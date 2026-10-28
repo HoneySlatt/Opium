@@ -1,0 +1,10 @@
+[package]
+name = "music-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+async-trait = "0.1.92"
+rand = "0.10.3"
+thiserror = "2.0.21"
