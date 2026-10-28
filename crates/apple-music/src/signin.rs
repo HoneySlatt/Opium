@@ -13,12 +13,14 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use futures_util::{SinkExt, StreamExt};
-use tokio::process::{Child, Command};
+use tokio::process::Command;
 use tokio_tungstenite::tungstenite::Message;
 
 const SIGNIN_URL: &str = "https://music.apple.com/signin";
 const TOKEN_COOKIE: &str = "media-user-token";
 const POLL: Duration = Duration::from_millis(500);
+/// Polls (of [`POLL`]) without an answering browser before giving up on it.
+const GIVE_UP_AFTER: u32 = 10;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SignInError {
@@ -35,15 +37,18 @@ pub enum SignInError {
 /// Open `browser` on Apple's sign-in page and wait for the user to finish.
 ///
 /// `profile` is the browser profile dedicated to this; it is created if missing.
+///
+/// The process we spawn is not a reliable signal: Chromium restarts itself on a
+/// fresh profile, and hands off to an instance already running on the same
+/// profile. So the browser is followed through `DevToolsActivePort`, reconnecting
+/// whenever it moves, and only counts as closed once our process is gone and
+/// nothing answers there any more.
 pub async fn sign_in(
     browser: &Path,
     profile: &Path,
     timeout: Duration,
 ) -> Result<String, SignInError> {
     let port_file = profile.join("DevToolsActivePort");
-    // A stale file from an earlier run would point at a dead port.
-    let _ = tokio::fs::remove_file(&port_file).await;
-
     let mut child = Command::new(browser)
         .arg(format!("--user-data-dir={}", profile.display()))
         .args([
@@ -59,31 +64,52 @@ pub async fn sign_in(
         .map_err(|e| SignInError::Launch(browser.to_owned(), e))?;
 
     let deadline = Instant::now() + timeout;
-    let endpoint = loop {
-        if let Some(endpoint) = read_port_file(&port_file).await {
-            break endpoint;
-        }
-        wait_a_bit(&mut child, deadline, timeout).await?;
-    };
-
-    let (mut ws, _) = tokio_tungstenite::connect_async(endpoint.as_str())
-        .await
-        .map_err(|e| SignInError::DevTools(e.to_string()))?;
-
-    let mut request_id = 0u64;
+    let mut unreachable_after_exit = 0;
     loop {
-        request_id += 1;
-        let request = serde_json::json!({ "id": request_id, "method": "Storage.getCookies" });
-        ws.send(Message::text(request.to_string()))
-            .await
-            .map_err(|e| SignInError::DevTools(e.to_string()))?;
+        if let Some(endpoint) = read_port_file(&port_file).await
+            && let Ok((mut ws, _)) = tokio_tungstenite::connect_async(endpoint.as_str()).await
+        {
+            unreachable_after_exit = 0;
+            if let Some(token) = poll_token(&mut ws, deadline, timeout).await? {
+                let close = serde_json::json!({ "id": 0, "method": "Browser.close" });
+                let _ = ws.send(Message::text(close.to_string())).await;
+                return Ok(token);
+            }
+        }
+        if Instant::now() > deadline {
+            return Err(SignInError::TimedOut(timeout));
+        }
+        if let Ok(Some(_)) = child.try_wait() {
+            unreachable_after_exit += 1;
+            if unreachable_after_exit > GIVE_UP_AFTER {
+                return Err(SignInError::BrowserClosed);
+            }
+        }
+        tokio::time::sleep(POLL).await;
+    }
+}
 
+/// Ask for cookies until the token appears. `Ok(None)` when the connection drops,
+/// which is the browser restarting or closing.
+async fn poll_token<S>(
+    ws: &mut S,
+    deadline: Instant,
+    timeout: Duration,
+) -> Result<Option<String>, SignInError>
+where
+    S: futures_util::Sink<Message>
+        + futures_util::Stream<Item = Result<Message, tokio_tungstenite::tungstenite::Error>>
+        + Unpin,
+{
+    for request_id in 1u64.. {
+        let request = serde_json::json!({ "id": request_id, "method": "Storage.getCookies" });
+        if ws.send(Message::text(request.to_string())).await.is_err() {
+            return Ok(None);
+        }
         let reply = loop {
-            let msg = ws
-                .next()
-                .await
-                .ok_or(SignInError::BrowserClosed)?
-                .map_err(|_| SignInError::BrowserClosed)?;
+            let Some(Ok(msg)) = ws.next().await else {
+                return Ok(None);
+            };
             let Message::Text(text) = msg else { continue };
             let value: serde_json::Value = serde_json::from_str(&text)
                 .map_err(|e| SignInError::DevTools(e.to_string()))?;
@@ -92,15 +118,15 @@ pub async fn sign_in(
                 break value;
             }
         };
-
         if let Some(token) = find_token(&reply) {
-            let close = serde_json::json!({ "id": request_id + 1, "method": "Browser.close" });
-            let _ = ws.send(Message::text(close.to_string())).await;
-            let _ = tokio::time::timeout(Duration::from_secs(5), child.wait()).await;
-            return Ok(token);
+            return Ok(Some(token));
         }
-        wait_a_bit(&mut child, deadline, timeout).await?;
+        if Instant::now() > deadline {
+            return Err(SignInError::TimedOut(timeout));
+        }
+        tokio::time::sleep(POLL).await;
     }
+    unreachable!("request ids ran out")
 }
 
 /// `DevToolsActivePort` holds the port on its first line and the browser target's
@@ -126,21 +152,6 @@ fn find_token(reply: &serde_json::Value) -> Option<String> {
         .and_then(|c| c["value"].as_str())
         .filter(|v| !v.is_empty())
         .map(str::to_owned)
-}
-
-async fn wait_a_bit(
-    child: &mut Child,
-    deadline: Instant,
-    timeout: Duration,
-) -> Result<(), SignInError> {
-    if Instant::now() > deadline {
-        return Err(SignInError::TimedOut(timeout));
-    }
-    if let Ok(Some(_)) = child.try_wait() {
-        return Err(SignInError::BrowserClosed);
-    }
-    tokio::time::sleep(POLL).await;
-    Ok(())
 }
 
 #[cfg(test)]
