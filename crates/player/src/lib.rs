@@ -109,11 +109,25 @@ where
     let device = cpal::default_host()
         .default_output_device()
         .ok_or_else(|| Error::Output("no output device".into()))?;
-    let config = device
+    // The source's own layout, else the device's usual one (stereo is then
+    // spread or folded by the channel mapping below), never whatever comes first.
+    let default_channels = device
+        .default_output_config()
+        .map_err(|e| output(&e))?
+        .channels();
+    let configs: Vec<_> = device
         .supported_output_configs()
         .map_err(|e| output(&e))?
         .filter(|c| c.sample_format() == cpal::SampleFormat::F32)
-        .find_map(|c| c.try_with_sample_rate(source_format.sample_rate))
+        .collect();
+    let config = [source_format.channels, default_channels]
+        .into_iter()
+        .find_map(|channels| {
+            configs
+                .iter()
+                .filter(|c| c.channels() == channels)
+                .find_map(|c| c.try_with_sample_rate(source_format.sample_rate))
+        })
         .ok_or_else(|| {
             Error::Output(format!(
                 "the output device can't run at {} Hz",
