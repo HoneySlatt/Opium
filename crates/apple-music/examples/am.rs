@@ -3,6 +3,8 @@
 //!   cargo run -p apple-music --example am -- signin
 //!   cargo run -p apple-music --example am -- library
 //!   cargo run -p apple-music --example am -- search "daft punk"
+//!   cargo run -p apple-music --example am -- fetch 1463409605 out.m4a
+//!   cargo run -p apple-music --example am -- play 1463409605
 //!
 //! The browser defaults to `brave-origin`; set `MUSIC_BROWSER` for another one.
 //! The token is stored under `$XDG_CONFIG_HOME/music/apple-music/` and never printed.
@@ -33,8 +35,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some("signin") => signin().await,
         Some("library") => library(&connect().await?).await,
         Some("search") => search(&connect().await?, &args[1..].join(" ")).await,
+        Some("fetch") if args.len() == 3 => fetch(&connect().await?, &args[1], &args[2]).await,
+        Some("play") if args.len() == 2 => play(&connect().await?, &args[1]).await,
         _ => {
-            eprintln!("usage: am signin | library | search <term>");
+            eprintln!("usage: am signin | library | search <term> | fetch <id> <out> | play <id>");
             Ok(())
         }
     }
@@ -114,5 +118,46 @@ async fn search(am: &AppleMusic, term: &str) -> Result<(), Box<dyn std::error::E
     for a in r.albums.iter().take(3) {
         println!("  [album] {} — {} ({:?})", a.title, a.artists.join(", "), a.year);
     }
+    Ok(())
+}
+
+async fn open_track(
+    am: &AppleMusic,
+    id: &str,
+) -> Result<apple_music::AudioStream, Box<dyn std::error::Error>> {
+    let cdm_path = widevine::locate().ok_or("no Widevine CDM found")?;
+    let cdm = widevine::Cdm::open(&cdm_path)?;
+    let track = music_core::model::ItemId::new(music_core::model::ProviderKind::AppleMusic, id);
+    Ok(am.fetch_track(&cdm, &track).await?)
+}
+
+async fn fetch(am: &AppleMusic, id: &str, out: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let started = std::time::Instant::now();
+    let mut stream = open_track(am, id).await?;
+    println!("ready to read after {:.2?}", started.elapsed());
+    let mut file = std::fs::File::create(out)?;
+    let written = std::io::copy(&mut stream, &mut file)?;
+    println!("{written} bytes decrypted after {:.2?}", started.elapsed());
+    Ok(())
+}
+
+async fn play(am: &AppleMusic, id: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let started = std::time::Instant::now();
+    let stream = open_track(am, id).await?;
+    let len = stream.len();
+    tokio::task::spawn_blocking(move || {
+        player::play(stream, len, Some("m4a"), |source, output| {
+            println!(
+                "playing after {:.2?}: source {} Hz × {} → output {} Hz × {}",
+                started.elapsed(),
+                source.sample_rate,
+                source.channels,
+                output.sample_rate,
+                output.channels
+            );
+        })
+    })
+    .await??;
+    println!("finished after {:.2?}", started.elapsed());
     Ok(())
 }

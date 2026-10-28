@@ -5,9 +5,14 @@
 //! ([`signin`]). Request shapes follow Kopuz (<https://github.com/Kopuz-org/kopuz>).
 
 pub mod auth;
+mod cenc;
 mod convert;
+mod playback;
 pub mod signin;
+mod stream;
 mod types;
+
+pub use stream::AudioStream;
 
 use async_trait::async_trait;
 use music_core::model::{
@@ -61,15 +66,20 @@ impl AppleMusic {
         &self.storefront
     }
 
+    /// What every request to Apple carries: both tokens, presented the way the
+    /// web player presents them.
+    fn authorized(&self, req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        req.bearer_auth(&self.developer_token)
+            .header("Origin", WEB_PLAYER)
+            .header("Referer", format!("{WEB_PLAYER}/"))
+            .header("Cookie", format!("media-user-token={}", self.user_token))
+    }
+
     /// `Ok(None)` on 404, which Apple also answers for some empty collections.
     async fn fetch<T: DeserializeOwned>(&self, path: &str) -> Result<Option<T>> {
         let resp = self
-            .http
-            .get(format!("{API}{path}"))
-            .bearer_auth(&self.developer_token)
+            .authorized(self.http.get(format!("{API}{path}")))
             .header("Media-User-Token", &self.user_token)
-            .header("Origin", WEB_PLAYER)
-            .header("Referer", format!("{WEB_PLAYER}/"))
             .send()
             .await
             .map_err(|e| Error::Network(format!("{path}: {e}")))?;

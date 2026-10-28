@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/music-core", "crates/apple-music"]
+members = ["crates/music-core", "crates/apple-music", "crates/widevine", "crates/player"]
 
 [workspace.package]
 version = "0.1.0"

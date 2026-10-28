@@ -1,0 +1,11 @@
+[package]
+name = "player"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+cpal = "0.18.2"
+rtrb = "0.4.1"
+symphonia = { version = "0.6.1", default-features = false, features = ["isomp4", "aac"] }
+thiserror = "2.0.21"

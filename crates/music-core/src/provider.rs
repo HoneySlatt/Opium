@@ -10,6 +10,8 @@ pub enum Error {
     Network(String),
     #[error("unexpected response: {0}")]
     Protocol(String),
+    #[error("playback failed: {0}")]
+    Playback(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
