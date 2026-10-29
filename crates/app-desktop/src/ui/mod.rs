@@ -30,8 +30,6 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     let collapsed = app.sidebar_collapsed || narrow;
     let theme = app.theme.clone();
 
-    let colors = backdrop(app);
-
     egui::Panel::left("sidebar")
         .exact_size(if collapsed { 68.0 } else { 232.0 })
         .resizable(false)
@@ -43,10 +41,6 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         .frame(egui::Frame::new().fill(theme.base))
         .show(ui, |ui| {
             let main = ui.max_rect();
-            // The cover's colours sit behind the page and stay put as it scrolls.
-            if let Some(colors) = colors {
-                page_backdrop(ui, &theme, main, colors);
-            }
             // The sidebar's right hairline.
             ui.painter()
                 .vline(main.left(), main.y_range(), Stroke::new(1.0, theme.line()));
@@ -60,7 +54,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
 }
 
 /// The cover colours behind album and playlist pages, fitted to the theme.
-fn backdrop(app: &mut App) -> Option<[Color32; 3]> {
+pub fn backdrop(app: &mut App) -> Option<[Color32; 3]> {
     let url = match &app.page {
         Page::Album(id) => match app.albums.get(id) {
             Some(crate::app::Loaded::Ready((album, _))) => album.artwork.as_ref()?.url(96),
@@ -72,31 +66,6 @@ fn backdrop(app: &mut App) -> Option<[Color32; 3]> {
     let light = app.theme.light;
     app.palette(&url)
         .map(|p| p.map(|c| crate::palette::fit(c, light)))
-}
-
-/// The cover's three colours across the page, discreetly (the sidebar stays
-/// plain): strongest behind the
-/// header (colour 1 top left, 2 top centre, 3 on the right), echoed low on both
-/// sides, under a veil of `base` that thickens towards the bottom.
-fn page_backdrop(ui: &Ui, theme: &Theme, rect: Rect, [c1, c2, c3]: [Color32; 3]) {
-    let blobs = [
-        blob(0.08, 0.02, 0.55, 0.65, c1, 0.45),
-        blob(0.55, -0.05, 0.50, 0.55, c2, 0.32),
-        blob(1.00, 0.35, 0.45, 0.70, c3, 0.26),
-        blob(0.00, 0.95, 0.50, 0.60, c2, 0.16),
-        blob(0.75, 1.05, 0.55, 0.50, c1, 0.15),
-    ];
-    wash(ui, rect, theme.base, &blobs, Some((0.15, 0.6)));
-}
-
-fn blob(x: f32, y: f32, rx: f32, ry: f32, color: Color32, alpha: f32) -> Blob {
-    Blob {
-        center: vec2(x, y),
-        radii: vec2(rx, ry),
-        color,
-        alpha,
-        fade: 0.9,
-    }
 }
 
 /// The page under the top bar; returns how far it is scrolled.
@@ -472,10 +441,10 @@ pub struct Blob {
     pub fade: f32,
 }
 
-/// Blobs over `base` as a coarse mesh, with per-vertex colours. With a `veil`,
-/// `base` is then laid over them, from the first opacity at the top to the
-/// second at the bottom, so the colour stays but recedes behind content.
-pub fn wash(ui: &Ui, rect: Rect, base: Color32, blobs: &[Blob], veil: Option<(f32, f32)>) {
+/// Blobs over `base` as a coarse mesh, with per-vertex colours. With
+/// `fade_to_base`, a vertical gradient then dissolves them into `base`: clear to
+/// 18 %, `base` at 55 % opacity by 55 %, solid at the bottom.
+pub fn wash(ui: &Ui, rect: Rect, base: Color32, blobs: &[Blob], fade_to_base: bool) {
     let (cols, rows) = (24, 16);
     let mut mesh = Mesh::default();
     for row in 0..=rows {
@@ -487,8 +456,15 @@ pub fn wash(ui: &Ui, rect: Rect, base: Color32, blobs: &[Blob], veil: Option<(f3
                 let t = (1.0 - d / blob.fade).clamp(0.0, 1.0);
                 color = over(alpha(blob.color, blob.alpha * t), color);
             }
-            if let Some((top, bottom)) = veil {
-                color = over(alpha(base, top + (bottom - top) * f.y), color);
+            if fade_to_base {
+                let a = if f.y < 0.18 {
+                    0.0
+                } else if f.y < 0.55 {
+                    0.55 * (f.y - 0.18) / (0.55 - 0.18)
+                } else {
+                    0.55 + 0.45 * (f.y - 0.55) / 0.45
+                };
+                color = over(alpha(base, a), color);
             }
             mesh.colored_vertex(rect.min + f * rect.size(), color);
         }
@@ -523,7 +499,7 @@ pub fn glow(ui: &Ui, theme: &Theme, rect: Rect) {
             fade: 0.72,
         },
     ];
-    wash(ui, rect, theme.base, &blobs, None);
+    wash(ui, rect, theme.base, &blobs, false);
 }
 
 /// The Play and Shuffle buttons of a page, from `at`. Returns `Some(shuffle)`
