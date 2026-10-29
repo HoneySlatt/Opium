@@ -287,14 +287,25 @@ fn now_playing(app: &mut App, ui: &mut Ui, theme: &Theme, lcd: Rect) {
         theme.muted(),
         width,
     );
-    paint_text(
-        ui,
-        galley,
-        left,
-        lcd.center().y + 8.0,
-        egui::Align::Min,
-        theme.muted(),
-    );
+    // The subtitle links to the album.
+    let y = lcd.center().y + 8.0;
+    let link = Rect::from_min_size(pos2(left, y - galley.size().y / 2.0), galley.size());
+    let mut color = theme.muted();
+    if let Some(album) = &track.album_id {
+        let hit = ui.interact(link, Id::unique("player-album"), Sense::click());
+        if hit.hovered() {
+            color = theme.text;
+            ui.painter()
+                .hline(link.x_range(), link.bottom(), Stroke::new(1.0, color));
+        }
+        if hit
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .clicked()
+        {
+            app.go(crate::app::Page::Album(album.clone()));
+        }
+    }
+    paint_text(ui, galley, left, y, egui::Align::Min, color);
 
     seek_hairline(app, ui, theme, lcd);
 }

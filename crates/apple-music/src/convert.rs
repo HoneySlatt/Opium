@@ -40,6 +40,12 @@ pub fn track(song: types::Song) -> Track {
         .and_then(|p| p.catalog_id.clone())
         .filter(|c| !c.is_empty());
     let in_catalog = catalog_id.is_some() || !song.id.starts_with("i.");
+    let album_id = song
+        .relationships
+        .as_ref()
+        .and_then(|r| r.albums.as_ref())
+        .and_then(|a| a.data.first())
+        .map(|a| id(a.id.clone()));
 
     Track {
         id: id(catalog_id.unwrap_or(song.id)),
@@ -47,7 +53,7 @@ pub fn track(song: types::Song) -> Track {
         title: attrs.name,
         artists: vec![attrs.artist_name],
         album: attrs.album_name,
-        album_id: None,
+        album_id,
         duration: attrs.duration_in_millis.map(Duration::from_millis),
         track_number: attrs.track_number,
         disc_number: attrs.disc_number,
@@ -131,6 +137,16 @@ mod tests {
         })));
         assert_eq!(t.id.id, "i.upload");
         assert!(t.quality.is_none());
+    }
+
+    #[test]
+    fn an_included_album_becomes_the_album_id() {
+        let t = track(song(serde_json::json!({
+            "id": "i.abc",
+            "attributes": { "name": "x" },
+            "relationships": { "albums": { "data": [{ "id": "l.album", "type": "library-albums" }] } }
+        })));
+        assert_eq!(t.album_id.map(|a| a.id), Some("l.album".to_owned()));
     }
 
     #[test]

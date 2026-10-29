@@ -31,6 +31,8 @@ pub trait Provider: Send + Sync {
 
     async fn library_playlists(&self, cursor: Option<&Cursor>) -> Result<Page<Playlist>>;
 
+    async fn album(&self, album: &ItemId) -> Result<Album>;
+
     async fn album_tracks(&self, album: &ItemId) -> Result<Vec<Track>>;
 
     async fn playlist_tracks(

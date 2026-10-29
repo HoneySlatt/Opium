@@ -1,7 +1,8 @@
 //! A development aid: `MUSIC_SCREENSHOT=out.png [MUSIC_SCREENSHOT_AFTER=seconds]
 //! [MUSIC_SCREENSHOT_PLAY=row]` saves the window once it has had time to load,
-//! then quits, optionally playing a Songs row first. Only the app's own window is
-//! captured.
+//! then quits, optionally playing a Songs row first. `MUSIC_SCREENSHOT_PAGE`
+//! opens a page first: `playlist:<index>` or `album:<id>`. Only the app's own
+//! window is captured.
 
 use std::path::PathBuf;
 
@@ -10,6 +11,7 @@ pub struct Screenshot {
     after: f64,
     requested: bool,
     play: Option<usize>,
+    page: Option<String>,
 }
 
 impl Screenshot {
@@ -27,12 +29,30 @@ impl Screenshot {
             after,
             requested: false,
             play,
+            page: std::env::var("MUSIC_SCREENSHOT_PAGE").ok(),
         })
     }
 
     /// The Songs row to play, once, when the library has loaded.
     pub fn play_row(&mut self, loaded: bool) -> Option<usize> {
         if loaded { self.play.take() } else { None }
+    }
+
+    /// The page to open, once, when the playlists have loaded.
+    pub fn page(&mut self, playlists: usize) -> Option<crate::app::Page> {
+        if playlists == 0 {
+            return None;
+        }
+        let spec = self.page.take()?;
+        let (kind, value) = spec.split_once(':')?;
+        match kind {
+            "playlist" => value.parse().ok().map(crate::app::Page::Playlist),
+            "album" => Some(crate::app::Page::Album(music_core::model::ItemId::new(
+                music_core::model::ProviderKind::AppleMusic,
+                value,
+            ))),
+            _ => None,
+        }
     }
 
     pub fn update(&mut self, ctx: &egui::Context) {

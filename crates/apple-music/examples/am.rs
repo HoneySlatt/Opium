@@ -94,7 +94,7 @@ async fn library(am: &AppleMusic) -> Result<(), Box<dyn std::error::Error>> {
     let albums = am.library_albums(None).await?;
     println!("\nalbums (first page: {})", albums.items.len());
     for a in albums.items.iter().take(5) {
-        println!("  {} — {} ({:?})", a.title, a.artists.join(", "), a.year);
+        println!("  {} — {} ({:?}) [{}]", a.title, a.artists.join(", "), a.year, a.id.id);
     }
     if let Some(album) = albums.items.first() {
         let tracks = am.album_tracks(&album.id).await?;

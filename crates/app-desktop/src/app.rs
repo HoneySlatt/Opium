@@ -1,13 +1,15 @@
 //! App state, and the glue between the queue, the backend and the player.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Duration;
 
-use music_core::model::{Playlist, ProviderKind, Track};
+use music_core::model::{Album, ItemId, Playlist, ProviderKind, Track};
 use music_core::{Queue, Repeat};
 use player::{Event, Player, Status, Token};
 
 use crate::backend::{Backend, Reply, Request};
+use crate::palette::Palette;
 use crate::theme::Theme;
 use crate::ui;
 
@@ -22,7 +24,32 @@ pub enum Page {
     Artists,
     Favourites,
     Playlist(usize),
+    Album(ItemId),
     Settings,
+}
+
+/// Something fetched on demand.
+pub enum Loaded<T> {
+    Loading,
+    Ready(T),
+    Failed(String),
+}
+
+/// An album and its tracks.
+pub type AlbumPage = (Album, Arc<Vec<Track>>);
+
+/// A playlist's tracks, filled page by page.
+#[derive(Default)]
+pub struct PlaylistTracks {
+    pub tracks: Arc<Vec<Track>>,
+    pub done: bool,
+    pub error: Option<String>,
+}
+
+enum PaletteState {
+    Pending,
+    Ready(Palette),
+    Failed,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -71,6 +98,11 @@ pub struct App {
     pub songs_done: bool,
     pub songs_view: SongsView,
     pub playlists: Vec<Playlist>,
+    pub albums: HashMap<ItemId, Loaded<AlbumPage>>,
+    pub playlist_tracks: HashMap<ItemId, PlaylistTracks>,
+    palettes: HashMap<String, PaletteState>,
+    /// The selected row on an album or playlist page.
+    pub detail_selected: Option<usize>,
     pub queue: Queue,
     tracks: HashMap<Token, Track>,
     next_token: Token,
@@ -118,6 +150,10 @@ impl App {
                 ..SongsView::default()
             },
             playlists: Vec::new(),
+            albums: HashMap::new(),
+            playlist_tracks: HashMap::new(),
+            palettes: HashMap::new(),
+            detail_selected: None,
             queue: Queue::new(),
             tracks: HashMap::new(),
             next_token: 0,
@@ -140,6 +176,41 @@ impl App {
         if page != self.page {
             self.back.push(std::mem::replace(&mut self.page, page));
             self.forward.clear();
+            self.arrived();
+        }
+    }
+
+    /// Fetch what the page shows, unless it already has been.
+    fn arrived(&mut self) {
+        self.detail_selected = None;
+        match &self.page {
+            Page::Album(id) if !self.albums.contains_key(id) => {
+                self.albums.insert(id.clone(), Loaded::Loading);
+                self.backend.send(Request::Album(id.clone()));
+            }
+            Page::Playlist(index) => {
+                if let Some(playlist) = self.playlists.get(*index)
+                    && !self.playlist_tracks.contains_key(&playlist.id)
+                {
+                    self.playlist_tracks
+                        .insert(playlist.id.clone(), PlaylistTracks::default());
+                    self.backend.send(Request::Playlist(playlist.id.clone()));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// The cover colours for `url`, fetched on first ask.
+    pub fn palette(&mut self, url: &str) -> Option<Palette> {
+        match self.palettes.get(url) {
+            Some(PaletteState::Ready(palette)) => Some(*palette),
+            Some(_) => None,
+            None => {
+                self.palettes.insert(url.to_owned(), PaletteState::Pending);
+                self.backend.send(Request::Palette(url.to_owned()));
+                None
+            }
         }
     }
 
@@ -154,12 +225,14 @@ impl App {
     pub fn go_back(&mut self) {
         if let Some(page) = self.back.pop() {
             self.forward.push(std::mem::replace(&mut self.page, page));
+            self.arrived();
         }
     }
 
     pub fn go_forward(&mut self) {
         if let Some(page) = self.forward.pop() {
             self.back.push(std::mem::replace(&mut self.page, page));
+            self.arrived();
         }
     }
 
@@ -178,6 +251,10 @@ impl App {
                 .get(*i)
                 .map(|p| p.name.clone())
                 .unwrap_or_default(),
+            Page::Album(id) => match self.albums.get(id) {
+                Some(Loaded::Ready((album, _))) => album.title.clone(),
+                _ => String::new(),
+            },
             Page::Settings => "Settings".into(),
         }
     }
@@ -190,6 +267,27 @@ impl App {
 
     pub fn is_playing(&self) -> bool {
         self.status.token.is_some() && !self.status.paused
+    }
+
+    /// Whether `track` is the one the player has.
+    pub fn is_current(&self, track: &Track) -> bool {
+        self.status.token.is_some() && self.now.as_ref().is_some_and(|n| n.id == track.id)
+    }
+
+    /// Play `tracks` from the top, or shuffled from a random one.
+    pub fn play_shuffled_or_not(&mut self, tracks: Vec<Track>, shuffle: bool, seed: f64) {
+        if tracks.is_empty() {
+            return;
+        }
+        if self.queue.shuffle() != shuffle {
+            self.queue.set_shuffle(shuffle);
+        }
+        let start = if shuffle {
+            (seed * 1000.0) as usize % tracks.len()
+        } else {
+            0
+        };
+        self.play_list(tracks, start);
     }
 
     /// Replace the queue with `tracks` and play from `start`.
@@ -310,7 +408,30 @@ impl App {
                     self.songs.extend(tracks);
                     self.songs_done = done;
                 }
-                Reply::Playlists(playlists) => self.playlists = playlists,
+                Reply::Playlists(playlists) => {
+                    self.playlists = playlists;
+                    // A playlist page opened before the list arrived can load now.
+                    self.arrived();
+                }
+                Reply::Album { id, result } => {
+                    let loaded = match result {
+                        Ok((album, tracks)) => Loaded::Ready((album, Arc::new(tracks))),
+                        Err(e) => Loaded::Failed(e),
+                    };
+                    self.albums.insert(id, loaded);
+                }
+                Reply::PlaylistTracks { id, result, done } => {
+                    let entry = self.playlist_tracks.entry(id).or_default();
+                    match result {
+                        Ok(tracks) => Arc::make_mut(&mut entry.tracks).extend(tracks),
+                        Err(e) => entry.error = Some(e),
+                    }
+                    entry.done = done;
+                }
+                Reply::Palette { url, palette } => {
+                    let state = palette.map_or(PaletteState::Failed, PaletteState::Ready);
+                    self.palettes.insert(url, state);
+                }
                 Reply::Fetched { token, result } => match result {
                     Ok(stream) if self.pending_play == Some(token) => {
                         self.pending_play = None;
@@ -405,6 +526,13 @@ impl eframe::App for App {
             .as_mut()
             .and_then(|s| s.play_row(!self.songs.is_empty()))
             .filter(|&row| row < self.songs_view.order.len());
+        if let Some(page) = self
+            .screenshot
+            .as_mut()
+            .and_then(|s| s.page(self.playlists.len()))
+        {
+            self.go(page);
+        }
         if let Some(row) = row {
             let tracks = self
                 .songs_view

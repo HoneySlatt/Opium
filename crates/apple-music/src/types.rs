@@ -12,6 +12,25 @@ pub struct Response<T> {
 pub struct Resource<A> {
     pub id: String,
     pub attributes: Option<A>,
+    /// Present when the request asked for them with `include=`.
+    pub relationships: Option<Relationships>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct Relationships {
+    pub albums: Option<Related>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct Related {
+    pub data: Vec<RelatedRef>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RelatedRef {
+    pub id: String,
 }
 
 #[derive(Debug, Deserialize)]

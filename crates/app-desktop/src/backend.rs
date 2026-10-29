@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::sync::mpsc;
 
 use apple_music::{AppleMusic, AudioStream};
-use music_core::model::{Cursor, ItemId, Playlist, Track};
+use music_core::model::{Album, Cursor, ItemId, Playlist, Track};
 use music_core::{Error, Provider};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
@@ -15,6 +15,12 @@ pub enum Request {
     Library,
     /// A track's audio, ready to hand to the player.
     Fetch { token: player::Token, track: ItemId },
+    /// An album and its tracks.
+    Album(ItemId),
+    /// A playlist's tracks, page by page.
+    Playlist(ItemId),
+    /// The three colours of the cover at this URL.
+    Palette(String),
 }
 
 pub enum Reply {
@@ -29,6 +35,19 @@ pub enum Reply {
     Fetched {
         token: player::Token,
         result: Result<AudioStream, String>,
+    },
+    Album {
+        id: ItemId,
+        result: Result<(Album, Vec<Track>), String>,
+    },
+    PlaylistTracks {
+        id: ItemId,
+        result: Result<Vec<Track>, String>,
+        done: bool,
+    },
+    Palette {
+        url: String,
+        palette: Option<crate::palette::Palette>,
     },
 }
 
@@ -107,9 +126,38 @@ async fn run(mut requests: UnboundedReceiver<Request>, replies: Replies) {
         .ok_or_else(|| "no Widevine module found: install Brave, Chrome or Firefox".to_owned())
         .and_then(|path| widevine::Cdm::open(&path).map_err(|e| e.to_string()));
 
+    let http = reqwest::Client::new();
     while let Some(request) = requests.recv().await {
         let (am, replies) = (am.clone(), replies.clone());
         match request {
+            Request::Album(id) => {
+                tokio::spawn(async move {
+                    let result = tokio::try_join!(am.album(&id), am.album_tracks(&id))
+                        .map_err(|e| e.to_string());
+                    replies.send(Reply::Album { id, result });
+                });
+            }
+            Request::Playlist(id) => {
+                tokio::spawn(load_playlist(am, id, replies));
+            }
+            Request::Palette(url) => {
+                let http = http.clone();
+                tokio::spawn(async move {
+                    let palette = match http.get(&url).send().await {
+                        Ok(resp) => match resp.bytes().await {
+                            Ok(bytes) => tokio::task::spawn_blocking(move || {
+                                crate::palette::from_image(&bytes)
+                            })
+                            .await
+                            .ok()
+                            .flatten(),
+                            Err(_) => None,
+                        },
+                        Err(_) => None,
+                    };
+                    replies.send(Reply::Palette { url, palette });
+                });
+            }
             Request::Library => {
                 tokio::spawn(load_library(am, replies));
             }
@@ -166,6 +214,34 @@ async fn load_library(am: Arc<AppleMusic>, replies: Replies) {
             }
             Err(e) => {
                 replies.send(Reply::Failed(e.to_string()));
+                return;
+            }
+        }
+    }
+}
+
+async fn load_playlist(am: Arc<AppleMusic>, id: ItemId, replies: Replies) {
+    let mut cursor: Option<Cursor> = None;
+    loop {
+        match am.playlist_tracks(&id, cursor.as_ref()).await {
+            Ok(page) => {
+                let done = page.next.is_none();
+                replies.send(Reply::PlaylistTracks {
+                    id: id.clone(),
+                    result: Ok(page.items),
+                    done,
+                });
+                match page.next {
+                    Some(next) => cursor = Some(next),
+                    None => return,
+                }
+            }
+            Err(e) => {
+                replies.send(Reply::PlaylistTracks {
+                    id,
+                    result: Err(e.to_string()),
+                    done: true,
+                });
                 return;
             }
         }

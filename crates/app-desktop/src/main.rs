@@ -5,6 +5,7 @@ mod backend;
 mod color;
 mod fonts;
 mod icons;
+mod palette;
 mod screenshot;
 mod settings;
 mod theme;

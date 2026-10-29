@@ -187,7 +187,7 @@ impl Provider for AppleMusic {
     }
 
     async fn library_tracks(&self, cursor: Option<&Cursor>) -> Result<Page<Track>> {
-        let first = format!("/v1/me/library/songs?limit={PAGE}");
+        let first = format!("/v1/me/library/songs?limit={PAGE}&include=albums");
         self.page(&first, cursor, convert::track).await
     }
 
@@ -199,6 +199,20 @@ impl Provider for AppleMusic {
     async fn library_playlists(&self, cursor: Option<&Cursor>) -> Result<Page<Playlist>> {
         let first = format!("/v1/me/library/playlists?limit={PAGE}");
         self.page(&first, cursor, convert::playlist).await
+    }
+
+    async fn album(&self, album: &ItemId) -> Result<Album> {
+        let path = if album.id.starts_with("l.") {
+            format!("/v1/me/library/albums/{}", album.id)
+        } else {
+            format!("/v1/catalog/{}/albums/{}", self.storefront, album.id)
+        };
+        let resp: types::Response<types::Album> = self.get(&path).await?;
+        resp.data
+            .into_iter()
+            .next()
+            .map(convert::album)
+            .ok_or_else(|| Error::Protocol(format!("{path}: no album")))
     }
 
     async fn album_tracks(&self, album: &ItemId) -> Result<Vec<Track>> {
@@ -214,7 +228,10 @@ impl Provider for AppleMusic {
         let mut cursor = None;
         loop {
             let page = self.page(&first, cursor.as_ref(), convert::track).await?;
-            tracks.extend(page.items);
+            tracks.extend(page.items.into_iter().map(|mut t| {
+                t.album_id.get_or_insert_with(|| album.clone());
+                t
+            }));
             match page.next {
                 Some(next) => cursor = Some(next),
                 None => return Ok(tracks),
@@ -229,12 +246,12 @@ impl Provider for AppleMusic {
     ) -> Result<Page<Track>> {
         let first = if playlist.id.starts_with("p.") {
             format!(
-                "/v1/me/library/playlists/{}/tracks?limit={PAGE}",
+                "/v1/me/library/playlists/{}/tracks?limit={PAGE}&include=albums",
                 playlist.id
             )
         } else {
             format!(
-                "/v1/catalog/{}/playlists/{}/tracks?limit={PAGE}",
+                "/v1/catalog/{}/playlists/{}/tracks?limit={PAGE}&include=albums",
                 self.storefront, playlist.id
             )
         };

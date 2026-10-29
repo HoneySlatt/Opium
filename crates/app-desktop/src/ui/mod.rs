@@ -1,8 +1,10 @@
 //! The window: sidebar, page, top bar and player bar, after `design/…/DESIGN.md`.
 
+mod detail;
 mod player_bar;
 mod sidebar;
 mod songs;
+mod tracks;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -54,8 +56,10 @@ pub fn show(app: &mut App, ui: &mut Ui) {
 /// The page under the top bar; returns how far it is scrolled.
 fn page(app: &mut App, ui: &mut Ui, narrow: bool) -> f32 {
     let pad = if narrow { 24.0 } else { 40.0 };
-    match app.page {
+    match app.page.clone() {
         Page::Songs => songs::show(app, ui, pad),
+        Page::Album(id) => detail::album(app, ui, pad, &id),
+        Page::Playlist(index) => detail::playlist(app, ui, pad, index),
         _ => placeholder(app, ui, pad),
     }
 }
@@ -412,30 +416,40 @@ pub fn thumb_url(track: &music_core::model::Track) -> Option<String> {
     track.artwork.as_ref().map(|a| a.url(120))
 }
 
-/// The violet glow at the top of pages without a cover: two radial gradients
-/// (accent at 26 % from the top left, mauve at 20 % from the top centre).
-pub fn glow(ui: &Ui, theme: &Theme, rect: Rect) {
-    let blobs = [
-        // (centre as a fraction of the rect, radii as fractions, colour, alpha, fade end)
-        (
-            vec2(0.08, -0.10),
-            vec2(0.55, 0.90),
-            theme.accent,
-            0.26,
-            0.70,
-        ),
-        (vec2(0.62, -0.25), vec2(0.45, 0.80), theme.mauve, 0.20, 0.72),
-    ];
-    let (cols, rows) = (24, 12);
+/// A radial blob of colour: centre and radii as fractions of the painted rect,
+/// opacity at the centre, and where (as a fraction of the radius) it fades out.
+pub struct Blob {
+    pub center: Vec2,
+    pub radii: Vec2,
+    pub color: Color32,
+    pub alpha: f32,
+    pub fade: f32,
+}
+
+/// Blobs over `base` as a coarse mesh, with per-vertex colours. With
+/// `fade_to_base`, a vertical gradient then dissolves them into `base`: clear to
+/// 18 %, `base` at 55 % opacity by 55 %, solid at the bottom.
+pub fn wash(ui: &Ui, rect: Rect, base: Color32, blobs: &[Blob], fade_to_base: bool) {
+    let (cols, rows) = (24, 16);
     let mut mesh = Mesh::default();
     for row in 0..=rows {
         for col in 0..=cols {
             let f = vec2(col as f32 / cols as f32, row as f32 / rows as f32);
-            let mut color = Color32::TRANSPARENT;
-            for (center, radii, c, a, end) in blobs {
-                let d = ((f - center) / radii).length();
-                let t = (1.0 - d / end).clamp(0.0, 1.0);
-                color = over(alpha(c, a * t), color);
+            let mut color = base;
+            for blob in blobs {
+                let d = ((f - blob.center) / blob.radii).length();
+                let t = (1.0 - d / blob.fade).clamp(0.0, 1.0);
+                color = over(alpha(blob.color, blob.alpha * t), color);
+            }
+            if fade_to_base {
+                let a = if f.y < 0.18 {
+                    0.0
+                } else if f.y < 0.55 {
+                    0.55 * (f.y - 0.18) / (0.55 - 0.18)
+                } else {
+                    0.55 + 0.45 * (f.y - 0.55) / 0.45
+                };
+                color = over(alpha(base, a), color);
             }
             mesh.colored_vertex(rect.min + f * rect.size(), color);
         }
@@ -449,6 +463,95 @@ pub fn glow(ui: &Ui, theme: &Theme, rect: Rect) {
         }
     }
     ui.painter().add(mesh);
+}
+
+/// The violet glow at the top of pages without a cover: two radial gradients
+/// (accent at 26 % from the top left, mauve at 20 % from the top centre).
+pub fn glow(ui: &Ui, theme: &Theme, rect: Rect) {
+    let blobs = [
+        Blob {
+            center: vec2(0.08, -0.10),
+            radii: vec2(0.55, 0.90),
+            color: theme.accent,
+            alpha: 0.26,
+            fade: 0.70,
+        },
+        Blob {
+            center: vec2(0.62, -0.25),
+            radii: vec2(0.45, 0.80),
+            color: theme.mauve,
+            alpha: 0.20,
+            fade: 0.72,
+        },
+    ];
+    wash(ui, rect, theme.base, &blobs, false);
+}
+
+/// The Play and Shuffle buttons of a page, from `at`. Returns `Some(shuffle)`
+/// when one was clicked.
+pub fn page_buttons(ui: &mut Ui, theme: &Theme, at: Pos2, salt: &str) -> Option<bool> {
+    let play = Rect::from_min_size(at, vec2(88.0, 36.0));
+    let shuffle = Rect::from_min_size(pos2(play.right() + 10.0, at.y), vec2(107.0, 36.0));
+    if page_button(ui, theme, play, icons::PLAY_FILL, "Play", true, salt) {
+        return Some(false);
+    }
+    if page_button(ui, theme, shuffle, icons::SHUFFLE, "Shuffle", false, salt) {
+        return Some(true);
+    }
+    None
+}
+
+/// A 36 px button: accent-filled for the primary action, else a faint fill.
+fn page_button(
+    ui: &mut Ui,
+    theme: &Theme,
+    rect: Rect,
+    icon: Icon,
+    label: &str,
+    primary: bool,
+    salt: &str,
+) -> bool {
+    let response = ui.interact(
+        rect,
+        egui::Id::unique(("page-button", salt, label)),
+        Sense::click(),
+    );
+    let (fill, fg) = if primary {
+        let fill = if response.hovered() {
+            crate::color::mix(theme.accent, theme.text, 0.88)
+        } else {
+            theme.accent
+        };
+        (fill, theme.on_accent())
+    } else {
+        let fill = theme.text_a(if response.hovered() { 0.14 } else { 0.09 });
+        (fill, theme.text)
+    };
+    let rect = if response.is_pointer_button_down_on() {
+        rect.shrink(0.4)
+    } else {
+        rect
+    };
+    ui.painter().rect_filled(rect, 9.0, fill);
+    paint_icon(
+        ui,
+        icon,
+        pos2(rect.left() + 20.0 + 7.0, rect.center().y),
+        14.0,
+        fg,
+    );
+    let galley = text(ui, label, font(13.0, Weight::Medium), fg, rect.width());
+    paint_text(
+        ui,
+        galley,
+        rect.left() + 20.0 + 14.0 + 8.0,
+        rect.center().y,
+        egui::Align::Min,
+        fg,
+    );
+    response
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .clicked()
 }
 
 /// `top` composited over `bottom`, both premultiplied.
