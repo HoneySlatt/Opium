@@ -102,9 +102,13 @@ pub struct SearchResponse {
 
 #[derive(Debug, Deserialize)]
 pub struct SearchResults {
+    #[serde(alias = "library-songs")]
     pub songs: Option<Response<Song>>,
+    #[serde(alias = "library-albums")]
     pub albums: Option<Response<Album>>,
+    #[serde(alias = "library-artists")]
     pub artists: Option<Response<Artist>>,
+    #[serde(alias = "library-playlists")]
     pub playlists: Option<Response<Playlist>>,
 }
 

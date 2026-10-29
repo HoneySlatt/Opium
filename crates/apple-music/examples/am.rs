@@ -3,6 +3,7 @@
 //!   cargo run -p apple-music --example am -- signin
 //!   cargo run -p apple-music --example am -- library
 //!   cargo run -p apple-music --example am -- search "daft punk"
+//!   cargo run -p apple-music --example am -- search-library "daft punk"
 //!   cargo run -p apple-music --example am -- fetch 1463409605 out.m4a
 //!   cargo run -p apple-music --example am -- play 1463409605 1463409610
 //!   cargo run -p apple-music --example am -- lyrics 1463409605
@@ -36,12 +37,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some("signin") => signin().await,
         Some("library") => library(&connect().await?).await,
         Some("search") => search(&connect().await?, &args[1..].join(" ")).await,
+        Some("search-library") => search_library(&connect().await?, &args[1..].join(" ")).await,
         Some("fetch") if args.len() == 3 => fetch(&connect().await?, &args[1], &args[2]).await,
         Some("play") if args.len() >= 2 => play(&connect().await?, &args[1..]).await,
         Some("lyrics") if args.len() == 2 => lyrics(&connect().await?, &args[1]).await,
         _ => {
             eprintln!(
-                "usage: am signin | library | search <term> | fetch <id> <out> | play <id>… | lyrics <id>"
+                "usage: am signin | library | search <term> | search-library <term> | fetch <id> <out> | play <id>… | lyrics <id>"
             );
             Ok(())
         }
@@ -132,6 +134,32 @@ async fn lyrics(am: &AppleMusic, id: &str) -> Result<(), Box<dyn std::error::Err
     println!("{} lines, synced: {}", lyrics.lines.len(), lyrics.synced);
     for line in &lyrics.lines {
         println!("  {:>7.2}  {}", line.start.as_secs_f64(), line.text);
+    }
+    Ok(())
+}
+
+async fn search_library(am: &AppleMusic, term: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let r = am.search_library(term).await?;
+    println!(
+        "\n{} songs, {} albums, {} artists, {} playlists",
+        r.tracks.len(),
+        r.albums.len(),
+        r.artists.len(),
+        r.playlists.len()
+    );
+    for t in r.tracks.iter().take(5) {
+        println!("  {} — {} [{}]", t.title, t.artists.join(", "), t.id.id);
+    }
+    for a in r.albums.iter().take(3) {
+        println!(
+            "  [album] {} — {} [{}]",
+            a.title,
+            a.artists.join(", "),
+            a.id.id
+        );
+    }
+    for p in r.playlists.iter().take(3) {
+        println!("  [playlist] {} [{}]", p.name, p.id.id);
     }
     Ok(())
 }

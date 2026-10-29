@@ -10,6 +10,8 @@ use music_core::model::{Album, Cursor, ItemId, Lyrics, Playlist, SearchResults, 
 use music_core::{Error, Provider};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
+use crate::app::SearchScope;
+
 pub enum Request {
     /// The library songs and playlists, page by page.
     Library,
@@ -23,8 +25,9 @@ pub enum Request {
     Palette(String),
     /// A track's lyrics.
     Lyrics(ItemId),
-    /// Songs, albums, artists and playlists matching a query.
-    Search(String),
+    /// Songs, albums, artists and playlists matching a query, in the
+    /// catalog or in the library.
+    Search(SearchScope, String),
 }
 
 pub enum Reply {
@@ -58,6 +61,7 @@ pub enum Reply {
         result: Result<Option<Lyrics>, String>,
     },
     Search {
+        scope: SearchScope,
         query: String,
         result: Result<SearchResults, String>,
     },
@@ -176,10 +180,18 @@ async fn run(mut requests: UnboundedReceiver<Request>, replies: Replies) {
                     replies.send(Reply::Lyrics { id, result });
                 });
             }
-            Request::Search(query) => {
+            Request::Search(scope, query) => {
                 tokio::spawn(async move {
-                    let result = am.search(&query).await.map_err(|e| e.to_string());
-                    replies.send(Reply::Search { query, result });
+                    let result = match scope {
+                        SearchScope::AppleMusic => am.search(&query).await,
+                        SearchScope::Library => am.search_library(&query).await,
+                    };
+                    let result = result.map_err(|e| e.to_string());
+                    replies.send(Reply::Search {
+                        scope,
+                        query,
+                        result,
+                    });
                 });
             }
             Request::Library => {

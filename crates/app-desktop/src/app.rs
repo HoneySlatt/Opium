@@ -37,6 +37,14 @@ pub enum Loaded<T> {
     Failed(String),
 }
 
+/// Where Search looks: everything on Apple Music, or the user's library.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum SearchScope {
+    #[default]
+    AppleMusic,
+    Library,
+}
+
 /// The queue drawer's tabs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum DrawerTab {
@@ -139,7 +147,8 @@ pub struct App {
     pub search_edited: Option<f64>,
     /// Put the cursor in the search field on the next frame.
     pub focus_search: bool,
-    pub searches: HashMap<String, Loaded<Arc<SearchResults>>>,
+    searches: HashMap<(SearchScope, String), Loaded<Arc<SearchResults>>>,
+    pub search_scope: SearchScope,
     pub search_source: Option<ProviderKind>,
     /// Playlists opened from outside the library (search results).
     other_playlists: HashMap<ItemId, Playlist>,
@@ -207,6 +216,7 @@ impl App {
             search_edited: None,
             focus_search: false,
             searches: HashMap::new(),
+            search_scope: SearchScope::default(),
             search_source: None,
             other_playlists: HashMap::new(),
             songs: Vec::new(),
@@ -267,9 +277,13 @@ impl App {
                 self.albums.insert(id.clone(), Loaded::Loading);
                 self.backend.send(Request::Album(id.clone()));
             }
-            Page::Search(query) if !self.searches.contains_key(query) => {
-                self.searches.insert(query.clone(), Loaded::Loading);
-                self.backend.send(Request::Search(query.clone()));
+            Page::Search(query) => {
+                let key = (self.search_scope, query.clone());
+                if let std::collections::hash_map::Entry::Vacant(e) = self.searches.entry(key) {
+                    e.insert(Loaded::Loading);
+                    self.backend
+                        .send(Request::Search(self.search_scope, query.clone()));
+                }
             }
             Page::Playlist(id) if !self.playlist_tracks.contains_key(id) => {
                 self.playlist_tracks
@@ -295,6 +309,19 @@ impl App {
         self.go(Page::Playlist(playlist.id.clone()));
     }
 
+    /// The results for `query` where Search looks now.
+    pub fn search_results(&self, query: &str) -> Option<&Loaded<Arc<SearchResults>>> {
+        self.searches.get(&(self.search_scope, query.to_owned()))
+    }
+
+    /// Look in the catalog or the library, searching there if not done yet.
+    pub fn set_search_scope(&mut self, scope: SearchScope) {
+        if scope != self.search_scope {
+            self.search_scope = scope;
+            self.arrived();
+        }
+    }
+
     /// Search for what the field holds: a new page, or the search page
     /// updated in place while typing.
     pub fn submit_search(&mut self) {
@@ -304,8 +331,9 @@ impl App {
             return;
         }
         // A search that failed is tried again.
-        if matches!(self.searches.get(&query), Some(Loaded::Failed(_))) {
-            self.searches.remove(&query);
+        let key = (self.search_scope, query.clone());
+        if matches!(self.searches.get(&key), Some(Loaded::Failed(_))) {
+            self.searches.remove(&key);
         }
         if matches!(self.page, Page::Search(_)) {
             self.page = Page::Search(query);
@@ -605,12 +633,16 @@ impl App {
                     };
                     self.lyrics.insert(id, loaded);
                 }
-                Reply::Search { query, result } => {
+                Reply::Search {
+                    scope,
+                    query,
+                    result,
+                } => {
                     let loaded = match result {
                         Ok(results) => Loaded::Ready(Arc::new(results)),
                         Err(e) => Loaded::Failed(e),
                     };
-                    self.searches.insert(query, loaded);
+                    self.searches.insert((scope, query), loaded);
                 }
                 Reply::Fetched { token, result } => match result {
                     Ok(stream) if self.pending_play == Some(token) => {

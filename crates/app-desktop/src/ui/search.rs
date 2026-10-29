@@ -1,12 +1,13 @@
-//! Search: the query as the title with the source filter, the top result
-//! beside the first songs, then shelves of albums and playlists.
+//! Search: the query as the title with the source filter, Apple Music or the
+//! library to search, the top result beside the first songs, then shelves of
+//! albums and playlists.
 
 use std::sync::Arc;
 
 use egui::{Id, Rect, Sense, Stroke, Ui, pos2, vec2};
 use music_core::model::{Artwork, ItemId, ProviderKind, SearchResults, Track};
 
-use crate::app::{App, Loaded, Page};
+use crate::app::{App, Loaded, Page, SearchScope};
 use crate::fonts::{Weight, font};
 use crate::icons;
 use crate::theme::Theme;
@@ -15,8 +16,8 @@ use super::songs::source_chips;
 use super::tracks::{self, Columns, RowAction, RowState};
 use super::{artwork, glow, icon_button, paint_text, text};
 
-/// Where the sections start, under the title.
-const BODY_TOP: f32 = 132.0;
+/// Where the sections start, under the title and the scope switch.
+const BODY_TOP: f32 = 172.0;
 const SECTION_GAP: f32 = 34.0;
 /// A section's title and the space under it.
 const SECTION_HEAD: f32 = 34.0;
@@ -53,7 +54,7 @@ enum Open {
 
 pub fn show(app: &mut App, ui: &mut Ui, pad: f32, query: &str) -> f32 {
     let theme = app.theme.clone();
-    let loaded = match app.searches.get(query) {
+    let loaded = match app.search_results(query) {
         Some(Loaded::Ready(results)) => Ok(Some(filtered(results, app.search_source))),
         Some(Loaded::Failed(e)) => Err(e.clone()),
         _ => Ok(None),
@@ -141,14 +142,28 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, query: &str) -> f32 {
                 app.detail_selected = None;
             }
 
+            let scopes = [
+                (SearchScope::AppleMusic, "Apple Music"),
+                (SearchScope::Library, "Library"),
+            ];
+            let at = pos2(left, content.top() + 118.0);
+            if let Some(scope) = super::drawer::tabs(ui, &theme, at, &scopes, app.search_scope) {
+                app.set_search_scope(scope);
+                app.detail_selected = None;
+            }
+
             let mut y = content.top() + BODY_TOP;
             if let Err(e) = &loaded {
                 message(ui, &theme, left, y, width, "Couldn't search Apple Music", e);
                 return;
             }
             if empty {
+                let place = match app.search_scope {
+                    SearchScope::AppleMusic => "on Apple Music",
+                    SearchScope::Library => "in your library",
+                };
                 let detail = format!(
-                    "Nothing on Apple Music matches “{query}”. Check the spelling, or try fewer words."
+                    "Nothing {place} matches “{query}”. Check the spelling, or try fewer words."
                 );
                 message(ui, &theme, left, y, width, "No results", &detail);
                 return;
@@ -194,7 +209,14 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, query: &str) -> f32 {
                 section_head(ui, &theme, songs_rect.left(), songs_rect.top(), "Songs");
                 let rows_top = songs_rect.top() + SECTION_HEAD;
                 if loading {
-                    tracks::skeleton(ui, &theme, rows_top, songs_rect.left(), songs_rect.width(), SONGS_SHOWN);
+                    tracks::skeleton(
+                        ui,
+                        &theme,
+                        rows_top,
+                        songs_rect.left(),
+                        songs_rect.width(),
+                        SONGS_SHOWN,
+                    );
                 } else {
                     song_list(app, ui, &theme, songs_rect, rows_top, &songs);
                 }
@@ -295,7 +317,7 @@ fn open(app: &mut App, what: Open, query: &str) {
     match what {
         Open::Album(id) => app.go(Page::Album(id)),
         Open::Playlist(i) => {
-            let playlist = match app.searches.get(query) {
+            let playlist = match app.search_results(query) {
                 Some(Loaded::Ready(r)) => filtered(r, app.search_source).playlists.get(i).cloned(),
                 _ => None,
             };
@@ -337,7 +359,7 @@ fn top_card(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect, top: &Top, qu
             Some(Open::Album(id.clone())),
         ),
         Top::Playlist(i) => {
-            let Some(Loaded::Ready(r)) = app.searches.get(query) else {
+            let Some(Loaded::Ready(r)) = app.search_results(query) else {
                 return;
             };
             let Some(p) = filtered(r, app.search_source).playlists.get(*i).cloned() else {

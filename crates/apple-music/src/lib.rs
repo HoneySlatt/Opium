@@ -102,6 +102,24 @@ impl AppleMusic {
             .map_err(|e| Error::Protocol(format!("{path}: {e}")))
     }
 
+    /// Run a search request; the catalog and the library answer alike.
+    async fn search_at(&self, path: &str) -> Result<SearchResults> {
+        let Some(resp) = self.fetch::<types::SearchResponse>(path).await? else {
+            return Ok(SearchResults::default());
+        };
+        let r = resp.results;
+        fn all<A, T>(list: Option<types::Response<A>>, f: fn(A) -> T) -> Vec<T> {
+            list.map(|l| l.data.into_iter().map(f).collect())
+                .unwrap_or_default()
+        }
+        Ok(SearchResults {
+            tracks: all(r.songs, convert::track),
+            albums: all(r.albums, convert::album),
+            artists: all(r.artists, convert::artist),
+            playlists: all(r.playlists, convert::playlist),
+        })
+    }
+
     async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
         self.fetch(path)
             .await?
@@ -171,20 +189,15 @@ impl Provider for AppleMusic {
             "/v1/catalog/{}/search?term={term}&types=songs,albums,artists,playlists&limit={SEARCH_LIMIT}",
             self.storefront
         );
-        let Some(resp) = self.fetch::<types::SearchResponse>(&path).await? else {
-            return Ok(SearchResults::default());
-        };
-        let r = resp.results;
-        fn all<A, T>(list: Option<types::Response<A>>, f: fn(A) -> T) -> Vec<T> {
-            list.map(|l| l.data.into_iter().map(f).collect())
-                .unwrap_or_default()
-        }
-        Ok(SearchResults {
-            tracks: all(r.songs, convert::track),
-            albums: all(r.albums, convert::album),
-            artists: all(r.artists, convert::artist),
-            playlists: all(r.playlists, convert::playlist),
-        })
+        self.search_at(&path).await
+    }
+
+    async fn search_library(&self, query: &str) -> Result<SearchResults> {
+        let term: String = url::form_urlencoded::byte_serialize(query.as_bytes()).collect();
+        let path = format!(
+            "/v1/me/library/search?term={term}&types=library-songs,library-albums,library-artists,library-playlists&limit={SEARCH_LIMIT}"
+        );
+        self.search_at(&path).await
     }
 
     async fn library_tracks(&self, cursor: Option<&Cursor>) -> Result<Page<Track>> {

@@ -26,6 +26,9 @@ pub trait Provider: Send + Sync {
 
     async fn search(&self, query: &str) -> Result<SearchResults>;
 
+    /// The same search, in the user's library only.
+    async fn search_library(&self, query: &str) -> Result<SearchResults>;
+
     /// The user's saved songs (Apple library songs, SoundCloud likes, Navidrome starred).
     async fn library_tracks(&self, cursor: Option<&Cursor>) -> Result<Page<Track>>;
 
