@@ -180,6 +180,10 @@ pub struct SongsView {
 /// What `SongsView::order` was built from: the song count, sort and filter.
 pub type OrderKey = (usize, Option<(SortKey, bool)>, Option<ProviderKind>);
 
+/// How many tracks in a row may fail to start, and be skipped, before the
+/// app stops trying.
+const MAX_SKIPS: usize = 5;
+
 /// How long typing pauses before the search runs, in seconds.
 const SEARCH_PAUSE: f64 = 0.16;
 
@@ -245,6 +249,8 @@ pub struct App {
     queued_next: Option<Token>,
     /// An album or playlist to queue once its tracks are in.
     waiting: Option<(Waiting, Enqueue)>,
+    /// Tracks that failed to start one after the other, skipped.
+    failed_in_row: usize,
     /// The track that is audible, or was last.
     pub now: Option<Track>,
     pub status: Status,
@@ -319,6 +325,7 @@ impl App {
             pending_play: None,
             queued_next: None,
             waiting: None,
+            failed_in_row: 0,
             now: None,
             status: Status::default(),
             volume: 1.0,
@@ -1059,15 +1066,31 @@ impl App {
                     // Superseded while it was fetching.
                     Ok(_) => {}
                     Err(e) => {
-                        if self.pending_play == Some(token) {
-                            self.pending_play = None;
-                        }
                         let title = self
                             .tracks
                             .get(&token)
                             .map(|t| t.title.clone())
                             .unwrap_or_default();
-                        self.notify(format!("Couldn't play “{title}”: {e}"), now);
+                        // A track Apple has no stream for (gone from the catalog,
+                        // or not in this country) is skipped, as Apple Music
+                        // does; a run of failures stops, in case nothing plays.
+                        if self.pending_play == Some(token) {
+                            self.pending_play = None;
+                            self.failed_in_row += 1;
+                            if self.failed_in_row <= MAX_SKIPS && self.queue.skip_next().is_some() {
+                                self.notify(format!("Skipped “{title}”: {e}"), now);
+                                self.start_current();
+                            } else {
+                                self.notify(format!("Couldn't play “{title}”: {e}"), now);
+                            }
+                        } else if self.queued_next == Some(token) {
+                            // The next track can't follow: take it out and line up
+                            // the one after.
+                            self.queued_next = None;
+                            self.queue.remove_upcoming(0);
+                            self.prefetch_next();
+                            self.notify(format!("Left out “{title}”: {e}"), now);
+                        }
                     }
                 },
             }
@@ -1094,6 +1117,7 @@ impl App {
                     self.tracks
                         .retain(|t, _| *t == token || Some(*t) == pending || Some(*t) == queued);
                     self.prefetch_next();
+                    self.failed_in_row = 0;
                 }
                 Event::Finished => {}
                 Event::Error { message, .. } => self.notify(message, now),
