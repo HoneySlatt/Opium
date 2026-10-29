@@ -125,8 +125,9 @@ fn header(app: &mut App, ui: &mut Ui, theme: &Theme, top: f32, left: f32, width:
 
     // Play and Shuffle.
     if !app.songs_view.order.is_empty()
-        && let Some(shuffle) = page_buttons(ui, theme, pos2(left, top + 125.0), "songs")
+        && let Some(button) = page_buttons(ui, theme, pos2(left, top + 125.0), "songs", false)
     {
+        let shuffle = button == super::PageButton::Shuffle;
         app.play_shuffled_or_not(shown_tracks(app), shuffle, ui.input(|i| i.time));
     }
 }

@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use egui::{Color32, Rect, Sense, Ui, pos2, vec2};
-use music_core::model::{Album, FavouriteKind, ItemId, Track};
+use music_core::model::{Album, Collection, FavouriteKind, ItemId, Track};
 
 use crate::app::{App, Loaded, Page, TrackChoice};
 use crate::color::mix;
@@ -15,7 +15,9 @@ use crate::icons::{self, Icon};
 use crate::theme::Theme;
 
 use super::tracks::{self, Columns, RowAction, RowState};
-use super::{Blob, artwork, page_buttons, paint_icon, paint_text, quality_label, text, wash};
+use super::{
+    Blob, PageButton, artwork, page_buttons, paint_icon, paint_text, quality_label, text, wash,
+};
 
 /// What the header shows.
 struct Header {
@@ -32,13 +34,19 @@ struct Header {
     art: Option<String>,
     /// The star after the title: what it names, and whether it is lit.
     favourite: Option<(FavouriteKind, ItemId, bool)>,
+    /// What an Add button adds to the library, when it isn't there yet.
+    add: Option<Collection>,
 }
 
 /// What a click in the header asked for.
 enum HeaderAction {
-    Play { shuffle: bool },
+    Play {
+        shuffle: bool,
+    },
     OpenArtist(ItemId),
     Favourite(FavouriteKind, ItemId),
+    /// The header's `add`.
+    AddToLibrary,
 }
 
 const ART_TOP: f32 = 60.0;
@@ -68,11 +76,16 @@ struct Listing {
 pub fn album(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
     let (header, tracks, loading, error) = match app.albums.get(id) {
         Some(Loaded::Ready((album, tracks))) => (
-            Some(album_header(
-                album,
-                tracks,
-                app.is_favourite(FavouriteKind::Album, &App::album_favourite_id(album)),
-            )),
+            Some(Header {
+                add: app
+                    .can_add_album(&album.id)
+                    .then(|| Collection::Album(album.clone())),
+                ..album_header(
+                    album,
+                    tracks,
+                    app.is_favourite(FavouriteKind::Album, &App::album_favourite_id(album)),
+                )
+            }),
             tracks.clone(),
             false,
             None,
@@ -126,6 +139,7 @@ pub fn playlist(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
             let on = app.is_favourite(FavouriteKind::Playlist, &id);
             (FavouriteKind::Playlist, id, on)
         }),
+        add: Some(Collection::Playlist(playlist.clone())).filter(|p| app.can_add_to_library(p)),
     };
     let listing = Listing {
         columns: Kind::Playlist,
@@ -175,6 +189,7 @@ fn album_header(album: &Album, tracks: &[Track], favourite: bool) -> Header {
             App::album_favourite_id(album),
             favourite,
         )),
+        add: None,
     }
 }
 
@@ -226,6 +241,11 @@ fn page(
                 }
                 Some(HeaderAction::OpenArtist(id)) => app.go(Page::Artist(id)),
                 Some(HeaderAction::Favourite(kind, id)) => app.toggle_favourite(kind, id),
+                Some(HeaderAction::AddToLibrary) => {
+                    if let Some(item) = header.as_ref().and_then(|h| h.add.as_ref()) {
+                        app.add_collection_to_library(item, ui.input(|i| i.time));
+                    }
+                }
                 None => {}
             }
 
@@ -529,9 +549,12 @@ fn header_text(
     }
     y += 6.0;
 
-    page_buttons(ui, theme, pos2(x, y), header.kind)
-        .map(|shuffle| HeaderAction::Play { shuffle })
-        .or(action)
+    match page_buttons(ui, theme, pos2(x, y), header.kind, header.add.is_some()) {
+        Some(PageButton::Play) => Some(HeaderAction::Play { shuffle: false }),
+        Some(PageButton::Shuffle) => Some(HeaderAction::Play { shuffle: true }),
+        Some(PageButton::Add) => Some(HeaderAction::AddToLibrary),
+        None => action,
+    }
 }
 
 /// The editorial notes: three lines at most, then an ellipsis.

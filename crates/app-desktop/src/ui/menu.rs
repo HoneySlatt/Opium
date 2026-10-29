@@ -8,6 +8,7 @@ use crate::fonts::{Weight, font};
 use crate::icons::{self, Icon};
 use crate::theme::Theme;
 
+use super::grid::CardClick;
 use super::{paint_icon, paint_text, text};
 
 /// A menu line: an item with its icon, label and what it means, or a hairline.
@@ -242,13 +243,30 @@ pub(super) fn playlist_menu(
     context_menu(response, theme, &entries)
 }
 
-/// What an album's or a playlist's menu offers.
-pub(super) fn collection_menu(response: &Response, theme: &Theme) -> Option<Enqueue> {
-    let entries = [
-        Entry::Item(icons::PLAY_FILL, "Play", Enqueue::Now),
+/// What an album's or a playlist's menu offers; Add to Library when it isn't
+/// there yet.
+pub(super) fn collection_menu(
+    response: &Response,
+    theme: &Theme,
+    addable: bool,
+) -> Option<CardClick> {
+    let mut entries = vec![
+        Entry::Item(icons::PLAY_FILL, "Play", CardClick::Enqueue(Enqueue::Now)),
         Entry::Line,
-        Entry::Item(icons::NEXT, "Play Next", Enqueue::Next),
-        Entry::Item(icons::LATER, "Add to Queue", Enqueue::Last),
+        Entry::Item(icons::NEXT, "Play Next", CardClick::Enqueue(Enqueue::Next)),
+        Entry::Item(
+            icons::LATER,
+            "Add to Queue",
+            CardClick::Enqueue(Enqueue::Last),
+        ),
     ];
+    if addable {
+        entries.push(Entry::Line);
+        entries.push(Entry::Item(
+            icons::PLUS,
+            "Add to Library",
+            CardClick::AddToLibrary,
+        ));
+    }
     context_menu(response, theme, &entries)
 }

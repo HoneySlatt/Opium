@@ -163,7 +163,19 @@ fn page(app: &mut App, ui: &mut Ui, pad: f32, which: Which) -> f32 {
                 if visible.end > viewport.top() && visible.start < viewport.bottom() {
                     let at = pos2(left, y);
                     let id = Id::unique(("shelf", salt, n));
-                    let cards = || -> Vec<ShelfCard> { shelf.items.iter().map(card).collect() };
+                    let addable: Vec<bool> = shelf
+                        .items
+                        .iter()
+                        .map(|c| app.can_add_to_library(c))
+                        .collect();
+                    let cards = || -> Vec<ShelfCard> {
+                        shelf
+                            .items
+                            .iter()
+                            .zip(&addable)
+                            .map(|(c, &addable)| ShelfCard { addable, ..card(c) })
+                            .collect()
+                    };
                     let clicked = match (shelf.hero, which) {
                         _ if !shelf.songs.is_empty() => {
                             section_head(ui, &theme, at.x, at.y, &shelf.title);
@@ -185,8 +197,12 @@ fn page(app: &mut App, ui: &mut Ui, pad: f32, which: Which) -> f32 {
                             );
                             None
                         }
-                        (true, Which::Home) => hero_shelf(ui, &theme, at, width, shelf, id),
-                        (true, Which::New) => picks_shelf(ui, &theme, at, width, shelf, id),
+                        (true, Which::Home) => {
+                            hero_shelf(ui, &theme, at, width, shelf, &addable, id)
+                        }
+                        (true, Which::New) => {
+                            picks_shelf(ui, &theme, at, width, shelf, &addable, id)
+                        }
                         (true, Which::Radio) => {
                             if more(ui, &theme, at, width, shelf, LIVE, id) {
                                 see_all = Some(shelf.title.clone());
@@ -264,6 +280,7 @@ pub(super) fn act(app: &mut App, item: &Collection, click: CardClick, now: f64) 
             app.enqueue_album(a.id.clone(), how, now);
         }
         (CardClick::Enqueue(how), Collection::Playlist(p)) => app.enqueue_playlist(p, how, now),
+        (CardClick::AddToLibrary, item) => app.add_collection_to_library(item, now),
     }
 }
 
@@ -274,18 +291,21 @@ pub(super) fn card(item: &Collection) -> ShelfCard {
             sub: a.artists.join(", "),
             url: a.artwork.as_ref().map(|art| art.url(400)),
             explicit: a.explicit,
+            addable: false,
         },
         Collection::Playlist(p) => ShelfCard {
             title: p.name.clone(),
             sub: p.curator.clone().unwrap_or_else(|| "Playlist".into()),
             url: p.artwork.as_ref().map(|art| art.url(400)),
             explicit: false,
+            addable: false,
         },
         Collection::Station(s) => ShelfCard {
             title: s.name.clone(),
             sub: s.description.clone().unwrap_or_else(|| "Station".into()),
             url: s.artwork.as_ref().map(|art| art.url(400)),
             explicit: false,
+            addable: false,
         },
     }
 }
@@ -298,6 +318,7 @@ fn hero_shelf(
     at: egui::Pos2,
     width: f32,
     shelf: &Shelf,
+    addable: &[bool],
     id: Id,
 ) -> Option<(usize, CardClick)> {
     section_head(ui, theme, at.x, at.y, &shelf.title);
@@ -382,8 +403,10 @@ fn hero_shelf(
                 soft,
             );
         }
-        if let Some(how) = super::menu::collection_menu(&response, theme) {
-            clicked = Some((i, CardClick::Enqueue(how)));
+        if let Some(click) =
+            super::menu::collection_menu(&response, theme, addable.get(i).copied().unwrap_or(false))
+        {
+            clicked = Some((i, click));
         } else if response
             .on_hover_cursor(egui::CursorIcon::PointingHand)
             .clicked()
@@ -403,6 +426,7 @@ fn picks_shelf(
     at: egui::Pos2,
     width: f32,
     shelf: &Shelf,
+    addable: &[bool],
     id: Id,
 ) -> Option<(usize, CardClick)> {
     let row = Rect::from_min_size(
@@ -525,8 +549,10 @@ fn picks_shelf(
                 .painter()
                 .rect_filled(art, 10.0, Color32::from_black_alpha(30));
         }
-        if let Some(how) = super::menu::collection_menu(&response, theme) {
-            clicked = Some((i, CardClick::Enqueue(how)));
+        if let Some(click) =
+            super::menu::collection_menu(&response, theme, addable.get(i).copied().unwrap_or(false))
+        {
+            clicked = Some((i, click));
         } else if response
             .on_hover_cursor(egui::CursorIcon::PointingHand)
             .clicked()

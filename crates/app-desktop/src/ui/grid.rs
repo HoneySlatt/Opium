@@ -48,6 +48,8 @@ pub(super) struct CoverCard<'a> {
     pub round: bool,
     /// An E after the title.
     pub explicit: bool,
+    /// Its menu offers Add to Library.
+    pub addable: bool,
 }
 
 /// What a click on a cover asked for.
@@ -56,6 +58,7 @@ pub(super) enum CardClick {
     Open,
     /// From the right-click menu of an album or a playlist.
     Enqueue(Enqueue),
+    AddToLibrary,
 }
 
 /// A cover with its title and a muted line under it; `art` is the cover's
@@ -109,9 +112,9 @@ pub(super) fn cover_card(
     let g = text(ui, card.sub, font(12.0, Weight::Regular), muted, width);
     paint_text(ui, g, x, art.bottom() + 39.0, align, muted);
     if !card.round
-        && let Some(how) = super::menu::collection_menu(&response, theme)
+        && let Some(click) = super::menu::collection_menu(&response, theme, card.addable)
     {
-        return Some(CardClick::Enqueue(how));
+        return Some(click);
     }
     response
         .on_hover_cursor(egui::CursorIcon::PointingHand)
@@ -231,6 +234,7 @@ pub(super) struct ShelfCard {
     pub sub: String,
     pub url: Option<String>,
     pub explicit: bool,
+    pub addable: bool,
 }
 
 /// A titled row of `size` px covers that scrolls sideways. Returns the cover
@@ -277,6 +281,7 @@ pub(super) fn cover_shelf(
             sub: &card.sub,
             round: false,
             explicit: card.explicit,
+            addable: card.addable,
         };
         if let Some(click) = cover_card(&row_ui, theme, art, &cover, id.with(i)) {
             clicked = Some((i, click));
@@ -359,6 +364,7 @@ pub fn shelf(app: &mut App, ui: &mut Ui, pad: f32, which: Shelves, title: &str) 
                     sub: &card.sub,
                     round: false,
                     explicit: card.explicit,
+                    addable: app.can_add_to_library(&items[position]),
                 };
                 let id = Id::unique(("shelf-card", title, position));
                 let art = grid.cell(position, left, top);
@@ -524,6 +530,7 @@ fn page(app: &mut App, ui: &mut Ui, pad: f32, kind: Kind) -> f32 {
                     sub: &sub,
                     round: kind == Kind::Artists,
                     explicit,
+                    addable: false,
                 };
                 if let Some(click) = cover_card(ui, &theme, art, &cover, id) {
                     clicked = Some((open, click));
@@ -555,7 +562,10 @@ fn page(app: &mut App, ui: &mut Ui, pad: f32, kind: Kind) -> f32 {
         Some((Open::Station(station), _)) => app.play_station(&station),
         Some((Open::Album(id), CardClick::Enqueue(how))) => app.enqueue_album(id, how, now),
         Some((Open::Playlist(p), CardClick::Enqueue(how))) => app.enqueue_playlist(&p, how, now),
-        Some((Open::Artist(_), CardClick::Enqueue(_))) | None => {}
+        // The library's own covers: in the library already.
+        Some((_, CardClick::AddToLibrary))
+        | Some((Open::Artist(_), CardClick::Enqueue(_)))
+        | None => {}
     }
     output.state.clamped_offset().y
 }

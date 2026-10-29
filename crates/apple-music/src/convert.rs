@@ -110,11 +110,13 @@ pub fn album(album: types::Album) -> Album {
         })
         .filter(|d| !d.trim().is_empty());
     // A library album says so only through its catalog counterpart.
-    let catalog_rating = album
+    let catalog = album
         .relationships
         .as_ref()
         .and_then(|r| r.catalog.as_ref())
-        .and_then(|c| c.data.first())
+        .and_then(|c| c.data.first());
+    let catalog_id = catalog.map(|c| id(c.id.clone()));
+    let catalog_rating = catalog
         .and_then(|c| c.attributes.as_ref())
         .and_then(|a| a.content_rating.as_deref());
     let explicit =
@@ -129,7 +131,7 @@ pub fn album(album: types::Album) -> Album {
                 .and_then(|a| a.artwork.as_ref()),
         ),
         released: attrs.release_date.clone(),
-        catalog_id: None,
+        catalog_id,
         in_favourites: attrs.in_favorites,
         genre,
         description,

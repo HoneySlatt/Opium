@@ -632,17 +632,38 @@ pub fn glow(ui: &Ui, theme: &Theme, rect: Rect) {
 
 /// The Play and Shuffle buttons of a page, from `at`. Returns `Some(shuffle)`
 /// when one was clicked.
-pub fn page_buttons(ui: &mut Ui, theme: &Theme, at: Pos2, salt: &str) -> Option<bool> {
+pub fn page_buttons(
+    ui: &mut Ui,
+    theme: &Theme,
+    at: Pos2,
+    salt: &str,
+    add: bool,
+) -> Option<PageButton> {
     let play = page_button(ui, theme, at, icons::PLAY_FILL, "Play", salt);
     let shuffle_at = pos2(play.rect.right() + 10.0, at.y);
     let shuffle = page_button(ui, theme, shuffle_at, icons::SHUFFLE, "Shuffle", salt);
+    let add = add.then(|| {
+        let add_at = pos2(shuffle.rect.right() + 10.0, at.y);
+        page_button(ui, theme, add_at, icons::PLUS, "Add", salt)
+    });
     if play.clicked() {
-        Some(false)
+        Some(PageButton::Play)
     } else if shuffle.clicked() {
-        Some(true)
+        Some(PageButton::Shuffle)
+    } else if add.is_some_and(|a| a.clicked()) {
+        Some(PageButton::Add)
     } else {
         None
     }
+}
+
+/// A button under a page's title.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum PageButton {
+    Play,
+    Shuffle,
+    /// Add to Library.
+    Add,
 }
 
 /// A 36 px button on a faint fill, as Cider draws Play and Shuffle: as wide as

@@ -3,7 +3,7 @@
 //! songs in sideways columns; then shelves of albums and of singles and EPs.
 
 use egui::{Id, Rect, Sense, Ui, pos2, vec2};
-use music_core::model::{Album, ArtistDetail, FavouriteKind, ItemId};
+use music_core::model::{Album, ArtistDetail, Collection, FavouriteKind, ItemId};
 
 use crate::app::{App, Loaded, Page};
 use crate::fonts::{Weight, font};
@@ -138,6 +138,7 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
                         sub: date_line(a),
                         url: a.artwork.as_ref().map(|art| art.url(400)),
                         explicit: a.explicit,
+                        addable: app.can_add_album(&a.id),
                     })
                     .collect();
                 let shelf_id = Id::unique(("artist-shelf", *title, &artist.artist.id.id));
@@ -154,6 +155,10 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
                     let id = albums[i].id.clone();
                     match click {
                         CardClick::Open => app.go(Page::Album(id)),
+                        CardClick::AddToLibrary => {
+                            let album = Collection::Album(albums[i].clone());
+                            app.add_collection_to_library(&album, ui.input(|i| i.time));
+                        }
                         CardClick::Enqueue(how) => {
                             app.enqueue_album(id, how, ui.input(|i| i.time));
                         }

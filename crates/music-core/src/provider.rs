@@ -61,6 +61,15 @@ pub trait Provider: Send + Sync {
         ))
     }
 
+    /// Which of these catalog albums or playlists are wholly in the library.
+    async fn in_library(
+        &self,
+        _kind: FavouriteKind,
+        _ids: &[ItemId],
+    ) -> Result<Vec<(ItemId, bool)>> {
+        Ok(Vec::new())
+    }
+
     /// A song's artist and station.
     async fn song_links(&self, _song: &ItemId) -> Result<SongLinks> {
         Ok(SongLinks::default())

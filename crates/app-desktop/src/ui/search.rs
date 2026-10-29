@@ -5,7 +5,9 @@
 use std::sync::Arc;
 
 use egui::{Id, Rect, Sense, Ui, pos2, vec2};
-use music_core::model::{Artwork, FavouriteKind, ItemId, ProviderKind, SearchResults, Track};
+use music_core::model::{
+    Artwork, Collection, FavouriteKind, ItemId, ProviderKind, SearchResults, Track,
+};
 
 use crate::app::{App, Loaded, Page, SearchScope};
 use crate::fonts::{Weight, font};
@@ -478,6 +480,23 @@ fn shelf(
     cards: &[Card],
     query: &str,
 ) {
+    // The album or playlist a card stands for.
+    let collection = |app: &App, open: &Open| -> Option<Collection> {
+        let Some(Loaded::Ready(r)) = app.search_results(query) else {
+            return None;
+        };
+        let r = filtered(r, app.search_source);
+        match open {
+            Open::Album(id) => r
+                .albums
+                .iter()
+                .find(|a| a.id == *id)
+                .cloned()
+                .map(Collection::Album),
+            Open::Playlist(k) => r.playlists.get(*k).cloned().map(Collection::Playlist),
+            Open::Artist(_) => None,
+        }
+    };
     let items: Vec<ShelfCard> = cards
         .iter()
         .map(|c| ShelfCard {
@@ -485,17 +504,24 @@ fn shelf(
             sub: c.sub.clone(),
             url: c.art.as_ref().map(|a| a.url(376)),
             explicit: c.explicit,
+            addable: collection(app, &c.open).is_some_and(|c| app.can_add_to_library(&c)),
         })
         .collect();
     let id = Id::unique(("search-shelf", title, query));
     let Some((i, click)) = cover_shelf(ui, theme, at, width, title, &items, CARD, id) else {
         return;
     };
+    let now = ui.input(|i| i.time);
     let how = match click {
         CardClick::Open => return open(app, cards[i].open.clone(), query),
+        CardClick::AddToLibrary => {
+            if let Some(item) = collection(app, &cards[i].open) {
+                app.add_collection_to_library(&item, now);
+            }
+            return;
+        }
         CardClick::Enqueue(how) => how,
     };
-    let now = ui.input(|i| i.time);
     match &cards[i].open {
         Open::Album(id) => app.enqueue_album(id.clone(), how, now),
         Open::Playlist(k) => {

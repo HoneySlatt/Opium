@@ -150,6 +150,13 @@ pub struct ArtistAttributes {
 
 pub type Song = Resource<SongAttributes>;
 pub type Album = Resource<AlbumAttributes>;
+
+/// An album or playlist asked for with `fields=inLibrary`.
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct InLibrary {
+    pub in_library: bool,
+}
 pub type Playlist = Resource<PlaylistAttributes>;
 pub type Artist = Resource<ArtistAttributes>;
 

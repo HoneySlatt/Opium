@@ -18,6 +18,13 @@ use crate::app::SearchScope;
 pub enum Request {
     /// The library songs and playlists, page by page.
     Library,
+    /// The library playlists again, once one was added.
+    Playlists,
+    /// Which catalog albums or playlists are wholly in the library.
+    InLibrary {
+        kind: FavouriteKind,
+        ids: Vec<ItemId>,
+    },
     /// The library albums, page by page.
     LibraryAlbums,
     /// The library artists, page by page.
@@ -134,6 +141,16 @@ pub enum Reply {
     },
     /// A change to the library went through (the message to show), or why not.
     Changed(Result<String, String>),
+    /// Whether catalog albums or playlists are in the library; those Apple
+    /// didn't answer for are left out.
+    InLibrary(Vec<(ItemId, bool)>),
+    /// Something was added to the library, or why not.
+    AddedToLibrary {
+        kind: FavouriteKind,
+        id: ItemId,
+        quiet: bool,
+        result: Result<(), String>,
+    },
     /// A favourite was set (`set: Some(on)`) or looked up; the state or why not.
     Favourite {
         id: ItemId,
@@ -432,11 +449,13 @@ async fn run(
                     let result = am
                         .add_to_library(kind, &id)
                         .await
-                        .map(|()| "Added to the library".to_owned())
                         .map_err(|e| format!("Couldn't add to the library: {e}"));
-                    if !(quiet && result.is_ok()) {
-                        replies.send(Reply::Changed(result));
-                    }
+                    replies.send(Reply::AddedToLibrary {
+                        kind,
+                        id,
+                        quiet,
+                        result,
+                    });
                 });
             }
             Request::SongLinks { song, radio } => {
@@ -592,6 +611,22 @@ async fn run(
             Request::Library => {
                 tokio::spawn(load_library(am, replies));
             }
+            Request::InLibrary { kind, ids } => {
+                tokio::spawn(async move {
+                    // A failure only leaves Add to Library unoffered.
+                    if let Ok(known) = am.in_library(kind, &ids).await {
+                        replies.send(Reply::InLibrary(known));
+                    }
+                });
+            }
+            Request::Playlists => {
+                tokio::spawn(async move {
+                    // Only a whole list replaces the one shown.
+                    if let (playlists, true) = load_playlists(&am, &replies).await {
+                        replies.send(Reply::Playlists(playlists));
+                    }
+                });
+            }
             Request::Fetch { token, track } => {
                 let cdm = cdm.clone();
                 tokio::spawn(async move {
@@ -655,7 +690,9 @@ async fn stream<T, F, Fut>(
     }
 }
 
-async fn load_library(am: Arc<AppleMusic>, replies: Replies) {
+/// Every library playlist, and whether all came: a failed page is shown, and
+/// ends the list there.
+async fn load_playlists(am: &AppleMusic, replies: &Replies) -> (Vec<Playlist>, bool) {
     let mut playlists = Vec::new();
     let mut cursor: Option<Cursor> = None;
     loop {
@@ -664,15 +701,19 @@ async fn load_library(am: Arc<AppleMusic>, replies: Replies) {
                 playlists.extend(page.items);
                 match page.next {
                     Some(next) => cursor = Some(next),
-                    None => break,
+                    None => return (playlists, true),
                 }
             }
             Err(e) => {
                 replies.send(Reply::Failed(e.to_string()));
-                break;
+                return (playlists, false);
             }
         }
     }
+}
+
+async fn load_library(am: Arc<AppleMusic>, replies: Replies) {
+    let (playlists, _) = load_playlists(&am, &replies).await;
     replies.send(Reply::Playlists(playlists));
 
     let mut cursor: Option<Cursor> = None;

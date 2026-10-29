@@ -536,6 +536,32 @@ impl Provider for AppleMusic {
         self.send_change(req, &path).await
     }
 
+    /// Apple's `inLibrary`: an album is in only once all its songs are, which
+    /// is when the web player stops offering to add it.
+    async fn in_library(&self, kind: FavouriteKind, ids: &[ItemId]) -> Result<Vec<(ItemId, bool)>> {
+        let mut known = Vec::new();
+        for chunk in ids.chunks(25) {
+            let list: Vec<&str> = chunk.iter().map(|i| i.id.as_str()).collect();
+            let path = format!(
+                "/v1/catalog/{}/{}?ids={}&fields=inLibrary",
+                self.storefront,
+                catalog_type(kind),
+                list.join(",")
+            );
+            let Some(resp) = self
+                .fetch::<types::Response<types::Resource<types::InLibrary>>>(&path)
+                .await?
+            else {
+                continue;
+            };
+            known.extend(resp.data.into_iter().map(|r| {
+                let on = r.attributes.is_some_and(|a| a.in_library);
+                (ItemId::new(ProviderKind::AppleMusic, r.id), on)
+            }));
+        }
+        Ok(known)
+    }
+
     /// Both from one request for the catalog song (Kopuz asks for the station
     /// the same way).
     async fn song_links(&self, song: &ItemId) -> Result<SongLinks> {

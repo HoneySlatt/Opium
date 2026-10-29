@@ -271,6 +271,14 @@ pub struct App {
     pub songs_view: SongsView,
     pub playlists: Vec<Playlist>,
     pub library_albums: Streamed<Album>,
+    /// Albums and playlists added to the library since its lists were read.
+    added_to_library: std::collections::HashSet<ItemId>,
+    /// Whether catalog albums and playlists are wholly in the library, as
+    /// Apple said.
+    in_library: HashMap<ItemId, bool>,
+    /// Those to ask Apple about next frame, and those asked already.
+    in_library_wanted: std::cell::RefCell<Vec<(FavouriteKind, ItemId)>>,
+    in_library_asked: std::collections::HashSet<ItemId>,
     pub library_artists: Streamed<Artist>,
     pub recently_added: Streamed<Collection>,
     /// The songs in the library, by catalog id.
@@ -381,6 +389,10 @@ impl App {
             },
             playlists: Vec::new(),
             library_albums: Streamed::default(),
+            added_to_library: std::collections::HashSet::new(),
+            in_library: HashMap::new(),
+            in_library_wanted: Default::default(),
+            in_library_asked: std::collections::HashSet::new(),
             library_artists: Streamed::default(),
             recently_added: Streamed::default(),
             favourite_songs: Default::default(),
@@ -433,6 +445,72 @@ impl App {
         // The first page loads what it shows, as any page does on arrival.
         app.arrived();
         app
+    }
+
+    /// Whether an album or a playlist is in the library, if known: a library
+    /// one is, a catalog one as Apple says, asked the first time it is shown.
+    fn collection_in_library(&self, kind: FavouriteKind, id: &ItemId) -> Option<bool> {
+        let library = match kind {
+            FavouriteKind::Album => id.id.starts_with("l."),
+            _ => id.id.starts_with("p."),
+        };
+        if library || self.added_to_library.contains(id) {
+            return Some(true);
+        }
+        let known = self.in_library.get(id).copied();
+        if known.is_none() && !self.in_library_asked.contains(id) {
+            self.in_library_wanted.borrow_mut().push((kind, id.clone()));
+        }
+        known
+    }
+
+    /// Whether Add to Library is offered for a cover: an album or a playlist
+    /// Apple says isn't wholly in the library.
+    pub fn can_add_to_library(&self, item: &Collection) -> bool {
+        match item {
+            Collection::Album(a) => self.can_add_album(&a.id),
+            Collection::Playlist(p) => {
+                self.collection_in_library(FavouriteKind::Playlist, &p.id) == Some(false)
+            }
+            Collection::Station(_) => false,
+        }
+    }
+
+    /// Whether Add to Library is offered for an album.
+    pub fn can_add_album(&self, id: &ItemId) -> bool {
+        self.collection_in_library(FavouriteKind::Album, id) == Some(false)
+    }
+
+    /// Ask Apple, in one request a kind, about the covers shown last frame.
+    fn ask_in_library(&mut self) {
+        let wanted = std::mem::take(&mut *self.in_library_wanted.borrow_mut());
+        for kind in [FavouriteKind::Album, FavouriteKind::Playlist] {
+            let ids: Vec<ItemId> = wanted
+                .iter()
+                .filter(|(k, _)| *k == kind)
+                .map(|(_, id)| id.clone())
+                .filter(|id| self.in_library_asked.insert(id.clone()))
+                .collect();
+            if !ids.is_empty() {
+                self.backend.send(Request::InLibrary { kind, ids });
+            }
+        }
+    }
+
+    /// Add a whole album or playlist to the library.
+    pub fn add_collection_to_library(&mut self, item: &Collection, now: f64) {
+        let (kind, id, name) = match item {
+            Collection::Album(a) => (FavouriteKind::Album, &a.id, &a.title),
+            Collection::Playlist(p) => (FavouriteKind::Playlist, &p.id, &p.name),
+            Collection::Station(_) => return,
+        };
+        self.added_to_library.insert(id.clone());
+        self.backend.send(Request::AddToLibrary {
+            kind,
+            id: id.clone(),
+            quiet: false,
+        });
+        self.notify(format!("Adding “{name}” to the library…"), now);
     }
 
     // ---- Navigation ----
@@ -524,6 +602,9 @@ impl App {
         self.library_albums = Streamed::default();
         self.library_artists = Streamed::default();
         self.recently_added = Streamed::default();
+        self.added_to_library.clear();
+        self.in_library.clear();
+        self.in_library_asked.clear();
         self.home = None;
         self.searches.clear();
         self.backend.send(Request::Library);
@@ -1606,6 +1687,39 @@ impl App {
                     }
                     Err(e) => self.notify(e, now),
                 },
+                Reply::InLibrary(known) => self.in_library.extend(known),
+                Reply::AddedToLibrary {
+                    kind,
+                    id,
+                    quiet,
+                    result,
+                } => match result {
+                    Ok(()) => {
+                        match kind {
+                            // The sidebar lists it, and the Albums page and
+                            // Recently Added are read again to show it.
+                            FavouriteKind::Playlist => self.backend.send(Request::Playlists),
+                            FavouriteKind::Album => {
+                                self.library_albums = Streamed::default();
+                                self.recently_added = Streamed::default();
+                                if matches!(self.page, Page::Albums | Page::RecentlyAdded) {
+                                    self.arrived();
+                                }
+                            }
+                            FavouriteKind::Song | FavouriteKind::Artist => {}
+                        }
+                        if !quiet {
+                            self.notify("Added to the library", now);
+                        }
+                    }
+                    Err(e) => {
+                        self.added_to_library.remove(&id);
+                        if kind == FavouriteKind::Song {
+                            self.library_songs.remove(&id);
+                        }
+                        self.notify(e, now);
+                    }
+                },
                 Reply::Changed(result) => match result {
                     Ok(message) | Err(message) => self.notify(message, now),
                 },
@@ -1778,6 +1892,8 @@ impl eframe::App for App {
             }
         }
         ui::show(self, ui);
+        // The covers just drawn that Apple hasn't said about yet.
+        self.ask_in_library();
         if let Some(page) = self
             .screenshot
             .as_mut()
