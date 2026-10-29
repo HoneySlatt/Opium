@@ -1574,6 +1574,7 @@ impl App {
         self.backend.send(Request::Fetch {
             token,
             track: track.id.clone(),
+            fallback: track.library_id.clone(),
         });
         self.tracks.insert(token, track);
         token
@@ -1640,6 +1641,7 @@ impl App {
         self.backend.send(Request::Warm {
             token,
             track: track.id.clone(),
+            fallback: track.library_id.clone(),
         });
         self.warm = Some(Warm {
             token,

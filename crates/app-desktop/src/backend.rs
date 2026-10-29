@@ -100,6 +100,8 @@ pub enum Request {
     Fetch {
         token: player::Token,
         track: ItemId,
+        /// The library's copy, played if the catalog's can't be.
+        fallback: Option<ItemId>,
     },
     /// An animated cover's video at `size` pixels, kept on disk.
     Motion {
@@ -111,6 +113,7 @@ pub enum Request {
     Warm {
         token: player::Token,
         track: ItemId,
+        fallback: Option<ItemId>,
     },
     /// An album and its tracks.
     Album(ItemId),
@@ -688,10 +691,14 @@ async fn run(
                     }
                 });
             }
-            Request::Fetch { token, track } => {
+            Request::Fetch {
+                token,
+                track,
+                fallback,
+            } => {
                 let cdm = cdm.clone();
                 tokio::spawn(async move {
-                    let result = playable(&am, cdm, &track).await;
+                    let result = playable(&am, cdm, &track, fallback.as_ref()).await;
                     replies.send(Reply::Fetched { token, result });
                 });
             }
@@ -714,13 +721,17 @@ async fn run(
                     replies.send(Reply::Motion { url, size, result });
                 });
             }
-            Request::Warm { token, track } => {
+            Request::Warm {
+                token,
+                track,
+                fallback,
+            } => {
                 if let Some(last) = warming.take() {
                     last.abort();
                 }
                 let cdm = cdm.clone();
                 warming = Some(tokio::spawn(async move {
-                    let result = playable(&am, cdm, &track).await;
+                    let result = playable(&am, cdm, &track, fallback.as_ref()).await;
                     replies.send(Reply::Fetched { token, result });
                 }));
             }
@@ -735,8 +746,22 @@ const STATION_BATCH: usize = 20;
 const RECENT_LIMIT: usize = 200;
 
 /// A track or a station, ready to play: stations (`ra.`) stream, everything
-/// else is a track.
+/// else is a track. A catalog song Apple no longer offers here is played from
+/// the library's copy, when there is one, as Apple Music does.
 async fn playable(
+    am: &AppleMusic,
+    cdm: Result<widevine::Cdm, String>,
+    track: &ItemId,
+    fallback: Option<&ItemId>,
+) -> Result<Playable, String> {
+    let first = playable_as(am, cdm.clone(), track).await;
+    match (first, fallback) {
+        (Err(_), Some(copy)) if copy != track => playable_as(am, cdm, copy).await,
+        (result, _) => result,
+    }
+}
+
+async fn playable_as(
     am: &AppleMusic,
     cdm: Result<widevine::Cdm, String>,
     track: &ItemId,

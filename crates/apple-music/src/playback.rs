@@ -39,6 +39,16 @@ fn is_library_id(id: &str) -> bool {
     !tail.is_empty() && tail.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
 }
 
+/// The catalog song a `songList` entry plays, when it names one: a user's
+/// own upload says -1.
+fn song_id(song: &serde_json::Value) -> Option<String> {
+    match &song["songId"] {
+        serde_json::Value::String(id) if !id.is_empty() && id != "-1" => Some(id.clone()),
+        serde_json::Value::Number(n) if n.as_i64().is_some_and(|n| n > 0) => Some(n.to_string()),
+        _ => None,
+    }
+}
+
 fn web_playback_body(id: &str) -> serde_json::Value {
     if is_library_id(id) {
         serde_json::json!({ "universalLibraryId": id })
@@ -112,7 +122,11 @@ impl AppleMusic {
     /// decoder accepts, decrypting in the background as it goes.
     pub async fn fetch_track(&self, cdm: &Cdm, track: &ItemId) -> Result<AudioStream> {
         let adam_id = track.id.as_str();
-        let asset = select_asset(&self.web_playback(adam_id).await?)?;
+        let song = self.web_playback(adam_id).await?;
+        // A library song Apple matched to the catalog is licensed by the
+        // catalog's id, said here, though asked for as the library's.
+        let licensed_as = song_id(&song).unwrap_or_else(|| adam_id.to_owned());
+        let asset = select_asset(&song)?;
         let (Asset::Catalog(url) | Asset::Upload(url)) = &asset;
         let fetched = self.download(url).await?;
 
@@ -132,7 +146,13 @@ impl AppleMusic {
             .map_err(|e| playback_error(e.to_string()))?;
         let (mut data, ()) = tokio::try_join!(
             self.download(&file.url),
-            self.load_license(&session, &challenge, adam_id, &file),
+            self.load_license(
+                &session,
+                &challenge,
+                &licensed_as,
+                is_library_id(adam_id),
+                &file
+            ),
         )?;
 
         let layout = cenc::index_fmp4(&data).map_err(playback_error)?;
@@ -181,6 +201,7 @@ impl AppleMusic {
         session: &Session,
         challenge: &[u8],
         adam_id: &str,
+        is_library: bool,
         file: &EncryptedFile,
     ) -> Result<()> {
         let envelope = serde_json::json!({
@@ -188,7 +209,7 @@ impl AppleMusic {
             "key-system": "com.widevine.alpha",
             "uri": format!("{},{}", file.uri_prefix, file.key_id_base64),
             "adamId": adam_id,
-            "isLibrary": is_library_id(adam_id),
+            "isLibrary": is_library,
             "user-initiated": true,
         });
         let resp = self
@@ -250,6 +271,17 @@ async fn json_body(resp: reqwest::Response, what: &str) -> Result<serde_json::Va
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_matched_library_song_names_its_catalog_song_and_an_upload_none() {
+        assert_eq!(
+            super::song_id(&serde_json::json!({ "songId": "1744445314" })).as_deref(),
+            Some("1744445314")
+        );
+        assert_eq!(super::song_id(&serde_json::json!({ "songId": -1 })), None);
+        assert_eq!(super::song_id(&serde_json::json!({})), None);
+    }
+
     use super::*;
 
     #[test]
