@@ -320,6 +320,8 @@ pub struct App {
     pub theme: Theme,
     backend: Backend,
     pub player: Player,
+    /// The desktop's media controls.
+    mpris: crate::mpris::Mpris,
     pub connection: Connection,
     /// The Apple Music storefront (country) of the account, once connected.
     pub storefront: Option<String>,
@@ -472,6 +474,7 @@ impl App {
             theme,
             backend,
             player: Player::new(),
+            mpris: crate::mpris::Mpris::start(cc.egui_ctx.clone()),
             connection: Connection::Connecting,
             storefront: None,
             signing_in: false,
@@ -1938,11 +1941,15 @@ impl App {
     }
 
     pub fn cycle_repeat(&mut self) {
-        self.queue.set_repeat(match self.queue.repeat() {
+        self.set_repeat(match self.queue.repeat() {
             Repeat::Off => Repeat::All,
             Repeat::All => Repeat::One,
             Repeat::One => Repeat::Off,
         });
+    }
+
+    pub fn set_repeat(&mut self, repeat: Repeat) {
+        self.queue.set_repeat(repeat);
         self.prefetch_next();
         self.settings.repeat = Some(self.queue.repeat().into());
         self.settings.save();
@@ -2425,6 +2432,61 @@ impl App {
 }
 
 impl App {
+    /// Carry out what the desktop's media controls asked for.
+    fn media_controls(&mut self, ctx: &egui::Context) {
+        use crate::mpris::Action;
+        let mut acted = false;
+        while let Some(action) = self.mpris.next_action() {
+            acted = true;
+            match action {
+                Action::PlayPause => self.toggle_play(),
+                Action::Play if !self.is_playing() => self.toggle_play(),
+                Action::Pause if self.is_playing() => self.player.pause(),
+                Action::Play | Action::Pause => {}
+                // Paused at the start: Play goes on from there.
+                Action::Stop => {
+                    self.player.pause();
+                    self.player.seek(Duration::ZERO);
+                }
+                Action::Next => self.next(),
+                Action::Previous => self.previous(),
+                Action::SeekTo(to) => self.seek(to),
+                Action::Volume(volume) => self.set_volume(volume),
+                Action::Shuffle(on) => {
+                    if on != self.queue.shuffle() {
+                        self.toggle_shuffle();
+                    }
+                }
+                Action::Repeat(repeat) => self.set_repeat(repeat),
+                Action::Raise => ctx.send_viewport_cmd(egui::ViewportCommand::Focus),
+                Action::Quit => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+            }
+        }
+        // The player takes it in a moment: look again then, to show it.
+        if acted {
+            ctx.request_repaint_after(Duration::from_millis(50));
+        }
+    }
+
+    fn media_state(&self) -> crate::mpris::State {
+        use crate::mpris::Playback;
+        crate::mpris::State {
+            track: self.now.clone(),
+            length: self.duration(),
+            playback: if self.is_playing() || self.pending_play.is_some() {
+                Playback::Playing
+            } else if self.status.token.is_some() {
+                Playback::Paused
+            } else {
+                Playback::Stopped
+            },
+            position: self.status.position,
+            volume: if self.muted { 0.0 } else { self.volume },
+            shuffle: self.queue.shuffle(),
+            repeat: self.queue.repeat(),
+        }
+    }
+
     /// The interface scale, changed with Ctrl +, Ctrl − and Ctrl 0.
     fn zoom(&mut self, ctx: &egui::Context) {
         let (bigger, smaller, reset) = ctx.input_mut(|i| {
@@ -2471,6 +2533,7 @@ impl eframe::App for App {
         }
         let now = ui.input(|i| i.time);
         self.pump(now);
+        self.media_controls(ui.ctx());
         if let Some(edited) = self.search_edited {
             if now - edited >= SEARCH_PAUSE {
                 self.submit_search();
@@ -2537,6 +2600,7 @@ impl eframe::App for App {
         if self.is_playing() {
             ui.ctx().request_repaint_after(Duration::from_millis(250));
         }
+        self.mpris.update(self.media_state());
     }
 }
 

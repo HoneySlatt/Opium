@@ -7,6 +7,7 @@ mod color;
 mod covers;
 mod fonts;
 mod icons;
+mod mpris;
 mod palette;
 mod screenshot;
 mod settings;
