@@ -12,8 +12,8 @@ use crate::icons;
 use crate::theme::Theme;
 
 use super::grid::{
-    CARD_TEXT, CardClick, SHELF_HEAD, SONG_COLUMNS_HEIGHT, ShelfCard, cover_shelf, shelf_scroll,
-    song_columns,
+    CARD_TEXT, CardClick, SHELF_HEAD, ShelfCard, cover_shelf, shelf_scroll, song_columns,
+    song_columns_height,
 };
 use super::search::{message, section_head};
 use super::{artwork, glow, icon_button, paint_text, text};
@@ -30,9 +30,13 @@ const HERO_GAP: f32 = 20.0;
 /// The stations on air, on Radio.
 const LIVE: f32 = 230.0;
 /// The editors' picks on New: their badge, name and line above a large cover.
-const PICK: f32 = 300.0;
+const PICK: f32 = 340.0;
+/// A pick's wide picture, at Apple's 16:9.
+const PICK_HEIGHT: f32 = PICK * 9.0 / 16.0;
 const PICK_WORDS: f32 = 64.0;
 const PICK_GAP: f32 = 20.0;
+/// The best new songs: four to a column, as in Cider.
+const NEW_SONG_ROWS: usize = 4;
 
 /// Which page of shelves.
 #[derive(Clone, Copy, PartialEq)]
@@ -75,9 +79,9 @@ fn page(app: &mut App, ui: &mut Ui, pad: f32, which: Which) -> f32 {
     let height = |shelf: &Shelf| {
         SHELF_HEAD
             + match (shelf.hero, which) {
-                _ if !shelf.songs.is_empty() => SONG_COLUMNS_HEIGHT,
+                _ if !shelf.songs.is_empty() => song_columns_height(NEW_SONG_ROWS),
                 (true, Which::Home) => HERO + HERO_FOOT,
-                (true, Which::New) => PICK_WORDS + PICK,
+                (true, Which::New) => PICK_WORDS + PICK_HEIGHT,
                 (true, Which::Radio) => LIVE + CARD_TEXT,
                 (false, _) => COVER + CARD_TEXT,
             }
@@ -172,10 +176,20 @@ fn page(app: &mut App, ui: &mut Ui, pad: f32, which: Which) -> f32 {
                             section_head(ui, &theme, at.x, at.y, &shelf.title);
                             let row = Rect::from_min_size(
                                 pos2(at.x, at.y + SHELF_HEAD),
-                                vec2(width, SONG_COLUMNS_HEIGHT),
+                                vec2(width, song_columns_height(NEW_SONG_ROWS)),
                             );
                             let arrows = pos2(at.x + width, at.y + 11.0);
-                            song_columns(app, ui, &theme, row, arrows, &shelf.songs, id, false);
+                            song_columns(
+                                app,
+                                ui,
+                                &theme,
+                                row,
+                                arrows,
+                                &shelf.songs,
+                                id,
+                                false,
+                                NEW_SONG_ROWS,
+                            );
                             None
                         }
                         (true, Which::Home) => hero_shelf(ui, &theme, at, width, shelf, id),
@@ -341,8 +355,9 @@ fn hero_shelf(
     clicked
 }
 
-/// The editors' picks, as Apple's New page lays them out: what it is (`NEW
-/// ALBUM`), its name and who made it, above a large cover; sideways.
+/// The editors' picks, as Apple's New page and Cider lay them out: what it
+/// is (`NEW ALBUM`), its name and who made it, above a wide picture with the
+/// editors' line along its foot and the cover in its corner; sideways.
 fn picks_shelf(
     ui: &mut Ui,
     theme: &Theme,
@@ -353,7 +368,7 @@ fn picks_shelf(
 ) -> Option<(usize, CardClick)> {
     let row = Rect::from_min_size(
         pos2(at.x, at.y + SHELF_HEAD),
-        vec2(width, PICK_WORDS + PICK),
+        vec2(width, PICK_WORDS + PICK_HEIGHT),
     );
     let stride = PICK + PICK_GAP;
     let content = shelf.items.len() as f32 * stride - PICK_GAP;
@@ -376,16 +391,22 @@ fn picks_shelf(
         if x + PICK < row.left() || x > row.right() {
             continue;
         }
-        let frame = Rect::from_min_size(pos2(x, row.top()), vec2(PICK, PICK_WORDS + PICK));
+        let frame = Rect::from_min_size(pos2(x, row.top()), vec2(PICK, PICK_WORDS + PICK_HEIGHT));
         let words = card(item);
-        let badge = shelf.badges.get(i).cloned().unwrap_or_default();
+        let pick = shelf.picks.get(i).cloned().unwrap_or_default();
         let muted = theme.muted();
-        let g = text(&row_ui, &badge, font(11.0, Weight::SemiBold), muted, PICK);
+        let g = text(
+            &row_ui,
+            &pick.badge,
+            font(10.5, Weight::SemiBold),
+            muted,
+            PICK,
+        );
         paint_text(&row_ui, g, x, frame.top() + 8.0, egui::Align::Min, muted);
         let g = text(
             &row_ui,
             &words.title,
-            font(15.0, Weight::Medium),
+            font(14.5, Weight::Medium),
             theme.text,
             PICK,
         );
@@ -393,25 +414,77 @@ fn picks_shelf(
             &row_ui,
             g,
             x,
-            frame.top() + 28.0,
+            frame.top() + 27.0,
             egui::Align::Min,
             theme.text,
         );
         let g = text(
             &row_ui,
             &words.sub,
-            font(12.5, Weight::Regular),
-            muted,
+            font(13.5, Weight::Regular),
+            theme.subtext0,
             PICK,
         );
-        paint_text(&row_ui, g, x, frame.top() + 47.0, egui::Align::Min, muted);
-        let art = Rect::from_min_size(pos2(x, frame.top() + PICK_WORDS), vec2(PICK, PICK));
+        paint_text(
+            &row_ui,
+            g,
+            x,
+            frame.top() + 46.0,
+            egui::Align::Min,
+            theme.subtext0,
+        );
+
+        let art = Rect::from_min_size(pos2(x, frame.top() + PICK_WORDS), vec2(PICK, PICK_HEIGHT));
         let response = row_ui.interact(frame, id.with(i), Sense::click());
-        artwork(&row_ui, words.url.clone(), art, 10.0, theme);
+        match &pick.wide {
+            Some(wide) => artwork(&row_ui, Some(wide.url(0)), art, 10.0, theme),
+            None => artwork(&row_ui, words.url.clone(), art, 10.0, theme),
+        }
+        // The editors' line over a shade at the picture's foot.
+        if let Some(blurb) = &pick.blurb {
+            let foot = Rect::from_min_max(pos2(art.left(), art.bottom() - 70.0), art.max);
+            let mut mesh = egui::Mesh::default();
+            let clear = Color32::from_black_alpha(0);
+            let shade = Color32::from_black_alpha(150);
+            mesh.colored_vertex(foot.left_top(), clear);
+            mesh.colored_vertex(foot.right_top(), clear);
+            mesh.colored_vertex(foot.right_bottom(), shade);
+            mesh.colored_vertex(foot.left_bottom(), shade);
+            mesh.add_triangle(0, 1, 2);
+            mesh.add_triangle(0, 2, 3);
+            row_ui.painter().add(mesh);
+            let room = PICK - 24.0 - if pick.wide.is_some() { 80.0 } else { 0.0 };
+            let mut job = egui::text::LayoutJob::single_section(
+                blurb.clone(),
+                egui::TextFormat {
+                    font_id: font(11.5, Weight::Regular),
+                    color: Color32::WHITE,
+                    line_height: Some(15.0),
+                    ..Default::default()
+                },
+            );
+            job.wrap = egui::text::TextWrapping {
+                max_width: room,
+                max_rows: 2,
+                break_anywhere: false,
+                overflow_character: Some('…'),
+            };
+            let g = row_ui.painter().layout_job(job);
+            let pos = pos2(art.left() + 12.0, art.bottom() - 12.0 - g.size().y);
+            row_ui.painter().galley(pos, g, Color32::WHITE);
+        }
+        // The cover in the corner, over the wide picture.
+        if pick.wide.is_some() {
+            let cover = Rect::from_min_size(
+                pos2(art.right() - 10.0 - 70.0, art.bottom() - 10.0 - 70.0),
+                vec2(70.0, 70.0),
+            );
+            artwork(&row_ui, words.url.clone(), cover, 6.0, theme);
+        }
         if response.hovered() {
             row_ui
                 .painter()
-                .rect_filled(art, 10.0, Color32::from_black_alpha(40));
+                .rect_filled(art, 10.0, Color32::from_black_alpha(30));
         }
         if let Some(how) = super::menu::collection_menu(&response, theme) {
             clicked = Some((i, CardClick::Enqueue(how)));

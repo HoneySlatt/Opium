@@ -193,6 +193,17 @@ pub struct Playlist {
     pub editable: bool,
 }
 
+/// An editors' pick: what it is, in a word, and how they show it.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Pick {
+    /// `NEW ALBUM`, `UPDATED PLAYLIST`.
+    pub badge: String,
+    /// A line about it, shown over the picture.
+    pub blurb: Option<String>,
+    /// A wide picture made for it, when there is one.
+    pub wide: Option<Artwork>,
+}
+
 /// A row of the home, radio or new music page.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Shelf {
@@ -201,9 +212,9 @@ pub struct Shelf {
     /// the week's picks.
     pub hero: bool,
     pub items: Vec<Collection>,
-    /// What the editors call each item (`NEW ALBUM`), for a hero shelf; empty
-    /// or as long as `items`.
-    pub badges: Vec<String>,
+    /// How the editors present each item, for a hero shelf; empty or as long
+    /// as `items`.
+    pub picks: Vec<Pick>,
     /// A shelf of songs instead of covers.
     pub songs: Vec<Track>,
 }

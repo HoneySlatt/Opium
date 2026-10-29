@@ -273,8 +273,13 @@ async fn new_music(am: &AppleMusic) -> Result<(), Box<dyn std::error::Error>> {
             shelf.songs.len(),
             if shelf.hero { ", hero" } else { "" }
         );
-        for badge in shelf.badges.iter().take(3) {
-            println!("  [{badge}]");
+        for pick in shelf.picks.iter().take(3) {
+            println!(
+                "  [{}] {:?} wide: {}",
+                pick.badge,
+                pick.blurb,
+                pick.wide.is_some()
+            );
         }
     }
     Ok(())

@@ -332,5 +332,6 @@ fn songs_section(
         &artist.top_songs,
         id,
         true,
+        3,
     );
 }

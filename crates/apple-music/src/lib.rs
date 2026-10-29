@@ -19,8 +19,8 @@ pub use stream::AudioStream;
 
 use async_trait::async_trait;
 use music_core::model::{
-    Album, Artist, ArtistDetail, Collection, Cursor, FavouriteKind, ItemId, Lyrics, Page, Playlist,
-    ProviderKind, SearchResults, Shelf, Track,
+    Album, Artist, ArtistDetail, Artwork, Collection, Cursor, FavouriteKind, ItemId, Lyrics, Page,
+    Pick, Playlist, ProviderKind, SearchResults, Shelf, Track,
 };
 use music_core::{Error, Provider, Result};
 use serde::de::DeserializeOwned;
@@ -80,14 +80,29 @@ fn editorial_shelves(page: &serde_json::Value) -> Vec<Shelf> {
                     ..Shelf::default()
                 };
                 for child in children(&element) {
-                    let badge = child["attributes"]["designBadge"]
+                    let Some(item) = contents(&child).into_iter().next() else {
+                        continue;
+                    };
+                    // The item's own editorial picture and line, as Cider shows them.
+                    let attributes = &items(&child)[0]["attributes"];
+                    let wide = attributes["editorialArtwork"]["subscriptionHero"]["url"]
                         .as_str()
-                        .unwrap_or("")
-                        .to_owned();
-                    if let Some(item) = contents(&child).into_iter().next() {
-                        shelf.items.push(item);
-                        shelf.badges.push(badge);
-                    }
+                        .map(|url| Artwork {
+                            // Wide, at the shape Cider shows it; Apple crops to it.
+                            url_template: url.replace("{w}x{h}", "1280x720"),
+                            background: None,
+                        });
+                    shelf.items.push(item);
+                    shelf.picks.push(Pick {
+                        badge: child["attributes"]["designBadge"]
+                            .as_str()
+                            .unwrap_or("")
+                            .to_owned(),
+                        blurb: attributes["editorialNotes"]["short"]
+                            .as_str()
+                            .map(str::to_owned),
+                        wide,
+                    });
                 }
                 if !shelf.items.is_empty() {
                     shelves.push(shelf);
@@ -137,6 +152,10 @@ fn catalog_type(kind: FavouriteKind) -> &'static str {
 /// Album details in English, as the app's text is: Apple writes most editorial
 /// notes in English only, and names genres in the storefront's language otherwise.
 const NOTES_LANGUAGE: &str = "en-US";
+/// The editorial pages (New, Radio) in English: they take the storefront's own
+/// English, British for France, and fall back to its first language for
+/// another one.
+const EDITORIAL_LANGUAGE: &str = "en-GB";
 /// Recently Added answers at most 25 at a time.
 const RECENT_PAGE: u32 = 25;
 /// Search caps each result type at 25.
@@ -554,7 +573,7 @@ impl Provider for AppleMusic {
     /// them to a subscriber.
     async fn radio(&self) -> Result<Vec<Shelf>> {
         let path = format!(
-            "/v1/editorial/{}/groupings?platform=web&name=radio&l={NOTES_LANGUAGE}",
+            "/v1/editorial/{}/groupings?platform=web&name=radio&l={EDITORIAL_LANGUAGE}",
             self.storefront
         );
         let Some(page) = self.fetch::<serde_json::Value>(&path).await? else {
@@ -567,7 +586,7 @@ impl Provider for AppleMusic {
     /// new albums and updated playlists, as the web player shows them.
     async fn new_music(&self) -> Result<Vec<Shelf>> {
         let path = format!(
-            "/v1/editorial/{}/groupings?platform=web&name=music&l={NOTES_LANGUAGE}",
+            "/v1/editorial/{}/groupings?platform=web&name=music&extend=editorialArtwork&l={EDITORIAL_LANGUAGE}",
             self.storefront
         );
         let Some(page) = self.fetch::<serde_json::Value>(&path).await? else {

@@ -22,6 +22,17 @@ pub(super) fn context_menu<T: Clone>(
     theme: &Theme,
     entries: &[Entry<T>],
 ) -> Option<T> {
+    menu(response, theme, entries, false)
+}
+
+/// The menu, opened by a secondary click on `response`, or by a primary one
+/// (a "…" button).
+fn menu<T: Clone>(
+    response: &Response,
+    theme: &Theme,
+    entries: &[Entry<T>],
+    on_click: bool,
+) -> Option<T> {
     let mut chosen = None;
     let frame = Frame::new()
         .fill(theme.mantle)
@@ -34,31 +45,33 @@ pub(super) fn context_menu<T: Clone>(
             spread: 0,
             color: egui::Color32::from_black_alpha(110),
         });
-    egui::Popup::context_menu(response)
-        .frame(frame)
-        .width(220.0)
-        .show(|ui| {
-            ui.spacing_mut().item_spacing.y = 0.0;
-            for entry in entries {
-                match entry {
-                    Entry::Line => {
-                        let (rect, _) =
-                            ui.allocate_exact_size(vec2(ui.available_width(), 9.0), Sense::hover());
-                        ui.painter().hline(
-                            (rect.left() + 6.0)..=(rect.right() - 6.0),
-                            rect.center().y,
-                            Stroke::new(1.0, theme.line()),
-                        );
-                    }
-                    Entry::Item(icon, label, value) => {
-                        if item(ui, theme, *icon, label) {
-                            chosen = Some(value.clone());
-                            ui.close();
-                        }
+    let popup = if on_click {
+        egui::Popup::menu(response)
+    } else {
+        egui::Popup::context_menu(response)
+    };
+    popup.frame(frame).width(220.0).show(|ui| {
+        ui.spacing_mut().item_spacing.y = 0.0;
+        for entry in entries {
+            match entry {
+                Entry::Line => {
+                    let (rect, _) =
+                        ui.allocate_exact_size(vec2(ui.available_width(), 9.0), Sense::hover());
+                    ui.painter().hline(
+                        (rect.left() + 6.0)..=(rect.right() - 6.0),
+                        rect.center().y,
+                        Stroke::new(1.0, theme.line()),
+                    );
+                }
+                Entry::Item(icon, label, value) => {
+                    if item(ui, theme, *icon, label) {
+                        chosen = Some(value.clone());
+                        ui.close();
                     }
                 }
             }
-        });
+        }
+    });
     chosen
 }
 
@@ -109,6 +122,19 @@ pub(super) fn track_menu(
     theme: &Theme,
     facts: TrackFacts,
 ) -> Option<TrackChoice> {
+    menu(response, theme, &track_entries(facts), false)
+}
+
+/// The track menu, opened by a click on a "…" button.
+pub(super) fn track_menu_button(
+    response: &Response,
+    theme: &Theme,
+    facts: TrackFacts,
+) -> Option<TrackChoice> {
+    menu(response, theme, &track_entries(facts), true)
+}
+
+fn track_entries(facts: TrackFacts) -> Vec<Entry<TrackChoice>> {
     let star = if facts.favourite {
         Entry::Item(
             icons::STAR_FILL,
@@ -144,7 +170,7 @@ pub(super) fn track_menu(
             TrackChoice::GoToAlbum,
         ));
     }
-    context_menu(response, theme, &entries)
+    entries
 }
 
 /// What an album's or a playlist's menu offers.

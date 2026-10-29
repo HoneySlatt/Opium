@@ -11,17 +11,22 @@ use crate::fonts::{Weight, font};
 use crate::icons;
 use crate::theme::Theme;
 
-use super::menu::{TrackFacts, track_menu};
+use super::menu::{TrackFacts, track_menu, track_menu_button};
 use super::songs::source_chips;
 use super::{artwork, explicit_badge, glow, icon_button, paint_icon, paint_text, text, thumb_url};
 
 /// Songs in columns: three rows to a column, as in Cider.
-const SONG_ROWS: usize = 3;
 const SONG_ROW: f32 = 56.0;
 const SONG_COLUMN: f32 = 300.0;
 const SONG_GAP: f32 = 24.0;
-/// How tall a block of song columns is.
-pub(super) const SONG_COLUMNS_HEIGHT: f32 = SONG_ROWS as f32 * SONG_ROW;
+/// How tall a block of song columns is, three rows to a column (an artist's
+/// top songs).
+pub(super) const SONG_COLUMNS_HEIGHT: f32 = 3.0 * SONG_ROW;
+
+/// How tall a block of song columns of `rows` rows is.
+pub(super) fn song_columns_height(rows: usize) -> f32 {
+    rows as f32 * SONG_ROW
+}
 
 /// Grid covers are at least this wide, 26 apart, rows 40 apart, as in Cider.
 const CARD_MIN: f32 = 190.0;
@@ -515,10 +520,10 @@ fn card(app: &App, kind: Kind, i: usize) -> (String, String, Option<String>, Ope
     }
 }
 
-/// Songs in columns of three that scroll sideways, as Apple lists an artist's
-/// top songs and the songs of the moment: a click plays from that song, a
-/// right click opens its menu. Under each title, its album (`show_album`) or
-/// its artists.
+/// Songs in columns of `rows` that scroll sideways, as Apple lists an
+/// artist's top songs and the best new songs: a click plays from that song,
+/// a right click or its "…" opens its menu. Under each title, its album
+/// (`show_album`) or its artists.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn song_columns(
     app: &mut App,
@@ -529,9 +534,10 @@ pub(super) fn song_columns(
     songs: &[Track],
     id: Id,
     show_album: bool,
+    rows: usize,
 ) {
     let room = row.width();
-    let columns = songs.len().div_ceil(SONG_ROWS);
+    let columns = songs.len().div_ceil(rows);
     let stride = SONG_COLUMN + SONG_GAP;
     let page = ((room + SONG_GAP) / stride).floor().max(1.0) * stride;
     let offset = shelf_scroll(
@@ -549,7 +555,7 @@ pub(super) fn song_columns(
     let mut play = None;
     let mut chosen = None;
     for (i, track) in songs.iter().enumerate() {
-        let (column, line) = (i / SONG_ROWS, i % SONG_ROWS);
+        let (column, line) = (i / rows, i % rows);
         let cell = Rect::from_min_size(
             pos2(
                 row.left() + column as f32 * stride - offset,
@@ -583,7 +589,7 @@ pub(super) fn song_columns(
             );
         }
         let tx = thumb.right() + 12.0;
-        let room = cell.right() - 8.0 - tx;
+        let room = cell.right() - 36.0 - tx;
         let color = if now { theme.accent } else { theme.text };
         let title_room = room - if track.explicit { 18.0 } else { 0.0 };
         let g = text(
@@ -628,15 +634,24 @@ pub(super) fn song_columns(
             let end = title_end + if track.explicit { 18.0 } else { 0.0 };
             super::tracks::favourite_star(&row_ui, theme, pos2(end + 12.0, cell.center().y - 9.0));
         }
-        if let Some(choice) = track_menu(
-            &response,
-            theme,
-            TrackFacts {
-                has_album: track.album_id.is_some(),
-                favourite,
-                in_library: app.track_in_library(track),
-            },
-        ) {
+        let facts = || TrackFacts {
+            has_album: track.album_id.is_some(),
+            favourite,
+            in_library: app.track_in_library(track),
+        };
+        // "…" at the end of the row, as in Cider: the same menu, on a click.
+        let more =
+            Rect::from_center_size(pos2(cell.right() - 18.0, cell.center().y), vec2(26.0, 26.0));
+        let more_response = row_ui.interact(more, id.with(("more", i)), Sense::click());
+        let more_color = if more_response.hovered() {
+            theme.text
+        } else {
+            theme.text_a(0.35)
+        };
+        paint_icon(&row_ui, icons::MORE, more.center(), 16.0, more_color);
+        if let Some(choice) = track_menu_button(&more_response, theme, facts()) {
+            chosen = Some((i, choice));
+        } else if let Some(choice) = track_menu(&response, theme, facts()) {
             chosen = Some((i, choice));
         } else if response
             .on_hover_cursor(egui::CursorIcon::PointingHand)
