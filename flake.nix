@@ -32,6 +32,8 @@
               pipewire
               rustPlatform.bindgenHook
             ];
+            # Animated cover art is decoded with FFmpeg's libraries.
+            buildInputs = with pkgs; [ ffmpeg ];
             LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath runtimeLibs;
           };
         }
