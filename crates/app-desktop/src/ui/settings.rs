@@ -368,7 +368,7 @@ fn paint_preview(ui: &Ui, rect: Rect, c: &Theme) {
 fn scale(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect) {
     let y = card.center().y;
     let right = card.right() - 16.0;
-    let current = app.scale().unwrap_or(1.0);
+    let current = app.scale();
     // From the right: Reset, +, the value, −.
     if button(ui, theme, right, y, "Reset", true) {
         app.set_scale(None);
@@ -402,7 +402,7 @@ fn scale(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect) {
         theme,
         pos2(card.left() + 16.0, y),
         "Interface scale",
-        "Ctrl + and Ctrl − change it too; Ctrl 0 goes back to what suits the screen.",
+        "Ctrl + and Ctrl − change it too; Ctrl 0 goes back to 100 %.",
         x - card.left() - 32.0,
     );
 }

@@ -471,14 +471,14 @@ impl App {
         }
     }
 
-    /// The interface scale in use, once the first frame has set it.
-    pub fn scale(&self) -> Option<f32> {
-        self.zoom
+    /// The interface scale, 1.0 for 100 %.
+    pub fn scale(&self) -> f32 {
+        self.settings.ui_scale.unwrap_or(1.0)
     }
 
-    /// Choose the interface scale, or go back to the one that suits the screen.
+    /// Choose the interface scale, or go back to 100 %.
     pub fn set_scale(&mut self, scale: Option<f32>) {
-        self.settings.ui_scale = scale.map(|s| ((s * 10.0).round() / 10.0).clamp(0.75, 3.0));
+        self.settings.ui_scale = scale.map(|s| ((s * 10.0).round() / 10.0).clamp(0.7, 2.5));
         self.settings.save();
         // The next frame applies it.
         self.zoom = None;
@@ -1247,8 +1247,7 @@ impl App {
 }
 
 impl App {
-    /// The interface scale: the saved one, or one that suits the screen, changed
-    /// with Ctrl +, Ctrl − and Ctrl 0.
+    /// The interface scale, changed with Ctrl +, Ctrl − and Ctrl 0.
     fn zoom(&mut self, ctx: &egui::Context) {
         let (bigger, smaller, reset) = ctx.input_mut(|i| {
             let ctrl = egui::Modifiers::COMMAND;
@@ -1258,24 +1257,13 @@ impl App {
                 i.consume_key(ctrl, egui::Key::Num0),
             )
         });
-        let current = self.zoom.unwrap_or_else(|| {
-            self.settings
-                .ui_scale
-                .unwrap_or_else(|| crate::settings::default_scale(ctx))
-        });
-        let wanted = if reset {
-            self.settings.ui_scale = None;
-            self.settings.save();
-            crate::settings::default_scale(ctx)
+        if reset {
+            self.set_scale(None);
         } else if bigger || smaller {
             let step = if bigger { 0.1 } else { -0.1 };
-            let scale = (((current + step) * 10.0).round() / 10.0).clamp(0.75, 3.0);
-            self.settings.ui_scale = Some(scale);
-            self.settings.save();
-            scale
-        } else {
-            current
-        };
+            self.set_scale(Some(self.scale() + step));
+        }
+        let wanted = self.scale() * crate::settings::SCALE_UNIT;
         if self.zoom != Some(wanted) {
             self.zoom = Some(wanted);
             ctx.set_zoom_factor(wanted);

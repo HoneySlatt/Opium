@@ -19,8 +19,8 @@ pub enum Appearance {
 pub struct Settings {
     /// Unset: Amane when its theme file exists, Stock otherwise.
     pub appearance: Option<Appearance>,
-    /// The interface scale, on top of the screen's own; Ctrl +, Ctrl − and
-    /// Ctrl 0 change it. `None` until the user picks one.
+    /// The interface scale, 1.0 for 100 % (which draws at [`SCALE_UNIT`]);
+    /// Ctrl +, Ctrl − and Ctrl 0 change it. `None` is 100 %.
     pub ui_scale: Option<f32>,
 }
 
@@ -52,21 +52,5 @@ impl Settings {
     }
 }
 
-/// The scale to start from when the user hasn't chosen one: the design's sizes
-/// are CSS pixels, which a 4K screen at scale 1 shows far too small (Cider, the
-/// reference, draws about 1.6× there).
-pub fn default_scale(ctx: &egui::Context) -> f32 {
-    let (monitor, native) = ctx.input(|i| {
-        (
-            i.viewport().monitor_size,
-            i.viewport().native_pixels_per_point,
-        )
-    });
-    let physical_width = monitor.map(|m| m.x * native.unwrap_or(1.0)).unwrap_or(0.0);
-    let native = native.unwrap_or(1.0);
-    if physical_width >= 3000.0 && native < 1.5 {
-        1.5 / native
-    } else {
-        1.0
-    }
-}
+/// What 100 % draws at: the design's sizes, 10 % larger (the user's call).
+pub const SCALE_UNIT: f32 = 1.1;
