@@ -22,11 +22,33 @@ const SECTION_GAP: f32 = 36.0;
 
 pub fn show(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
     let theme = app.theme.clone();
-    let (albums, error) = match app.artist_albums.get(id) {
-        Some(Loaded::Ready(albums)) => (Some(albums.clone()), None),
-        Some(Loaded::Failed(e)) => (None, Some(e.clone())),
-        _ => (None, None),
-    };
+    // Their releases on every service the library has them on, one copy
+    // of each: what has come, while the rest comes.
+    let mut gathered: Option<Vec<Album>> = None;
+    let mut error = None;
+    for twin in app.artist_twins(id) {
+        match app.artist_albums.get(&twin) {
+            Some(Loaded::Ready(albums)) => {
+                gathered
+                    .get_or_insert_with(Vec::new)
+                    .extend(albums.iter().cloned());
+            }
+            Some(Loaded::Failed(e)) => error = Some(e.clone()),
+            _ => {}
+        }
+    }
+    let albums = gathered.map(|all| {
+        let copies = crate::dedupe::albums(&all);
+        let kept: Vec<Album> = all
+            .into_iter()
+            .enumerate()
+            .filter(|(i, _)| !copies.contains(i))
+            .map(|(_, a)| a)
+            .collect();
+        std::sync::Arc::new(kept)
+    });
+    // A failure shows only when nothing came.
+    let error = error.filter(|_| albums.is_none());
     let artist = app.library_artist(id).cloned();
     // Singles and EPs apart, as Apple names them; each newest first.
     let (mut long, mut short): (Vec<Album>, Vec<Album>) = albums

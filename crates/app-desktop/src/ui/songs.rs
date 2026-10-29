@@ -220,8 +220,18 @@ fn rebuild_order(app: &mut App) {
             words.iter().all(|w| text.contains(w))
         }
     };
+    // Across services, one copy of a song; within one, all of its own.
+    let copies = if view.source.is_none() {
+        crate::dedupe::songs(songs)
+    } else {
+        Default::default()
+    };
     let mut order: Vec<usize> = (0..songs.len())
-        .filter(|&i| view.source.is_none_or(|s| songs[i].id.provider == s) && found(&songs[i]))
+        .filter(|&i| {
+            view.source.is_none_or(|s| songs[i].id.provider == s)
+                && !copies.contains(&i)
+                && found(&songs[i])
+        })
         .collect();
     if let Some((by, ascending)) = view.sort {
         let text_cmp = |a: &str, b: &str| a.to_lowercase().cmp(&b.to_lowercase());

@@ -381,6 +381,9 @@ pub struct App {
     in_library_wanted: std::cell::RefCell<Vec<(FavouriteKind, ItemId)>>,
     in_library_asked: std::collections::HashSet<ItemId>,
     pub library_artists: Streamed<Artist>,
+    /// The copies the library's lists leave out, by the version of the list
+    /// they were found in: albums, artists, recent additions.
+    copies: [Option<(u64, Arc<std::collections::HashSet<usize>>)>; 3],
     /// Library artists' albums in the library, by artist.
     pub artist_albums: HashMap<ItemId, Loaded<Arc<Vec<Album>>>>,
     pub recently_added: Streamed<Collection>,
@@ -540,6 +543,7 @@ impl App {
             in_library_wanted: Default::default(),
             in_library_asked: std::collections::HashSet::new(),
             library_artists: Streamed::default(),
+            copies: Default::default(),
             artist_albums: HashMap::new(),
             recently_added: Streamed::default(),
             favourite_songs: Default::default(),
@@ -730,9 +734,14 @@ impl App {
                 self.artists.insert(id.clone(), Loaded::Loading);
                 self.backend.send(Request::Artist(id.clone()));
             }
-            Page::LibraryArtist(id) if !self.artist_albums.contains_key(id) => {
-                self.artist_albums.insert(id.clone(), Loaded::Loading);
-                self.backend.send(Request::LibraryArtistAlbums(id.clone()));
+            // Their releases on every service the library has them on.
+            Page::LibraryArtist(id) => {
+                for twin in self.artist_twins(id) {
+                    if !self.artist_albums.contains_key(&twin) {
+                        self.artist_albums.insert(twin.clone(), Loaded::Loading);
+                        self.backend.send(Request::LibraryArtistAlbums(twin));
+                    }
+                }
             }
             Page::Search(query) => {
                 let key = (self.search_scope, query.clone());
@@ -1434,10 +1443,65 @@ impl App {
     /// A library artist by their library id, once the library's artists are
     /// read.
     pub fn library_artist(&self, id: &ItemId) -> Option<&Artist> {
-        self.library_artists
-            .items
-            .iter()
-            .find(|a| a.library_id.as_ref() == Some(id))
+        // Apple Music's by their library id; the others' have one id.
+        self.library_artists.items.iter().find(|a| {
+            a.library_id.as_ref() == Some(id)
+                || (a.id.provider != ProviderKind::AppleMusic && a.id == *id)
+        })
+    }
+
+    /// The artist's page ids on every service the library has them on, by
+    /// their name: `id`'s own first.
+    pub fn artist_twins(&self, id: &ItemId) -> Vec<ItemId> {
+        let Some(name) = self.library_artist(id).map(|a| fold(a.name.trim())) else {
+            return vec![id.clone()];
+        };
+        let mut twins = vec![id.clone()];
+        for a in &self.library_artists.items {
+            let page = a.library_id.clone().unwrap_or_else(|| a.id.clone());
+            if page != *id && fold(a.name.trim()) == name {
+                twins.push(page);
+            }
+        }
+        twins
+    }
+
+    /// The copies the Albums (`0`), Artists (`1`) or Recently Added (`2`)
+    /// page leaves out: found again when its list changes.
+    pub fn copies(&mut self, list: usize) -> Arc<std::collections::HashSet<usize>> {
+        let version = match list {
+            0 => self.library_albums.version,
+            1 => self.library_artists.version,
+            _ => self.recently_added.version,
+        };
+        if let Some((built, copies)) = &self.copies[list]
+            && *built == version
+        {
+            return copies.clone();
+        }
+        let copies = Arc::new(match list {
+            0 => crate::dedupe::albums(&self.library_albums.items),
+            1 => crate::dedupe::artists(&self.library_artists.items),
+            _ => {
+                // The albums among them, as albums.
+                let (at, albums): (Vec<usize>, Vec<Album>) = self
+                    .recently_added
+                    .items
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, c)| match c {
+                        Collection::Album(a) => Some((i, a.clone())),
+                        _ => None,
+                    })
+                    .unzip();
+                crate::dedupe::albums(&albums)
+                    .into_iter()
+                    .map(|k| at[k])
+                    .collect()
+            }
+        });
+        self.copies[list] = Some((version, copies.clone()));
+        copies
     }
 
     /// The library's songs from `albums`, album by album in that order, each

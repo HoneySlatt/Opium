@@ -504,23 +504,35 @@ fn page(app: &mut App, ui: &mut Ui, pad: f32, kind: Kind) -> f32 {
     let source = app.grid_source.filter(|_| kind != Kind::Artists);
     let keep = |provider: ProviderKind| source.is_none_or(|s| s == provider);
     // The items shown, as indices into the list.
+    // Across services, one copy of each; a service's filter shows it whole.
+    let copies = match (source, kind) {
+        (Some(_), _) => Default::default(),
+        (None, Kind::Albums) => app.copies(0),
+        (None, Kind::Artists) => app.copies(1),
+        (None, Kind::Recent) => app.copies(2),
+    };
     let (shown, done): (Vec<usize>, bool) = match kind {
         Kind::Albums => (
             app.albums_in_order()
                 .iter()
                 .copied()
-                .filter(|&i| keep(app.library_albums.items[i].id.provider))
+                .filter(|&i| keep(app.library_albums.items[i].id.provider) && !copies.contains(&i))
                 .collect(),
             app.library_albums.done,
         ),
         Kind::Artists => (
-            (0..app.library_artists.items.len()).collect(),
+            (0..app.library_artists.items.len())
+                .filter(|i| !copies.contains(i))
+                .collect(),
             app.library_artists.done,
         ),
         Kind::Recent => (
             indices(&app.recently_added.items, |item| {
                 keep(item_id(item).provider)
-            }),
+            })
+            .into_iter()
+            .filter(|i| !copies.contains(i))
+            .collect(),
             app.recently_added.done,
         ),
     };
