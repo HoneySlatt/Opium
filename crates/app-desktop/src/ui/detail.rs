@@ -56,8 +56,8 @@ pub fn album(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
     page(app, ui, pad, header, tracks, listing)
 }
 
-pub fn playlist(app: &mut App, ui: &mut Ui, pad: f32, index: usize) -> f32 {
-    let Some(playlist) = app.playlists.get(index).cloned() else {
+pub fn playlist(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
+    let Some(playlist) = app.playlist(id).cloned() else {
         return 0.0;
     };
     let (tracks, done, error) = match app.playlist_tracks.get(&playlist.id) {

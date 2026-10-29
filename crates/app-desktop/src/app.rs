@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use music_core::model::{Album, ItemId, Playlist, ProviderKind, Track};
@@ -23,7 +24,7 @@ pub enum Page {
     Albums,
     Artists,
     Favourites,
-    Playlist(usize),
+    Playlist(ItemId),
     Album(ItemId),
     Settings,
 }
@@ -118,6 +119,8 @@ pub struct App {
     pub toast: Option<(String, f64)>,
     screenshot: Option<crate::screenshot::Screenshot>,
     settings: crate::settings::Settings,
+    /// Raised by the watcher when Amane rewrites the theme file.
+    theme_changed: Arc<AtomicBool>,
     /// The zoom set last, `None` until the first frame knows the screen.
     zoom: Option<f32>,
 }
@@ -126,8 +129,11 @@ impl App {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         crate::fonts::install(&cc.egui_ctx);
         egui_extras::install_image_loaders(&cc.egui_ctx);
-        let theme = Theme::STOCK;
+        let settings = crate::settings::Settings::load();
+        let theme = resolve_theme(&settings);
         theme.apply(&cc.egui_ctx);
+        let theme_changed = Arc::new(AtomicBool::new(false));
+        watch_theme(cc.egui_ctx.clone(), theme_changed.clone());
         // Ctrl +, − and 0 are ours: 0 goes back to the scale that suits the screen.
         cc.egui_ctx.options_mut(|o| o.zoom_with_keyboard = false);
         let backend = Backend::start(cc.egui_ctx.clone());
@@ -165,7 +171,8 @@ impl App {
             muted: false,
             toast: None,
             screenshot: crate::screenshot::Screenshot::from_env(),
-            settings: crate::settings::Settings::load(),
+            settings,
+            theme_changed,
             zoom: None,
         }
     }
@@ -188,17 +195,17 @@ impl App {
                 self.albums.insert(id.clone(), Loaded::Loading);
                 self.backend.send(Request::Album(id.clone()));
             }
-            Page::Playlist(index) => {
-                if let Some(playlist) = self.playlists.get(*index)
-                    && !self.playlist_tracks.contains_key(&playlist.id)
-                {
-                    self.playlist_tracks
-                        .insert(playlist.id.clone(), PlaylistTracks::default());
-                    self.backend.send(Request::Playlist(playlist.id.clone()));
-                }
+            Page::Playlist(id) if !self.playlist_tracks.contains_key(id) => {
+                self.playlist_tracks
+                    .insert(id.clone(), PlaylistTracks::default());
+                self.backend.send(Request::Playlist(id.clone()));
             }
             _ => {}
         }
+    }
+
+    pub fn playlist(&self, id: &ItemId) -> Option<&Playlist> {
+        self.playlists.iter().find(|p| &p.id == id)
     }
 
     /// The cover colours for `url`, fetched on first ask.
@@ -246,9 +253,8 @@ impl App {
             Page::Albums => "Albums".into(),
             Page::Artists => "Artists".into(),
             Page::Favourites => "Favourite Songs".into(),
-            Page::Playlist(i) => self
-                .playlists
-                .get(*i)
+            Page::Playlist(id) => self
+                .playlist(id)
                 .map(|p| p.name.clone())
                 .unwrap_or_default(),
             Page::Album(id) => match self.albums.get(id) {
@@ -408,11 +414,7 @@ impl App {
                     self.songs.extend(tracks);
                     self.songs_done = done;
                 }
-                Reply::Playlists(playlists) => {
-                    self.playlists = playlists;
-                    // A playlist page opened before the list arrived can load now.
-                    self.arrived();
-                }
+                Reply::Playlists(playlists) => self.playlists = playlists,
                 Reply::Album { id, result } => {
                     let loaded = match result {
                         Ok((album, tracks)) => Loaded::Ready((album, Arc::new(tracks))),
@@ -518,6 +520,13 @@ impl App {
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.zoom(ui.ctx());
+        if self.theme_changed.swap(false, Ordering::Relaxed) {
+            let theme = resolve_theme(&self.settings);
+            if theme != self.theme {
+                theme.apply(ui.ctx());
+                self.theme = theme;
+            }
+        }
         let now = ui.input(|i| i.time);
         self.pump(now);
         ui::show(self, ui);
@@ -529,7 +538,7 @@ impl eframe::App for App {
         if let Some(page) = self
             .screenshot
             .as_mut()
-            .and_then(|s| s.page(self.playlists.len()))
+            .and_then(|s| s.page(&self.playlists))
         {
             self.go(page);
         }
@@ -549,4 +558,36 @@ impl eframe::App for App {
             ui.ctx().request_repaint_after(Duration::from_millis(250));
         }
     }
+}
+
+/// Stock, or Amane's theme when it is chosen (or, until it is chosen either
+/// way, when its file exists). A missing or invalid file falls back to Stock.
+fn resolve_theme(settings: &crate::settings::Settings) -> Theme {
+    use crate::settings::Appearance;
+    match settings.appearance {
+        Some(Appearance::Stock) => Theme::STOCK,
+        Some(Appearance::Amane) | None => Theme::amane().unwrap_or(Theme::STOCK),
+    }
+}
+
+/// Watch Amane's theme file the way Kopuz watches its palette: check its
+/// modification time every second and wake the UI when it changes.
+fn watch_theme(ctx: egui::Context, changed: Arc<AtomicBool>) {
+    let path = Theme::amane_path();
+    let modified = move || std::fs::metadata(&path).and_then(|m| m.modified()).ok();
+    std::thread::Builder::new()
+        .name("theme-watch".into())
+        .spawn(move || {
+            let mut last = modified();
+            loop {
+                std::thread::sleep(Duration::from_secs(1));
+                let now = modified();
+                if now != last {
+                    last = now;
+                    changed.store(true, Ordering::Relaxed);
+                    ctx.request_repaint();
+                }
+            }
+        })
+        .expect("spawn the theme watcher");
 }

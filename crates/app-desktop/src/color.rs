@@ -77,6 +77,16 @@ pub fn luminance(c: Color32) -> f32 {
     0.2126 * to_linear(r) + 0.7152 * to_linear(g) + 0.0722 * to_linear(b)
 }
 
+/// `#rrggbb`.
+pub fn hex(s: &str) -> Option<Color32> {
+    let s = s.trim().strip_prefix('#')?;
+    if s.len() != 6 {
+        return None;
+    }
+    let v = u32::from_str_radix(s, 16).ok()?;
+    Some(Color32::from_rgb((v >> 16) as u8, (v >> 8) as u8, v as u8))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -102,5 +112,12 @@ mod tests {
     fn white_is_oklab_one() {
         let w = Oklab::from_color(Color32::WHITE);
         assert!((w.l - 1.0).abs() < 1e-3 && w.a.abs() < 1e-3 && w.b.abs() < 1e-3);
+    }
+
+    #[test]
+    fn hex_parses_and_rejects() {
+        assert_eq!(hex("#7c3aed"), Some(Color32::from_rgb(0x7c, 0x3a, 0xed)));
+        assert_eq!(hex("7c3aed"), None);
+        assert_eq!(hex("#7c3"), None);
     }
 }

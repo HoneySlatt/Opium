@@ -48,7 +48,8 @@ pub fn show(app: &mut App, ui: &mut Ui, collapsed: bool) {
             for i in 0..app.playlists.len() {
                 let playlist = &app.playlists[i];
                 let art = playlist.artwork.as_ref().map(|a| a.url(120));
-                let active = app.page == Page::Playlist(i);
+                let id = playlist.id.clone();
+                let active = app.page == Page::Playlist(id.clone());
                 let name = playlist.name.clone();
                 if nav_item(
                     ui,
@@ -62,7 +63,7 @@ pub fn show(app: &mut App, ui: &mut Ui, collapsed: bool) {
                 )
                 .clicked()
                 {
-                    app.go(Page::Playlist(i));
+                    app.go(Page::Playlist(id));
                 }
             }
             ui.add_space(12.0);

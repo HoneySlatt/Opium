@@ -4,9 +4,21 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+/// Where the colours come from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Appearance {
+    /// Near-black with Pluto's violet.
+    Stock,
+    /// Whatever Amane's theme switch last wrote to `~/.config/music/theme.toml`.
+    Amane,
+}
+
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
+    /// Unset: Amane when its theme file exists, Stock otherwise.
+    pub appearance: Option<Appearance>,
     /// The interface scale, on top of the screen's own; Ctrl +, Ctrl − and
     /// Ctrl 0 change it. `None` until the user picks one.
     pub ui_scale: Option<f32>,

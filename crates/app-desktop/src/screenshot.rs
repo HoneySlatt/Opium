@@ -39,14 +39,18 @@ impl Screenshot {
     }
 
     /// The page to open, once, when the playlists have loaded.
-    pub fn page(&mut self, playlists: usize) -> Option<crate::app::Page> {
-        if playlists == 0 {
+    pub fn page(&mut self, playlists: &[music_core::model::Playlist]) -> Option<crate::app::Page> {
+        if playlists.is_empty() {
             return None;
         }
         let spec = self.page.take()?;
         let (kind, value) = spec.split_once(':')?;
         match kind {
-            "playlist" => value.parse().ok().map(crate::app::Page::Playlist),
+            "playlist" => value
+                .parse::<usize>()
+                .ok()
+                .and_then(|i| playlists.get(i))
+                .map(|p| crate::app::Page::Playlist(p.id.clone())),
             "album" => Some(crate::app::Page::Album(music_core::model::ItemId::new(
                 music_core::model::ProviderKind::AppleMusic,
                 value,

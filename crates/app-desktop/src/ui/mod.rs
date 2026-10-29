@@ -66,7 +66,7 @@ fn backdrop(app: &mut App) -> Option<[Color32; 3]> {
             Some(crate::app::Loaded::Ready((album, _))) => album.artwork.as_ref()?.url(96),
             _ => return None,
         },
-        Page::Playlist(index) => app.playlists.get(*index)?.artwork.as_ref()?.url(96),
+        Page::Playlist(id) => app.playlist(id)?.artwork.as_ref()?.url(96),
         _ => return None,
     };
     let light = app.theme.light;
@@ -105,7 +105,7 @@ fn page(app: &mut App, ui: &mut Ui, narrow: bool) -> f32 {
     match app.page.clone() {
         Page::Songs => songs::show(app, ui, pad),
         Page::Album(id) => detail::album(app, ui, pad, &id),
-        Page::Playlist(index) => detail::playlist(app, ui, pad, index),
+        Page::Playlist(id) => detail::playlist(app, ui, pad, &id),
         _ => placeholder(app, ui, pad),
     }
 }
