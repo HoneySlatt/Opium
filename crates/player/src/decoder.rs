@@ -1,7 +1,7 @@
 //! One source, demuxed and decoded to interleaved 32-bit integer frames.
 //!
-//! Integers rather than floats so a 16- or 24-bit lossless source reaches an
-//! exclusive output unchanged: symphonia widens them by shifting, which is exact.
+//! Integers rather than floats so a 16- or 24-bit lossless source reaches the
+//! output unchanged: symphonia widens them by shifting, which is exact.
 
 use std::time::Duration;
 
@@ -12,7 +12,7 @@ use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::units::Time;
 
-use crate::{Error, Result, Source, SourceFormat};
+use crate::{Error, Result, SeekHint, Source, SourceFormat};
 
 pub(crate) struct Decoder {
     format: Box<dyn FormatReader>,
@@ -20,6 +20,7 @@ pub(crate) struct Decoder {
     track_id: u32,
     pub info: SourceFormat,
     samples: Vec<i32>,
+    seek_hint: Option<SeekHint>,
 }
 
 fn decode_error(e: symphonia::core::errors::Error) -> Error {
@@ -72,6 +73,7 @@ impl Decoder {
             track_id,
             info,
             samples: Vec::new(),
+            seek_hint: source.seek_hint,
         })
     }
 
@@ -110,6 +112,9 @@ impl Decoder {
 
     /// Seek near `to`; returns where decoding actually resumes.
     pub fn seek(&mut self, to: Duration) -> Result<Duration> {
+        if let Some(hint) = &mut self.seek_hint {
+            hint(to);
+        }
         let time = Time::try_from_secs_f64(to.as_secs_f64()).unwrap_or_default();
         let seeked = self
             .format

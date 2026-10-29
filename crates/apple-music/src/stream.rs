@@ -9,9 +9,16 @@
 //! headers to seek never waits for audio it is about to skip. Either way the
 //! thread moves to where the reader is. CENC keeps sizes and every sample
 //! decrypts on its own, which is what makes any order work.
+//!
+//! Seeking still makes the demuxer read every byte up to the target, audio
+//! included, because Apple's fragments are too small for it to skip them. A
+//! [`seek hint`](AudioStream::seek_hint) names the target first: decryption jumps
+//! there, and everything before the target's fragment (less a margin) is served
+//! as it is, encrypted or not, since the decoder never sees it.
 
 use std::io::{self, Read, Seek, SeekFrom};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
+use std::time::Duration;
 
 use crate::cenc::EncryptedSample;
 
@@ -28,6 +35,8 @@ struct Shared {
     state: Mutex<State>,
     changed: Condvar,
     samples: Vec<EncryptedSample>,
+    /// How long each sample plays: they all hold the same number of frames.
+    sample_duration: Duration,
 }
 
 struct State {
@@ -38,15 +47,22 @@ struct State {
     failed: Option<String>,
     /// Set when the reader is dropped, so the thread stops early.
     abandoned: bool,
+    /// Samples ending before this offset may be read undecrypted: a seek is
+    /// walking past them.
+    skippable_before: usize,
 }
+
+/// How far before a seek target bytes still have to be decrypted, to cover the
+/// difference between the estimated and the actual landing point.
+const SEEK_MARGIN: Duration = Duration::from_secs(2);
 
 impl AudioStream {
     /// A track with nothing to decrypt: the user's own upload.
     pub(crate) fn plain(data: Vec<u8>) -> Self {
-        Self::new(data, Vec::new())
+        Self::new(data, Vec::new(), Duration::ZERO)
     }
 
-    fn new(data: Vec<u8>, samples: Vec<EncryptedSample>) -> Self {
+    fn new(data: Vec<u8>, samples: Vec<EncryptedSample>, sample_duration: Duration) -> Self {
         let len = data.len() as u64;
         let shared = Arc::new(Shared {
             state: Mutex::new(State {
@@ -55,9 +71,11 @@ impl AudioStream {
                 wanted: None,
                 failed: None,
                 abandoned: false,
+                skippable_before: 0,
             }),
             changed: Condvar::new(),
             samples,
+            sample_duration,
         });
         Self {
             shared,
@@ -67,9 +85,14 @@ impl AudioStream {
     }
 
     /// Start decrypting `data` in the background. Its init segment must already
-    /// be patched; only `samples` are encrypted.
-    pub(crate) fn decrypting(data: Vec<u8>, samples: Vec<EncryptedSample>, decrypt: Decrypt) -> Self {
-        let stream = Self::new(data, samples);
+    /// be patched; only `samples` are encrypted, each `sample_duration` long.
+    pub(crate) fn decrypting(
+        data: Vec<u8>,
+        samples: Vec<EncryptedSample>,
+        sample_duration: Duration,
+        decrypt: Decrypt,
+    ) -> Self {
+        let stream = Self::new(data, samples, sample_duration);
         let worker = stream.shared.clone();
         std::thread::Builder::new()
             .name("am-decrypt".into())
@@ -84,6 +107,12 @@ impl AudioStream {
 
     pub fn is_empty(&self) -> bool {
         self.len == 0
+    }
+
+    /// Call with the target time before seeking the demuxer reading this stream.
+    pub fn seek_hint(&self) -> impl FnMut(Duration) + Send + 'static {
+        let shared = self.shared.clone();
+        move |to| shared.prepare_seek(to)
     }
 }
 
@@ -140,12 +169,28 @@ impl Shared {
         }
     }
 
-    /// The first sample overlapping `start..end` that isn't decrypted yet.
+    fn prepare_seek(&self, to: Duration) {
+        if self.samples.is_empty() || self.sample_duration.is_zero() {
+            return;
+        }
+        let safe_from = to.saturating_sub(SEEK_MARGIN);
+        let index = ((safe_from.as_secs_f64() / self.sample_duration.as_secs_f64()) as usize)
+            .min(self.samples.len() - 1);
+        let mut state = self.lock();
+        // The demuxer resumes at a fragment start; nothing before this one is decoded.
+        state.skippable_before = self.samples[index].fragment;
+        state.wanted = Some(index);
+        drop(state);
+        self.changed.notify_all();
+    }
+
+    /// The first sample overlapping `start..end` that has to be decrypted before
+    /// it is read and isn't yet.
     fn pending_in(&self, state: &State, start: usize, end: usize) -> Option<usize> {
         let first = self.samples.partition_point(|s| s.end() <= start);
         (first..self.samples.len())
             .take_while(|&i| self.samples[i].start < end)
-            .find(|&i| !state.decrypted[i])
+            .find(|&i| !state.decrypted[i] && self.samples[i].end() > state.skippable_before)
     }
 }
 
@@ -214,6 +259,7 @@ mod tests {
         let mut data = clear.clone();
         let samples: Vec<EncryptedSample> = (0..3)
             .map(|i| EncryptedSample {
+                fragment: 100 + i * 50,
                 start: 100 + i * 50,
                 len: 50,
                 iv: [0; 16],
@@ -233,7 +279,7 @@ mod tests {
     #[test]
     fn reading_everything_yields_the_cleartext() {
         let (clear, data, samples) = track();
-        let mut stream = AudioStream::decrypting(data, samples, xor());
+        let mut stream = AudioStream::decrypting(data, samples, Duration::from_secs(1), xor());
         let mut out = Vec::new();
         stream.read_to_end(&mut out).unwrap();
         assert_eq!(out, clear);
@@ -247,7 +293,7 @@ mod tests {
             std::thread::park();
             Err("parked".into())
         });
-        let mut stream = AudioStream::decrypting(data, samples, never);
+        let mut stream = AudioStream::decrypting(data, samples, Duration::from_secs(1), never);
         let mut buf = [0u8; 200];
         assert_eq!(stream.read(&mut buf).unwrap(), 100);
         assert_eq!(&buf[..100], &clear[..100]);
@@ -256,7 +302,7 @@ mod tests {
     #[test]
     fn seeking_into_a_sample_waits_for_it() {
         let (clear, data, samples) = track();
-        let mut stream = AudioStream::decrypting(data, samples, xor());
+        let mut stream = AudioStream::decrypting(data, samples, Duration::from_secs(1), xor());
         stream.seek(SeekFrom::Start(210)).unwrap();
         let mut buf = [0u8; 100];
         let n = stream.read(&mut buf).unwrap();
@@ -267,8 +313,23 @@ mod tests {
     fn a_failed_decrypt_is_a_read_error() {
         let (_, data, samples) = track();
         let failing: Decrypt = Box::new(|_, _| Err("no key".into()));
-        let mut stream = AudioStream::decrypting(data, samples, failing);
+        let mut stream = AudioStream::decrypting(data, samples, Duration::from_secs(1), failing);
         stream.seek(SeekFrom::Start(120)).unwrap();
         assert!(stream.read(&mut [0u8; 10]).is_err());
+    }
+
+    #[test]
+    fn a_seek_hint_lets_the_walk_read_past_samples_before_the_target() {
+        let (_, data, samples) = track();
+        let never: Decrypt = Box::new(|_, _| {
+            std::thread::park();
+            Err("parked".into())
+        });
+        let mut stream = AudioStream::decrypting(data.clone(), samples, Duration::from_secs(1), never);
+        // Sample 2 starts 2 s in; with the margin, everything before it is skippable.
+        stream.seek_hint()(Duration::from_secs(4));
+        let mut buf = [0u8; 250];
+        assert_eq!(stream.read(&mut buf).unwrap(), 200, "stops at sample 2, which must decrypt");
+        assert_eq!(&buf[..200], &data[..200], "earlier samples come through as they are");
     }
 }

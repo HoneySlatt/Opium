@@ -11,7 +11,7 @@ use rtrb::{Producer, RingBuffer};
 
 use crate::decoder::Decoder;
 use crate::output::{Output, OutputState};
-use crate::{Event, OutputInfo, OutputMode, Source, Status, Token};
+use crate::{Event, OutputInfo, Source, Status, Token};
 
 pub(crate) enum Command {
     Play(Token, Source),
@@ -21,7 +21,6 @@ pub(crate) enum Command {
     Seek(Duration),
     Stop,
     Volume(f32),
-    Output(OutputMode),
     Quit,
 }
 
@@ -52,10 +51,19 @@ impl Sink {
     fn played(&self) -> u64 {
         self.state.played.load(Ordering::Relaxed)
     }
+
+    /// The output as it is now, with the rate the graph actually runs at.
+    fn live_info(&self) -> OutputInfo {
+        let mut info = self.info.clone();
+        let graph_rate = self.state.graph_rate.load(Ordering::Relaxed);
+        if graph_rate > 0 {
+            info.sample_rate = graph_rate;
+        }
+        info
+    }
 }
 
 pub(crate) struct Engine {
-    mode: OutputMode,
     volume: f32,
     paused: bool,
     sink: Option<Sink>,
@@ -79,9 +87,8 @@ const RING_SECONDS: usize = 2;
 const IDLE: Duration = Duration::from_millis(10);
 
 impl Engine {
-    pub fn new(mode: OutputMode, status: Arc<Mutex<Status>>, events: Sender<Event>) -> Self {
+    pub fn new(status: Arc<Mutex<Status>>, events: Sender<Event>) -> Self {
         Self {
-            mode,
             volume: 1.0,
             paused: false,
             sink: None,
@@ -152,14 +159,6 @@ impl Engine {
                     sink.state.volume.store(volume.to_bits(), Ordering::Relaxed);
                 }
             }
-            Command::Output(mode) => {
-                self.mode = mode;
-                let position = self.position();
-                self.park_queued();
-                if let Some(segment) = self.segments.pop_front() {
-                    self.start(segment.item, position);
-                }
-            }
             Command::Quit => {}
         }
     }
@@ -179,7 +178,6 @@ impl Engine {
 
     /// Open an output for `item`'s format and play it from `at`.
     fn start(&mut self, mut item: Item, at: Duration) {
-        // An exclusive device must be released before it can be opened again.
         self.sink = None;
         self.segments.clear();
         self.pending.clear();
@@ -201,14 +199,7 @@ impl Engine {
         let state = Arc::new(OutputState::new(self.volume));
         state.paused.store(self.paused, Ordering::Relaxed);
 
-        match Output::open(
-            &self.mode,
-            format.sample_rate,
-            channels,
-            format.bits_per_sample,
-            consumer,
-            state.clone(),
-        ) {
+        match Output::open(format.sample_rate, channels, consumer, state.clone()) {
             Ok((output, info)) => {
                 self.emit(Event::Started {
                     token: item.token,
@@ -245,7 +236,7 @@ impl Engine {
     }
 
     /// Take every track after the playing one back out of the ring's future, so
-    /// the playing one can be restarted or moved. The first goes back to `next`.
+    /// the playing one can be moved. The first goes back to `next`.
     fn park_queued(&mut self) {
         let queued = self.segments.drain(1..).map(|s| s.item);
         let parked: Vec<Item> = queued.chain(self.switch.take()).collect();
@@ -338,7 +329,7 @@ impl Engine {
             self.start(item, Duration::ZERO);
         } else if self.next.is_none() {
             self.segments.clear();
-            // Release the device; an exclusive one is unusable by others meanwhile.
+            // Close the stream, so it stops holding the graph at its rate.
             self.sink = None;
             self.emit(Event::Finished);
         }
@@ -399,7 +390,7 @@ impl Engine {
                 position: self.position(),
                 paused: self.paused,
                 source: Some(front.item.decoder.info.clone()),
-                output: self.sink.as_ref().map(|s| s.info.clone()),
+                output: self.sink.as_ref().map(Sink::live_info),
             },
             None => Status {
                 paused: self.paused,

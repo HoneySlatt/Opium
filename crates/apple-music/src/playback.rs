@@ -20,6 +20,8 @@ const LICENSE: &str =
     "https://play.itunes.apple.com/WebObjects/MZPlay.woa/wa/acquireWebPlaybackLicense";
 /// The one catalog flavour Widevine can open; the `cbcp` ones use FairPlay.
 const CTR_FLAVOR: &str = "28:ctrp256";
+/// Each sample of that flavour is one AAC-LC frame: 1024 frames at 44.1 kHz.
+const AAC_FRAME: std::time::Duration = std::time::Duration::from_nanos(1024 * 1_000_000_000 / 44_100);
 
 fn playback_error(msg: impl Into<String>) -> Error {
     Error::Playback(msg.into())
@@ -144,7 +146,7 @@ impl AppleMusic {
                 .decrypt(ciphertext, &key_id, &sample.iv, &subsamples)
                 .map_err(|e| e.to_string())
         });
-        Ok(AudioStream::decrypting(data, layout.samples, decrypt))
+        Ok(AudioStream::decrypting(data, layout.samples, AAC_FRAME, decrypt))
     }
 
     async fn web_playback(&self, adam_id: &str) -> Result<serde_json::Value> {

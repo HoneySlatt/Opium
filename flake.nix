@@ -22,7 +22,8 @@
               clippy
               rustfmt
               pkg-config
-              alsa-lib
+              pipewire
+              rustPlatform.bindgenHook
             ];
           };
         }

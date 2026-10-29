@@ -1,15 +1,14 @@
 //! Decoding and audio output.
 //!
 //! A [`Player`] owns an engine thread that decodes ahead into a ring of 32-bit
-//! integer frames, and an output that plays from it: shared (PipeWire, with
-//! software volume) or exclusive (an ALSA `hw:` device at the source's own rate,
-//! untouched). A track set with [`Player::set_next`] follows the current one
+//! integer frames, and a PipeWire stream that plays from it while other programs
+//! keep playing. The stream pulls the graph to the source's rate, so the music is
+//! not resampled. A track set with [`Player::set_next`] follows the current one
 //! without a gap when both have the same rate and channel count.
 
 mod decoder;
 mod engine;
 mod output;
-mod reserve;
 
 use std::io::{Read, Seek};
 use std::sync::mpsc::{Receiver, Sender};
@@ -38,7 +37,11 @@ pub type Token = u64;
 pub struct Source {
     reader: Box<dyn MediaSource>,
     extension: Option<String>,
+    seek_hint: Option<SeekHint>,
 }
+
+/// Told the target time just before the demuxer seeks.
+pub(crate) type SeekHint = Box<dyn FnMut(Duration) + Send>;
 
 impl Source {
     /// `extension` is a format hint (`"m4a"`, `"flac"`…).
@@ -49,7 +52,15 @@ impl Source {
         Self {
             reader: Box::new(Bytes { inner: reader, len }),
             extension: extension.map(str::to_owned),
+            seek_hint: None,
         }
+    }
+
+    /// Have `hint` told where a seek is headed before it happens, for sources
+    /// that can prepare (decrypt ahead, fetch a range…).
+    pub fn with_seek_hint(mut self, hint: impl FnMut(Duration) + Send + 'static) -> Self {
+        self.seek_hint = Some(Box::new(hint));
+        self
     }
 }
 
@@ -80,14 +91,6 @@ impl<R: Read + Seek + Send + Sync> MediaSource for Bytes<R> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum OutputMode {
-    /// The default device, through the sound server.
-    Shared,
-    /// An ALSA device (`hw:CARD=USB,DEV=0`…) opened directly and exclusively.
-    Exclusive { device: String },
-}
-
 /// The source as decoded.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SourceFormat {
@@ -103,12 +106,11 @@ pub struct SourceFormat {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutputInfo {
     pub device: String,
+    /// The rate the PipeWire graph runs at, as of the last [`Player::status`].
+    /// When it differs from the source's, the music is being resampled.
     pub sample_rate: u32,
     pub channels: u16,
     pub sample_format: &'static str,
-    /// The decoder's samples reach the device unchanged: exclusive access, the
-    /// source's rate and channels, no volume, a container wide enough.
-    pub bit_perfect: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -145,11 +147,11 @@ pub struct Player {
 }
 
 impl Player {
-    pub fn new(mode: OutputMode) -> Self {
+    pub fn new() -> Self {
         let (commands, command_rx) = std::sync::mpsc::channel();
         let (event_tx, events) = std::sync::mpsc::channel();
         let status = Arc::new(Mutex::new(Status::default()));
-        let engine = Engine::new(mode, status.clone(), event_tx);
+        let engine = Engine::new(status.clone(), event_tx);
         let thread = std::thread::Builder::new()
             .name("player".into())
             .spawn(move || engine.run(command_rx))
@@ -193,14 +195,9 @@ impl Player {
         self.send(Command::Stop);
     }
 
-    /// Shared output only: exclusive output is never scaled.
+    /// Below 1.0 the samples are scaled; at 1.0 they pass untouched.
     pub fn set_volume(&self, volume: f32) {
         self.send(Command::Volume(volume.clamp(0.0, 1.0)));
-    }
-
-    /// Switch outputs, carrying on from the same position.
-    pub fn set_output(&self, mode: OutputMode) {
-        self.send(Command::Output(mode));
     }
 
     pub fn status(&self) -> Status {
@@ -212,6 +209,12 @@ impl Player {
 
     pub fn events(&self) -> &Receiver<Event> {
         &self.events
+    }
+}
+
+impl Default for Player {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

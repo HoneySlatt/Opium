@@ -307,6 +307,8 @@ fn try_parse_senc(
 /// sample be decrypted in isolation, in place, in any order.
 #[derive(Debug, Clone)]
 pub struct EncryptedSample {
+    /// Where the `moof` of this sample's fragment begins.
+    pub fragment: usize,
     pub start: usize,
     pub len: usize,
     pub iv: [u8; 16],
@@ -447,6 +449,7 @@ pub fn index_fmp4(data: &[u8]) -> Result<Fmp4Layout, String> {
                     break;
                 }
                 layout.samples.push(EncryptedSample {
+                    fragment: moof_pos,
                     start: mdat_body_start + offset,
                     len: sz,
                     iv,
