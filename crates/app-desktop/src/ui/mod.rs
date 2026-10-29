@@ -2,6 +2,7 @@
 
 mod detail;
 mod drawer;
+mod now_playing;
 mod player_bar;
 mod sidebar;
 mod signal;
@@ -28,6 +29,15 @@ pub const NARROW: f32 = 1100.0;
 pub const TOP_BAR: f32 = 52.0;
 
 pub fn show(app: &mut App, ui: &mut Ui) {
+    if app.now_playing {
+        egui::CentralPanel::no_frame().show(ui, |ui| {
+            let full = ui.max_rect();
+            now_playing::show(app, ui);
+            signal::show(app, ui, full);
+        });
+        shortcuts(app, ui);
+        return;
+    }
     let narrow = ui.available_width() < NARROW;
     let collapsed = app.sidebar_collapsed || narrow;
     let theme = app.theme.clone();
@@ -203,7 +213,7 @@ fn top_bar(app: &mut App, ui: &mut Ui, main: Rect, scrolled: f32) {
             .layout(egui::Layout::left_to_right(egui::Align::Center)),
     );
     right.spacing_mut().item_spacing.x = 4.0;
-    icon_button(
+    if icon_button(
         &mut right,
         &theme,
         icons::LYRICS,
@@ -212,7 +222,12 @@ fn top_bar(app: &mut App, ui: &mut Ui, main: Rect, scrolled: f32) {
         theme.subtext0,
         true,
     )
-    .on_hover_text("Lyrics — comes in a later step");
+    .on_hover_text("Lyrics")
+    .clicked()
+    {
+        app.np_tab = crate::app::NpTab::Lyrics;
+        app.now_playing = true;
+    }
     let queue_color = if app.drawer_open {
         theme.accent
     } else {
@@ -302,10 +317,12 @@ fn shortcuts(app: &mut App, ui: &mut Ui) {
     if !typing && ui.input(|i| i.key_pressed(egui::Key::Space)) {
         app.toggle_play();
     }
-    // Escape closes the popover first, then the drawer.
+    // Escape closes the popover first, then Now Playing, then the drawer.
     if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
         if app.signal_open.is_some() {
             app.signal_open = None;
+        } else if app.now_playing {
+            app.now_playing = false;
         } else {
             app.drawer_open = false;
         }
@@ -500,6 +517,21 @@ pub struct Blob {
 /// `fade_to_base`, a vertical gradient then dissolves them into `base`: clear to
 /// 18 %, `base` at 55 % opacity by 55 %, solid at the bottom.
 pub fn wash(ui: &Ui, rect: Rect, base: Color32, blobs: &[Blob], fade_to_base: bool) {
+    let veil = |f: Vec2| {
+        if !fade_to_base || f.y < 0.18 {
+            0.0
+        } else if f.y < 0.55 {
+            0.55 * (f.y - 0.18) / (0.55 - 0.18)
+        } else {
+            0.55 + 0.45 * (f.y - 0.55) / 0.45
+        }
+    };
+    wash_with(ui, rect, base, blobs, veil);
+}
+
+/// Blobs over `base`, then `base` again at the opacity `veil` gives for each
+/// point (as fractions of the rect).
+pub fn wash_with(ui: &Ui, rect: Rect, base: Color32, blobs: &[Blob], veil: impl Fn(Vec2) -> f32) {
     let (cols, rows) = (24, 16);
     let mut mesh = Mesh::default();
     for row in 0..=rows {
@@ -511,14 +543,8 @@ pub fn wash(ui: &Ui, rect: Rect, base: Color32, blobs: &[Blob], fade_to_base: bo
                 let t = (1.0 - d / blob.fade).clamp(0.0, 1.0);
                 color = over(alpha(blob.color, blob.alpha * t), color);
             }
-            if fade_to_base {
-                let a = if f.y < 0.18 {
-                    0.0
-                } else if f.y < 0.55 {
-                    0.55 * (f.y - 0.18) / (0.55 - 0.18)
-                } else {
-                    0.55 + 0.45 * (f.y - 0.55) / 0.45
-                };
+            let a = veil(f);
+            if a > 0.0 {
                 color = over(alpha(base, a), color);
             }
             mesh.colored_vertex(rect.min + f * rect.size(), color);

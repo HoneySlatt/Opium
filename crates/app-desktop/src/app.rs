@@ -44,6 +44,14 @@ pub enum DrawerTab {
     History,
 }
 
+/// Now Playing's tabs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum NpTab {
+    #[default]
+    PlayingNext,
+    Lyrics,
+}
+
 /// What the signal path popover hangs from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SignalAnchor {
@@ -133,6 +141,8 @@ pub struct App {
     pub detail_selected: Option<usize>,
     pub drawer_open: bool,
     pub signal_open: Option<SignalAnchor>,
+    pub now_playing: bool,
+    pub np_tab: NpTab,
     pub drawer_tab: DrawerTab,
     /// Tracks that were playing before, most recent last.
     pub history: Vec<Track>,
@@ -207,6 +217,8 @@ impl App {
             drawer_open: std::env::var_os("MUSIC_SCREENSHOT_DRAWER").is_some(),
             signal_open: std::env::var_os("MUSIC_SCREENSHOT_SIGNAL")
                 .map(|_| SignalAnchor::PlayerBar),
+            now_playing: std::env::var_os("MUSIC_SCREENSHOT_NP").is_some(),
+            np_tab: NpTab::default(),
             screenshot: crate::screenshot::Screenshot::from_env(),
             settings,
             theme_changed,

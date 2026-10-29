@@ -200,8 +200,12 @@ fn right_side(app: &mut App, ui: &mut Ui, theme: &Theme, inner: Rect) -> f32 {
     {
         app.drawer_open = !app.drawer_open;
     }
-    icon_button(&mut row, theme, icons::EXPAND, 30.0, 15.0, dim, true)
-        .on_hover_text("Now Playing — comes in a later step");
+    if icon_button(&mut row, theme, icons::EXPAND, 30.0, 15.0, dim, true)
+        .on_hover_text("Now Playing")
+        .clicked()
+    {
+        app.now_playing = true;
+    }
     area.left()
 }
 
@@ -249,6 +253,19 @@ fn now_playing(app: &mut App, ui: &mut Ui, theme: &Theme, lcd: Rect) {
         vec2(30.0, 30.0),
     );
     artwork(ui, thumb_url(&track), art, 3.0, theme);
+    // The artwork opens Now Playing, with an expand icon on hover.
+    let open = ui.interact(art, Id::unique("player-art"), Sense::click());
+    if open.hovered() {
+        ui.painter()
+            .rect_filled(art, 3.0, Color32::from_black_alpha(115));
+        super::paint_icon(ui, icons::EXPAND, art.center(), 14.0, Color32::WHITE);
+    }
+    if open
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .clicked()
+    {
+        app.now_playing = true;
+    }
 
     // The quality chip, right-aligned.
     let chip_right = lcd.right() - 4.0;

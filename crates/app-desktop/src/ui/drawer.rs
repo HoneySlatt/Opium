@@ -68,7 +68,11 @@ pub fn show(app: &mut App, ui: &mut Ui, main: Rect) {
 
     // Header: the tabs and a close button.
     let tabs_at = pos2(rect.left() + 16.0, rect.top() + 12.0);
-    if let Some(tab) = tabs(ui, &theme, tabs_at, app.drawer_tab) {
+    let labels = [
+        (DrawerTab::PlayingNext, "Playing Next"),
+        (DrawerTab::History, "History"),
+    ];
+    if let Some(tab) = tabs(ui, &theme, tabs_at, &labels, app.drawer_tab) {
         app.drawer_tab = tab;
     }
     let close = Rect::from_min_size(
@@ -97,18 +101,32 @@ pub fn show(app: &mut App, ui: &mut Ui, main: Rect) {
     );
     let mut body_ui = ui.new_child(egui::UiBuilder::new().max_rect(body));
     body_ui.set_clip_rect(body.intersect(ui.clip_rect()));
-    let action = egui::ScrollArea::vertical()
-        .id_salt("drawer-body")
-        .auto_shrink(false)
-        .show(&mut body_ui, |ui| {
-            ui.spacing_mut().item_spacing.y = 0.0;
-            match app.drawer_tab {
-                DrawerTab::PlayingNext => playing_next(app, ui, &theme),
-                DrawerTab::History => {
+    match app.drawer_tab {
+        DrawerTab::PlayingNext => queue(app, &mut body_ui, &theme, "drawer-body"),
+        DrawerTab::History => {
+            egui::ScrollArea::vertical()
+                .id_salt("drawer-history")
+                .auto_shrink(false)
+                .show(&mut body_ui, |ui| {
+                    ui.spacing_mut().item_spacing.y = 0.0;
                     history(app, ui, &theme);
-                    Action::None
-                }
-            }
+                });
+        }
+    }
+    if open < 1.0 {
+        ui.ctx().request_repaint();
+    }
+}
+
+/// The current track, what plays next and the gapless note, scrolling in `ui`,
+/// with its buttons acting on the queue. Shared with Now Playing.
+pub(super) fn queue(app: &mut App, ui: &mut Ui, theme: &Theme, salt: &str) {
+    let action = egui::ScrollArea::vertical()
+        .id_salt(salt)
+        .auto_shrink(false)
+        .show(ui, |ui| {
+            ui.spacing_mut().item_spacing.y = 0.0;
+            playing_next(app, ui, theme)
         })
         .inner;
     match action {
@@ -119,18 +137,17 @@ pub fn show(app: &mut App, ui: &mut Ui, main: Rect) {
         Action::Shuffle => app.toggle_shuffle(),
         Action::Repeat => app.cycle_repeat(),
     }
-    if open < 1.0 {
-        ui.ctx().request_repaint();
-    }
 }
 
-/// The two-tab segmented control. Returns the tab clicked.
-fn tabs(ui: &mut Ui, theme: &Theme, at: egui::Pos2, current: DrawerTab) -> Option<DrawerTab> {
+/// A segmented control. Returns the tab clicked.
+pub(super) fn tabs<T: Copy + PartialEq>(
+    ui: &mut Ui,
+    theme: &Theme,
+    at: egui::Pos2,
+    labels: &[(T, &str)],
+    current: T,
+) -> Option<T> {
     let f = font(13.0, Weight::Medium);
-    let labels = [
-        (DrawerTab::PlayingNext, "Playing Next"),
-        (DrawerTab::History, "History"),
-    ];
     let widths: Vec<f32> = labels
         .iter()
         .map(|(_, l)| text(ui, l, f.clone(), theme.text, 200.0).size().x + 24.0)
@@ -139,10 +156,10 @@ fn tabs(ui: &mut Ui, theme: &Theme, at: egui::Pos2, current: DrawerTab) -> Optio
     ui.painter().rect_filled(outer, 9.0, theme.text_a(0.07));
     let mut x = outer.left() + 3.0;
     let mut clicked = None;
-    for ((tab, label), w) in labels.into_iter().zip(widths) {
+    for (&(tab, label), w) in labels.iter().zip(widths) {
         let rect = Rect::from_min_size(pos2(x, outer.top() + 3.0), vec2(w, 26.0));
         x += w;
-        let response = ui.interact(rect, Id::unique(("drawer-tab", label)), Sense::click());
+        let response = ui.interact(rect, Id::unique(("tab", label)), Sense::click());
         let on = tab == current;
         if on {
             ui.painter().rect_filled(rect, 7.0, theme.surface2);
