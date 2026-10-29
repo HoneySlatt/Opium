@@ -1,7 +1,7 @@
 //! The drawer: 360 px on the right between the top bar and the player bar,
 //! with Playing Next, History and Lyrics tabs.
 
-use egui::{Color32, Id, LayerId, Order, Rect, Sense, Stroke, Ui, pos2, vec2};
+use egui::{Color32, Id, Order, Rect, Sense, Stroke, Ui, pos2, vec2};
 use music_core::Repeat;
 use music_core::model::{ProviderKind, Track};
 
@@ -41,12 +41,21 @@ pub fn show(app: &mut App, ui: &mut Ui, main: Rect) {
     )
     .translate(vec2((1.0 - eased) * (WIDTH + 24.0), 0.0));
 
-    let mut layer = ui.new_child(
-        egui::UiBuilder::new()
-            .max_rect(rect)
-            .layer_id(LayerId::new(Order::Foreground, Id::unique("drawer"))),
-    );
-    let ui = &mut layer;
+    // An Area, not just a layer: egui then knows the pointer is over the
+    // drawer, so the wheel scrolls its lists and not the page under it.
+    egui::Area::new(Id::unique("drawer"))
+        .order(Order::Foreground)
+        .fixed_pos(rect.min)
+        .constrain(false)
+        .show(ui.ctx(), |ui| {
+            ui.set_min_size(rect.size());
+            ui.set_max_size(rect.size());
+            contents(app, ui, &theme, rect, open);
+        });
+}
+
+fn contents(app: &mut App, ui: &mut Ui, theme: &Theme, rect: Rect, open: f32) {
+    let theme = theme.clone();
     ui.painter().add(
         egui::Shadow {
             offset: [0, 18],
