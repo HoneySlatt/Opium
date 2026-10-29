@@ -5,18 +5,16 @@
 //! ([`signin`]). Request shapes follow Kopuz (<https://github.com/Kopuz-org/kopuz>).
 
 pub mod auth;
-mod cenc;
 mod convert;
 mod lyrics;
 mod motion;
 mod playback;
 mod radio;
 pub mod signin;
-mod stream;
 mod types;
 
+pub use cenc::AudioStream;
 pub use radio::LiveStream;
-pub use stream::AudioStream;
 
 use async_trait::async_trait;
 use music_core::model::{

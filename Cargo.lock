@@ -241,6 +241,7 @@ dependencies = [
  "async-trait",
  "base64 0.23.1",
  "browser-signin",
+ "cenc",
  "futures-util",
  "m3u8-rs",
  "music-core",
@@ -732,6 +733,10 @@ dependencies = [
  "libc",
  "shlex 2.0.1",
 ]
+
+[[package]]
+name = "cenc"
+version = "0.1.0"
 
 [[package]]
 name = "cexpr"

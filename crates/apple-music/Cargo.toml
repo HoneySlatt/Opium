@@ -7,6 +7,7 @@ license.workspace = true
 [dependencies]
 async-trait = "0.1.92"
 browser-signin = { path = "../browser-signin" }
+cenc = { path = "../cenc" }
 base64 = "0.23.1"
 futures-util = "0.3.34"
 m3u8-rs = "6.0.1"

@@ -12,8 +12,8 @@ use music_core::model::ItemId;
 use music_core::{Error, Result};
 use widevine::{Cdm, Session};
 
-use crate::stream::AudioStream;
-use crate::{AppleMusic, cenc};
+use crate::AppleMusic;
+use cenc::AudioStream;
 
 const WEB_PLAYBACK: &str = "https://play.music.apple.com/WebObjects/MZPlay.woa/wa/webPlayback";
 const LICENSE: &str =

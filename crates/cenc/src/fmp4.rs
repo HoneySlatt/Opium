@@ -1,4 +1,5 @@
-//! Locating and decrypting the CENC samples of an Apple Music fMP4.
+//! Locating and decrypting the CENC samples of a fragmented MP4, as Apple Music
+//! and SoundCloud serve them.
 //!
 //! Adapted from Kopuz (<https://github.com/Kopuz-org/kopuz>, revision a58c385,
 //! `daemon/server/src/applemusic/cenc.rs`), Copyright (c) 2026 Temidaradev and the

@@ -13,7 +13,7 @@
 //! decrypts on its own, which is what makes any order work.
 //!
 //! Seeking still makes the demuxer read every byte up to the target, audio
-//! included, because Apple's fragments are too small for it to skip them. A
+//! included, because the fragments are too small for it to skip them. A
 //! [`seek hint`](AudioStream::seek_hint) names the target first: decryption jumps
 //! there, and everything before the target's fragment (less a margin) is served
 //! as it is, encrypted or not, since the decoder never sees it.
@@ -22,10 +22,10 @@ use std::io::{self, Read, Seek, SeekFrom};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::Duration;
 
-use crate::cenc::EncryptedSample;
+use crate::fmp4::EncryptedSample;
 
 /// Turns one sample's ciphertext into cleartext of the same length.
-pub(crate) type Decrypt = Box<dyn FnMut(&[u8], &EncryptedSample) -> Result<Vec<u8>, String> + Send>;
+pub type Decrypt = Box<dyn FnMut(&[u8], &EncryptedSample) -> Result<Vec<u8>, String> + Send>;
 
 pub struct AudioStream {
     shared: Arc<Shared>,
@@ -69,7 +69,7 @@ const NAP: Duration = Duration::from_millis(250);
 
 impl AudioStream {
     /// A track with nothing to decrypt: the user's own upload.
-    pub(crate) fn plain(data: Vec<u8>) -> Self {
+    pub fn plain(data: Vec<u8>) -> Self {
         Self::new(data, Vec::new(), Duration::ZERO)
     }
 
@@ -110,7 +110,7 @@ impl AudioStream {
 
     /// Start decrypting `data` in the background. Its init segment must already
     /// be patched; only `samples` are encrypted, each `sample_duration` long.
-    pub(crate) fn decrypting(
+    pub fn decrypting(
         data: Vec<u8>,
         samples: Vec<EncryptedSample>,
         sample_duration: Duration,
@@ -119,7 +119,7 @@ impl AudioStream {
         let stream = Self::new(data, samples, sample_duration);
         let worker = stream.shared.clone();
         std::thread::Builder::new()
-            .name("am-decrypt".into())
+            .name("decrypt".into())
             .spawn(move || worker.decrypt_all(decrypt))
             .expect("spawn the decrypt thread");
         stream

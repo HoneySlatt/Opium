@@ -16,7 +16,7 @@ use music_core::model::ItemId;
 use music_core::{Error, Result};
 use widevine::{Cdm, Session};
 
-use crate::{AppleMusic, cenc};
+use crate::AppleMusic;
 
 /// The Widevine system id, as HLS names its key format.
 const WIDEVINE: &str = "urn:uuid:edef8ba9-79d6-4ace-a3c8-27dcd51d21ed";
