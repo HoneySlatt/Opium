@@ -228,29 +228,36 @@ const MORE_BY_CARD: f32 = 190.0;
 const SEARCH_ROW: f32 = 46.0;
 
 pub fn album(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
+    // Whole from its copies on every service the library has it on.
+    let whole = app.album_tracks(id);
     let (header, tracks, loading, error) = match app.albums.get(id) {
-        Some(Loaded::Ready((album, tracks))) => (
-            Some(Header {
-                add: app
-                    .can_add_album(&album.id)
-                    .then(|| Collection::Album(album.clone())),
-                motion: album.motion.clone(),
-                ..album_header(
-                    album,
-                    tracks,
-                    app.is_favourite(FavouriteKind::Album, &App::album_favourite_id(album)),
-                )
-            }),
-            tracks.clone(),
-            false,
-            None,
-        ),
+        Some(Loaded::Ready((album, _))) => {
+            let tracks = whole.clone().unwrap_or_default();
+            (
+                Some(Header {
+                    add: app
+                        .can_add_album(&album.id)
+                        .then(|| Collection::Album(album.clone())),
+                    motion: album.motion.clone(),
+                    ..album_header(
+                        album,
+                        &tracks,
+                        app.is_favourite(FavouriteKind::Album, &App::album_favourite_id(album)),
+                    )
+                }),
+                tracks,
+                false,
+                None,
+            )
+        }
         Some(Loaded::Failed(e)) => (None, Arc::default(), false, Some(e.clone())),
         _ => (None, Arc::default(), true, None),
     };
     // A compilation names each track's artist; an album by one artist need not.
-    let with_artist = match app.albums.get(id) {
-        Some(Loaded::Ready((album, tracks))) => tracks.iter().any(|t| t.artists != album.artists),
+    let with_artist = match (app.albums.get(id), &whole) {
+        (Some(Loaded::Ready((album, _))), Some(tracks)) => {
+            tracks.iter().any(|t| t.artists != album.artists)
+        }
         _ => false,
     };
     let listing = Listing {
@@ -269,10 +276,11 @@ pub fn album(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
 /// The foot of an album's page, once the album has come: its details, then
 /// the artist's other releases once their page has.
 fn album_foot(app: &mut App, id: &ItemId) -> Option<AlbumFoot> {
-    let Some(Loaded::Ready((album, tracks))) = app.albums.get(id) else {
+    let Some(Loaded::Ready((album, _))) = app.albums.get(id) else {
         return None;
     };
-    let (album, tracks) = (album.clone(), tracks.clone());
+    let album = album.clone();
+    let tracks = app.album_tracks(id).unwrap_or_default();
     let mut lines = Vec::new();
     if let Some(date) = album.released.as_deref().and_then(long_date) {
         lines.push(date);

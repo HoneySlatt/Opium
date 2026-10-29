@@ -116,6 +116,41 @@ pub fn albums(albums: &[Album]) -> HashSet<usize> {
     )
 }
 
+/// What copies of an album share.
+pub fn album_key(album: &Album) -> (String, String) {
+    (title_key(&album.title), artist_key(&album.artists))
+}
+
+/// Whether two tracks are one song.
+fn same_song(a: &Track, b: &Track) -> bool {
+    title_key(&a.title) == title_key(&b.title)
+        && artist_key(&a.artists) == artist_key(&b.artists)
+        && match (a.duration, b.duration) {
+            (Some(x), Some(y)) => x.abs_diff(y) <= SAME_LENGTH,
+            _ => true,
+        }
+}
+
+/// An album whole from its copies on several services: each song from the
+/// best copy that has it, the others filling in what it lacks, in disc and
+/// track order where the copies number them.
+pub fn album_tracks(copies: &[&[Track]]) -> Vec<Track> {
+    let mut copies: Vec<&[Track]> = copies.to_vec();
+    copies.sort_by_key(|c| c.first().map_or(u8::MAX, |t| rank(t.id.provider)));
+    let mut out: Vec<Track> = Vec::new();
+    for copy in copies {
+        for track in copy {
+            if !out.iter().any(|t| same_song(t, track)) {
+                out.push(track.clone());
+            }
+        }
+    }
+    if out.iter().all(|t| t.track_number.is_some()) {
+        out.sort_by_key(|t| (t.disc_number.unwrap_or(1), t.track_number));
+    }
+    out
+}
+
 /// The artists to leave out of `artists`.
 pub fn artists(artists: &[Artist]) -> HashSet<usize> {
     worse_copies(
@@ -166,6 +201,36 @@ mod tests {
         ];
         let out = songs(&list);
         assert_eq!(out, HashSet::from([0, 2]));
+    }
+
+    #[test]
+    fn an_album_is_whole_from_its_copies_the_best_one_first() {
+        let numbered = |mut t: Track, n| {
+            t.track_number = Some(n);
+            t
+        };
+        let server = vec![
+            numbered(track(ProviderKind::Navidrome, "One", "Artist", 100), 1),
+            numbered(track(ProviderKind::Navidrome, "Three", "Artist", 120), 3),
+        ];
+        let apple = vec![
+            numbered(track(ProviderKind::AppleMusic, "One", "Artist", 101), 1),
+            numbered(track(ProviderKind::AppleMusic, "Two", "Artist", 90), 2),
+            numbered(track(ProviderKind::AppleMusic, "Three", "Artist", 120), 3),
+        ];
+        let whole = album_tracks(&[&apple, &server]);
+        let got: Vec<(&str, ProviderKind)> = whole
+            .iter()
+            .map(|t| (t.title.as_str(), t.id.provider))
+            .collect();
+        assert_eq!(
+            got,
+            [
+                ("One", ProviderKind::Navidrome),
+                ("Two", ProviderKind::AppleMusic),
+                ("Three", ProviderKind::Navidrome),
+            ]
+        );
     }
 
     #[test]

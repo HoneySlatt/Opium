@@ -417,6 +417,9 @@ pub struct App {
     /// The source filter on the cover grids.
     pub grid_source: Option<ProviderKind>,
     pub albums: HashMap<ItemId, Loaded<AlbumPage>>,
+    /// Albums made whole from their copies on other services, and how many
+    /// copies they were made from.
+    whole_albums: HashMap<ItemId, (usize, Arc<Vec<Track>>)>,
     pub artists: HashMap<ItemId, Loaded<Arc<ArtistDetail>>>,
     /// Catalog albums' other editions and music videos.
     album_extras: HashMap<ItemId, Loaded<Arc<music_core::model::AlbumExtras>>>,
@@ -561,6 +564,7 @@ impl App {
             home: None,
             grid_source: None,
             albums: HashMap::new(),
+            whole_albums: HashMap::new(),
             artists: HashMap::new(),
             album_extras: HashMap::new(),
             playlist_tracks: HashMap::new(),
@@ -1466,6 +1470,54 @@ impl App {
         twins
     }
 
+    /// The album's copies on the library's other services, by their title
+    /// and artist.
+    pub fn album_twins(&self, id: &ItemId) -> Vec<ItemId> {
+        let Some(Loaded::Ready((album, _))) = self.albums.get(id) else {
+            return Vec::new();
+        };
+        let key = crate::dedupe::album_key(album);
+        self.library_albums
+            .items
+            .iter()
+            .filter(|a| a.id.provider != id.provider && crate::dedupe::album_key(a) == key)
+            .map(|a| a.id.clone())
+            .collect()
+    }
+
+    /// The album's tracks, whole from its copies on every service the
+    /// library has it on, asked for the first time; its own until they come.
+    pub fn album_tracks(&mut self, id: &ItemId) -> Option<Arc<Vec<Track>>> {
+        let own = match self.albums.get(id) {
+            Some(Loaded::Ready((_, tracks))) => tracks.clone(),
+            _ => return None,
+        };
+        let mut copies = vec![own.clone()];
+        for twin in self.album_twins(id) {
+            match self.albums.get(&twin) {
+                Some(Loaded::Ready((_, tracks))) => copies.push(tracks.clone()),
+                Some(_) => {}
+                None => {
+                    self.albums.insert(twin.clone(), Loaded::Loading);
+                    self.backend.send(Request::Album(twin));
+                }
+            }
+        }
+        if copies.len() == 1 {
+            return Some(own);
+        }
+        if let Some((made_of, whole)) = self.whole_albums.get(id)
+            && *made_of == copies.len()
+        {
+            return Some(whole.clone());
+        }
+        let slices: Vec<&[Track]> = copies.iter().map(|c| c.as_slice()).collect();
+        let whole = Arc::new(crate::dedupe::album_tracks(&slices));
+        self.whole_albums
+            .insert(id.clone(), (copies.len(), whole.clone()));
+        Some(whole)
+    }
+
     /// The copies the Albums (`0`), Artists (`1`) or Recently Added (`2`)
     /// page leaves out: found again when its list changes.
     pub fn copies(&mut self, list: usize) -> Arc<std::collections::HashSet<usize>> {
@@ -2086,7 +2138,7 @@ impl App {
 
     /// Queue an album, fetching its tracks first if need be.
     pub fn enqueue_album(&mut self, id: ItemId, how: Enqueue, now: f64) {
-        if let Some(Loaded::Ready((_, tracks))) = self.albums.get(&id) {
+        if let Some(tracks) = self.album_tracks(&id) {
             let tracks = tracks.to_vec();
             self.enqueue_from(tracks, how, now, Page::Album(id));
             return;
