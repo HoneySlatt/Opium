@@ -38,6 +38,8 @@ pub const NARROW: f32 = 1100.0;
 pub const TOP_BAR: f32 = 52.0;
 
 pub fn show(app: &mut App, ui: &mut Ui) {
+    // Before the pages, so that their arrow keys don't see these too.
+    player_shortcuts(app, ui);
     if app.now_playing {
         egui::CentralPanel::no_frame().show(ui, |ui| {
             let full = ui.max_rect();
@@ -365,6 +367,91 @@ fn shortcuts(app: &mut App, ui: &mut Ui) {
         }
     }
 }
+
+/// The player's keys, as Apple Music's: Ctrl with the arrows for the next
+/// or previous song and the volume, Shift with them to move in the song.
+fn player_shortcuts(app: &mut App, ui: &mut Ui) {
+    if ui.ctx().egui_wants_keyboard_input() {
+        return;
+    }
+    use egui::{Key, Modifiers};
+    let ctrl = Modifiers::COMMAND;
+    let shift = Modifiers::SHIFT;
+    let [
+        next,
+        previous,
+        louder,
+        quieter,
+        mute,
+        shuffle,
+        repeat,
+        lyrics,
+        current,
+        ahead,
+        back,
+    ] = ui.input_mut(|i| {
+        [
+            (ctrl, Key::ArrowRight),
+            (ctrl, Key::ArrowLeft),
+            (ctrl, Key::ArrowUp),
+            (ctrl, Key::ArrowDown),
+            (ctrl, Key::M),
+            (ctrl, Key::S),
+            (ctrl, Key::R),
+            (ctrl, Key::L),
+            (ctrl, Key::J),
+            (shift, Key::ArrowRight),
+            (shift, Key::ArrowLeft),
+        ]
+        .map(|(modifiers, key)| i.consume_key(modifiers, key))
+    });
+    if next {
+        app.next();
+    }
+    if previous {
+        app.previous();
+    }
+    if louder || quieter {
+        let step = if louder { VOLUME_STEP } else { -VOLUME_STEP };
+        let from = if app.muted { 0.0 } else { app.volume };
+        app.set_volume(from + step);
+    }
+    if mute {
+        app.toggle_mute();
+    }
+    if shuffle {
+        app.toggle_shuffle();
+    }
+    if repeat {
+        app.cycle_repeat();
+    }
+    if lyrics {
+        app.toggle_drawer(true);
+    }
+    if current && let Some(album) = app.now.as_ref().and_then(|t| t.album_id.clone()) {
+        app.now_playing = false;
+        app.go(Page::Album(album));
+    }
+    // A live stream has no length, and doesn't move.
+    if (ahead || back)
+        && let Some(length) = app.duration()
+    {
+        let at = app.status.position;
+        let to = if ahead {
+            at + SEEK_STEP
+        } else {
+            at.saturating_sub(SEEK_STEP)
+        };
+        if to < length {
+            app.seek(to);
+        } else {
+            app.next();
+        }
+    }
+}
+
+const VOLUME_STEP: f32 = 0.05;
+const SEEK_STEP: std::time::Duration = std::time::Duration::from_secs(10);
 
 /// What a page's search did this frame.
 pub(super) struct PageSearch {
