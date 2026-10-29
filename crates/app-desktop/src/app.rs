@@ -248,6 +248,8 @@ pub struct App {
     /// What is known to be a favourite or not: set by the user here, or read
     /// from the service. It wins over `favourite_songs`.
     favourites_known: HashMap<ItemId, bool>,
+    /// The new music page's shelves, once asked for.
+    pub new_music: Option<Loaded<Arc<Vec<Shelf>>>>,
     /// The radio page's shelves, once asked for.
     pub radio: Option<Loaded<Arc<Vec<Shelf>>>>,
     /// The station of songs playing, which the queue keeps topping up.
@@ -343,6 +345,7 @@ impl App {
             library_songs: Default::default(),
             playlist_dialog: None,
             favourites_known: HashMap::new(),
+            new_music: None,
             radio: None,
             station: None,
             station_loading: false,
@@ -412,6 +415,7 @@ impl App {
             }
             Page::Home if self.home.is_none() => self.refresh_home(),
             Page::Radio if self.radio.is_none() => self.refresh_radio(),
+            Page::New if self.new_music.is_none() => self.refresh_new_music(),
             Page::Albums if self.library_albums.first_ask() => {
                 self.backend.send(Request::LibraryAlbums);
             }
@@ -508,6 +512,12 @@ impl App {
         self.settings.save();
         // The next frame applies it.
         self.zoom = None;
+    }
+
+    /// Ask for the new music page again.
+    pub fn refresh_new_music(&mut self) {
+        self.new_music = Some(Loaded::Loading);
+        self.backend.send(Request::NewMusic);
     }
 
     /// Ask for the radio page again.
@@ -1222,6 +1232,12 @@ impl App {
                 Reply::LibraryAlbums { albums, done } => self.library_albums.extend(albums, done),
                 Reply::LibraryArtists { artists, done } => {
                     self.library_artists.extend(artists, done)
+                }
+                Reply::NewMusic(result) => {
+                    self.new_music = Some(match result {
+                        Ok(shelves) => Loaded::Ready(Arc::new(shelves)),
+                        Err(e) => Loaded::Failed(e),
+                    });
                 }
                 Reply::Radio(result) => {
                     self.radio = Some(match result {

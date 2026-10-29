@@ -11,7 +11,10 @@ use crate::fonts::{Weight, font};
 use crate::icons;
 use crate::theme::Theme;
 
-use super::grid::{CARD_TEXT, CardClick, SHELF_HEAD, ShelfCard, cover_shelf, shelf_scroll};
+use super::grid::{
+    CARD_TEXT, CardClick, SHELF_HEAD, SONG_COLUMNS_HEIGHT, ShelfCard, cover_shelf, shelf_scroll,
+    song_columns,
+};
 use super::search::{message, section_head};
 use super::{artwork, glow, icon_button, paint_text, text};
 
@@ -26,16 +29,25 @@ const HERO_GAP: f32 = 20.0;
 
 /// The stations on air, on Radio.
 const LIVE: f32 = 230.0;
+/// The editors' picks on New: their badge, name and line above a large cover.
+const PICK: f32 = 300.0;
+const PICK_WORDS: f32 = 64.0;
+const PICK_GAP: f32 = 20.0;
 
 /// Which page of shelves.
 #[derive(Clone, Copy, PartialEq)]
 enum Which {
     Home,
+    New,
     Radio,
 }
 
 pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
     page(app, ui, pad, Which::Home)
+}
+
+pub fn new_music(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
+    page(app, ui, pad, Which::New)
 }
 
 pub fn radio(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
@@ -46,10 +58,12 @@ fn page(app: &mut App, ui: &mut Ui, pad: f32, which: Which) -> f32 {
     let theme = app.theme.clone();
     let loaded = match which {
         Which::Home => &app.home,
+        Which::New => &app.new_music,
         Which::Radio => &app.radio,
     };
     let (title, salt) = match which {
         Which::Home => ("Home", "home"),
+        Which::New => ("New", "new"),
         Which::Radio => ("Radio", "radio"),
     };
     let shelves = match loaded {
@@ -61,7 +75,9 @@ fn page(app: &mut App, ui: &mut Ui, pad: f32, which: Which) -> f32 {
     let height = |shelf: &Shelf| {
         SHELF_HEAD
             + match (shelf.hero, which) {
+                _ if !shelf.songs.is_empty() => SONG_COLUMNS_HEIGHT,
                 (true, Which::Home) => HERO + HERO_FOOT,
+                (true, Which::New) => PICK_WORDS + PICK,
                 (true, Which::Radio) => LIVE + CARD_TEXT,
                 (false, _) => COVER + CARD_TEXT,
             }
@@ -149,10 +165,21 @@ fn page(app: &mut App, ui: &mut Ui, pad: f32, which: Which) -> f32 {
                 let visible = (y - content.top())..(y - content.top() + h);
                 if visible.end > viewport.top() && visible.start < viewport.bottom() {
                     let at = pos2(left, y);
-                    let id = Id::unique(("home-shelf", n));
+                    let id = Id::unique(("shelf", salt, n));
                     let cards = || -> Vec<ShelfCard> { shelf.items.iter().map(card).collect() };
                     let clicked = match (shelf.hero, which) {
+                        _ if !shelf.songs.is_empty() => {
+                            section_head(ui, &theme, at.x, at.y, &shelf.title);
+                            let row = Rect::from_min_size(
+                                pos2(at.x, at.y + SHELF_HEAD),
+                                vec2(width, SONG_COLUMNS_HEIGHT),
+                            );
+                            let arrows = pos2(at.x + width, at.y + 11.0);
+                            song_columns(app, ui, &theme, row, arrows, &shelf.songs, id, false);
+                            None
+                        }
                         (true, Which::Home) => hero_shelf(ui, &theme, at, width, shelf, id),
+                        (true, Which::New) => picks_shelf(ui, &theme, at, width, shelf, id),
                         (true, Which::Radio) => {
                             cover_shelf(ui, &theme, at, width, &shelf.title, &cards(), LIVE, id)
                         }
@@ -170,6 +197,7 @@ fn page(app: &mut App, ui: &mut Ui, pad: f32, which: Which) -> f32 {
     if refresh {
         match which {
             Which::Home => app.refresh_home(),
+            Which::New => app.refresh_new_music(),
             Which::Radio => app.refresh_radio(),
         }
     }
@@ -300,6 +328,90 @@ fn hero_shelf(
                 egui::Align::Min,
                 soft,
             );
+        }
+        if let Some(how) = super::menu::collection_menu(&response, theme) {
+            clicked = Some((i, CardClick::Enqueue(how)));
+        } else if response
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .clicked()
+        {
+            clicked = Some((i, CardClick::Open));
+        }
+    }
+    clicked
+}
+
+/// The editors' picks, as Apple's New page lays them out: what it is (`NEW
+/// ALBUM`), its name and who made it, above a large cover; sideways.
+fn picks_shelf(
+    ui: &mut Ui,
+    theme: &Theme,
+    at: egui::Pos2,
+    width: f32,
+    shelf: &Shelf,
+    id: Id,
+) -> Option<(usize, CardClick)> {
+    let row = Rect::from_min_size(
+        pos2(at.x, at.y + SHELF_HEAD),
+        vec2(width, PICK_WORDS + PICK),
+    );
+    let stride = PICK + PICK_GAP;
+    let content = shelf.items.len() as f32 * stride - PICK_GAP;
+    let page = ((width + PICK_GAP) / stride).floor().max(1.0) * stride;
+    // No title: the arrows alone on its line.
+    let offset = shelf_scroll(
+        ui,
+        theme,
+        id,
+        pos2(at.x + width, at.y + 11.0),
+        row,
+        content,
+        page,
+    );
+    let mut row_ui = ui.new_child(egui::UiBuilder::new().max_rect(row));
+    row_ui.set_clip_rect(row.intersect(ui.clip_rect()));
+    let mut clicked = None;
+    for (i, item) in shelf.items.iter().enumerate() {
+        let x = row.left() + i as f32 * stride - offset;
+        if x + PICK < row.left() || x > row.right() {
+            continue;
+        }
+        let frame = Rect::from_min_size(pos2(x, row.top()), vec2(PICK, PICK_WORDS + PICK));
+        let words = card(item);
+        let badge = shelf.badges.get(i).cloned().unwrap_or_default();
+        let muted = theme.muted();
+        let g = text(&row_ui, &badge, font(11.0, Weight::SemiBold), muted, PICK);
+        paint_text(&row_ui, g, x, frame.top() + 8.0, egui::Align::Min, muted);
+        let g = text(
+            &row_ui,
+            &words.title,
+            font(15.0, Weight::Medium),
+            theme.text,
+            PICK,
+        );
+        paint_text(
+            &row_ui,
+            g,
+            x,
+            frame.top() + 28.0,
+            egui::Align::Min,
+            theme.text,
+        );
+        let g = text(
+            &row_ui,
+            &words.sub,
+            font(12.5, Weight::Regular),
+            muted,
+            PICK,
+        );
+        paint_text(&row_ui, g, x, frame.top() + 47.0, egui::Align::Min, muted);
+        let art = Rect::from_min_size(pos2(x, frame.top() + PICK_WORDS), vec2(PICK, PICK));
+        let response = row_ui.interact(frame, id.with(i), Sense::click());
+        artwork(&row_ui, words.url.clone(), art, 10.0, theme);
+        if response.hovered() {
+            row_ui
+                .painter()
+                .rect_filled(art, 10.0, Color32::from_black_alpha(40));
         }
         if let Some(how) = super::menu::collection_menu(&response, theme) {
             clicked = Some((i, CardClick::Enqueue(how)));

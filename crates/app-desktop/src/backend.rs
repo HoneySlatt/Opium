@@ -28,6 +28,8 @@ pub enum Request {
     Home,
     /// The radio page's shelves.
     Radio,
+    /// The new music page's shelves.
+    NewMusic,
     /// The next songs of a station of songs.
     StationTracks(ItemId),
     /// Sign in to Apple Music in the browser, then connect with the new token.
@@ -115,6 +117,7 @@ pub enum Reply {
         result: Result<Vec<Track>, String>,
     },
     Radio(Result<Vec<Shelf>, String>),
+    NewMusic(Result<Vec<Shelf>, String>),
     Album {
         id: ItemId,
         result: Result<(Album, Vec<Track>), String>,
@@ -408,6 +411,13 @@ async fn run(
                         set: None,
                         result,
                     });
+                });
+            }
+            Request::NewMusic => {
+                tokio::spawn(async move {
+                    replies.send(Reply::NewMusic(
+                        am.new_music().await.map_err(|e| e.to_string()),
+                    ));
                 });
             }
             Request::Radio => {

@@ -262,6 +262,7 @@ pub fn shelf(recommendation: types::Recommendation) -> Option<Shelf> {
             .display
             .is_some_and(|d| d.kind == "MusicNotesHeroShelf"),
         items,
+        ..Shelf::default()
     })
 }
 

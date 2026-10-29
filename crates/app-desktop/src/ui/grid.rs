@@ -2,15 +2,26 @@
 //! cover card and grid layout the artist page and search share.
 
 use egui::{Id, Rect, Sense, Stroke, Ui, pos2, vec2};
-use music_core::model::{Collection, ItemId, Playlist, ProviderKind, Station};
+use music_core::model::{
+    Collection, FavouriteKind, ItemId, Playlist, ProviderKind, Station, Track,
+};
 
 use crate::app::{App, Enqueue, Page};
 use crate::fonts::{Weight, font};
 use crate::icons;
 use crate::theme::Theme;
 
+use super::menu::{TrackFacts, track_menu};
 use super::songs::source_chips;
-use super::{artwork, glow, icon_button, paint_icon, paint_text, text};
+use super::{artwork, explicit_badge, glow, icon_button, paint_icon, paint_text, text, thumb_url};
+
+/// Songs in columns: three rows to a column, as in Cider.
+const SONG_ROWS: usize = 3;
+const SONG_ROW: f32 = 56.0;
+const SONG_COLUMN: f32 = 300.0;
+const SONG_GAP: f32 = 24.0;
+/// How tall a block of song columns is.
+pub(super) const SONG_COLUMNS_HEIGHT: f32 = SONG_ROWS as f32 * SONG_ROW;
 
 /// Grid covers are at least this wide, 26 apart, rows 40 apart, as in Cider.
 const CARD_MIN: f32 = 190.0;
@@ -501,5 +512,144 @@ fn card(app: &App, kind: Kind, i: usize) -> (String, String, Option<String>, Ope
                 Open::Station(s.clone()),
             ),
         },
+    }
+}
+
+/// Songs in columns of three that scroll sideways, as Apple lists an artist's
+/// top songs and the songs of the moment: a click plays from that song, a
+/// right click opens its menu. Under each title, its album (`show_album`) or
+/// its artists.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn song_columns(
+    app: &mut App,
+    ui: &mut Ui,
+    theme: &Theme,
+    row: Rect,
+    arrows: egui::Pos2,
+    songs: &[Track],
+    id: Id,
+    show_album: bool,
+) {
+    let room = row.width();
+    let columns = songs.len().div_ceil(SONG_ROWS);
+    let stride = SONG_COLUMN + SONG_GAP;
+    let page = ((room + SONG_GAP) / stride).floor().max(1.0) * stride;
+    let offset = shelf_scroll(
+        ui,
+        theme,
+        id,
+        arrows,
+        row,
+        columns as f32 * stride - SONG_GAP,
+        page,
+    );
+
+    let mut row_ui = ui.new_child(egui::UiBuilder::new().max_rect(row));
+    row_ui.set_clip_rect(row.intersect(ui.clip_rect()));
+    let mut play = None;
+    let mut chosen = None;
+    for (i, track) in songs.iter().enumerate() {
+        let (column, line) = (i / SONG_ROWS, i % SONG_ROWS);
+        let cell = Rect::from_min_size(
+            pos2(
+                row.left() + column as f32 * stride - offset,
+                row.top() + line as f32 * SONG_ROW,
+            ),
+            vec2(SONG_COLUMN, SONG_ROW),
+        );
+        if cell.right() < row.left() || cell.left() > row.right() {
+            continue;
+        }
+        let response = row_ui.interact(cell, id.with(i), Sense::click());
+        if response.hovered() {
+            row_ui.painter().rect_filled(cell, 8.0, theme.hover());
+        }
+        let now = app.is_current(track);
+        let thumb = Rect::from_min_size(
+            pos2(cell.left() + 6.0, cell.center().y - 20.0),
+            vec2(40.0, 40.0),
+        );
+        artwork(&row_ui, thumb_url(track), thumb, 4.0, theme);
+        if response.hovered() {
+            row_ui
+                .painter()
+                .rect_filled(thumb, 4.0, egui::Color32::from_black_alpha(90));
+            paint_icon(
+                &row_ui,
+                icons::PLAY_FILL,
+                thumb.center(),
+                14.0,
+                egui::Color32::WHITE,
+            );
+        }
+        let tx = thumb.right() + 12.0;
+        let room = cell.right() - 8.0 - tx;
+        let color = if now { theme.accent } else { theme.text };
+        let title_room = room - if track.explicit { 18.0 } else { 0.0 };
+        let g = text(
+            &row_ui,
+            &track.title,
+            font(13.0, Weight::Medium),
+            color,
+            title_room,
+        );
+        let title_end = tx + g.size().x;
+        paint_text(
+            &row_ui,
+            g,
+            tx,
+            cell.center().y - 9.0,
+            egui::Align::Min,
+            color,
+        );
+        if track.explicit {
+            explicit_badge(
+                &row_ui,
+                theme,
+                pos2(title_end + 12.0, cell.center().y - 9.0),
+            );
+        }
+        let muted = theme.muted();
+        let sub = match &track.album {
+            Some(album) if show_album => album.clone(),
+            _ => track.artists.join(", "),
+        };
+        let g = text(&row_ui, &sub, font(12.0, Weight::Regular), muted, room);
+        paint_text(
+            &row_ui,
+            g,
+            tx,
+            cell.center().y + 9.0,
+            egui::Align::Min,
+            muted,
+        );
+        let favourite = app.is_favourite(FavouriteKind::Song, &track.id);
+        if favourite {
+            let end = title_end + if track.explicit { 18.0 } else { 0.0 };
+            super::tracks::favourite_star(&row_ui, theme, pos2(end + 12.0, cell.center().y - 9.0));
+        }
+        if let Some(choice) = track_menu(
+            &response,
+            theme,
+            TrackFacts {
+                has_album: track.album_id.is_some(),
+                favourite,
+                in_library: app.track_in_library(track),
+            },
+        ) {
+            chosen = Some((i, choice));
+        } else if response
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .clicked()
+        {
+            play = Some(i);
+        }
+    }
+    if let Some(i) = play {
+        app.play_list(songs.to_vec(), i);
+    }
+    if let Some((i, choice)) = chosen {
+        let track = songs[i].clone();
+        app.track_choice(track, choice, ui.input(|i| i.time));
     }
 }

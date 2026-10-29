@@ -30,27 +30,36 @@ const WEB_PLAYER: &str = "https://music.apple.com";
 const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
 /// The largest page the library and catalog endpoints accept.
 const PAGE: u32 = 100;
-/// The radio grouping's subscriber tab as shelves: the row of stations on air
-/// (element kind 316) first, then every titled shelf (kind 326) holding
-/// anything the app can play or open.
-fn radio_shelves(page: &serde_json::Value) -> Vec<Shelf> {
-    let contents = |element: &serde_json::Value| -> Vec<Collection> {
+/// An editorial grouping's first tab (the subscriber's) as shelves: the big
+/// row first (element kind 316: the stations on air, the week's picks, each
+/// with its badge), then every titled shelf of covers (326) or of songs (327)
+/// holding anything the app can play or open. Items that only link to
+/// another page are left out.
+fn editorial_shelves(page: &serde_json::Value) -> Vec<Shelf> {
+    let items = |element: &serde_json::Value| -> Vec<serde_json::Value> {
         element["relationships"]["contents"]["data"]
             .as_array()
-            .map(|items| {
-                items
-                    .iter()
-                    .filter_map(|item| serde_json::from_value(item.clone()).ok())
-                    .filter_map(convert::collection)
-                    .collect()
-            })
+            .cloned()
             .unwrap_or_default()
+    };
+    let contents = |element: &serde_json::Value| -> Vec<Collection> {
+        items(element)
+            .into_iter()
+            .filter_map(|item| serde_json::from_value(item).ok())
+            .filter_map(convert::collection)
+            .collect()
     };
     let children = |element: &serde_json::Value| -> Vec<serde_json::Value> {
         element["relationships"]["children"]["data"]
             .as_array()
             .cloned()
             .unwrap_or_default()
+    };
+    let name = |element: &serde_json::Value| -> String {
+        element["attributes"]["name"]
+            .as_str()
+            .unwrap_or("")
+            .to_owned()
     };
     let tabs = page["data"][0]["relationships"]["tabs"]["data"]
         .as_array()
@@ -66,26 +75,46 @@ fn radio_shelves(page: &serde_json::Value) -> Vec<Shelf> {
             .unwrap_or("");
         match kind {
             "316" => {
-                let items: Vec<Collection> = children(&element).iter().flat_map(contents).collect();
-                if !items.is_empty() {
-                    shelves.push(Shelf {
-                        title: String::new(),
-                        hero: true,
-                        items,
-                    });
+                let mut shelf = Shelf {
+                    hero: true,
+                    ..Shelf::default()
+                };
+                for child in children(&element) {
+                    let badge = child["attributes"]["designBadge"]
+                        .as_str()
+                        .unwrap_or("")
+                        .to_owned();
+                    if let Some(item) = contents(&child).into_iter().next() {
+                        shelf.items.push(item);
+                        shelf.badges.push(badge);
+                    }
+                }
+                if !shelf.items.is_empty() {
+                    shelves.push(shelf);
                 }
             }
             "326" => {
-                let items = contents(&element);
-                let title = element["attributes"]["name"]
-                    .as_str()
-                    .unwrap_or("")
-                    .to_owned();
+                let (title, items) = (name(&element), contents(&element));
                 if !items.is_empty() && !title.is_empty() {
                     shelves.push(Shelf {
                         title,
-                        hero: false,
                         items,
+                        ..Shelf::default()
+                    });
+                }
+            }
+            "327" => {
+                let songs: Vec<Track> = items(&element)
+                    .into_iter()
+                    .filter_map(|item| serde_json::from_value::<types::Song>(item).ok())
+                    .map(convert::track)
+                    .collect();
+                let title = name(&element);
+                if !songs.is_empty() && !title.is_empty() {
+                    shelves.push(Shelf {
+                        title,
+                        songs,
+                        ..Shelf::default()
                     });
                 }
             }
@@ -531,7 +560,20 @@ impl Provider for AppleMusic {
         let Some(page) = self.fetch::<serde_json::Value>(&path).await? else {
             return Ok(Vec::new());
         };
-        Ok(radio_shelves(&page))
+        Ok(editorial_shelves(&page))
+    }
+
+    /// Apple's new music page: the week's picks, the songs of the moment,
+    /// new albums and updated playlists, as the web player shows them.
+    async fn new_music(&self) -> Result<Vec<Shelf>> {
+        let path = format!(
+            "/v1/editorial/{}/groupings?platform=web&name=music&l={NOTES_LANGUAGE}",
+            self.storefront
+        );
+        let Some(page) = self.fetch::<serde_json::Value>(&path).await? else {
+            return Ok(Vec::new());
+        };
+        Ok(editorial_shelves(&page))
     }
 
     /// A station's next songs, about `count` of them. Apple hands out two a

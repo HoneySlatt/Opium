@@ -78,6 +78,11 @@ pub trait Provider: Send + Sync {
         Ok(Vec::new())
     }
 
+    /// New music, shelf by shelf, as the service's editors show it.
+    async fn new_music(&self) -> Result<Vec<Shelf>> {
+        Ok(Vec::new())
+    }
+
     /// The next songs of a station that plays songs, about `count` of them.
     async fn station_tracks(&self, _station: &ItemId, _count: usize) -> Result<Vec<Track>> {
         Ok(Vec::new())

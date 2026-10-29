@@ -193,13 +193,19 @@ pub struct Playlist {
     pub editable: bool,
 }
 
-/// A row of the home page.
-#[derive(Debug, Clone, PartialEq)]
+/// A row of the home, radio or new music page.
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct Shelf {
     pub title: String,
-    /// Shown large: the playlists made for the user.
+    /// Shown large: the playlists made for the user, the stations on air,
+    /// the week's picks.
     pub hero: bool,
     pub items: Vec<Collection>,
+    /// What the editors call each item (`NEW ALBUM`), for a hero shelf; empty
+    /// or as long as `items`.
+    pub badges: Vec<String>,
+    /// A shelf of songs instead of covers.
+    pub songs: Vec<Track>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]

@@ -8,6 +8,7 @@
 //!   cargo run -p apple-music --example am -- play 1463409605 1463409610
 //!   cargo run -p apple-music --example am -- lyrics 1463409605
 //!   cargo run -p apple-music --example am -- radio
+//!   cargo run -p apple-music --example am -- new
 //!   cargo run -p apple-music --example am -- add-library song 1247608150
 //!   cargo run -p apple-music --example am -- station ra.u-…
 //!   cargo run -p apple-music --example am -- live ra.978194965 out.aac [seconds]
@@ -66,6 +67,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .await
         }
         Some("radio") => radio(&connect().await?).await,
+        Some("new") => new_music(&connect().await?).await,
         Some("station") if args.len() == 2 => station(&connect().await?, &args[1]).await,
         Some("add-library") if args.len() == 3 => {
             add_library(&connect().await?, &args[1], &args[2]).await
@@ -73,7 +75,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some("lyrics") if args.len() == 2 => lyrics(&connect().await?, &args[1]).await,
         _ => {
             eprintln!(
-                "usage: am signin | library | search <term> | search-library <term> | fetch <id> <out> | play <id>… | lyrics <id> | radio | station <id> | add-library <kind> <id> | live <station> <out.aac> [seconds]"
+                "usage: am signin | library | search <term> | search-library <term> | fetch <id> <out> | play <id>… | lyrics <id> | radio | new | station <id> | add-library <kind> <id> | live <station> <out.aac> [seconds]"
             );
             Ok(())
         }
@@ -259,6 +261,22 @@ async fn add_library(
     let id = music_core::model::ItemId::new(music_core::model::ProviderKind::AppleMusic, id);
     am.add_to_library(kind, &id).await?;
     println!("added");
+    Ok(())
+}
+
+async fn new_music(am: &AppleMusic) -> Result<(), Box<dyn std::error::Error>> {
+    for shelf in am.new_music().await? {
+        println!(
+            "{} ({} items, {} songs{})",
+            shelf.title,
+            shelf.items.len(),
+            shelf.songs.len(),
+            if shelf.hero { ", hero" } else { "" }
+        );
+        for badge in shelf.badges.iter().take(3) {
+            println!("  [{badge}]");
+        }
+    }
     Ok(())
 }
 

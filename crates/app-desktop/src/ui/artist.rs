@@ -11,21 +11,17 @@ use crate::icons;
 use crate::theme::Theme;
 
 use super::detail::cover_wash;
-use super::grid::{CARD_TEXT, CardClick, SHELF_HEAD, ShelfCard, cover_shelf, shelf_scroll};
-use super::menu::{TrackFacts, track_menu};
+use super::grid::{
+    CARD_TEXT, CardClick, SHELF_HEAD, SONG_COLUMNS_HEIGHT, ShelfCard, cover_shelf, song_columns,
+};
 use super::search::{message, section_head};
-use super::{artwork, explicit_badge, format_date, paint_icon, paint_text, text, thumb_url};
+use super::{artwork, format_date, paint_icon, paint_text, text};
 
 const PHOTO_TOP: f32 = 56.0;
 const PHOTO: f32 = 220.0;
 /// From the top of the page to the first section.
 const HERO: f32 = PHOTO_TOP + PHOTO + 20.0 + 58.0 + 16.0 + 56.0 + 40.0;
 const SECTION_GAP: f32 = 36.0;
-/// Top songs: three rows to a column, as in Cider.
-const SONG_ROWS: usize = 3;
-const SONG_ROW: f32 = 56.0;
-const SONG_COLUMN: f32 = 300.0;
-const SONG_GAP: f32 = 24.0;
 /// The latest release beside them: its cover and the words next to it.
 const LATEST_ART: f32 = 150.0;
 const LATEST_WIDTH: f32 = LATEST_ART + 16.0 + 140.0;
@@ -54,7 +50,7 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
     let shelf_height = SHELF_HEAD + SHELF_CARD + CARD_TEXT + SECTION_GAP;
     let mut total = HERO;
     if top_songs {
-        total += SHELF_HEAD + SONG_ROWS as f32 * SONG_ROW + SECTION_GAP;
+        total += SHELF_HEAD + SONG_COLUMNS_HEIGHT + SECTION_GAP;
     }
     total += shelves.iter().filter(|(_, a)| !a.is_empty()).count() as f32 * shelf_height;
     total += 104.0;
@@ -129,7 +125,7 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
 
             if top_songs {
                 songs_section(app, ui, &theme, artist, pos2(left, y), width);
-                y += SHELF_HEAD + SONG_ROWS as f32 * SONG_ROW + SECTION_GAP;
+                y += SHELF_HEAD + SONG_COLUMNS_HEIGHT + SECTION_GAP;
             }
             for (title, albums) in &shelves {
                 if albums.is_empty() {
@@ -269,10 +265,7 @@ fn songs_section(
     let rows_top = at.y + SHELF_HEAD;
     if let Some(latest) = &artist.latest {
         let art = Rect::from_min_size(
-            pos2(
-                x,
-                rows_top + (SONG_ROWS as f32 * SONG_ROW - LATEST_ART) / 2.0,
-            ),
+            pos2(x, rows_top + (SONG_COLUMNS_HEIGHT - LATEST_ART) / 2.0),
             vec2(LATEST_ART, LATEST_ART),
         );
         let response = ui.interact(art, Id::unique("artist-latest"), Sense::click());
@@ -328,127 +321,16 @@ fn songs_section(
 
     let room = at.x + width - x;
     section_head(ui, theme, x, at.y, "Top Songs");
-    let row = Rect::from_min_size(pos2(x, rows_top), vec2(room, SONG_ROWS as f32 * SONG_ROW));
-    let columns = artist.top_songs.len().div_ceil(SONG_ROWS);
-    let stride = SONG_COLUMN + SONG_GAP;
-    let page = ((room + SONG_GAP) / stride).floor().max(1.0) * stride;
+    let row = Rect::from_min_size(pos2(x, rows_top), vec2(room, SONG_COLUMNS_HEIGHT));
     let id = Id::unique(("artist-songs", &artist.artist.id.id));
-    let offset = shelf_scroll(
+    song_columns(
+        app,
         ui,
         theme,
-        id,
-        pos2(at.x + width, at.y + 11.0),
         row,
-        columns as f32 * stride - SONG_GAP,
-        page,
+        pos2(at.x + width, at.y + 11.0),
+        &artist.top_songs,
+        id,
+        true,
     );
-
-    let mut row_ui = ui.new_child(egui::UiBuilder::new().max_rect(row));
-    row_ui.set_clip_rect(row.intersect(ui.clip_rect()));
-    let mut play = None;
-    let mut chosen = None;
-    for (i, track) in artist.top_songs.iter().enumerate() {
-        let (column, line) = (i / SONG_ROWS, i % SONG_ROWS);
-        let cell = Rect::from_min_size(
-            pos2(
-                row.left() + column as f32 * stride - offset,
-                row.top() + line as f32 * SONG_ROW,
-            ),
-            vec2(SONG_COLUMN, SONG_ROW),
-        );
-        if cell.right() < row.left() || cell.left() > row.right() {
-            continue;
-        }
-        let response = row_ui.interact(cell, id.with(i), Sense::click());
-        if response.hovered() {
-            row_ui.painter().rect_filled(cell, 8.0, theme.hover());
-        }
-        let now = app.is_current(track);
-        let thumb = Rect::from_min_size(
-            pos2(cell.left() + 6.0, cell.center().y - 20.0),
-            vec2(40.0, 40.0),
-        );
-        artwork(&row_ui, thumb_url(track), thumb, 4.0, theme);
-        if response.hovered() {
-            row_ui
-                .painter()
-                .rect_filled(thumb, 4.0, egui::Color32::from_black_alpha(90));
-            paint_icon(
-                &row_ui,
-                icons::PLAY_FILL,
-                thumb.center(),
-                14.0,
-                egui::Color32::WHITE,
-            );
-        }
-        let tx = thumb.right() + 12.0;
-        let room = cell.right() - 8.0 - tx;
-        let color = if now { theme.accent } else { theme.text };
-        let title_room = room - if track.explicit { 18.0 } else { 0.0 };
-        let g = text(
-            &row_ui,
-            &track.title,
-            font(13.0, Weight::Medium),
-            color,
-            title_room,
-        );
-        let title_end = tx + g.size().x;
-        paint_text(
-            &row_ui,
-            g,
-            tx,
-            cell.center().y - 9.0,
-            egui::Align::Min,
-            color,
-        );
-        if track.explicit {
-            explicit_badge(
-                &row_ui,
-                theme,
-                pos2(title_end + 12.0, cell.center().y - 9.0),
-            );
-        }
-        let muted = theme.muted();
-        let sub = track
-            .album
-            .clone()
-            .unwrap_or_else(|| track.artists.join(", "));
-        let g = text(&row_ui, &sub, font(12.0, Weight::Regular), muted, room);
-        paint_text(
-            &row_ui,
-            g,
-            tx,
-            cell.center().y + 9.0,
-            egui::Align::Min,
-            muted,
-        );
-        let favourite = app.is_favourite(FavouriteKind::Song, &track.id);
-        if favourite {
-            let end = title_end + if track.explicit { 18.0 } else { 0.0 };
-            super::tracks::favourite_star(&row_ui, theme, pos2(end + 12.0, cell.center().y - 9.0));
-        }
-        if let Some(choice) = track_menu(
-            &response,
-            theme,
-            TrackFacts {
-                has_album: track.album_id.is_some(),
-                favourite,
-                in_library: app.track_in_library(track),
-            },
-        ) {
-            chosen = Some((i, choice));
-        } else if response
-            .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .clicked()
-        {
-            play = Some(i);
-        }
-    }
-    if let Some(i) = play {
-        app.play_list(artist.top_songs.clone(), i);
-    }
-    if let Some((i, choice)) = chosen {
-        let track = artist.top_songs[i].clone();
-        app.track_choice(track, choice, ui.input(|i| i.time));
-    }
 }
