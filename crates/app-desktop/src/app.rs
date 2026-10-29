@@ -1953,7 +1953,8 @@ impl App {
             Playable::Track(stream) => {
                 let len = stream.len();
                 let hint = stream.seek_hint();
-                player::Source::new(stream, len, Some("m4a")).with_seek_hint(hint)
+                let extension = stream.extension();
+                player::Source::new(stream, len, Some(extension)).with_seek_hint(hint)
             }
             // A station's stream is ADTS, forward only.
             Playable::Live(stream) => player::Source::stream(stream, Some("aac")),

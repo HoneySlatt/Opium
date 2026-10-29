@@ -73,6 +73,18 @@ impl AudioStream {
         Self::new(data, Vec::new(), Duration::ZERO)
     }
 
+    /// What the file is, as an extension for the decoder: Apple's own
+    /// tracks are MP4, a user's upload is whatever they put in.
+    pub fn extension(&self) -> &'static str {
+        let state = self.shared.lock();
+        match state.data.get(..4) {
+            Some([b'I', b'D', b'3', _]) => "mp3",
+            Some([0xFF, b, _, _]) if b & 0xE0 == 0xE0 => "mp3",
+            Some(b"fLaC") => "flac",
+            _ => "m4a",
+        }
+    }
+
     fn new(data: Vec<u8>, samples: Vec<EncryptedSample>, sample_duration: Duration) -> Self {
         let len = data.len() as u64;
         let shared = Arc::new(Shared {

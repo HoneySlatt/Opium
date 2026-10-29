@@ -521,5 +521,6 @@ async fn play(am: &AppleMusic, ids: &[String]) -> Result<(), Box<dyn std::error:
 fn make_source(stream: apple_music::AudioStream) -> player::Source {
     let len = stream.len();
     let hint = stream.seek_hint();
-    player::Source::new(stream, len, Some("m4a")).with_seek_hint(hint)
+    let extension = stream.extension();
+    player::Source::new(stream, len, Some(extension)).with_seek_hint(hint)
 }

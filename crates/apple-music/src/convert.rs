@@ -68,7 +68,8 @@ pub fn track(song: types::Song) -> Track {
         album: attrs.album_name,
         album_id,
         duration: attrs.duration_in_millis.map(Duration::from_millis),
-        track_number: attrs.track_number,
+        // A user's upload says 0 when it has no number.
+        track_number: attrs.track_number.filter(|&n| n > 0),
         disc_number: attrs.disc_number,
         explicit: attrs.content_rating.as_deref() == Some("explicit"),
         quality: in_catalog.then(web_quality),
