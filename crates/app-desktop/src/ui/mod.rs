@@ -9,6 +9,7 @@ mod lyrics;
 mod menu;
 mod now_playing;
 mod player_bar;
+mod playlist_dialog;
 mod search;
 mod settings;
 mod sidebar;
@@ -42,6 +43,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
             now_playing::show(app, ui);
             signal::show(app, ui, full);
         });
+        playlist_dialog::show(app, ui.ctx());
         shortcuts(app, ui);
         return;
     }
@@ -71,6 +73,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
             toast(app, ui, main);
         });
 
+    playlist_dialog::show(app, ui.ctx());
     shortcuts(app, ui);
 }
 

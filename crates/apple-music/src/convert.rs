@@ -170,6 +170,7 @@ pub fn playlist(playlist: types::Playlist) -> Playlist {
         track_count: None,
         catalog_id: attrs.play_params.and_then(|p| p.global_id).map(id),
         in_favourites: attrs.in_favorites,
+        editable: attrs.can_edit == Some(true) && !favourites,
     }
 }
 

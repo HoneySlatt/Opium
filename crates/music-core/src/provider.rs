@@ -54,6 +54,20 @@ pub trait Provider: Send + Sync {
         Err(Error::Protocol("this service has no favourites".into()))
     }
 
+    /// Add a catalog song, album or playlist to the user's library.
+    async fn add_to_library(&self, _kind: FavouriteKind, _id: &ItemId) -> Result<()> {
+        Err(Error::Protocol(
+            "this service has no library to add to".into(),
+        ))
+    }
+
+    /// Add songs to one of the user's playlists, at its end.
+    async fn add_to_playlist(&self, _playlist: &ItemId, _tracks: &[ItemId]) -> Result<()> {
+        Err(Error::Protocol(
+            "this service's playlists can't be added to".into(),
+        ))
+    }
+
     /// Whether `id` is among the user's favourites, when the service can say.
     async fn is_favourite(&self, _kind: FavouriteKind, _id: &ItemId) -> Result<Option<bool>> {
         Ok(None)

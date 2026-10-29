@@ -4,13 +4,13 @@
 use egui::{Id, Rect, Sense, Stroke, Ui, pos2, vec2};
 use music_core::model::{ItemId, ProviderKind, Track};
 
-use crate::app::{Enqueue, SortKey};
+use crate::app::{SortKey, TrackChoice};
 use crate::color::alpha;
 use crate::fonts::{Weight, font};
 use crate::icons;
 use crate::theme::Theme;
 
-use super::menu::TrackChoice;
+use super::menu::TrackFacts;
 use super::{
     artwork, explicit_badge, format_time, paint_icon, paint_text, quality_label, quality_tag, text,
     thumb_url,
@@ -189,10 +189,8 @@ pub enum RowAction {
     Select,
     Play,
     OpenAlbum(ItemId),
-    /// From the right-click menu: play next, or add to the queue.
-    Enqueue(Enqueue),
-    /// From the right-click menu: add to the favourites, or take out.
-    Favourite,
+    /// From the right-click menu.
+    Menu(TrackChoice),
 }
 
 /// How a row shows.
@@ -206,6 +204,8 @@ pub struct RowState {
     pub playing: bool,
     /// It is among the favourites: a star follows the title.
     pub favourite: bool,
+    /// It is in the library already.
+    pub in_library: bool,
     /// Rows are told apart by this and their position.
     pub list: &'static str,
     pub position: usize,
@@ -371,16 +371,13 @@ pub fn row(
         paint_text(ui, g, d1, y, egui::Align::Max, theme.muted());
     }
 
-    match super::menu::track_menu(&response, theme, track.album_id.is_some(), state.favourite) {
-        Some(TrackChoice::Favourite) => action = RowAction::Favourite,
-        Some(TrackChoice::PlayNext) => action = RowAction::Enqueue(Enqueue::Next),
-        Some(TrackChoice::AddToQueue) => action = RowAction::Enqueue(Enqueue::Last),
-        Some(TrackChoice::GoToAlbum) => {
-            if let Some(album) = &track.album_id {
-                action = RowAction::OpenAlbum(album.clone());
-            }
-        }
-        None => {}
+    let facts = TrackFacts {
+        has_album: track.album_id.is_some(),
+        favourite: state.favourite,
+        in_library: state.in_library,
+    };
+    if let Some(choice) = super::menu::track_menu(&response, theme, facts) {
+        action = RowAction::Menu(choice);
     }
     if matches!(action, RowAction::None) {
         if response.double_clicked() {

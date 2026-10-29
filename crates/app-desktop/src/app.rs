@@ -98,6 +98,25 @@ pub enum Enqueue {
     Last,
 }
 
+/// The Add to Playlists window: the songs, the playlists ticked, the search.
+pub struct PlaylistDialog {
+    pub tracks: Vec<Track>,
+    pub chosen: Vec<ItemId>,
+    pub filter: String,
+}
+
+/// What a track's right-click menu asked for.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum TrackChoice {
+    PlayNext,
+    AddToQueue,
+    /// Add to the favourites, or take out.
+    Favourite,
+    AddToLibrary,
+    AddToPlaylist,
+    GoToAlbum,
+}
+
 /// An album or playlist waiting for its tracks before going into the queue.
 enum Waiting {
     Album(ItemId),
@@ -220,6 +239,10 @@ pub struct App {
     pub library_albums: Streamed<Album>,
     pub library_artists: Streamed<Artist>,
     pub recently_added: Streamed<Collection>,
+    /// The songs in the library, by catalog id.
+    library_songs: std::collections::HashSet<ItemId>,
+    /// The Add to Playlists window, when open.
+    pub playlist_dialog: Option<PlaylistDialog>,
     /// The songs in Apple's playlist of favourites.
     favourite_songs: std::collections::HashSet<ItemId>,
     /// What is known to be a favourite or not: set by the user here, or read
@@ -317,6 +340,8 @@ impl App {
             library_artists: Streamed::default(),
             recently_added: Streamed::default(),
             favourite_songs: Default::default(),
+            library_songs: Default::default(),
+            playlist_dialog: None,
             favourites_known: HashMap::new(),
             radio: None,
             station: None,
@@ -443,6 +468,7 @@ impl App {
     fn reload_library(&mut self) {
         self.songs.clear();
         self.songs_done = false;
+        self.library_songs.clear();
         self.playlists.clear();
         self.library_albums = Streamed::default();
         self.library_artists = Streamed::default();
@@ -551,7 +577,112 @@ impl App {
                 }
             }
         }
+        // A song favourited joins the library, unless the user said not to.
+        if on
+            && kind == FavouriteKind::Song
+            && self.favourites_to_library()
+            && !self.in_library(&id)
+        {
+            self.library_songs.insert(id.clone());
+            self.backend.send(Request::AddToLibrary {
+                kind,
+                id: id.clone(),
+            });
+        }
         self.backend.send(Request::SetFavourite { kind, id, on });
+    }
+
+    /// Whether a song is in the library, as far as the app has loaded it.
+    pub fn in_library(&self, id: &ItemId) -> bool {
+        self.library_songs.contains(id)
+    }
+
+    pub fn favourites_to_library(&self) -> bool {
+        self.settings.favourites_to_library.unwrap_or(true)
+    }
+
+    pub fn set_favourites_to_library(&mut self, on: bool) {
+        self.settings.favourites_to_library = Some(on);
+        self.settings.save();
+    }
+
+    pub fn add_to_library(&mut self, track: &Track, now: f64) {
+        self.library_songs.insert(track.id.clone());
+        self.backend.send(Request::AddToLibrary {
+            kind: FavouriteKind::Song,
+            id: track.id.clone(),
+        });
+        self.notify(format!("Adding “{}” to the library…", track.title), now);
+    }
+
+    /// The user's own playlists, which songs can be added to.
+    pub fn editable_playlists(&self) -> Vec<Playlist> {
+        self.playlists
+            .iter()
+            .filter(|p| p.editable)
+            .cloned()
+            .collect()
+    }
+
+    /// The playlists songs were last added to, most recent first.
+    pub fn recent_playlists(&self) -> Vec<Playlist> {
+        self.settings
+            .recent_playlists
+            .iter()
+            .filter_map(|id| self.playlists.iter().find(|p| p.id.id == *id && p.editable))
+            .cloned()
+            .collect()
+    }
+
+    /// Open the Add to Playlists window for `tracks`, loading the playlists'
+    /// songs so it can say which already have them.
+    pub fn open_playlist_dialog(&mut self, tracks: Vec<Track>) {
+        for playlist in self.editable_playlists() {
+            if !self.playlist_tracks.contains_key(&playlist.id) {
+                self.playlist_tracks
+                    .insert(playlist.id.clone(), PlaylistTracks::default());
+                self.backend.send(Request::Playlist(playlist.id.clone()));
+            }
+        }
+        self.playlist_dialog = Some(PlaylistDialog {
+            tracks,
+            chosen: Vec::new(),
+            filter: String::new(),
+        });
+    }
+
+    /// Whether `playlist` has every one of `tracks`: `None` while its songs
+    /// are still loading.
+    pub fn playlist_has(&self, playlist: &ItemId, tracks: &[Track]) -> Option<bool> {
+        let entry = self.playlist_tracks.get(playlist)?;
+        let has = tracks
+            .iter()
+            .all(|t| entry.tracks.iter().any(|p| p.id == t.id));
+        (has || entry.done).then_some(has)
+    }
+
+    /// Add the window's songs to the playlists ticked in it, and close it.
+    pub fn add_to_chosen_playlists(&mut self) {
+        let Some(dialog) = self.playlist_dialog.take() else {
+            return;
+        };
+        if dialog.chosen.is_empty() {
+            return;
+        }
+        for id in &dialog.chosen {
+            // What the playlist pages show, at once.
+            if let Some(entry) = self.playlist_tracks.get_mut(id) {
+                Arc::make_mut(&mut entry.tracks).extend(dialog.tracks.iter().cloned());
+            }
+            self.settings.recent_playlists.retain(|r| *r != id.id);
+            self.settings.recent_playlists.insert(0, id.id.clone());
+        }
+        self.settings.recent_playlists.truncate(3);
+        self.settings.save();
+        self.backend.send(Request::AddToPlaylists {
+            playlists: dialog.chosen,
+            tracks: dialog.tracks.into_iter().map(|t| t.id).collect(),
+        });
     }
 
     /// The id favourites know an album by: its catalog one.
@@ -869,6 +1000,22 @@ impl App {
         self.notify(message, now);
     }
 
+    /// Do what a track's menu asked.
+    pub fn track_choice(&mut self, track: Track, choice: TrackChoice, now: f64) {
+        match choice {
+            TrackChoice::PlayNext => self.enqueue(vec![track], Enqueue::Next, now),
+            TrackChoice::AddToQueue => self.enqueue(vec![track], Enqueue::Last, now),
+            TrackChoice::Favourite => self.toggle_favourite(FavouriteKind::Song, track.id),
+            TrackChoice::AddToLibrary => self.add_to_library(&track, now),
+            TrackChoice::AddToPlaylist => self.open_playlist_dialog(vec![track]),
+            TrackChoice::GoToAlbum => {
+                if let Some(album) = track.album_id {
+                    self.go(Page::Album(album));
+                }
+            }
+        }
+    }
+
     /// Queue an album, fetching its tracks first if need be.
     pub fn enqueue_album(&mut self, id: ItemId, how: Enqueue, now: f64) {
         if let Some(Loaded::Ready((_, tracks))) = self.albums.get(&id) {
@@ -1010,6 +1157,8 @@ impl App {
                     self.notify(e, now);
                 }
                 Reply::Songs { tracks, done } => {
+                    self.library_songs
+                        .extend(tracks.iter().map(|t| t.id.clone()));
                     self.songs.extend(tracks);
                     self.songs_done = done;
                 }
@@ -1123,6 +1272,9 @@ impl App {
                     }
                     entry.done = done;
                 }
+                Reply::Changed(result) => match result {
+                    Ok(message) | Err(message) => self.notify(message, now),
+                },
                 Reply::Favourite { id, set, result } => match (set, result) {
                     (Some(on), Ok(_)) => {
                         let message = if on {

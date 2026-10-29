@@ -3,7 +3,7 @@
 
 use egui::{Frame, Response, Sense, Stroke, Ui, pos2, vec2};
 
-use crate::app::Enqueue;
+use crate::app::{Enqueue, TrackChoice};
 use crate::fonts::{Weight, font};
 use crate::icons::{self, Icon};
 use crate::theme::Theme;
@@ -95,24 +95,21 @@ fn item(ui: &mut Ui, theme: &Theme, icon: Icon, label: &str) -> bool {
     response.clicked()
 }
 
-/// What a track's menu offers.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum TrackChoice {
-    PlayNext,
-    AddToQueue,
-    /// Add to the favourites, or take out.
-    Favourite,
-    GoToAlbum,
+/// What the track menu knows about its track.
+pub(super) struct TrackFacts {
+    pub has_album: bool,
+    pub favourite: bool,
+    pub in_library: bool,
 }
 
-/// The track menu; Go to Album only when the album is known.
+/// The track menu; Add to Library only when the song isn't there yet, Go to
+/// Album only when the album is known.
 pub(super) fn track_menu(
     response: &Response,
     theme: &Theme,
-    has_album: bool,
-    favourite: bool,
+    facts: TrackFacts,
 ) -> Option<TrackChoice> {
-    let star = if favourite {
+    let star = if facts.favourite {
         Entry::Item(
             icons::STAR_FILL,
             "Remove from Favourites",
@@ -127,7 +124,19 @@ pub(super) fn track_menu(
         Entry::Line,
         star,
     ];
-    if has_album {
+    if !facts.in_library {
+        entries.push(Entry::Item(
+            icons::PLUS,
+            "Add to Library",
+            TrackChoice::AddToLibrary,
+        ));
+    }
+    entries.push(Entry::Item(
+        icons::LIST,
+        "Add to Playlist…",
+        TrackChoice::AddToPlaylist,
+    ));
+    if facts.has_album {
         entries.push(Entry::Line);
         entries.push(Entry::Item(
             icons::DISC,

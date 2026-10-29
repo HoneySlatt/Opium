@@ -119,6 +119,9 @@ pub struct PlaylistAttributes {
     /// With `extend=inFavorites`.
     pub in_favorites: Option<bool>,
     pub play_params: Option<PlaylistPlayParams>,
+    /// Library playlists: whether the user may change it (theirs, not one
+    /// they follow or Apple's Favourite Songs).
+    pub can_edit: Option<bool>,
 }
 
 #[derive(Debug, Default, Deserialize)]

@@ -274,6 +274,7 @@ fn page(
                     now,
                     playing: now && app.is_playing(),
                     favourite: app.is_favourite(FavouriteKind::Song, &track.id),
+                    in_library: app.in_library(&track.id),
                     list: listing.list,
                     position,
                 };
@@ -285,13 +286,9 @@ fn page(
                         app.play_list(tracks.to_vec(), position);
                     }
                     RowAction::OpenAlbum(id) => app.go(Page::Album(id)),
-                    RowAction::Favourite => {
-                        let id = track.id.clone();
-                        app.toggle_favourite(FavouriteKind::Song, id);
-                    }
-                    RowAction::Enqueue(how) => {
+                    RowAction::Menu(choice) => {
                         let track = track.clone();
-                        app.enqueue(vec![track], how, ui.input(|i| i.time));
+                        app.track_choice(track, choice, ui.input(|i| i.time));
                     }
                 }
             }

@@ -5,14 +5,14 @@
 use egui::{Id, Rect, Sense, Ui, pos2, vec2};
 use music_core::model::{Album, ArtistDetail, FavouriteKind, ItemId};
 
-use crate::app::{App, Enqueue, Loaded, Page};
+use crate::app::{App, Loaded, Page};
 use crate::fonts::{Weight, font};
 use crate::icons;
 use crate::theme::Theme;
 
 use super::detail::cover_wash;
 use super::grid::{CARD_TEXT, CardClick, SHELF_HEAD, ShelfCard, cover_shelf, shelf_scroll};
-use super::menu::{TrackChoice, track_menu};
+use super::menu::{TrackFacts, track_menu};
 use super::search::{message, section_head};
 use super::{artwork, explicit_badge, format_date, paint_icon, paint_text, text, thumb_url};
 
@@ -427,7 +427,15 @@ fn songs_section(
             let end = title_end + if track.explicit { 18.0 } else { 0.0 };
             super::tracks::favourite_star(&row_ui, theme, pos2(end + 12.0, cell.center().y - 9.0));
         }
-        if let Some(choice) = track_menu(&response, theme, track.album_id.is_some(), favourite) {
+        if let Some(choice) = track_menu(
+            &response,
+            theme,
+            TrackFacts {
+                has_album: track.album_id.is_some(),
+                favourite,
+                in_library: app.in_library(&track.id),
+            },
+        ) {
             chosen = Some((i, choice));
         } else if response
             .on_hover_cursor(egui::CursorIcon::PointingHand)
@@ -441,16 +449,6 @@ fn songs_section(
     }
     if let Some((i, choice)) = chosen {
         let track = artist.top_songs[i].clone();
-        let now = ui.input(|i| i.time);
-        match choice {
-            TrackChoice::PlayNext => app.enqueue(vec![track], Enqueue::Next, now),
-            TrackChoice::AddToQueue => app.enqueue(vec![track], Enqueue::Last, now),
-            TrackChoice::Favourite => app.toggle_favourite(FavouriteKind::Song, track.id),
-            TrackChoice::GoToAlbum => {
-                if let Some(album) = track.album_id {
-                    app.go(Page::Album(album));
-                }
-            }
-        }
+        app.track_choice(track, choice, ui.input(|i| i.time));
     }
 }

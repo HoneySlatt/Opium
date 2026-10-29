@@ -22,6 +22,11 @@ pub struct Settings {
     /// The interface scale, 1.0 for 100 % (which draws at [`SCALE_UNIT`]);
     /// Ctrl +, Ctrl − and Ctrl 0 change it. `None` is 100 %.
     pub ui_scale: Option<f32>,
+    /// A song favourited joins the library if it isn't there (on unless
+    /// turned off).
+    pub favourites_to_library: Option<bool>,
+    /// The playlists songs were last added to, most recent first.
+    pub recent_playlists: Vec<String>,
 }
 
 fn path() -> PathBuf {

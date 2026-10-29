@@ -187,6 +187,8 @@ pub struct Playlist {
     pub catalog_id: Option<ItemId>,
     /// Whether the user has it in their favourites, when the service said.
     pub in_favourites: Option<bool>,
+    /// The user's own: songs can be added to it.
+    pub editable: bool,
 }
 
 /// A row of the home page.

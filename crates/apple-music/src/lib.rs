@@ -203,6 +203,21 @@ impl AppleMusic {
         })
     }
 
+    /// Send a request that changes the account, and say whether Apple took it.
+    async fn send_change(&self, req: reqwest::RequestBuilder, path: &str) -> Result<()> {
+        let resp = self
+            .authorized(req)
+            .header("Media-User-Token", &self.user_token)
+            .send()
+            .await
+            .map_err(|e| Error::Network(format!("{path}: {e}")))?;
+        match resp.status().as_u16() {
+            401 | 403 => Err(Error::NotSignedIn),
+            code if (200..300).contains(&code) => Ok(()),
+            _ => Err(Error::Protocol(format!("{path}: HTTP {}", resp.status()))),
+        }
+    }
+
     async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
         self.fetch(path)
             .await?
@@ -451,17 +466,39 @@ impl Provider for AppleMusic {
         } else {
             self.http.delete(format!("{API}{path}"))
         };
-        let resp = self
-            .authorized(req)
-            .header("Media-User-Token", &self.user_token)
-            .send()
-            .await
-            .map_err(|e| Error::Network(format!("{path}: {e}")))?;
-        match resp.status().as_u16() {
-            401 | 403 => Err(Error::NotSignedIn),
-            code if (200..300).contains(&code) => Ok(()),
-            _ => Err(Error::Protocol(format!("{path}: HTTP {}", resp.status()))),
-        }
+        self.send_change(req, &path).await
+    }
+
+    /// As Apple's client adds: the item in the query, no body (Kopuz's form).
+    async fn add_to_library(&self, kind: FavouriteKind, id: &ItemId) -> Result<()> {
+        let path = format!(
+            "/v1/me/library?ids%5B{}%5D={}&representation=ids",
+            catalog_type(kind),
+            id.id
+        );
+        let req = self
+            .http
+            .post(format!("{API}{path}"))
+            .header("Content-Length", "0");
+        self.send_change(req, &path).await
+    }
+
+    /// Songs go by catalog id with their type, or Apple accepts them and
+    /// drops them silently (as Kopuz found).
+    async fn add_to_playlist(&self, playlist: &ItemId, tracks: &[ItemId]) -> Result<()> {
+        let path = format!(
+            "/v1/me/library/playlists/{}/tracks?representation=resources",
+            playlist.id
+        );
+        let data: Vec<serde_json::Value> = tracks
+            .iter()
+            .map(|t| serde_json::json!({ "id": t.id, "type": "songs" }))
+            .collect();
+        let req = self
+            .http
+            .post(format!("{API}{path}"))
+            .json(&serde_json::json!({ "data": data }));
+        self.send_change(req, &path).await
     }
 
     async fn is_favourite(&self, kind: FavouriteKind, id: &ItemId) -> Result<Option<bool>> {

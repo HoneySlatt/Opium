@@ -60,6 +60,7 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
                     now,
                     playing: now && app.is_playing(),
                     favourite: app.is_favourite(FavouriteKind::Song, &track.id),
+                    in_library: app.in_library(&track.id),
                     list: "songs",
                     position,
                 };
@@ -71,13 +72,9 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
                         app.play_list(shown_tracks(app), position);
                     }
                     RowAction::OpenAlbum(id) => app.go(Page::Album(id)),
-                    RowAction::Favourite => {
-                        let id = track.id.clone();
-                        app.toggle_favourite(FavouriteKind::Song, id);
-                    }
-                    RowAction::Enqueue(how) => {
+                    RowAction::Menu(choice) => {
                         let track = track.clone();
-                        app.enqueue(vec![track], how, ui.input(|i| i.time));
+                        app.track_choice(track, choice, ui.input(|i| i.time));
                     }
                 }
             }

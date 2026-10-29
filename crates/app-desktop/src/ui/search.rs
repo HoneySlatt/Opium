@@ -442,6 +442,7 @@ fn song_list(app: &mut App, ui: &mut Ui, theme: &Theme, area: Rect, top: f32, so
             now,
             playing: now && app.is_playing(),
             favourite: app.is_favourite(FavouriteKind::Song, &track.id),
+            in_library: app.in_library(&track.id),
             list: "search",
             position,
         };
@@ -453,13 +454,9 @@ fn song_list(app: &mut App, ui: &mut Ui, theme: &Theme, area: Rect, top: f32, so
                 app.play_list(songs.to_vec(), position);
             }
             RowAction::OpenAlbum(id) => app.go(Page::Album(id)),
-            RowAction::Favourite => {
-                let id = track.id.clone();
-                app.toggle_favourite(FavouriteKind::Song, id);
-            }
-            RowAction::Enqueue(how) => {
+            RowAction::Menu(choice) => {
                 let track = track.clone();
-                app.enqueue(vec![track], how, ui.input(|i| i.time));
+                app.track_choice(track, choice, ui.input(|i| i.time));
             }
         }
     }

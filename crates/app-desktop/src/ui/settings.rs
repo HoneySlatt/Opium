@@ -25,7 +25,7 @@ const THEMES: f32 = 14.0 + 10.0 + 74.0 + 10.0 + 18.0 + 18.0 + 4.0 + 14.0 + 12.0 
 pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
     let theme = app.theme.clone();
     let width = (ui.available_width() - 2.0 * pad).min(MAX_WIDTH);
-    let total = BODY_TOP + 4.0 * (GROUP_HEAD + GROUP_GAP) + 3.0 * ROW + THEMES + 2.0 * ROW + 104.0;
+    let total = BODY_TOP + 5.0 * (GROUP_HEAD + GROUP_GAP) + 3.0 * ROW + THEMES + 3.0 * ROW + 104.0;
     let output = egui::ScrollArea::vertical()
         .id_salt("settings")
         .auto_shrink(false)
@@ -61,6 +61,37 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
             let card = Rect::from_min_size(pos2(left, y), vec2(width, 3.0 * ROW));
             panel(ui, &theme, card, 3);
             services(app, ui, &theme, card);
+            y = card.bottom() + GROUP_GAP;
+
+            y = group(
+                ui,
+                &theme,
+                left,
+                y,
+                width,
+                "Library",
+                "What joins your Apple Music library.",
+            );
+            let card = Rect::from_min_size(pos2(left, y), vec2(width, ROW));
+            panel(ui, &theme, card, 1);
+            let on = app.favourites_to_library();
+            if switch(
+                ui,
+                &theme,
+                pos2(card.right() - 16.0, card.center().y),
+                on,
+                "favourites-to-library",
+            ) {
+                app.set_favourites_to_library(!on);
+            }
+            labels(
+                ui,
+                &theme,
+                pos2(card.left() + 16.0, card.center().y),
+                "Add favourites to the library",
+                "A song you favourite joins your library if it isn't there yet.",
+                width - 32.0 - 60.0,
+            );
             y = card.bottom() + GROUP_GAP;
 
             y = group(
@@ -142,6 +173,28 @@ fn labels(ui: &Ui, theme: &Theme, at: egui::Pos2, name: &str, detail: &str, widt
     let muted = theme.muted();
     let g = text(ui, detail, font(12.0, Weight::Regular), muted, width);
     paint_text(ui, g, at.x, at.y + 10.0, egui::Align::Min, muted);
+}
+
+/// An on/off switch ending at `right`, as the design draws it: the accent
+/// when on, the knob sliding across. Returns whether it was clicked.
+fn switch(ui: &mut Ui, theme: &Theme, right_center: egui::Pos2, on: bool, salt: &str) -> bool {
+    let rect = Rect::from_min_max(
+        pos2(right_center.x - 38.0, right_center.y - 11.0),
+        pos2(right_center.x, right_center.y + 11.0),
+    );
+    let response = ui.interact(rect, Id::unique(("switch", salt)), Sense::click());
+    let t = ui
+        .ctx()
+        .animate_bool_with_time(Id::unique(("switch-anim", salt)), on, 0.18);
+    let off = theme.surface2;
+    ui.painter()
+        .rect_filled(rect, 11.0, crate::color::mix(off, theme.accent, t));
+    let x = rect.left() + 11.0 + t * 16.0;
+    ui.painter()
+        .circle_filled(pos2(x, rect.center().y), 8.0, egui::Color32::WHITE);
+    response
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .clicked()
 }
 
 /// A small button on a faint fill, ending at `right`. Returns whether it was

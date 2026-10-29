@@ -40,6 +40,13 @@ pub enum Request {
         id: ItemId,
         on: bool,
     },
+    /// Add a song, an album or a playlist to the library.
+    AddToLibrary { kind: FavouriteKind, id: ItemId },
+    /// Add songs to playlists.
+    AddToPlaylists {
+        playlists: Vec<ItemId>,
+        tracks: Vec<ItemId>,
+    },
     /// Whether something is a favourite.
     Favourite { kind: FavouriteKind, id: ItemId },
     /// A track's audio, ready to hand to the player.
@@ -66,6 +73,8 @@ pub enum Reply {
     },
     /// The browser sign-in ended: the token is saved, or why not.
     SignedIn(Result<(), String>),
+    /// A change to the library went through (the message to show), or why not.
+    Changed(Result<String, String>),
     /// A favourite was set (`set: Some(on)`) or looked up; the state or why not.
     Favourite {
         id: ItemId,
@@ -356,6 +365,32 @@ async fn run(
                         set: Some(on),
                         result,
                     });
+                });
+            }
+            Request::AddToLibrary { kind, id } => {
+                tokio::spawn(async move {
+                    let result = am
+                        .add_to_library(kind, &id)
+                        .await
+                        .map(|()| "Added to the library".to_owned())
+                        .map_err(|e| format!("Couldn't add to the library: {e}"));
+                    replies.send(Reply::Changed(result));
+                });
+            }
+            Request::AddToPlaylists { playlists, tracks } => {
+                tokio::spawn(async move {
+                    let mut failed = None;
+                    for playlist in &playlists {
+                        if let Err(e) = am.add_to_playlist(playlist, &tracks).await {
+                            failed = Some(e);
+                        }
+                    }
+                    let result = match failed {
+                        None if playlists.len() == 1 => Ok("Added to the playlist".to_owned()),
+                        None => Ok(format!("Added to {} playlists", playlists.len())),
+                        Some(e) => Err(format!("Couldn't add to every playlist: {e}")),
+                    };
+                    replies.send(Reply::Changed(result));
                 });
             }
             Request::Favourite { kind, id } => {
