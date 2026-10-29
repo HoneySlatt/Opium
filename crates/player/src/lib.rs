@@ -235,6 +235,11 @@ impl Player {
         self.send(Command::SetNext(token, source));
     }
 
+    /// Play the track set with [`set_next`](Self::set_next) now.
+    pub fn skip_to_next(&self) {
+        self.send(Command::SkipToNext);
+    }
+
     pub fn pause(&self) {
         self.send(Command::Pause);
     }

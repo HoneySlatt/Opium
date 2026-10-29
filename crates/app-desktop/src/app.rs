@@ -331,6 +331,8 @@ pub struct App {
     pending_play: Option<Token>,
     /// Fetching or fetched, to follow the current track.
     queued_next: Option<Token>,
+    /// The player has `queued_next` as its next track, fetched.
+    next_ready: bool,
     /// An album or playlist to queue once its tracks are in.
     waiting: Option<(Waiting, Enqueue)>,
     /// Tracks that failed to start one after the other, skipped.
@@ -422,6 +424,7 @@ impl App {
             next_token: 0,
             pending_play: None,
             queued_next: None,
+            next_ready: false,
             waiting: None,
             failed_in_row: 0,
             now: None,
@@ -1126,6 +1129,11 @@ impl App {
 
     // ---- Playback ----
 
+    /// The track being fetched to play now, until it starts.
+    pub fn loading(&self) -> Option<&Track> {
+        self.pending_play.and_then(|token| self.tracks.get(&token))
+    }
+
     pub fn is_playing(&self) -> bool {
         self.status.token.is_some() && !self.status.paused
     }
@@ -1172,7 +1180,11 @@ impl App {
 
     fn start_current(&mut self) {
         self.queued_next = None;
+        self.next_ready = false;
         if let Some(track) = self.queue.current().cloned() {
+            // What played stops at once, as in Apple Music, rather than go on
+            // over the wait.
+            self.player.stop();
             self.pending_play = Some(self.issue(track));
         }
     }
@@ -1180,6 +1192,7 @@ impl App {
     /// Have the track after the current one fetched, so it follows without a gap.
     fn prefetch_next(&mut self) {
         self.queued_next = self.queue.peek_finished().cloned().map(|t| self.issue(t));
+        self.next_ready = false;
     }
 
     pub fn toggle_play(&mut self) {
@@ -1195,8 +1208,29 @@ impl App {
     }
 
     pub fn next(&mut self) {
-        if self.queue.skip_next().is_some() {
-            self.start_current();
+        // The track lined up to follow is the one Next moves to, unless the
+        // current one repeats: play what was fetched for it rather than fetch
+        // it again.
+        let lined_up = self.queued_next.filter(|token| {
+            self.queue.repeat() != Repeat::One
+                && self.queue.peek_finished().map(|t| &t.id)
+                    == self.tracks.get(token).map(|t| &t.id)
+        });
+        match lined_up {
+            // It starts at once; its Started moves the queue on.
+            Some(_) if self.next_ready => self.player.skip_to_next(),
+            // Still on its way: it plays when it comes.
+            Some(token) => {
+                self.queue.skip_next();
+                self.queued_next = None;
+                self.player.stop();
+                self.pending_play = Some(token);
+            }
+            None => {
+                if self.queue.skip_next().is_some() {
+                    self.start_current();
+                }
+            }
         }
     }
 
@@ -1770,6 +1804,7 @@ impl App {
                     }
                     Ok(stream) if self.queued_next == Some(token) => {
                         self.player.set_next(token, Self::source(stream));
+                        self.next_ready = true;
                     }
                     // Superseded while it was fetching.
                     Ok(_) => {}
@@ -1836,7 +1871,14 @@ impl App {
                     }
                 }
                 Event::Finished => {}
-                Event::Error { message, .. } => self.notify(message, now),
+                Event::Error { token, message } => {
+                    // A next track the player couldn't open: Next fetches anew.
+                    if token.is_some() && token == self.queued_next {
+                        self.queued_next = None;
+                        self.next_ready = false;
+                    }
+                    self.notify(message, now);
+                }
             }
         }
         self.status = self.player.status();

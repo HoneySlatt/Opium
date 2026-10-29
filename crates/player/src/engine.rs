@@ -16,6 +16,7 @@ use crate::{Event, OutputInfo, Source, Status, Token};
 pub(crate) enum Command {
     Play(Token, Source),
     SetNext(Token, Source),
+    SkipToNext,
     Pause,
     Resume,
     Seek(Duration),
@@ -151,6 +152,13 @@ impl Engine {
                 self.next = self.open(token, source);
                 if self.segments.back().is_some_and(|s| s.decoded_all) {
                     self.queue_next();
+                }
+            }
+            // The next track, already open, plays now: nothing to fetch again.
+            Command::SkipToNext => {
+                self.park_queued();
+                if let Some(item) = self.next.take() {
+                    self.start(item, Duration::ZERO);
                 }
             }
             Command::Pause => self.set_paused(true),

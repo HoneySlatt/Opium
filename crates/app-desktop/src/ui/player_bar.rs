@@ -112,7 +112,17 @@ fn transport(app: &mut App, ui: &mut Ui, theme: &Theme, inner: Rect) -> f32 {
     } else {
         (icons::PLAY_FILL, "Play")
     };
-    if icon_button(&mut row, theme, icon, 32.0, 18.0, theme.text, has_track)
+    if app.loading().is_some() {
+        // In the play button's place while the track is on its way.
+        let (rect, _) = row.allocate_exact_size(vec2(32.0, 32.0), Sense::hover());
+        let mut child = row.new_child(egui::UiBuilder::new().max_rect(rect));
+        child
+            .put(
+                Rect::from_center_size(rect.center(), vec2(16.0, 16.0)),
+                egui::Spinner::new().size(16.0).color(theme.text),
+            )
+            .on_hover_text("Loading");
+    } else if icon_button(&mut row, theme, icon, 32.0, 18.0, theme.text, has_track)
         .on_hover_text(tip)
         .clicked()
     {
@@ -145,6 +155,7 @@ fn transport(app: &mut App, ui: &mut Ui, theme: &Theme, inner: Rect) -> f32 {
 
     let position = shown_position(app, ui);
     let time = match app.duration() {
+        _ if app.loading().is_some() => "Loading…".into(),
         Some(total) if app.now.is_some() => format!(
             "{} / -{}",
             format_time(position),
@@ -255,7 +266,8 @@ fn shown_position(app: &App, ui: &Ui) -> Duration {
 }
 
 fn now_playing(app: &mut App, ui: &mut Ui, theme: &Theme, lcd: Rect) {
-    let Some(track) = app.now.clone() else {
+    // The track picked shows at once, while it loads.
+    let Some(track) = app.loading().cloned().or_else(|| app.now.clone()) else {
         return;
     };
     let art = Rect::from_min_size(
