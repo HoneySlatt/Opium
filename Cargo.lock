@@ -221,6 +221,7 @@ dependencies = [
  "image",
  "music-core",
  "player",
+ "reqwest",
  "serde",
  "tokio",
  "toml",
