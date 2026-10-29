@@ -131,6 +131,8 @@ pub fn album(album: types::Album) -> Album {
     Album {
         explicit,
         motion,
+        copyright: attrs.copyright.clone(),
+        mastered: attrs.is_mastered_for_itunes == Some(true),
         added: attrs.date_added.clone(),
         id: id(album.id),
         artist_id: artist.map(|a| id(a.id.clone())),

@@ -14,6 +14,7 @@ use crate::fonts::{Weight, font};
 use crate::icons::{self, Icon};
 use crate::theme::Theme;
 
+use super::grid::{CARD_TEXT, CardClick, SHELF_HEAD, ShelfCard, cover_shelf};
 use super::tracks::{self, Columns, RowAction, RowState};
 use super::{
     Blob, PageButton, artwork, page_buttons, paint_icon, paint_text, quality_label, text, wash,
@@ -169,7 +170,30 @@ struct Listing {
     playlist: Option<ItemId>,
     /// A playlist: it can be searched.
     searchable: bool,
+    /// What an album's page shows under its tracks, as Cider does.
+    album: Option<AlbumFoot>,
 }
+
+/// Under an album's tracks: whether Apple mastered it, its date, count and
+/// copyright, then the artist's other releases.
+struct AlbumFoot {
+    mastered: bool,
+    lines: Vec<String>,
+    /// The artist, and what else they put out, newest first.
+    more_by: Option<(String, ItemId, Vec<Album>)>,
+}
+
+/// How tall the album's foot is.
+fn foot_height(foot: &AlbumFoot) -> f32 {
+    let mut h = 24.0 + if foot.mastered { 30.0 } else { 0.0 } + foot.lines.len() as f32 * 18.0;
+    if foot.more_by.is_some() {
+        h += 40.0 + SHELF_HEAD + MORE_BY_CARD + CARD_TEXT;
+    }
+    h
+}
+
+/// The covers of the artist's other releases.
+const MORE_BY_CARD: f32 = 190.0;
 
 /// The row above a playlist's songs that holds its search field.
 const SEARCH_ROW: f32 = 46.0;
@@ -208,8 +232,83 @@ pub fn album(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
         error,
         playlist: None,
         searchable: false,
+        album: album_foot(app, id),
     };
     page(app, ui, pad, header, tracks, listing)
+}
+
+/// The foot of an album's page, once the album has come: its details, then
+/// the artist's other releases once their page has.
+fn album_foot(app: &mut App, id: &ItemId) -> Option<AlbumFoot> {
+    let Some(Loaded::Ready((album, tracks))) = app.albums.get(id) else {
+        return None;
+    };
+    let (album, tracks) = (album.clone(), tracks.clone());
+    let mut lines = Vec::new();
+    if let Some(date) = album.released.as_deref().and_then(long_date) {
+        lines.push(date);
+    }
+    let count = tracks.len();
+    let mut count_line = format!("{count} track{}", if count == 1 { "" } else { "s" });
+    if let Some(length) = total_length(&tracks) {
+        let minutes = (length.as_secs() + 30) / 60;
+        count_line += &format!(", {minutes} minute{}", if minutes == 1 { "" } else { "s" });
+    }
+    lines.push(count_line);
+    if let Some(copyright) = &album.copyright {
+        lines.push(copyright.clone());
+    }
+    let more_by = album.artist_id.clone().and_then(|artist| {
+        let detail = app.artist_detail(&artist)?;
+        let mine = |a: &Album| {
+            a.id == album.id || album.catalog_id.as_ref() == Some(&a.id) || a.title == album.title
+        };
+        let mut others: Vec<Album> = Vec::new();
+        for a in detail
+            .latest
+            .iter()
+            .chain(&detail.albums)
+            .chain(&detail.singles)
+        {
+            if !mine(a) && !others.iter().any(|o| o.id == a.id) {
+                others.push(a.clone());
+            }
+        }
+        others.sort_by(|a, b| b.released.cmp(&a.released));
+        others.truncate(20);
+        (!others.is_empty()).then(|| (detail.artist.name.clone(), artist, others))
+    });
+    Some(AlbumFoot {
+        mastered: album.mastered,
+        lines,
+        more_by,
+    })
+}
+
+/// `2026-10-02` → `2 October 2026`, as Cider writes it under the tracks.
+fn long_date(iso: &str) -> Option<String> {
+    const MONTHS: [&str; 12] = [
+        "January",
+        "February",
+        "March",
+        "April",
+        "May",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November",
+        "December",
+    ];
+    let mut parts = iso.splitn(3, '-');
+    let year = parts.next()?;
+    let month: usize = parts.next()?.parse().ok()?;
+    let day: u32 = parts.next()?.get(..2)?.parse().ok()?;
+    Some(format!(
+        "{day} {} {year}",
+        MONTHS.get(month.checked_sub(1)?)?
+    ))
 }
 
 pub fn playlist(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
@@ -254,6 +353,7 @@ pub fn playlist(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
         error,
         playlist: playlist.editable.then(|| playlist.id.clone()),
         searchable: true,
+        album: None,
     };
     page(app, ui, pad, Some(header), tracks, listing)
 }
@@ -341,7 +441,10 @@ fn page(
         Kind::Playlist => tracks::HEAD_SPACE,
     };
     let rows = tracks.len();
-    let foot = 18.0 + 16.0 + 18.0;
+    let foot = match &listing.album {
+        Some(album) => foot_height(album),
+        None => 18.0 + 16.0 + 18.0,
+    };
     let total = table_top + head + rows.max(1) as f32 * tracks::ROW + foot + 104.0;
     let colors = super::backdrop(app);
     let output = egui::ScrollArea::vertical()
@@ -484,7 +587,10 @@ fn page(
                     }
                 }
             }
-            if let Some(length) = total_length(&tracks) {
+            let foot_top = rows_top + rows as f32 * tracks::ROW;
+            if let Some(foot) = &listing.album {
+                album_foot_ui(app, ui, &theme, foot, left, width, foot_top);
+            } else if let Some(length) = total_length(&tracks) {
                 let minutes = (length.as_secs() + 30) / 60;
                 let foot_text = format!(
                     "{rows} song{}, {minutes} minute{}",
@@ -743,6 +849,75 @@ fn header_text(
         Some(PageButton::Shuffle) => Some(HeaderAction::Play { shuffle: true }),
         Some(PageButton::Add) => Some(HeaderAction::AddToLibrary),
         None => action,
+    }
+}
+
+/// The album's details under its tracks, then More by its artist.
+#[allow(clippy::too_many_arguments)]
+fn album_foot_ui(
+    app: &mut App,
+    ui: &mut Ui,
+    theme: &Theme,
+    foot: &AlbumFoot,
+    left: f32,
+    width: f32,
+    top: f32,
+) {
+    let muted = theme.muted();
+    let mut y = top + 24.0;
+    if foot.mastered {
+        let g = text(
+            ui,
+            "Apple Digital Master",
+            font(12.5, Weight::Regular),
+            muted,
+            width,
+        );
+        paint_text(ui, g, left, y, egui::Align::Min, muted);
+        y += 30.0;
+    }
+    for line in &foot.lines {
+        let g = text(ui, line, font(12.5, Weight::Regular), muted, width);
+        paint_text(ui, g, left, y, egui::Align::Min, muted);
+        y += 18.0;
+    }
+    let Some((name, artist, albums)) = &foot.more_by else {
+        return;
+    };
+    let at = pos2(left, y + 40.0 - 18.0);
+    let title = format!("More by {name}");
+    let cards: Vec<ShelfCard> = albums
+        .iter()
+        .map(|a| ShelfCard {
+            title: a.title.clone(),
+            sub: a.artists.join(", "),
+            url: a.artwork.as_ref().map(|art| art.url(400)),
+            explicit: a.explicit,
+            addable: app.can_add_album(&a.id),
+        })
+        .collect();
+    let id = egui::Id::unique(("more-by", &artist.id));
+    // The title, and a chevron after it, lead to the artist.
+    let g = text(ui, &title, font(18.0, Weight::SemiBold), theme.text, 400.0);
+    let chevron = pos2(at.x + g.size().x + 12.0, at.y + 12.0);
+    let link = Rect::from_min_max(pos2(at.x, at.y - 3.0), pos2(chevron.x + 10.0, at.y + 25.0));
+    let hit = ui.interact(link, id.with("title"), Sense::click());
+    let color = if hit.hovered() { theme.text } else { muted };
+    paint_icon(ui, icons::RIGHT, chevron, 16.0, color);
+    if hit
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .clicked()
+    {
+        app.go(Page::Artist(artist.clone()));
+    }
+    let now = ui.input(|i| i.time);
+    match cover_shelf(ui, theme, at, width, &title, &cards, MORE_BY_CARD, id) {
+        Some((i, CardClick::Open)) => app.go(Page::Album(albums[i].id.clone())),
+        Some((i, CardClick::Enqueue(how))) => app.enqueue_album(albums[i].id.clone(), how, now),
+        Some((i, CardClick::AddToLibrary)) => {
+            app.add_collection_to_library(&Collection::Album(albums[i].clone()), now);
+        }
+        None => {}
     }
 }
 

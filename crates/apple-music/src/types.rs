@@ -110,6 +110,10 @@ pub struct AlbumAttributes {
     pub date_added: Option<String>,
     /// With `extend=editorialVideo`: the animated cover, when there is one.
     pub editorial_video: Option<EditorialVideo>,
+    /// `℗ 2026 R.A.T MUSIC`.
+    pub copyright: Option<String>,
+    /// Mastered for Apple: an Apple Digital Master.
+    pub is_mastered_for_itunes: Option<bool>,
 }
 
 /// An album's animated covers, as HLS master playlists.

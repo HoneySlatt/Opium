@@ -1309,6 +1309,19 @@ impl App {
         self.settings.save();
     }
 
+    /// An artist's page as far as it has come; asks for it the first time.
+    pub fn artist_detail(&mut self, id: &ItemId) -> Option<Arc<ArtistDetail>> {
+        match self.artists.get(id) {
+            Some(Loaded::Ready(artist)) => Some(artist.clone()),
+            Some(_) => None,
+            None => {
+                self.artists.insert(id.clone(), Loaded::Loading);
+                self.backend.send(Request::Artist(id.clone()));
+                None
+            }
+        }
+    }
+
     /// The animated cover of `track`'s album, once its album says; asks for
     /// the album the first time.
     pub fn album_motion(&mut self, track: &Track) -> Option<String> {

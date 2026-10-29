@@ -131,6 +131,11 @@ pub struct Album {
     pub added: Option<String>,
     /// Its animated cover, square: where the service lists the video.
     pub motion: Option<String>,
+    /// `℗ 2026 R.A.T MUSIC`.
+    pub copyright: Option<String>,
+    /// Mastered for the service, as Apple's Digital Masters are.
+    #[serde(default)]
+    pub mastered: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
