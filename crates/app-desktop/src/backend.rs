@@ -583,7 +583,22 @@ async fn run(
             }
             continue;
         };
+        let Some(request) = shared_request(am.clone(), request, replies.clone()) else {
+            continue;
+        };
         match request {
+            // Any service's, done above.
+            Request::SetFavourite { .. }
+            | Request::AddToLibrary { .. }
+            | Request::SongLinks { .. }
+            | Request::RemoveFromLibrary(_)
+            | Request::CreatePlaylist { .. }
+            | Request::EditPlaylist { .. }
+            | Request::RemoveFromPlaylist { .. }
+            | Request::DeletePlaylist(_)
+            | Request::AddToPlaylists { .. }
+            | Request::Favourite { .. }
+            | Request::StationTracks(_) => {}
             Request::SignIn
             | Request::Reconnect
             | Request::SignInSoundCloud
@@ -641,125 +656,6 @@ async fn run(
                     replies.send(Reply::Lyrics { id, result });
                 });
             }
-            Request::SetFavourite { kind, id, on } => {
-                tokio::spawn(async move {
-                    let result = am
-                        .set_favourite(kind, &id, on)
-                        .await
-                        .map(|()| Some(on))
-                        .map_err(|e| e.to_string());
-                    replies.send(Reply::Favourite {
-                        id,
-                        set: Some(on),
-                        result,
-                    });
-                });
-            }
-            Request::AddToLibrary { kind, id, quiet } => {
-                tokio::spawn(async move {
-                    let result = am
-                        .add_to_library(kind, &id)
-                        .await
-                        .map_err(|e| format!("Couldn't add to the library: {e}"));
-                    replies.send(Reply::AddedToLibrary {
-                        kind,
-                        id,
-                        quiet,
-                        result,
-                    });
-                });
-            }
-            Request::SongLinks { song, radio } => {
-                tokio::spawn(async move {
-                    let result = am.song_links(&song).await.map_err(|e| e.to_string());
-                    replies.send(Reply::SongLinks { radio, result });
-                });
-            }
-            Request::RemoveFromLibrary(id) => {
-                tokio::spawn(async move {
-                    let result = am
-                        .remove_from_library(&id)
-                        .await
-                        .map(|()| "Removed from the library".to_owned())
-                        .map_err(|e| format!("Couldn't remove it from the library: {e}"));
-                    replies.send(Reply::Changed(result));
-                });
-            }
-            Request::CreatePlaylist {
-                name,
-                description,
-                tracks,
-            } => {
-                tokio::spawn(async move {
-                    let result = am
-                        .create_playlist(&name, &description, &tracks)
-                        .await
-                        .map_err(|e| format!("Couldn't make the playlist: {e}"));
-                    replies.send(Reply::PlaylistCreated(result));
-                });
-            }
-            Request::EditPlaylist {
-                id,
-                name,
-                description,
-            } => {
-                tokio::spawn(async move {
-                    let result = am
-                        .edit_playlist(&id, &name, &description)
-                        .await
-                        .map_err(|e| format!("Couldn't change the playlist: {e}"));
-                    replies.send(Reply::PlaylistEdited {
-                        id,
-                        name,
-                        description,
-                        result,
-                    });
-                });
-            }
-            Request::RemoveFromPlaylist { playlist, entry } => {
-                tokio::spawn(async move {
-                    let result = am
-                        .remove_from_playlist(&playlist, &entry)
-                        .await
-                        .map_err(|e| format!("Couldn't take it out of the playlist: {e}"));
-                    replies.send(Reply::RemovedFromPlaylist { playlist, result });
-                });
-            }
-            Request::DeletePlaylist(id) => {
-                tokio::spawn(async move {
-                    let result = am
-                        .delete_playlist(&id)
-                        .await
-                        .map_err(|e| format!("Couldn't delete the playlist: {e}"));
-                    replies.send(Reply::PlaylistDeleted { id, result });
-                });
-            }
-            Request::AddToPlaylists { playlists, tracks } => {
-                tokio::spawn(async move {
-                    let mut failed = None;
-                    for playlist in &playlists {
-                        if let Err(e) = am.add_to_playlist(playlist, &tracks).await {
-                            failed = Some(e);
-                        }
-                    }
-                    let result = match failed {
-                        None if playlists.len() == 1 => Ok("Added to the playlist".to_owned()),
-                        None => Ok(format!("Added to {} playlists", playlists.len())),
-                        Some(e) => Err(format!("Couldn't add to every playlist: {e}")),
-                    };
-                    replies.send(Reply::Changed(result));
-                });
-            }
-            Request::Favourite { kind, id } => {
-                tokio::spawn(async move {
-                    let result = am.is_favourite(kind, &id).await.map_err(|e| e.to_string());
-                    replies.send(Reply::Favourite {
-                        id,
-                        set: None,
-                        result,
-                    });
-                });
-            }
             Request::NewMusic => {
                 tokio::spawn(async move {
                     replies.send(Reply::NewMusic(
@@ -770,15 +666,6 @@ async fn run(
             Request::Radio => {
                 tokio::spawn(async move {
                     replies.send(Reply::Radio(am.radio().await.map_err(|e| e.to_string())));
-                });
-            }
-            Request::StationTracks(id) => {
-                tokio::spawn(async move {
-                    let result = am
-                        .station_tracks(&id, STATION_BATCH)
-                        .await
-                        .map_err(|e| e.to_string());
-                    replies.send(Reply::StationTracks { id, result });
                 });
             }
             Request::Home => {
@@ -1008,6 +895,143 @@ async fn load_library(am: Arc<AppleMusic>, replies: Replies) {
     list.failed(&replies, result, &show);
 }
 
+/// What any service does alike: favourites, the library, playlists, a
+/// song's links and stations. Hands back the requests it isn't for.
+fn shared_request(p: Arc<dyn Provider>, request: Request, replies: Replies) -> Option<Request> {
+    match request {
+        Request::SetFavourite { kind, id, on } => {
+            tokio::spawn(async move {
+                let result = p
+                    .set_favourite(kind, &id, on)
+                    .await
+                    .map(|()| Some(on))
+                    .map_err(|e| e.to_string());
+                replies.send(Reply::Favourite {
+                    id,
+                    set: Some(on),
+                    result,
+                });
+            });
+        }
+        Request::AddToLibrary { kind, id, quiet } => {
+            tokio::spawn(async move {
+                let result = p
+                    .add_to_library(kind, &id)
+                    .await
+                    .map_err(|e| format!("Couldn't add to the library: {e}"));
+                replies.send(Reply::AddedToLibrary {
+                    kind,
+                    id,
+                    quiet,
+                    result,
+                });
+            });
+        }
+        Request::SongLinks { song, radio } => {
+            tokio::spawn(async move {
+                let result = p.song_links(&song).await.map_err(|e| e.to_string());
+                replies.send(Reply::SongLinks { radio, result });
+            });
+        }
+        Request::RemoveFromLibrary(id) => {
+            tokio::spawn(async move {
+                let result = p
+                    .remove_from_library(&id)
+                    .await
+                    .map(|()| "Removed from the library".to_owned())
+                    .map_err(|e| format!("Couldn't remove it from the library: {e}"));
+                replies.send(Reply::Changed(result));
+            });
+        }
+        Request::CreatePlaylist {
+            name,
+            description,
+            tracks,
+        } => {
+            tokio::spawn(async move {
+                let result = p
+                    .create_playlist(&name, &description, &tracks)
+                    .await
+                    .map_err(|e| format!("Couldn't make the playlist: {e}"));
+                replies.send(Reply::PlaylistCreated(result));
+            });
+        }
+        Request::EditPlaylist {
+            id,
+            name,
+            description,
+        } => {
+            tokio::spawn(async move {
+                let result = p
+                    .edit_playlist(&id, &name, &description)
+                    .await
+                    .map_err(|e| format!("Couldn't change the playlist: {e}"));
+                replies.send(Reply::PlaylistEdited {
+                    id,
+                    name,
+                    description,
+                    result,
+                });
+            });
+        }
+        Request::RemoveFromPlaylist { playlist, entry } => {
+            tokio::spawn(async move {
+                let result = p
+                    .remove_from_playlist(&playlist, &entry)
+                    .await
+                    .map_err(|e| format!("Couldn't take it out of the playlist: {e}"));
+                replies.send(Reply::RemovedFromPlaylist { playlist, result });
+            });
+        }
+        Request::DeletePlaylist(id) => {
+            tokio::spawn(async move {
+                let result = p
+                    .delete_playlist(&id)
+                    .await
+                    .map_err(|e| format!("Couldn't delete the playlist: {e}"));
+                replies.send(Reply::PlaylistDeleted { id, result });
+            });
+        }
+        Request::AddToPlaylists { playlists, tracks } => {
+            tokio::spawn(async move {
+                let mut failed = None;
+                for playlist in &playlists {
+                    if let Err(e) = p.add_to_playlist(playlist, &tracks).await {
+                        failed = Some(e);
+                    }
+                }
+                let result = match failed {
+                    None if playlists.len() == 1 => Ok("Added to the playlist".to_owned()),
+                    None => Ok(format!("Added to {} playlists", playlists.len())),
+                    Some(e) => Err(format!("Couldn't add to every playlist: {e}")),
+                };
+                replies.send(Reply::Changed(result));
+            });
+        }
+        Request::Favourite { kind, id } => {
+            tokio::spawn(async move {
+                let result = p.is_favourite(kind, &id).await.map_err(|e| e.to_string());
+                replies.send(Reply::Favourite {
+                    id,
+                    set: None,
+                    result,
+                });
+            });
+        }
+        Request::StationTracks(id) => {
+            tokio::spawn(async move {
+                let result = p
+                    .station_tracks(&id, STATION_BATCH)
+                    .await
+                    .map_err(|e| e.to_string());
+                replies.send(Reply::StationTracks { id, result });
+            });
+        }
+        other => return Some(other),
+    }
+    None
+}
+
 /// Which service a request is for, when it names an item.
 fn target(request: &Request) -> Option<ProviderKind> {
     let id = match request {
@@ -1043,6 +1067,9 @@ fn soundcloud_request(
     replies: Replies,
     warming: &mut Option<tokio::task::JoinHandle<()>>,
 ) {
+    let Some(request) = shared_request(sc.clone(), request, replies.clone()) else {
+        return;
+    };
     match request {
         Request::Album(id) => {
             tokio::spawn(async move {
@@ -1079,17 +1106,6 @@ fn soundcloud_request(
         }
         Request::Lyrics(id) => replies.send(Reply::Lyrics {
             id,
-            result: Ok(None),
-        }),
-        Request::SongLinks { song, radio } => {
-            tokio::spawn(async move {
-                let result = sc.song_links(&song).await.map_err(|e| e.to_string());
-                replies.send(Reply::SongLinks { radio, result });
-            });
-        }
-        Request::Favourite { id, .. } => replies.send(Reply::Favourite {
-            id,
-            set: None,
             result: Ok(None),
         }),
         Request::Fetch {

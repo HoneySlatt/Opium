@@ -3,7 +3,8 @@
 //! `sc signin` opens a browser on soundcloud.com and keeps the tokens under
 //! `$XDG_CONFIG_HOME/music/soundcloud/`, readable by the user only; they are
 //! never printed. Then: `sc me`, `sc likes`, `sc playlists`, `sc playlist <id>`,
-//! `sc search <words>`, `sc fetch <track id> <out> [--stream]`. `sc public
+//! `sc search <words>`, `sc radio <track id>`, `sc fetch <track id> <out>
+//! [--stream]`. `sc public
 //! <track id> <out>` fetches a public track without signing in.
 
 use std::path::PathBuf;
@@ -175,6 +176,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 );
             }
         }
+        "radio" if args.len() >= 2 => {
+            let sc = connect().await?;
+            let links = sc.song_links(&track_id(arg(1))).await?;
+            let station = links.station.ok_or("no station")?;
+            for round in 0..2 {
+                let tracks = sc.station_tracks(&station, 20).await?;
+                println!("round {round}: {} tracks", tracks.len());
+                for t in tracks.iter().take(4) {
+                    println!("  {:>12}  {} — {}", t.id.id, t.artists.join(", "), t.title);
+                }
+            }
+        }
         "fetch" if args.len() >= 3 => {
             let sc = connect().await?;
             fetch(&sc, arg(1), arg(2), arg(3) != "--stream").await?;
@@ -184,7 +197,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             fetch(&sc, arg(1), arg(2), false).await?;
         }
         _ => eprintln!(
-            "usage: sc signin | me | likes | playlists | playlist <id> | search <words> | fetch <track id> <out> [--stream] | public <track id> <out>"
+            "usage: sc signin | me | likes | playlists | playlist <id> | search <words> | radio <track id> | fetch <track id> <out> [--stream] | public <track id> <out>"
         ),
     }
     Ok(())

@@ -144,13 +144,18 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 .unwrap_or_default();
             let matches =
                 |p: &Playlist| filter.is_empty() || p.name.to_lowercase().contains(&filter);
+            let tracks = app
+                .playlist_dialog
+                .as_ref()
+                .map(|d| d.tracks.clone())
+                .unwrap_or_default();
             let recent: Vec<Playlist> = if filter.is_empty() {
-                app.recent_playlists()
+                app.recent_playlists(&tracks)
             } else {
                 Vec::new()
             };
             let all: Vec<Playlist> = app
-                .editable_playlists()
+                .editable_playlists(&tracks)
                 .into_iter()
                 .filter(matches)
                 .collect();

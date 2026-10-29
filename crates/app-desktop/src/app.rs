@@ -588,6 +588,14 @@ impl App {
     /// Whether an album or a playlist is in the library, if known: a library
     /// one is, a catalog one as Apple says, asked the first time it is shown.
     fn collection_in_library(&self, kind: FavouriteKind, id: &ItemId) -> Option<bool> {
+        // A SoundCloud playlist is in the library once liked or made; its
+        // albums aren't kept there yet.
+        if id.provider == ProviderKind::SoundCloud {
+            return Some(
+                self.added_to_library.contains(id)
+                    || (kind != FavouriteKind::Album && self.playlists.iter().any(|p| p.id == *id)),
+            );
+        }
         let library = match kind {
             FavouriteKind::Album => id.id.starts_with("l."),
             _ => id.id.starts_with("p."),
@@ -881,6 +889,10 @@ impl App {
     pub fn is_favourite(&self, kind: FavouriteKind, id: &ItemId) -> bool {
         match self.favourites_known.get(id) {
             Some(&on) => on,
+            // A SoundCloud song's like is its favourite and its library both.
+            None if id.provider == ProviderKind::SoundCloud => {
+                kind == FavouriteKind::Song && self.library_songs.contains(id)
+            }
             None => kind == FavouriteKind::Song && self.favourite_songs.contains(id),
         }
     }
@@ -890,6 +902,19 @@ impl App {
     pub fn toggle_favourite(&mut self, kind: FavouriteKind, id: ItemId) {
         let on = !self.is_favourite(kind, &id);
         self.favourites_known.insert(id.clone(), on);
+        // On SoundCloud, a like: into the library, or out of it.
+        if id.provider == ProviderKind::SoundCloud {
+            if kind == FavouriteKind::Song {
+                if on {
+                    self.library_songs.insert(id.clone());
+                } else {
+                    self.library_songs.remove(&id);
+                    self.songs.retain(|t| t.id != id);
+                }
+            }
+            self.backend.send(Request::SetFavourite { kind, id, on });
+            return;
+        }
         if kind == FavouriteKind::Song {
             // Apple's playlist changes with it: load it again when next opened.
             if let Some(favourites) = self.favourites() {
@@ -953,22 +978,26 @@ impl App {
         self.notify(format!("Adding “{}” to the library…", track.title), now);
     }
 
-    /// The user's own playlists, which songs can be added to.
-    pub fn editable_playlists(&self) -> Vec<Playlist> {
-        // SoundCloud's take songs in a later version.
+    /// The user's own playlists that `tracks` can go in: those of their
+    /// service, as a playlist takes its own service's songs only.
+    pub fn editable_playlists(&self, tracks: &[Track]) -> Vec<Playlist> {
+        let provider = tracks.first().map(|t| t.id.provider);
+        let one_service = tracks.iter().all(|t| Some(t.id.provider) == provider);
         self.playlists
             .iter()
-            .filter(|p| p.editable && p.id.provider == ProviderKind::AppleMusic)
+            .filter(|p| p.editable && one_service && Some(p.id.provider) == provider)
             .cloned()
             .collect()
     }
 
-    /// The playlists songs were last added to, most recent first.
-    pub fn recent_playlists(&self) -> Vec<Playlist> {
+    /// The playlists songs were last added to, most recent first, that
+    /// `tracks` can go in.
+    pub fn recent_playlists(&self, tracks: &[Track]) -> Vec<Playlist> {
+        let fit = self.editable_playlists(tracks);
         self.settings
             .recent_playlists
             .iter()
-            .filter_map(|id| self.playlists.iter().find(|p| p.id.id == *id && p.editable))
+            .filter_map(|id| fit.iter().find(|p| p.id.id == *id))
             .cloned()
             .collect()
     }
@@ -976,7 +1005,7 @@ impl App {
     /// Open the Add to Playlists window for `tracks`, loading the playlists'
     /// songs so it can say which already have them.
     pub fn open_playlist_dialog(&mut self, tracks: Vec<Track>) {
-        for playlist in self.editable_playlists() {
+        for playlist in self.editable_playlists(&tracks) {
             if !self.playlist_tracks.contains_key(&playlist.id) {
                 self.playlist_tracks
                     .insert(playlist.id.clone(), PlaylistTracks::default());
@@ -1931,11 +1960,19 @@ impl App {
     /// Take `track` out of one of the user's playlists: off its page at once,
     /// every row of it, as Apple does.
     pub fn remove_from_playlist(&mut self, playlist: &ItemId, track: &Track) {
-        let Some(entry) = track.library_id.clone() else {
-            return;
+        // Apple names a playlist's row by its library id; SoundCloud has a
+        // track once in a playlist, named by its own.
+        let entry = if playlist.provider == ProviderKind::SoundCloud {
+            track.id.clone()
+        } else {
+            let Some(entry) = track.library_id.clone() else {
+                return;
+            };
+            entry
         };
         if let Some(loaded) = self.playlist_tracks.get_mut(playlist) {
-            Arc::make_mut(&mut loaded.tracks).retain(|t| t.library_id.as_ref() != Some(&entry));
+            Arc::make_mut(&mut loaded.tracks)
+                .retain(|t| t.library_id.as_ref() != Some(&entry) && t.id != entry);
         }
         self.backend.send(Request::RemoveFromPlaylist {
             playlist: playlist.clone(),

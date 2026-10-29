@@ -15,8 +15,8 @@ use std::sync::{Mutex, RwLock};
 
 use async_trait::async_trait;
 use music_core::model::{
-    Album, Artist, ArtistDetail, Collection, Cursor, ItemId, Page, Playlist, ProviderKind,
-    SearchResults, SongLinks, Track,
+    Album, Artist, ArtistDetail, Collection, Cursor, FavouriteKind, ItemId, Page, Playlist,
+    ProviderKind, SearchResults, SongLinks, Track,
 };
 use music_core::{Error, Provider, Result};
 use serde::de::DeserializeOwned;
@@ -33,6 +33,8 @@ const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KH
 const PAGE: u32 = 200;
 /// Tracks `tracks?ids=` takes at once.
 const IDS_AT_ONCE: usize = 50;
+/// Tracks a playlist holds, as the web player allows.
+const PLAYLIST_MAX: usize = 500;
 
 /// The user's tokens, as the browser keeps them.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -51,6 +53,16 @@ pub struct SoundCloud {
     on_tokens: OnTokens,
     /// The signed-in user.
     me: types::User,
+    /// What each station has played, so that it goes on without repeating.
+    stations: Mutex<std::collections::HashMap<String, Station>>,
+}
+
+/// A station's songs so far: their ids, and the last, which the next ones
+/// are related to.
+#[derive(Default)]
+struct Station {
+    seen: std::collections::HashSet<u64>,
+    last: Option<u64>,
 }
 
 impl SoundCloud {
@@ -69,6 +81,7 @@ impl SoundCloud {
             tokens: Mutex::new(tokens),
             on_tokens,
             me: types::User::default(),
+            stations: Mutex::default(),
         };
         if !sc.token().is_empty() {
             sc.me = sc.get("/me").await?;
@@ -101,9 +114,32 @@ impl SoundCloud {
     }
 
     /// `path` on the API, or a URL it handed back (`next_href`, a
-    /// transcoding's), with `query` and the client id. A refused token is
-    /// renewed, a refused client id read again, once each.
+    /// transcoding's), with `query` and the client id.
     async fn get_with<T: DeserializeOwned>(&self, path: &str, query: &[(&str, &str)]) -> Result<T> {
+        let body = self.call(reqwest::Method::GET, path, query, None).await?;
+        serde_json::from_str(&body).map_err(|e| Error::Protocol(format!("{path}: {e}")))
+    }
+
+    /// A change on the API, with `body` as JSON when there is one; what it
+    /// answered.
+    async fn send(
+        &self,
+        method: reqwest::Method,
+        path: &str,
+        body: Option<&serde_json::Value>,
+    ) -> Result<String> {
+        self.call(method, path, &[], body).await
+    }
+
+    /// A request to the API as the web player makes it. A refused token is
+    /// renewed, a refused client id read again, once each.
+    async fn call(
+        &self,
+        method: reqwest::Method,
+        path: &str,
+        query: &[(&str, &str)],
+        body: Option<&serde_json::Value>,
+    ) -> Result<String> {
         let url = if path.starts_with("https://") {
             path.to_owned()
         } else {
@@ -113,12 +149,15 @@ impl SoundCloud {
         loop {
             let mut request = self
                 .http
-                .get(&url)
+                .request(method.clone(), &url)
                 .query(&[("client_id", self.client_id().as_str())])
                 .query(query);
             let token = self.token();
             if !token.is_empty() {
                 request = request.header("Authorization", format!("OAuth {token}"));
+            }
+            if let Some(body) = body {
+                request = request.json(body);
             }
             let resp = request
                 .header("Origin", WEB)
@@ -146,12 +185,10 @@ impl SoundCloud {
                     return Err(Error::Protocol(format!("{url}: HTTP {s}")));
                 }
                 _ => {
-                    let body = resp
+                    return resp
                         .text()
                         .await
-                        .map_err(|e| Error::Network(format!("{url}: {e}")))?;
-                    return serde_json::from_str(&body)
-                        .map_err(|e| Error::Protocol(format!("{url}: {e}")));
+                        .map_err(|e| Error::Network(format!("{url}: {e}")));
                 }
             }
         }
@@ -247,6 +284,58 @@ impl SoundCloud {
         }
     }
 
+    /// A playlist's track ids, in its order.
+    async fn playlist_ids(&self, playlist: &ItemId) -> Result<Vec<u64>> {
+        let found: types::Playlist = self.get(&format!("/playlists/{}", playlist.id)).await?;
+        Ok(found.tracks.iter().map(|t| t.id).collect())
+    }
+
+    /// Make `ids` a playlist's tracks, in that order: SoundCloud takes the
+    /// whole list each time, 500 at most.
+    async fn set_playlist_tracks(&self, playlist: &ItemId, ids: &[u64]) -> Result<()> {
+        if ids.len() > PLAYLIST_MAX {
+            return Err(Error::Protocol(format!(
+                "a SoundCloud playlist holds {PLAYLIST_MAX} tracks at most"
+            )));
+        }
+        let body = serde_json::json!({ "playlist": { "tracks": ids } });
+        self.send(
+            reqwest::Method::PUT,
+            &format!("/playlists/{}", playlist.id),
+            Some(&body),
+        )
+        .await
+        .map(drop)
+    }
+
+    /// Like or unlike: a track, or a playlist or album.
+    async fn like(&self, kind: FavouriteKind, id: &ItemId, on: bool) -> Result<()> {
+        let path = match kind {
+            FavouriteKind::Song => format!("/users/{}/track_likes/{}", self.me.id, id.id),
+            FavouriteKind::Album | FavouriteKind::Playlist => {
+                format!("/users/{}/playlist_likes/{}", self.me.id, id.id)
+            }
+            // An artist is followed.
+            FavouriteKind::Artist => {
+                let method = if on {
+                    reqwest::Method::POST
+                } else {
+                    reqwest::Method::DELETE
+                };
+                return self
+                    .send(method, &format!("/me/followings/{}", id.id), None)
+                    .await
+                    .map(drop);
+            }
+        };
+        let method = if on {
+            reqwest::Method::PUT
+        } else {
+            reqwest::Method::DELETE
+        };
+        self.send(method, &path, None).await.map(drop)
+    }
+
     /// Every track of a playlist, in its order: it lists only the first few
     /// whole, the others by id, fetched 50 at a time.
     async fn whole_playlist(&self, id: &ItemId) -> Result<types::Playlist> {
@@ -284,6 +373,9 @@ impl SoundCloud {
         Ok(playlist)
     }
 }
+
+/// A track's station, as the app names it: `track-stations:<id>`.
+const STATION: &str = "track-stations:";
 
 /// The app a JWT token was issued to: its `client_id` claim.
 fn jwt_client_id(token: &str) -> Option<String> {
@@ -345,9 +437,14 @@ impl Provider for SoundCloud {
                 .collection
                 .into_iter()
                 .filter_map(|like| like.track)
-                .map(|t| Track {
-                    in_library: true,
-                    ..convert::track(t)
+                .map(|t| {
+                    let track = convert::track(t);
+                    // Remove from Library unlikes it, by its own id.
+                    Track {
+                        in_library: true,
+                        library_id: Some(track.id.clone()),
+                        ..track
+                    }
                 })
                 .collect(),
             next: page.next_href.map(Cursor),
@@ -465,8 +562,129 @@ impl Provider for SoundCloud {
         let track: types::Track = self.get(&format!("/tracks/{}", song.id)).await?;
         Ok(SongLinks {
             artist: track.user.map(|u| convert::id(u.id)),
-            station: None,
+            station: Some(ItemId::new(
+                ProviderKind::SoundCloud,
+                format!("{STATION}{}", track.id),
+            )),
         })
+    }
+
+    /// The track's station first, then songs related to the last one played,
+    /// none twice.
+    async fn station_tracks(&self, station: &ItemId, _count: usize) -> Result<Vec<Track>> {
+        let seed = station
+            .id
+            .strip_prefix(STATION)
+            .ok_or_else(|| Error::Protocol(format!("not a SoundCloud station: {}", station.id)))?;
+        let last = {
+            let stations = self.stations.lock().unwrap_or_else(|e| e.into_inner());
+            stations.get(&station.id).and_then(|s| s.last)
+        };
+        let limit = [("limit", "50")];
+        let page: types::Collection<types::Track> = match last {
+            None => {
+                self.get_with(
+                    &format!("/stations/soundcloud:{STATION}{seed}/tracks"),
+                    &limit,
+                )
+                .await?
+            }
+            Some(last) => {
+                self.get_with(&format!("/tracks/{last}/related"), &limit)
+                    .await?
+            }
+        };
+        let mut stations = self.stations.lock().unwrap_or_else(|e| e.into_inner());
+        let state = stations.entry(station.id.clone()).or_default();
+        let fresh: Vec<types::Track> = page
+            .collection
+            .into_iter()
+            .filter(|t| t.title.is_some() && state.seen.insert(t.id))
+            .collect();
+        if let Some(t) = fresh.last() {
+            state.last = Some(t.id);
+        }
+        Ok(fresh.into_iter().map(convert::track).collect())
+    }
+
+    async fn set_favourite(&self, kind: FavouriteKind, id: &ItemId, on: bool) -> Result<()> {
+        self.like(kind, id, on).await
+    }
+
+    /// Into the library is a like, on SoundCloud.
+    async fn add_to_library(&self, kind: FavouriteKind, id: &ItemId) -> Result<()> {
+        self.like(kind, id, true).await
+    }
+
+    async fn remove_from_library(&self, library_id: &ItemId) -> Result<()> {
+        self.like(FavouriteKind::Song, library_id, false).await
+    }
+
+    /// Private, as the user's own playlists are until they share them.
+    async fn create_playlist(
+        &self,
+        name: &str,
+        description: &str,
+        tracks: &[ItemId],
+    ) -> Result<Playlist> {
+        let ids: Vec<u64> = tracks.iter().filter_map(|t| t.id.parse().ok()).collect();
+        let body = serde_json::json!({ "playlist": {
+            "title": name,
+            "description": description,
+            "sharing": "private",
+            "tracks": ids,
+        }});
+        let made = self
+            .send(reqwest::Method::POST, "/playlists", Some(&body))
+            .await?;
+        let made: types::Playlist =
+            serde_json::from_str(&made).map_err(|e| Error::Protocol(format!("playlists: {e}")))?;
+        Ok(convert::playlist(made, Some(self.me.id)))
+    }
+
+    async fn edit_playlist(&self, playlist: &ItemId, name: &str, description: &str) -> Result<()> {
+        let body = serde_json::json!({ "playlist": { "title": name, "description": description } });
+        self.send(
+            reqwest::Method::PUT,
+            &format!("/playlists/{}", playlist.id),
+            Some(&body),
+        )
+        .await
+        .map(drop)
+    }
+
+    /// The user's own goes for good; one they only liked is unliked.
+    async fn delete_playlist(&self, playlist: &ItemId) -> Result<()> {
+        let found: types::Playlist = self.get(&format!("/playlists/{}", playlist.id)).await?;
+        if found.user.is_some_and(|u| u.id == self.me.id) {
+            self.send(
+                reqwest::Method::DELETE,
+                &format!("/playlists/{}", playlist.id),
+                None,
+            )
+            .await
+            .map(drop)
+        } else {
+            self.like(FavouriteKind::Playlist, playlist, false).await
+        }
+    }
+
+    /// `entry` is the track itself: a playlist has a track once.
+    async fn remove_from_playlist(&self, playlist: &ItemId, entry: &ItemId) -> Result<()> {
+        let mut ids = self.playlist_ids(playlist).await?;
+        ids.retain(|id| id.to_string() != entry.id);
+        self.set_playlist_tracks(playlist, &ids).await
+    }
+
+    /// At the end, those not in it already.
+    async fn add_to_playlist(&self, playlist: &ItemId, tracks: &[ItemId]) -> Result<()> {
+        let mut ids = self.playlist_ids(playlist).await?;
+        for id in tracks.iter().filter_map(|t| t.id.parse::<u64>().ok()) {
+            if !ids.contains(&id) {
+                ids.push(id);
+            }
+        }
+        self.set_playlist_tracks(playlist, &ids).await
     }
 
     /// All of it at once: SoundCloud playlists are short (500 at most).

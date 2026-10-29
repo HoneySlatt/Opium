@@ -380,7 +380,11 @@ pub fn row(
         favourite: state.favourite,
         in_library: state.in_library,
         removable: track.library_id.is_some(),
-        in_playlist: state.in_playlist && track.library_id.is_some(),
+        // Apple names a playlist's row by its library id; SoundCloud by the
+        // track itself.
+        in_playlist: state.in_playlist
+            && (track.library_id.is_some()
+                || track.id.provider == music_core::model::ProviderKind::SoundCloud),
     };
     if let Some(choice) = super::menu::track_menu(&response, theme, facts) {
         action = RowAction::Menu(choice);
