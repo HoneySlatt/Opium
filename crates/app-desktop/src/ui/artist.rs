@@ -1,32 +1,43 @@
-//! An artist, laid out as Cider does: the round photo, the name and the play
-//! buttons centred over the photo's colours; the latest release beside the top
-//! songs in sideways columns; then shelves of albums and of singles and EPs.
+//! An artist, laid out as Cider does: their video, or a wide picture of
+//! them, across the top and fading into the page, their name and buttons
+//! over its foot; the latest release beside the top songs in sideways
+//! columns; then shelves of their albums, videos, playlists and the like.
 
-use egui::{Id, Rect, Sense, Ui, pos2, vec2};
-use music_core::model::{Album, ArtistDetail, Collection, FavouriteKind, ItemId};
+use egui::{Color32, Id, Mesh, Rect, Sense, Ui, pos2, vec2};
+use music_core::model::{Album, ArtistDetail, Collection, FavouriteKind, ItemId, Playlist};
 
 use crate::app::{App, Loaded, Page};
 use crate::fonts::{Weight, font};
 use crate::icons;
 use crate::theme::Theme;
 
-use super::detail::cover_wash;
 use super::grid::{
     CARD_TEXT, CardClick, SHELF_HEAD, SONG_COLUMNS_HEIGHT, ShelfCard, cover_shelf, round_shelf,
-    song_columns,
+    song_columns, video_shelf,
 };
 use super::search::{message, section_head};
 use super::{artwork, format_date, paint_icon, paint_text, text};
 
-const PHOTO_TOP: f32 = 56.0;
-const PHOTO: f32 = 220.0;
-/// From the top of the page to the first section.
-const HERO: f32 = PHOTO_TOP + PHOTO + 20.0 + 58.0 + 16.0 + 56.0 + 40.0;
 const SECTION_GAP: f32 = 36.0;
 /// The latest release beside them: its cover and the words next to it.
 const LATEST_ART: f32 = 150.0;
 const LATEST_WIDTH: f32 = LATEST_ART + 16.0 + 140.0;
 const SHELF_CARD: f32 = 200.0;
+/// The music videos' stills, wide.
+const VIDEO_CARD: f32 = 240.0;
+
+/// How tall the top of the page is, for a page `width` wide.
+fn hero_height(width: f32) -> f32 {
+    (width * 0.42).clamp(360.0, 760.0)
+}
+
+/// A shelf of the page, in the order Cider shows them.
+enum Section<'a> {
+    Albums(&'static str, &'a [Album]),
+    Videos,
+    Playlists(&'a [Playlist]),
+    Similar,
+}
 
 pub fn show(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
     let theme = app.theme.clone();
@@ -36,68 +47,60 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
         _ => (None, None),
     };
     let width = ui.available_width() - 2.0 * pad;
+    let hero = hero_height(ui.available_width());
     let top_songs = artist
         .as_ref()
         .is_some_and(|a| !a.top_songs.is_empty() || a.latest.is_some());
-    let shelves: Vec<(&str, &[Album])> = artist
+    let sections: Vec<Section> = artist
         .as_ref()
         .map(|a| {
-            vec![
-                ("Albums", a.albums.as_slice()),
-                ("Singles & EPs", a.singles.as_slice()),
-                ("Compilations", a.compilations.as_slice()),
-                ("Appears On", a.appears_on.as_slice()),
-            ]
+            let mut s = vec![
+                Section::Albums("Essential Albums", a.essentials.as_slice()),
+                Section::Albums("Albums", a.albums.as_slice()),
+                Section::Albums("Singles & EPs", a.singles.as_slice()),
+            ];
+            if !a.videos.is_empty() {
+                s.push(Section::Videos);
+            }
+            if !a.playlists.is_empty() {
+                s.push(Section::Playlists(a.playlists.as_slice()));
+            }
+            s.push(Section::Albums("Compilations", a.compilations.as_slice()));
+            s.push(Section::Albums("Appears On", a.appears_on.as_slice()));
+            if !a.similar.is_empty() {
+                s.push(Section::Similar);
+            }
+            s.retain(|s| !matches!(s, Section::Albums(_, a) if a.is_empty()));
+            s
         })
         .unwrap_or_default();
     let shelf_height = SHELF_HEAD + SHELF_CARD + CARD_TEXT + SECTION_GAP;
-    let mut total = HERO;
+    let video_height = SHELF_HEAD + VIDEO_CARD * 9.0 / 16.0 + CARD_TEXT + SECTION_GAP;
+    let mut total = hero + 16.0;
     if top_songs {
         total += SHELF_HEAD + SONG_COLUMNS_HEIGHT + SECTION_GAP;
     }
-    total += shelves.iter().filter(|(_, a)| !a.is_empty()).count() as f32 * shelf_height;
-    if artist.as_ref().is_some_and(|a| !a.similar.is_empty()) {
-        total += shelf_height;
+    for section in &sections {
+        total += match section {
+            Section::Videos => video_height,
+            _ => shelf_height,
+        };
     }
     total += 104.0;
 
-    let colors = super::backdrop(app);
     let output = egui::ScrollArea::vertical()
         .id_salt(("artist", &id.id))
         .auto_shrink(false)
         .show(ui, |ui| {
             let (content, _) =
                 ui.allocate_exact_size(vec2(ui.available_width(), total), Sense::hover());
-            if let Some(colors) = colors {
-                cover_wash(
-                    ui,
-                    &theme,
-                    Rect::from_min_size(content.min, vec2(content.width(), 680.0)),
-                    colors,
-                );
-            }
             let left = content.left() + pad;
-            let center = content.center().x;
-            let photo = Rect::from_center_size(
-                pos2(center, content.top() + PHOTO_TOP + PHOTO / 2.0),
-                vec2(PHOTO, PHOTO),
-            );
-            ui.painter().add(
-                egui::Shadow {
-                    offset: [0, 16],
-                    blur: 44,
-                    spread: 0,
-                    color: egui::Color32::from_black_alpha(100),
-                }
-                .as_shape(photo.shrink(8.0), PHOTO / 2.0),
-            );
-            let url = artist
-                .as_ref()
-                .and_then(|a| a.artist.artwork.as_ref())
-                .map(|a| a.url(480));
-            artwork(ui, url, photo, PHOTO / 2.0, &theme);
+            let top = Rect::from_min_size(content.min, vec2(content.width(), hero));
+            if let Some(artist) = &artist {
+                banner(app, ui, &theme, artist, top);
+            }
 
-            let mut y = content.top() + HERO;
+            let mut y = content.top() + hero + 16.0;
             if let Some(e) = &error {
                 message(ui, &theme, left, y, width, "Couldn't load this artist", e);
                 return;
@@ -105,23 +108,30 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
             let Some(artist) = &artist else {
                 return;
             };
+            // The name and the buttons over the foot of the picture, white
+            // whatever the theme, as the picture is under them.
             let name = text(
                 ui,
                 &artist.artist.name,
-                font(48.0, Weight::Bold),
-                theme.text,
+                font(44.0, Weight::Bold),
+                Color32::WHITE,
                 width,
             );
-            let name_y = photo.bottom() + 20.0 + 29.0;
-            paint_text(ui, name, center, name_y, egui::Align::Center, theme.text);
+            let name_y = top.bottom() - 132.0;
+            ui.painter().galley(
+                pos2(left, name_y - name.size().y / 2.0 + 2.0),
+                name.clone(),
+                Color32::from_black_alpha(110),
+            );
+            paint_text(ui, name, left, name_y, egui::Align::Min, Color32::WHITE);
             let favourite = app.is_favourite(FavouriteKind::Artist, &artist.artist.id);
-            let buttons_at = pos2(center, name_y + 29.0 + 16.0 + 28.0);
-            match hero_buttons(ui, &theme, buttons_at, favourite) {
+            let now = ui.input(|i| i.time);
+            match hero_buttons(ui, &theme, pos2(left, top.bottom() - 70.0), favourite) {
                 Some(HeroButton::Play) => {
-                    app.play_shuffled_or_not(artist.top_songs.clone(), false, ui.input(|i| i.time));
+                    app.play_shuffled_or_not(artist.top_songs.clone(), false, now);
                 }
                 Some(HeroButton::Shuffle) => {
-                    app.play_shuffled_or_not(artist.top_songs.clone(), true, ui.input(|i| i.time));
+                    app.play_shuffled_or_not(artist.top_songs.clone(), true, now);
                 }
                 Some(HeroButton::Favourite) => {
                     app.toggle_favourite(FavouriteKind::Artist, artist.artist.id.clone());
@@ -133,74 +143,206 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
                 songs_section(app, ui, &theme, artist, pos2(left, y), width);
                 y += SHELF_HEAD + SONG_COLUMNS_HEIGHT + SECTION_GAP;
             }
-            for (title, albums) in &shelves {
-                if albums.is_empty() {
-                    continue;
-                }
-                let cards: Vec<ShelfCard> = albums
-                    .iter()
-                    .map(|a| ShelfCard {
-                        title: a.title.clone(),
-                        sub: date_line(a),
-                        url: a.artwork.as_ref().map(|art| art.url(400)),
-                        explicit: a.explicit,
-                        addable: app.can_add_album(&a.id),
-                    })
-                    .collect();
-                let shelf_id = Id::unique(("artist-shelf", *title, &artist.artist.id.id));
-                if let Some((i, click)) = cover_shelf(
-                    ui,
-                    &theme,
-                    pos2(left, y),
-                    width,
-                    title,
-                    &cards,
-                    SHELF_CARD,
-                    shelf_id,
-                ) {
-                    let id = albums[i].id.clone();
-                    match click {
-                        CardClick::Open => app.go(Page::Album(id)),
-                        CardClick::AddToLibrary => {
-                            let album = Collection::Album(albums[i].clone());
-                            app.add_collection_to_library(&album, ui.input(|i| i.time));
-                        }
-                        CardClick::Enqueue(how) => {
-                            app.enqueue_album(id, how, ui.input(|i| i.time));
-                        }
+            for section in &sections {
+                match section {
+                    Section::Albums(title, albums) => {
+                        albums_shelf(app, ui, &theme, artist, title, albums, pos2(left, y), width);
+                        y += shelf_height;
                     }
-                }
-                y += shelf_height;
-            }
-            // Artists like them, in round photos, each leading to their page.
-            if !artist.similar.is_empty() {
-                let cards: Vec<ShelfCard> = artist
-                    .similar
-                    .iter()
-                    .map(|a| ShelfCard {
-                        title: a.name.clone(),
-                        sub: String::new(),
-                        url: a.artwork.as_ref().map(|art| art.url(400)),
-                        explicit: false,
-                        addable: false,
-                    })
-                    .collect();
-                let shelf_id = Id::unique(("artist-similar", &artist.artist.id.id));
-                if let Some(i) = round_shelf(
-                    ui,
-                    &theme,
-                    pos2(left, y),
-                    width,
-                    "Similar Artists",
-                    &cards,
-                    SHELF_CARD,
-                    shelf_id,
-                ) {
-                    app.go(Page::Artist(artist.similar[i].id.clone()));
+                    Section::Videos => {
+                        let cards: Vec<ShelfCard> = artist
+                            .videos
+                            .iter()
+                            .map(|v| ShelfCard {
+                                title: v.title.clone(),
+                                sub: v.artists.join(", "),
+                                url: v.thumbnail.clone(),
+                                explicit: v.explicit,
+                                addable: false,
+                            })
+                            .collect();
+                        let shelf_id = Id::unique(("artist-videos", &artist.artist.id.id));
+                        // There is no video player here: they play on Apple
+                        // Music's website.
+                        if let Some(i) = video_shelf(
+                            ui,
+                            &theme,
+                            pos2(left, y),
+                            width,
+                            "Music Videos",
+                            &cards,
+                            VIDEO_CARD,
+                            shelf_id,
+                        ) && let Some(url) = &artist.videos[i].url
+                        {
+                            ui.ctx().open_url(egui::OpenUrl::new_tab(url));
+                        }
+                        y += video_height;
+                    }
+                    Section::Playlists(playlists) => {
+                        let cards: Vec<ShelfCard> = playlists
+                            .iter()
+                            .map(|p| ShelfCard {
+                                title: p.name.clone(),
+                                sub: p.curator.clone().unwrap_or_default(),
+                                url: p.artwork.as_ref().map(|art| art.url(400)),
+                                explicit: false,
+                                addable: app.can_add_to_library(&Collection::Playlist(p.clone())),
+                            })
+                            .collect();
+                        let shelf_id = Id::unique(("artist-playlists", &artist.artist.id.id));
+                        if let Some((i, click)) = cover_shelf(
+                            ui,
+                            &theme,
+                            pos2(left, y),
+                            width,
+                            "Artist Playlists",
+                            &cards,
+                            SHELF_CARD,
+                            shelf_id,
+                        ) {
+                            let playlist = &playlists[i];
+                            match click {
+                                CardClick::Open => app.open_playlist(playlist),
+                                CardClick::Enqueue(how) => app.enqueue_playlist(playlist, how, now),
+                                CardClick::AddToLibrary => app.add_collection_to_library(
+                                    &Collection::Playlist(playlist.clone()),
+                                    now,
+                                ),
+                            }
+                        }
+                        y += shelf_height;
+                    }
+                    // Artists like them, in round photos, each leading to
+                    // their page.
+                    Section::Similar => {
+                        let cards: Vec<ShelfCard> = artist
+                            .similar
+                            .iter()
+                            .map(|a| ShelfCard {
+                                title: a.name.clone(),
+                                sub: String::new(),
+                                url: a.artwork.as_ref().map(|art| art.url(400)),
+                                explicit: false,
+                                addable: false,
+                            })
+                            .collect();
+                        let shelf_id = Id::unique(("artist-similar", &artist.artist.id.id));
+                        if let Some(i) = round_shelf(
+                            ui,
+                            &theme,
+                            pos2(left, y),
+                            width,
+                            "Similar Artists",
+                            &cards,
+                            SHELF_CARD,
+                            shelf_id,
+                        ) {
+                            app.go(Page::Artist(artist.similar[i].id.clone()));
+                        }
+                        y += shelf_height;
+                    }
                 }
             }
         });
     output.state.clamped_offset().y
+}
+
+/// A shelf of `albums` under `title`.
+#[allow(clippy::too_many_arguments)]
+fn albums_shelf(
+    app: &mut App,
+    ui: &mut Ui,
+    theme: &Theme,
+    artist: &ArtistDetail,
+    title: &str,
+    albums: &[Album],
+    at: egui::Pos2,
+    width: f32,
+) {
+    let cards: Vec<ShelfCard> = albums
+        .iter()
+        .map(|a| ShelfCard {
+            title: a.title.clone(),
+            sub: date_line(a),
+            url: a.artwork.as_ref().map(|art| art.url(400)),
+            explicit: a.explicit,
+            addable: app.can_add_album(&a.id),
+        })
+        .collect();
+    let shelf_id = Id::unique(("artist-shelf", title, &artist.artist.id.id));
+    if let Some((i, click)) = cover_shelf(ui, theme, at, width, title, &cards, SHELF_CARD, shelf_id)
+    {
+        let id = albums[i].id.clone();
+        let now = ui.input(|i| i.time);
+        match click {
+            CardClick::Open => app.go(Page::Album(id)),
+            CardClick::AddToLibrary => {
+                app.add_collection_to_library(&Collection::Album(albums[i].clone()), now);
+            }
+            CardClick::Enqueue(how) => app.enqueue_album(id, how, now),
+        }
+    }
+}
+
+/// The artist's video, else their wide picture, else their photo, filling
+/// the width from the top and cut at the foot of `rect`, where it fades into
+/// the page. A shade at the top keeps the top bar's buttons legible.
+fn banner(app: &mut App, ui: &Ui, theme: &Theme, artist: &ArtistDetail, rect: Rect) {
+    let area = Rect::from_min_size(rect.min, vec2(rect.width(), rect.width() * 9.0 / 16.0));
+    let pixels = rect.width() * ui.ctx().pixels_per_point();
+    let motion = artist
+        .motion
+        .as_deref()
+        .and_then(|master| app.motion_frame("artist-hero", master, pixels, ui.ctx()));
+    let (texture, photo) = match motion {
+        Some(t) => (Some(t), false),
+        None => {
+            let (url, photo) = match &artist.banner {
+                Some(url) => (Some(url.clone()), false),
+                None => (artist.artist.artwork.as_ref().map(|a| a.url(1600)), true),
+            };
+            let texture = url.and_then(|url| {
+                match egui::Image::new(url).load_for_size(ui.ctx(), area.size()) {
+                    Ok(egui::load::TexturePoll::Ready { texture }) => Some(texture),
+                    _ => None,
+                }
+            });
+            (texture, photo)
+        }
+    };
+    let painter = ui.painter_at(rect);
+    painter.rect_filled(rect, 0.0, theme.crust);
+    if let Some(texture) = texture {
+        // Filling the area: what overflows is cut, a photo's a little above
+        // its middle, where faces are.
+        let scale = (area.width() / texture.size.x).max(area.height() / texture.size.y);
+        let seen = area.size() / (texture.size * scale);
+        let u = (1.0 - seen.x) / 2.0;
+        let v = (1.0 - seen.y) * if photo { 0.3 } else { 0.0 };
+        let uv = Rect::from_min_size(pos2(u, v), seen);
+        painter.image(texture.id, area, uv, Color32::WHITE);
+    }
+    // Into the page over the lower half; a shade under the top bar.
+    let mut mesh = Mesh::default();
+    let stops = [
+        (0.0, Color32::from_black_alpha(150)),
+        (0.22, Color32::TRANSPARENT),
+        (0.45, Color32::TRANSPARENT),
+        (0.75, crate::color::alpha(theme.base, 0.55)),
+        (1.0, theme.base),
+    ];
+    for (k, (f, color)) in stops.iter().enumerate() {
+        let y = rect.top() + rect.height() * f;
+        mesh.colored_vertex(pos2(rect.left(), y), *color);
+        mesh.colored_vertex(pos2(rect.right(), y), *color);
+        if k > 0 {
+            let i = (k * 2) as u32;
+            mesh.add_triangle(i - 2, i - 1, i);
+            mesh.add_triangle(i - 1, i + 1, i);
+        }
+    }
+    painter.add(mesh);
 }
 
 /// `MAR 27, 2026`, or the year alone.
@@ -221,15 +363,17 @@ enum HeroButton {
     Favourite,
 }
 
-/// Shuffle, the big round Play centred on `center`, and the favourite star.
+/// Shuffle, the big round Play and the favourite star, from `start` (the
+/// left end of their row, at its middle), dark over the picture.
 fn hero_buttons(
     ui: &mut Ui,
     theme: &Theme,
-    center: egui::Pos2,
+    start: egui::Pos2,
     favourite: bool,
 ) -> Option<HeroButton> {
-    let (big, small, gap) = (28.0, 20.0, 16.0);
+    let (big, small, gap) = (26.0, 19.0, 12.0);
     let side = big + gap + small;
+    let center = start + vec2(small + gap + big, 0.0);
     let star = if favourite {
         icons::STAR_FILL
     } else {
@@ -269,12 +413,12 @@ fn hero_buttons(
     for (c, radius, icon, size, button, label) in buttons {
         let rect = Rect::from_center_size(c, vec2(radius * 2.0, radius * 2.0));
         let response = ui.interact(rect, Id::unique(("artist-hero", label)), Sense::click());
-        let fill = theme.text_a(if response.hovered() { 0.16 } else { 0.10 });
+        let fill = Color32::from_black_alpha(if response.hovered() { 150 } else { 105 });
         ui.painter().circle_filled(c, radius, fill);
         let color = if button == HeroButton::Favourite && favourite {
             theme.red
         } else {
-            theme.text
+            Color32::WHITE
         };
         // The triangle is drawn off-centre in its icon already, so that it
         // looks centred.
@@ -345,6 +489,37 @@ fn songs_section(
             let songs = format!("{count} Song{}", if count == 1 { "" } else { "s" });
             let g = text(ui, &songs, font(12.0, Weight::Regular), muted, room);
             paint_text(ui, g, tx, ty, egui::Align::Min, muted);
+        }
+        // Add, while it isn't in the library.
+        if app.can_add_album(&latest.id) {
+            let add = Rect::from_min_size(pos2(tx, ty + 18.0), vec2(64.0, 28.0));
+            let hit = ui.interact(add, Id::unique("artist-latest-add"), Sense::click());
+            let fill = theme.text_a(if hit.hovered() { 0.14 } else { 0.08 });
+            ui.painter().rect_filled(add, 8.0, fill);
+            paint_icon(
+                ui,
+                icons::PLUS,
+                add.left_center() + vec2(15.0, 0.0),
+                12.0,
+                theme.text,
+            );
+            let g = text(ui, "Add", font(12.5, Weight::Medium), theme.text, 40.0);
+            paint_text(
+                ui,
+                g,
+                add.left() + 26.0,
+                add.center().y,
+                egui::Align::Min,
+                theme.text,
+            );
+            if hit
+                .on_hover_text("Add to Library")
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .clicked()
+            {
+                let album = Collection::Album(latest.clone());
+                app.add_collection_to_library(&album, ui.input(|i| i.time));
+            }
         }
         if response
             .on_hover_cursor(egui::CursorIcon::PointingHand)

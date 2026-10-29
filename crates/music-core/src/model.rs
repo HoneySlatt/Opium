@@ -202,6 +202,15 @@ pub struct ArtistDetail {
     /// Others' releases they are on.
     pub appears_on: Vec<Album>,
     pub similar: Vec<Artist>,
+    /// Essential Albums, as Apple's editors pick them.
+    pub essentials: Vec<Album>,
+    pub videos: Vec<MusicVideo>,
+    /// Playlists of their songs.
+    pub playlists: Vec<Playlist>,
+    /// A video across the top of their page: where the service lists it.
+    pub motion: Option<String>,
+    /// A wide picture for the top of their page, or the video's first frame.
+    pub banner: Option<String>,
 }
 
 /// A music video, as an album's page lists them.

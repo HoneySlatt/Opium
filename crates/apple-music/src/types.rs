@@ -122,12 +122,26 @@ pub struct AlbumAttributes {
 pub struct EditorialVideo {
     pub motion_detail_square: Option<Video>,
     pub motion_square_video1x1: Option<Video>,
+    /// An artist's, across the top of their page.
+    pub motion_artist_fullscreen16x9: Option<Video>,
+    pub motion_artist_wide16x9: Option<Video>,
 }
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub struct Video {
     pub video: String,
+    /// Its first picture, to show while it comes.
+    #[serde(rename = "previewFrame")]
+    pub preview_frame: Option<Artwork>,
+}
+
+/// The pictures Apple's editors chose, at the sizes they made.
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct EditorialArtwork {
+    /// 2:1, across the top of an artist's page.
+    pub centered_fullscreen_background: Option<Artwork>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -177,6 +191,10 @@ pub struct ArtistAttributes {
     pub artwork: Option<Artwork>,
     /// With `extend=inFavorites`.
     pub in_favorites: Option<bool>,
+    /// With `extend=editorialVideo`.
+    pub editorial_video: Option<EditorialVideo>,
+    /// With `extend=editorialArtwork`.
+    pub editorial_artwork: Option<EditorialArtwork>,
 }
 
 pub type Song = Resource<SongAttributes>;
@@ -216,6 +234,13 @@ pub struct ArtistViews {
     pub appears_on_albums: Option<Response<Album>>,
     #[serde(rename = "similar-artists")]
     pub similar_artists: Option<Response<Artist>>,
+    /// Essential Albums.
+    #[serde(rename = "featured-albums")]
+    pub featured_albums: Option<Response<Album>>,
+    #[serde(rename = "music-videos")]
+    pub music_videos: Option<Response<MusicVideo>>,
+    #[serde(rename = "featured-playlists")]
+    pub featured_playlists: Option<Response<Playlist>>,
 }
 
 /// An album fetched with `views=`: the lists under its songs.

@@ -736,7 +736,7 @@ impl Provider for AppleMusic {
             artist.id.clone()
         };
         let path = format!(
-            "/v1/catalog/{}/artists/{catalog_id}?views=top-songs,latest-release,full-albums,singles,compilation-albums,appears-on-albums,similar-artists&extend=inFavorites&limit[view.top-songs]=30&limit[view.full-albums]=50&limit[view.singles]=50&limit[view.appears-on-albums]=30&limit[view.similar-artists]=20",
+            "/v1/catalog/{}/artists/{catalog_id}?views=top-songs,latest-release,featured-albums,full-albums,singles,music-videos,featured-playlists,compilation-albums,appears-on-albums,similar-artists&extend=inFavorites,editorialVideo,editorialArtwork&limit[view.top-songs]=30&limit[view.full-albums]=50&limit[view.singles]=50&limit[view.music-videos]=20&limit[view.appears-on-albums]=30&limit[view.similar-artists]=20",
             self.storefront
         );
         let resp: types::Response<types::ArtistWithViews> = self.get(&path).await?;
@@ -750,6 +750,11 @@ impl Provider for AppleMusic {
                 .unwrap_or_default()
         }
         let views = found.views;
+        let (motion, banner) = found
+            .attributes
+            .as_ref()
+            .map(convert::artist_banner)
+            .unwrap_or_default();
         Ok(ArtistDetail {
             artist: convert::artist(types::Artist {
                 id: found.id,
@@ -767,6 +772,19 @@ impl Provider for AppleMusic {
             compilations: all(views.compilation_albums, convert::album),
             appears_on: all(views.appears_on_albums, convert::album),
             similar: all(views.similar_artists, convert::artist),
+            essentials: all(views.featured_albums, convert::album),
+            videos: views
+                .music_videos
+                .map(|l| {
+                    l.data
+                        .into_iter()
+                        .filter_map(convert::music_video)
+                        .collect()
+                })
+                .unwrap_or_default(),
+            playlists: all(views.featured_playlists, convert::playlist),
+            motion,
+            banner,
         })
     }
 

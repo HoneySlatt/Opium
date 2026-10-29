@@ -306,6 +306,31 @@ pub fn artist(artist: types::Artist) -> Artist {
     }
 }
 
+/// An artist's video across the top of their page, and a wide picture for
+/// it: the video's first frame, else the editors' banner.
+pub fn artist_banner(attrs: &types::ArtistAttributes) -> (Option<String>, Option<String>) {
+    let video = attrs.editorial_video.as_ref().and_then(|v| {
+        v.motion_artist_fullscreen16x9
+            .as_ref()
+            .or(v.motion_artist_wide16x9.as_ref())
+            .filter(|m| !m.video.is_empty())
+    });
+    let sized = |a: &types::Artwork, size: &str| {
+        (!a.url.is_empty()).then(|| a.url.replace("{w}x{h}", size))
+    };
+    let banner = video
+        .and_then(|v| v.preview_frame.as_ref())
+        .and_then(|a| sized(a, "2400x1350"))
+        .or_else(|| {
+            attrs
+                .editorial_artwork
+                .as_ref()
+                .and_then(|e| e.centered_fullscreen_background.as_ref())
+                .and_then(|a| sized(a, "2400x1200"))
+        });
+    (video.map(|v| v.video.clone()), banner)
+}
+
 /// A music video, its still at 16:9.
 pub fn music_video(video: types::MusicVideo) -> Option<MusicVideo> {
     let attrs = video.attributes?;
