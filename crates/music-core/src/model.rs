@@ -204,6 +204,27 @@ pub struct ArtistDetail {
     pub similar: Vec<Artist>,
 }
 
+/// A music video, as an album's page lists them.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MusicVideo {
+    pub id: ItemId,
+    pub title: String,
+    pub artists: Vec<String>,
+    /// A still of it, 16:9.
+    pub thumbnail: Option<String>,
+    pub explicit: bool,
+    /// Its page on the service's website, where it plays.
+    pub url: Option<String>,
+}
+
+/// What an album's page shows besides its songs: its other editions, and
+/// the music videos of its songs.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct AlbumExtras {
+    pub other_versions: Vec<Album>,
+    pub videos: Vec<MusicVideo>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Playlist {
     pub id: ItemId,

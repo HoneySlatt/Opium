@@ -50,6 +50,8 @@ pub(super) struct CoverCard<'a> {
     pub explicit: bool,
     /// Its menu offers Add to Library.
     pub addable: bool,
+    /// A right click opens the album's or playlist's menu.
+    pub menu: bool,
 }
 
 /// What a click on a cover asked for.
@@ -76,7 +78,7 @@ pub(super) fn cover_card(
     artwork(ui, card.url.clone(), art, radius, theme);
     if missing {
         let icon = if card.round { icons::MIC } else { icons::DISC };
-        paint_icon(ui, icon, art.center(), art.width() / 3.0, theme.muted());
+        paint_icon(ui, icon, art.center(), art.height() / 3.0, theme.muted());
     }
     if response.hovered() {
         ui.painter()
@@ -112,6 +114,7 @@ pub(super) fn cover_card(
     let g = text(ui, card.sub, font(12.0, Weight::Regular), muted, width);
     paint_text(ui, g, x, art.bottom() + 39.0, align, muted);
     if !card.round
+        && card.menu
         && let Some(click) = super::menu::collection_menu(&response, theme, card.addable)
     {
         return Some(click);
@@ -255,7 +258,37 @@ pub(super) fn cover_shelf(
     size: f32,
     id: Id,
 ) -> Option<(usize, CardClick)> {
-    shelf_of(ui, theme, at, width, title, cards, size, id, false)
+    shelf_of(
+        ui,
+        theme,
+        at,
+        width,
+        title,
+        cards,
+        vec2(size, size),
+        id,
+        false,
+    )
+}
+
+/// A titled row of music videos' stills, `width` px wide at 16:9, that
+/// scrolls sideways; returns the one clicked.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn video_shelf(
+    ui: &mut Ui,
+    theme: &Theme,
+    at: egui::Pos2,
+    width: f32,
+    title: &str,
+    cards: &[ShelfCard],
+    card_width: f32,
+    id: Id,
+) -> Option<usize> {
+    let size = vec2(card_width, card_width * 9.0 / 16.0);
+    match shelf_of(ui, theme, at, width, title, cards, size, id, false) {
+        Some((i, CardClick::Open)) => Some(i),
+        _ => None,
+    }
 }
 
 /// A titled row of round photos, as of artists, that scrolls sideways;
@@ -271,7 +304,17 @@ pub(super) fn round_shelf(
     size: f32,
     id: Id,
 ) -> Option<usize> {
-    match shelf_of(ui, theme, at, width, title, cards, size, id, true) {
+    match shelf_of(
+        ui,
+        theme,
+        at,
+        width,
+        title,
+        cards,
+        vec2(size, size),
+        id,
+        true,
+    ) {
         Some((i, CardClick::Open)) => Some(i),
         _ => None,
     }
@@ -285,13 +328,18 @@ fn shelf_of(
     width: f32,
     title: &str,
     cards: &[ShelfCard],
-    size: f32,
+    size: egui::Vec2,
     id: Id,
     round: bool,
 ) -> Option<(usize, CardClick)> {
+    // Wider than tall: music videos' stills, which have no menu.
+    let video = size.x > size.y;
     super::search::section_head(ui, theme, at.x, at.y, title);
-    let row = Rect::from_min_size(pos2(at.x, at.y + SHELF_HEAD), vec2(width, size + CARD_TEXT));
-    let stride = size + SHELF_GAP;
+    let row = Rect::from_min_size(
+        pos2(at.x, at.y + SHELF_HEAD),
+        vec2(width, size.y + CARD_TEXT),
+    );
+    let stride = size.x + SHELF_GAP;
     let content = cards.len() as f32 * stride - SHELF_GAP;
     // A page is as many whole covers as fit.
     let page = ((width + SHELF_GAP) / stride).floor().max(1.0) * stride;
@@ -310,10 +358,10 @@ fn shelf_of(
     let mut clicked = None;
     for (i, card) in cards.iter().enumerate() {
         let x = row.left() + i as f32 * stride - offset;
-        if x + size < row.left() || x > row.right() {
+        if x + size.x < row.left() || x > row.right() {
             continue;
         }
-        let art = Rect::from_min_size(pos2(x, row.top()), vec2(size, size));
+        let art = Rect::from_min_size(pos2(x, row.top()), size);
         let cover = CoverCard {
             url: card.url.clone(),
             title: &card.title,
@@ -321,6 +369,7 @@ fn shelf_of(
             round,
             explicit: card.explicit,
             addable: card.addable,
+            menu: !video,
         };
         if let Some(click) = cover_card(&row_ui, theme, art, &cover, id.with(i)) {
             clicked = Some((i, click));
@@ -404,6 +453,7 @@ pub fn shelf(app: &mut App, ui: &mut Ui, pad: f32, which: Shelves, title: &str) 
                     round: false,
                     explicit: card.explicit,
                     addable: app.can_add_to_library(&items[position]),
+                    menu: true,
                 };
                 let id = Id::unique(("shelf-card", title, position));
                 let art = grid.cell(position, left, top);
@@ -642,6 +692,7 @@ fn page(app: &mut App, ui: &mut Ui, pad: f32, kind: Kind) -> f32 {
                     round: kind == Kind::Artists,
                     explicit,
                     addable: false,
+                    menu: true,
                 };
                 if let Some(click) = cover_card(ui, &theme, art, &cover, id) {
                     clicked = Some((open, click));

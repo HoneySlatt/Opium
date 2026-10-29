@@ -34,6 +34,8 @@ pub enum Request {
     LibraryArtists,
     /// A library artist's albums in the library.
     LibraryArtistAlbums(ItemId),
+    /// A catalog album's other editions and music videos.
+    AlbumExtras(ItemId),
     /// What was added to the library lately.
     RecentlyAdded,
     /// The home page's shelves.
@@ -205,6 +207,10 @@ pub enum Reply {
     LibraryArtistAlbums {
         id: ItemId,
         result: Result<Vec<Album>, String>,
+    },
+    AlbumExtras {
+        id: ItemId,
+        result: Result<Arc<music_core::model::AlbumExtras>, String>,
     },
     RecentlyAdded {
         items: Vec<Collection>,
@@ -637,6 +643,16 @@ async fn run(
                         .each_library_album(|albums, done| list.page(albums, done, &show))
                         .await;
                     list.failed(&replies, result, &show);
+                });
+            }
+            Request::AlbumExtras(id) => {
+                tokio::spawn(async move {
+                    let result = am
+                        .album_extras(&id)
+                        .await
+                        .map(Arc::new)
+                        .map_err(|e| e.to_string());
+                    replies.send(Reply::AlbumExtras { id, result });
                 });
             }
             Request::LibraryArtistAlbums(id) => {

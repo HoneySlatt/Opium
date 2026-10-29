@@ -3,8 +3,8 @@
 use std::time::Duration;
 
 use music_core::model::{
-    Album, Artist, Artwork, AudioQuality, Codec, Collection, ItemId, Playlist, ProviderKind, Shelf,
-    Station, StationKind, Track,
+    Album, Artist, Artwork, AudioQuality, Codec, Collection, ItemId, MusicVideo, Playlist,
+    ProviderKind, Shelf, Station, StationKind, Track,
 };
 
 use crate::types;
@@ -304,6 +304,22 @@ pub fn artist(artist: types::Artist) -> Artist {
         name: attrs.name,
         in_favourites: attrs.in_favorites,
     }
+}
+
+/// A music video, its still at 16:9.
+pub fn music_video(video: types::MusicVideo) -> Option<MusicVideo> {
+    let attrs = video.attributes?;
+    Some(MusicVideo {
+        id: id(video.id),
+        title: attrs.name,
+        artists: vec![attrs.artist_name],
+        thumbnail: attrs
+            .artwork
+            .filter(|a| !a.url.is_empty())
+            .map(|a| a.url.replace("{w}x{h}", "800x450")),
+        explicit: attrs.content_rating.as_deref() == Some("explicit"),
+        url: attrs.url,
+    })
 }
 
 #[cfg(test)]

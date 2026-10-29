@@ -218,6 +218,35 @@ pub struct ArtistViews {
     pub similar_artists: Option<Response<Artist>>,
 }
 
+/// An album fetched with `views=`: the lists under its songs.
+#[derive(Debug, Deserialize)]
+pub struct AlbumWithViews {
+    #[serde(default)]
+    pub views: AlbumViews,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct AlbumViews {
+    #[serde(rename = "other-versions")]
+    pub other_versions: Option<Response<Album>>,
+    #[serde(rename = "related-videos")]
+    pub related_videos: Option<Response<MusicVideo>>,
+}
+
+pub type MusicVideo = Resource<MusicVideoAttributes>;
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MusicVideoAttributes {
+    pub name: String,
+    #[serde(default)]
+    pub artist_name: String,
+    pub artwork: Option<Artwork>,
+    pub content_rating: Option<String>,
+    pub url: Option<String>,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct SearchResponse {
     pub results: SearchResults,

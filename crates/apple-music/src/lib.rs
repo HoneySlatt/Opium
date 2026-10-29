@@ -20,8 +20,8 @@ pub use stream::AudioStream;
 
 use async_trait::async_trait;
 use music_core::model::{
-    Album, Artist, ArtistDetail, Artwork, Collection, Cursor, FavouriteKind, ItemId, Lyrics, Page,
-    Pick, Playlist, ProviderKind, SearchResults, Shelf, SongLinks, Track,
+    Album, AlbumExtras, Artist, ArtistDetail, Artwork, Collection, Cursor, FavouriteKind, ItemId,
+    Lyrics, Page, Pick, Playlist, ProviderKind, SearchResults, Shelf, SongLinks, Track,
 };
 use music_core::{Error, Provider, Result};
 use serde::de::DeserializeOwned;
@@ -379,6 +379,42 @@ impl AppleMusic {
             each,
         )
         .await
+    }
+
+    /// The other editions of the catalog album `album`, and the music videos
+    /// of its songs, as Apple's web player lists them under the songs.
+    pub async fn album_extras(&self, album: &ItemId) -> Result<AlbumExtras> {
+        let path = format!(
+            "/v1/catalog/{}/albums/{}?views=other-versions,related-videos&limit[view.related-videos]=20",
+            self.storefront, album.id
+        );
+        let Some(resp) = self
+            .fetch::<types::Response<types::AlbumWithViews>>(&path)
+            .await?
+        else {
+            return Ok(AlbumExtras::default());
+        };
+        let views = resp
+            .data
+            .into_iter()
+            .next()
+            .map(|a| a.views)
+            .unwrap_or_default();
+        Ok(AlbumExtras {
+            other_versions: views
+                .other_versions
+                .map(|l| l.data.into_iter().map(convert::album).collect())
+                .unwrap_or_default(),
+            videos: views
+                .related_videos
+                .map(|l| {
+                    l.data
+                        .into_iter()
+                        .filter_map(convert::music_video)
+                        .collect()
+                })
+                .unwrap_or_default(),
+        })
     }
 
     /// A library artist's albums in the library, with the catalog's rating

@@ -150,6 +150,7 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
                         round: false,
                         explicit: album.explicit,
                         addable: false,
+                        menu: true,
                     };
                     let card_id = Id::unique(("library-artist-card", *title, i));
                     if let Some(click) = cover_card(ui, &theme, art, &card, card_id) {

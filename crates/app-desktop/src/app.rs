@@ -384,6 +384,8 @@ pub struct App {
     pub grid_source: Option<ProviderKind>,
     pub albums: HashMap<ItemId, Loaded<AlbumPage>>,
     pub artists: HashMap<ItemId, Loaded<Arc<ArtistDetail>>>,
+    /// Catalog albums' other editions and music videos.
+    album_extras: HashMap<ItemId, Loaded<Arc<music_core::model::AlbumExtras>>>,
     pub playlist_tracks: HashMap<ItemId, PlaylistTracks>,
     palettes: HashMap<String, PaletteState>,
     lyrics: HashMap<ItemId, Loaded<Option<Arc<Lyrics>>>>,
@@ -515,6 +517,7 @@ impl App {
             grid_source: None,
             albums: HashMap::new(),
             artists: HashMap::new(),
+            album_extras: HashMap::new(),
             playlist_tracks: HashMap::new(),
             palettes: HashMap::new(),
             lyrics: HashMap::new(),
@@ -1359,6 +1362,20 @@ impl App {
         }
     }
 
+    /// The catalog album `id`'s other editions and music videos, asked for
+    /// the first time.
+    pub fn album_extras(&mut self, id: &ItemId) -> Option<Arc<music_core::model::AlbumExtras>> {
+        match self.album_extras.get(id) {
+            Some(Loaded::Ready(extras)) => Some(extras.clone()),
+            Some(_) => None,
+            None => {
+                self.album_extras.insert(id.clone(), Loaded::Loading);
+                self.backend.send(Request::AlbumExtras(id.clone()));
+                None
+            }
+        }
+    }
+
     /// The animated cover of `track`'s album, once its album says; asks for
     /// the album the first time.
     pub fn album_motion(&mut self, track: &Track) -> Option<String> {
@@ -2093,6 +2110,13 @@ impl App {
                     done,
                     whole,
                 } => self.library_artists.arrived(artists, done, whole),
+                Reply::AlbumExtras { id, result } => {
+                    let loaded = match result {
+                        Ok(extras) => Loaded::Ready(extras),
+                        Err(e) => Loaded::Failed(e),
+                    };
+                    self.album_extras.insert(id, loaded);
+                }
                 Reply::LibraryArtistAlbums { id, result } => {
                     let loaded = match result {
                         Ok(albums) => Loaded::Ready(Arc::new(albums)),

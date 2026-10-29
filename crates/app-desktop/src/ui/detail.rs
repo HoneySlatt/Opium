@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use egui::{Color32, Rect, Sense, Ui, pos2, vec2};
-use music_core::model::{Album, Collection, FavouriteKind, ItemId, Track};
+use music_core::model::{Album, Collection, FavouriteKind, ItemId, MusicVideo, Track};
 
 use crate::app::{App, Loaded, Page, TrackChoice};
 use crate::color::mix;
@@ -14,7 +14,7 @@ use crate::fonts::{Weight, font};
 use crate::icons::{self, Icon};
 use crate::theme::Theme;
 
-use super::grid::{CARD_TEXT, CardClick, SHELF_HEAD, ShelfCard, cover_shelf};
+use super::grid::{CARD_TEXT, CardClick, SHELF_HEAD, ShelfCard, cover_shelf, video_shelf};
 use super::tracks::{self, Columns, RowAction, RowState};
 use super::{
     Blob, PageButton, artwork, page_buttons, paint_icon, paint_text, quality_label, text, wash,
@@ -175,13 +175,16 @@ struct Listing {
 }
 
 /// Under an album's tracks: whether Apple mastered it, its date, count and
-/// copyright, then the artist's other releases.
+/// copyright, then its other editions, its songs' music videos and the
+/// artist's other releases.
 struct AlbumFoot {
     /// A library album with only some of its songs there: its catalog
     /// version, which Show Full Album opens.
     full_album: Option<ItemId>,
     mastered: bool,
     lines: Vec<String>,
+    other_versions: Vec<Album>,
+    videos: Vec<MusicVideo>,
     /// The artist, and what else they put out, newest first.
     more_by: Option<(String, ItemId, Vec<Album>)>,
 }
@@ -195,11 +198,25 @@ fn foot_height(foot: &AlbumFoot) -> f32 {
             0.0
         } + if foot.mastered { 30.0 } else { 0.0 }
             + foot.lines.len() as f32 * 18.0;
+    if !foot.other_versions.is_empty() {
+        h += shelf_height(MORE_BY_CARD);
+    }
+    if !foot.videos.is_empty() {
+        h += shelf_height(VIDEO_CARD * 9.0 / 16.0);
+    }
     if foot.more_by.is_some() {
-        h += 40.0 + SHELF_HEAD + MORE_BY_CARD + CARD_TEXT;
+        h += shelf_height(MORE_BY_CARD);
     }
     h
 }
+
+/// A shelf under the album's details, with the gap above it.
+fn shelf_height(card: f32) -> f32 {
+    40.0 + SHELF_HEAD + card + CARD_TEXT
+}
+
+/// The music videos' stills, wide.
+const VIDEO_CARD: f32 = 240.0;
 
 /// The row of Show Full Album.
 const FULL_ALBUM: f32 = 40.0;
@@ -270,6 +287,24 @@ fn album_foot(app: &mut App, id: &ItemId) -> Option<AlbumFoot> {
     if let Some(copyright) = &album.copyright {
         lines.push(copyright.clone());
     }
+    // The lists under the songs are the catalog album's.
+    let catalog = album
+        .catalog_id
+        .clone()
+        .or_else(|| (!album.id.id.starts_with("l.")).then(|| album.id.clone()));
+    let extras = catalog.as_ref().and_then(|c| app.album_extras(c));
+    let (other_versions, videos) = match (&extras, &catalog) {
+        (Some(extras), Some(catalog)) => (
+            extras
+                .other_versions
+                .iter()
+                .filter(|a| &a.id != catalog && a.id != album.id)
+                .cloned()
+                .collect(),
+            extras.videos.clone(),
+        ),
+        _ => (Vec::new(), Vec::new()),
+    };
     let more_by = album.artist_id.clone().and_then(|artist| {
         let detail = app.artist_detail(&artist)?;
         let mine = |a: &Album| {
@@ -299,6 +334,8 @@ fn album_foot(app: &mut App, id: &ItemId) -> Option<AlbumFoot> {
         full_album,
         mastered: album.mastered,
         lines,
+        other_versions,
+        videos,
         more_by,
     })
 }
@@ -930,6 +967,59 @@ fn album_foot_ui(
         paint_text(ui, g, left, y, egui::Align::Min, muted);
         y += 18.0;
     }
+    let now = ui.input(|i| i.time);
+    if !foot.other_versions.is_empty() {
+        let at = pos2(left, y + 40.0 - 18.0);
+        let versions = &foot.other_versions;
+        let cards: Vec<ShelfCard> = versions
+            .iter()
+            .map(|a| ShelfCard {
+                title: a.title.clone(),
+                sub: match a.track_count {
+                    Some(n) => format!("{} · {n} Songs", a.artists.join(", ")),
+                    None => a.artists.join(", "),
+                },
+                url: a.artwork.as_ref().map(|art| art.url(400)),
+                explicit: a.explicit,
+                addable: app.can_add_album(&a.id),
+            })
+            .collect();
+        let id = egui::Id::unique("other-versions");
+        let title = "Other Versions";
+        match cover_shelf(ui, theme, at, width, title, &cards, MORE_BY_CARD, id) {
+            Some((i, CardClick::Open)) => app.go(Page::Album(versions[i].id.clone())),
+            Some((i, CardClick::Enqueue(how))) => {
+                app.enqueue_album(versions[i].id.clone(), how, now);
+            }
+            Some((i, CardClick::AddToLibrary)) => {
+                app.add_collection_to_library(&Collection::Album(versions[i].clone()), now);
+            }
+            None => {}
+        }
+        y += shelf_height(MORE_BY_CARD);
+    }
+    if !foot.videos.is_empty() {
+        let at = pos2(left, y + 40.0 - 18.0);
+        let cards: Vec<ShelfCard> = foot
+            .videos
+            .iter()
+            .map(|v| ShelfCard {
+                title: v.title.clone(),
+                sub: v.artists.join(", "),
+                url: v.thumbnail.clone(),
+                explicit: v.explicit,
+                addable: false,
+            })
+            .collect();
+        let id = egui::Id::unique("music-videos");
+        // There is no video player here: they play on Apple Music's website.
+        if let Some(i) = video_shelf(ui, theme, at, width, "Music Videos", &cards, VIDEO_CARD, id)
+            && let Some(url) = &foot.videos[i].url
+        {
+            ui.ctx().open_url(egui::OpenUrl::new_tab(url));
+        }
+        y += shelf_height(VIDEO_CARD * 9.0 / 16.0);
+    }
     let Some((name, artist, albums)) = &foot.more_by else {
         return;
     };
@@ -959,7 +1049,6 @@ fn album_foot_ui(
     {
         app.go(Page::Artist(artist.clone()));
     }
-    let now = ui.input(|i| i.time);
     match cover_shelf(ui, theme, at, width, &title, &cards, MORE_BY_CARD, id) {
         Some((i, CardClick::Open)) => app.go(Page::Album(albums[i].id.clone())),
         Some((i, CardClick::Enqueue(how))) => app.enqueue_album(albums[i].id.clone(), how, now),
