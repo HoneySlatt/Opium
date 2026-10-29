@@ -278,7 +278,7 @@ fn button(ui: &mut Ui, theme: &Theme, right: f32, y: f32, label: &str, enabled: 
 
 fn services(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect) {
     let rows: [(Icon, &str); 3] = [
-        (icons::AM, "Apple Music"),
+        (icons::APPLE_MUSIC, "Apple Music"),
         (icons::CLOUD, "SoundCloud"),
         (icons::SERVER, "Navidrome"),
     ];

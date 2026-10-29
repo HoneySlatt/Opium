@@ -429,7 +429,7 @@ fn row(ui: &mut Ui, theme: &Theme, track: &Track, kind: RowKind, salt: &str) -> 
         title_color,
     );
     let source = match track.id.provider {
-        ProviderKind::AppleMusic => icons::AM,
+        ProviderKind::AppleMusic => icons::APPLE_MUSIC,
         ProviderKind::SoundCloud => icons::CLOUD,
         ProviderKind::Navidrome => icons::SERVER,
     };

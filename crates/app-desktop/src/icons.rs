@@ -13,14 +13,19 @@ pub struct Icon {
 }
 
 impl Icon {
-    /// The icon at `size` points, tinted `color`.
+    /// The icon at `size` points, tinted `color`; a logo keeps its own
+    /// colours.
     pub fn image(self, size: f32, color: Color32) -> Image<'static> {
-        Image::new(ImageSource::Bytes {
+        let image = Image::new(ImageSource::Bytes {
             uri: format!("bytes://icon/{}.svg", self.name).into(),
             bytes: self.svg.as_bytes().into(),
         })
-        .fit_to_exact_size(Vec2::splat(size))
-        .tint(color)
+        .fit_to_exact_size(Vec2::splat(size));
+        if self == APPLE_MUSIC {
+            image
+        } else {
+            image.tint(color)
+        }
     }
 }
 

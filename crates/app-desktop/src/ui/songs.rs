@@ -259,7 +259,7 @@ pub(super) fn source_chips(
         (None, None, "All"),
         (
             Some(ProviderKind::AppleMusic),
-            Some(icons::AM),
+            Some(icons::APPLE_MUSIC),
             "Apple Music",
         ),
         (

@@ -374,7 +374,7 @@ pub fn row(
     // Source icon and quality tag.
     if let Some((s0, _)) = columns.source {
         let icon = match track.id.provider {
-            ProviderKind::AppleMusic => icons::AM,
+            ProviderKind::AppleMusic => icons::APPLE_MUSIC,
             ProviderKind::SoundCloud => icons::CLOUD,
             ProviderKind::Navidrome => icons::SERVER,
         };

@@ -142,7 +142,8 @@ pub fn playlist(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
     if let Some(total) = total_length(&tracks) {
         meta.push((Some(icons::CLOCK), length_label(total)));
     }
-    meta.push((Some(icons::AM), "APPLE MUSIC".into()));
+    // The service by its logo alone.
+    meta.push((Some(icons::APPLE_MUSIC), String::new()));
     let header = Header {
         kind: "Playlist",
         title: playlist.name.clone(),
@@ -193,7 +194,7 @@ fn album_header(album: &Album, tracks: &[Track], favourite: bool) -> Header {
         format!("{count} TRACK{}", if count == 1 { "" } else { "S" }),
     ));
     if let Some((label, _)) = tracks.iter().find_map(quality_label) {
-        meta.push((Some(icons::AM), label));
+        meta.push((Some(icons::APPLE_MUSIC), label));
     }
     Header {
         kind: "Album",

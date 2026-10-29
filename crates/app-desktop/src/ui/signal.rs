@@ -123,7 +123,7 @@ fn steps(app: &App, track: &Track) -> Vec<Step> {
     let (service, service_icon, transport) = match track.id.provider {
         ProviderKind::AppleMusic => (
             "Apple Music",
-            icons::AM,
+            icons::APPLE_MUSIC,
             "Widevine CENC, decrypted in-process",
         ),
         ProviderKind::SoundCloud => ("SoundCloud", icons::CLOUD, "HLS, unencrypted"),
