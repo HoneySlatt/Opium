@@ -3,16 +3,20 @@
 //! The browser CDM takes about 1.5 ms per sample whatever its size, and a
 //! four-minute track has around 9 000 of them, so decrypting everything up front
 //! would hold playback back for ~15 s. Instead a thread decrypts in file order,
-//! about 15× faster than real time, and a read only waits for the samples it
-//! covers. A read far ahead (a seek) moves the thread there first. CENC keeps
-//! sizes and every sample decrypts on its own, which is what makes any order work.
+//! about 15× faster than real time, and a read only waits for a sample it starts
+//! inside of. A read that reaches an encrypted sample further on stops short of
+//! it: the box headers between samples are clear, so a demuxer walking fragment
+//! headers to seek never waits for audio it is about to skip. Either way the
+//! thread moves to where the reader is. CENC keeps sizes and every sample
+//! decrypts on its own, which is what makes any order work.
 
 use std::io::{self, Read, Seek, SeekFrom};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 
-use widevine::Session;
-
 use crate::cenc::EncryptedSample;
+
+/// Turns one sample's ciphertext into cleartext of the same length.
+pub(crate) type Decrypt = Box<dyn FnMut(&[u8], &EncryptedSample) -> Result<Vec<u8>, String> + Send>;
 
 pub struct AudioStream {
     shared: Arc<Shared>,
@@ -64,17 +68,12 @@ impl AudioStream {
 
     /// Start decrypting `data` in the background. Its init segment must already
     /// be patched; only `samples` are encrypted.
-    pub(crate) fn decrypting(
-        data: Vec<u8>,
-        samples: Vec<EncryptedSample>,
-        session: Session,
-        key_id: Vec<u8>,
-    ) -> Self {
+    pub(crate) fn decrypting(data: Vec<u8>, samples: Vec<EncryptedSample>, decrypt: Decrypt) -> Self {
         let stream = Self::new(data, samples);
         let worker = stream.shared.clone();
         std::thread::Builder::new()
             .name("am-decrypt".into())
-            .spawn(move || worker.decrypt_all(&session, &key_id))
+            .spawn(move || worker.decrypt_all(decrypt))
             .expect("spawn the decrypt thread");
         stream
     }
@@ -93,7 +92,7 @@ impl Shared {
         self.state.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    fn decrypt_all(&self, session: &Session, key_id: &[u8]) {
+    fn decrypt_all(&self, mut decrypt: Decrypt) {
         let mut next = 0;
         loop {
             // Copy the ciphertext out so the lock isn't held across the CDM call.
@@ -114,9 +113,7 @@ impl Shared {
             };
 
             let sample = &self.samples[index];
-            let subsamples: Vec<(u32, u32)> =
-                sample.subs.iter().map(|&(c, e)| (u32::from(c), e)).collect();
-            let result = session.decrypt(&ciphertext, key_id, &sample.iv, &subsamples);
+            let result = decrypt(&ciphertext, sample);
 
             let mut state = self.lock();
             match result {
@@ -131,7 +128,7 @@ impl Shared {
                         sample.len
                     ));
                 }
-                Err(e) => state.failed = Some(e.to_string()),
+                Err(e) => state.failed = Some(e),
             }
             let failed = state.failed.is_some();
             drop(state);
@@ -158,7 +155,7 @@ impl Read for AudioStream {
             return Ok(0);
         }
         let start = self.pos as usize;
-        let end = (start + buf.len()).min(self.len as usize);
+        let mut end = (start + buf.len()).min(self.len as usize);
 
         let mut state = self.shared.lock();
         loop {
@@ -169,6 +166,11 @@ impl Read for AudioStream {
                 None => break,
                 Some(index) => {
                     state.wanted = Some(index);
+                    let sample_start = self.shared.samples[index].start;
+                    if sample_start > start {
+                        end = sample_start;
+                        break;
+                    }
                     state = self
                         .shared
                         .changed
@@ -199,5 +201,74 @@ impl Seek for AudioStream {
 impl Drop for AudioStream {
     fn drop(&mut self) {
         self.shared.lock().abandoned = true;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 100 clear bytes, then three 50-byte samples "encrypted" by XOR with 0xFF.
+    fn track() -> (Vec<u8>, Vec<u8>, Vec<EncryptedSample>) {
+        let clear: Vec<u8> = (0..250u32).map(|i| i as u8).collect();
+        let mut data = clear.clone();
+        let samples: Vec<EncryptedSample> = (0..3)
+            .map(|i| EncryptedSample {
+                start: 100 + i * 50,
+                len: 50,
+                iv: [0; 16],
+                subs: vec![],
+            })
+            .collect();
+        for s in &samples {
+            data[s.start..s.end()].iter_mut().for_each(|b| *b ^= 0xFF);
+        }
+        (clear, data, samples)
+    }
+
+    fn xor() -> Decrypt {
+        Box::new(|ciphertext, _| Ok(ciphertext.iter().map(|b| b ^ 0xFF).collect()))
+    }
+
+    #[test]
+    fn reading_everything_yields_the_cleartext() {
+        let (clear, data, samples) = track();
+        let mut stream = AudioStream::decrypting(data, samples, xor());
+        let mut out = Vec::new();
+        stream.read_to_end(&mut out).unwrap();
+        assert_eq!(out, clear);
+    }
+
+    #[test]
+    fn a_read_stops_short_of_a_sample_not_yet_decrypted() {
+        let (clear, data, samples) = track();
+        // A decrypt that never runs: only the clear prefix is readable.
+        let never: Decrypt = Box::new(|_, _| {
+            std::thread::park();
+            Err("parked".into())
+        });
+        let mut stream = AudioStream::decrypting(data, samples, never);
+        let mut buf = [0u8; 200];
+        assert_eq!(stream.read(&mut buf).unwrap(), 100);
+        assert_eq!(&buf[..100], &clear[..100]);
+    }
+
+    #[test]
+    fn seeking_into_a_sample_waits_for_it() {
+        let (clear, data, samples) = track();
+        let mut stream = AudioStream::decrypting(data, samples, xor());
+        stream.seek(SeekFrom::Start(210)).unwrap();
+        let mut buf = [0u8; 100];
+        let n = stream.read(&mut buf).unwrap();
+        assert_eq!(&buf[..n], &clear[210..210 + n]);
+    }
+
+    #[test]
+    fn a_failed_decrypt_is_a_read_error() {
+        let (_, data, samples) = track();
+        let failing: Decrypt = Box::new(|_, _| Err("no key".into()));
+        let mut stream = AudioStream::decrypting(data, samples, failing);
+        stream.seek(SeekFrom::Start(120)).unwrap();
+        assert!(stream.read(&mut [0u8; 10]).is_err());
     }
 }

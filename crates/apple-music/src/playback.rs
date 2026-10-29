@@ -137,7 +137,14 @@ impl AppleMusic {
             return Err(playback_error("no encrypted samples found in the track"));
         }
         cenc::patch_init(&mut data, &layout);
-        Ok(AudioStream::decrypting(data, layout.samples, session, key_id))
+        let decrypt = Box::new(move |ciphertext: &[u8], sample: &cenc::EncryptedSample| {
+            let subsamples: Vec<(u32, u32)> =
+                sample.subs.iter().map(|&(c, e)| (u32::from(c), e)).collect();
+            session
+                .decrypt(ciphertext, &key_id, &sample.iv, &subsamples)
+                .map_err(|e| e.to_string())
+        });
+        Ok(AudioStream::decrypting(data, layout.samples, decrypt))
     }
 
     async fn web_playback(&self, adam_id: &str) -> Result<serde_json::Value> {
