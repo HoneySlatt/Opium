@@ -323,7 +323,6 @@ pub fn show(app: &mut App, ui: &mut Ui, main: Rect) {
     // Above the player bar's chip, or below the top bar's button.
     let x = (anchor_rect.right() - WIDTH).clamp(main.left() + 8.0, main.right() - WIDTH - 8.0);
     let y = match anchor {
-        SignalAnchor::PlayerBar => anchor_rect.top() - height - 10.0,
         SignalAnchor::TopBar => anchor_rect.bottom() + 6.0,
     }
     .clamp(
@@ -455,13 +454,4 @@ pub fn show(app: &mut App, ui: &mut Ui, main: Rect) {
 /// Remember where an anchor was drawn, so the popover can hang from it.
 pub fn remember_anchor(ui: &Ui, anchor: SignalAnchor, rect: Rect) {
     ui.ctx().data_mut(|d| d.insert_temp(anchor.id(), rect));
-}
-
-/// The status as a tooltip line.
-pub fn tooltip(assessment: &Assessment) -> String {
-    if assessment.perfect() {
-        "Bit-perfect".into()
-    } else {
-        format!("Not bit-perfect: {}", assessment.issues.join(" · "))
-    }
 }

@@ -603,40 +603,6 @@ pub fn explicit_badge(ui: &Ui, theme: &Theme, center: Pos2) {
     paint_text(ui, e, center.x, center.y, egui::Align::Center, theme.base);
 }
 
-/// A track's quality tag (`AAC 256`, `FLAC 24/96`). Returns its width.
-pub fn quality_tag(ui: &Ui, theme: &Theme, label: &str, lossless: bool, left_center: Pos2) -> f32 {
-    let color = if lossless {
-        crate::color::mix(theme.accent, theme.text, 0.70)
-    } else {
-        theme.subtext0
-    };
-    let border = if lossless {
-        alpha(theme.accent, 0.55)
-    } else {
-        alpha(theme.subtext0, 0.40)
-    };
-    let galley = text(ui, label, font(10.0, Weight::SemiBold), color, 200.0);
-    let rect = Rect::from_min_size(
-        pos2(left_center.x, left_center.y - 8.5),
-        vec2(galley.size().x + 12.0, 17.0),
-    );
-    ui.painter().rect_stroke(
-        rect,
-        4.0,
-        Stroke::new(1.0, border),
-        egui::StrokeKind::Inside,
-    );
-    paint_text(
-        ui,
-        galley,
-        rect.center().x,
-        rect.center().y,
-        egui::Align::Center,
-        color,
-    );
-    rect.width()
-}
-
 /// `AAC 256`, `FLAC 24/96`… from what the provider says it delivers.
 pub fn quality_label(track: &music_core::model::Track) -> Option<(String, bool)> {
     use music_core::model::Codec;

@@ -237,8 +237,6 @@ pub enum NpTab {
 /// What the signal path popover hangs from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SignalAnchor {
-    /// The quality chip in the player bar: the popover opens above it.
-    PlayerBar,
     /// The waveform button in the top bar: the popover opens below it.
     TopBar,
 }
@@ -537,8 +535,7 @@ impl App {
             muted: false,
             toast: None,
             drawer_open: std::env::var_os("MUSIC_SCREENSHOT_DRAWER").is_some(),
-            signal_open: std::env::var_os("MUSIC_SCREENSHOT_SIGNAL")
-                .map(|_| SignalAnchor::PlayerBar),
+            signal_open: std::env::var_os("MUSIC_SCREENSHOT_SIGNAL").map(|_| SignalAnchor::TopBar),
             now_playing: std::env::var_os("MUSIC_SCREENSHOT_NP").is_some(),
             np_tab: match std::env::var("MUSIC_SCREENSHOT_NP").as_deref() {
                 Ok("lyrics") => NpTab::Lyrics,

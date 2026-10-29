@@ -2,7 +2,7 @@
 //! header and its rows.
 
 use egui::{Id, Rect, Sense, Stroke, Ui, pos2, vec2};
-use music_core::model::{ItemId, ProviderKind, Track};
+use music_core::model::{ItemId, Track};
 
 use crate::app::{SortKey, TrackChoice};
 use crate::color::alpha;
@@ -11,10 +11,7 @@ use crate::icons;
 use crate::theme::Theme;
 
 use super::menu::TrackFacts;
-use super::{
-    artwork, explicit_badge, format_time, paint_icon, paint_text, quality_label, quality_tag, text,
-    thumb_url,
-};
+use super::{artwork, explicit_badge, format_time, paint_icon, paint_text, text, thumb_url};
 
 pub const ROW: f32 = 52.0;
 pub const HEAD: f32 = 32.0;
@@ -22,14 +19,13 @@ pub const HEAD: f32 = 32.0;
 pub const HEAD_SPACE: f32 = HEAD + 5.0;
 
 /// Column x ranges inside a row, after the design's grid:
-/// `36px 3fr 2fr 2fr 116px 52px 36px`, gap 14, padding 10; without the album,
-/// `36px 4fr 2fr 116px 52px 36px`.
+/// `36px 3fr 2fr 2fr 52px 36px`, gap 14, padding 10; without the album,
+/// `36px 4fr 2fr 52px 36px`. No source column, as in Cider.
 pub struct Columns {
     number: (f32, f32),
     title: (f32, f32),
     artist: Option<(f32, f32)>,
     album: Option<(f32, f32)>,
-    source: Option<(f32, f32)>,
     duration: (f32, f32),
     /// Small artwork before the title; album pages leave it out, as Cider does.
     thumbs: bool,
@@ -38,8 +34,8 @@ pub struct Columns {
 impl Columns {
     pub fn new(left: f32, width: f32, with_album: bool) -> Self {
         let gap = 14.0;
-        let gaps = if with_album { 6.0 } else { 5.0 };
-        let fixed = 36.0 + 116.0 + 52.0 + 36.0 + gap * gaps + 20.0;
+        let gaps = if with_album { 5.0 } else { 4.0 };
+        let fixed = 36.0 + 52.0 + 36.0 + gap * gaps + 20.0;
         let fr = ((width - fixed) / if with_album { 7.0 } else { 6.0 }).max(0.0);
         let mut x = left + 10.0;
         let mut take = |w: f32| {
@@ -56,7 +52,6 @@ impl Columns {
             title,
             artist: Some(artist),
             album,
-            source: Some(take(116.0)),
             duration: take(52.0),
             thumbs: true,
         }
@@ -82,7 +77,6 @@ impl Columns {
             title,
             artist,
             album: None,
-            source: None,
             duration: take(52.0),
             thumbs: false,
         }
@@ -108,9 +102,6 @@ pub fn head(
     }
     if let Some(album) = columns.album {
         heads.push((album, "Album", Some(SortKey::Album)));
-    }
-    if let Some(source) = columns.source {
-        heads.push((source, "Source", None));
     }
     let mut clicked = None;
     for ((x0, x1), label, key) in heads {
@@ -369,19 +360,6 @@ pub fn row(
             }
         }
         paint_text(ui, g, c0, y, egui::Align::Min, color);
-    }
-
-    // Source icon and quality tag.
-    if let Some((s0, _)) = columns.source {
-        let icon = match track.id.provider {
-            ProviderKind::AppleMusic => icons::APPLE_MUSIC,
-            ProviderKind::SoundCloud => icons::CLOUD,
-            ProviderKind::Navidrome => icons::SERVER,
-        };
-        paint_icon(ui, icon, pos2(s0 + 6.5, y), 13.0, theme.muted());
-        if let Some((label, lossless)) = quality_label(track) {
-            quality_tag(ui, theme, &label, lossless, pos2(s0 + 13.0 + 6.0, y));
-        }
     }
 
     // Duration.

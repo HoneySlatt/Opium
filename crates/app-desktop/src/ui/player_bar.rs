@@ -8,16 +8,14 @@ use egui::{Color32, Id, Rect, Sense, Stroke, Ui, pos2, vec2};
 use music_core::model::FavouriteKind;
 
 use crate::app::App;
-use crate::color::{alpha, mix};
+use crate::color::mix;
 use crate::fonts::{Weight, font};
 use crate::icons;
 use crate::theme::Theme;
 
 use super::menu::{TrackFacts, track_menu};
 
-use super::{
-    artwork, explicit_badge, format_time, icon_button, paint_text, quality_label, text, thumb_url,
-};
+use super::{artwork, explicit_badge, format_time, icon_button, paint_text, text, thumb_url};
 
 pub fn show(app: &mut App, ui: &mut Ui, main: Rect) {
     let theme = app.theme.clone();
@@ -332,11 +330,8 @@ fn now_playing(app: &mut App, ui: &mut Ui, theme: &Theme, lcd: Rect) {
         app.now_playing = true;
     }
 
-    // The quality chip, right-aligned.
-    let chip_left = quality_chip(app, ui, theme, &track, chip_right, lcd.center().y);
-
     let left = art.right() + 10.0;
-    let width = (chip_left - 10.0 - left).max(0.0);
+    let width = (chip_right - 10.0 - left).max(0.0);
     let mut title_width = width;
     if track.explicit {
         title_width -= 17.0;
@@ -400,77 +395,6 @@ fn now_playing(app: &mut App, ui: &mut Ui, theme: &Theme, lcd: Rect) {
     if let Some(choice) = choice {
         app.track_choice(track, choice, ui.input(|i| i.time));
     }
-}
-
-/// Returns its left edge.
-fn quality_chip(
-    app: &mut App,
-    ui: &mut Ui,
-    theme: &Theme,
-    track: &music_core::model::Track,
-    right: f32,
-    y: f32,
-) -> f32 {
-    let Some((label, lossless)) = quality_label(track) else {
-        return right;
-    };
-    let assessment = super::signal::assess(app);
-    let perfect = assessment.perfect();
-    let color = theme.muted();
-    let galley = text(ui, &label, font(10.5, Weight::SemiBold), color, 200.0);
-    let dot = if perfect { 0.0 } else { 7.0 + 5.0 };
-    let rect = Rect::from_min_max(
-        pos2(right - galley.size().x - 14.0 - dot, y - 10.0),
-        pos2(right, y + 10.0),
-    );
-    let response = ui.interact(rect, Id::unique("quality-chip"), Sense::click());
-    super::signal::remember_anchor(ui, crate::app::SignalAnchor::PlayerBar, rect);
-    let open = app.signal_open == Some(crate::app::SignalAnchor::PlayerBar);
-    let fill = if response.hovered() || open {
-        theme.text_a(0.11)
-    } else if lossless {
-        alpha(theme.accent, 0.14)
-    } else {
-        theme.text_a(0.06)
-    };
-    ui.painter().rect_filled(rect, 5.0, fill);
-    let text_color = if response.hovered() {
-        theme.text
-    } else {
-        color
-    };
-    if !perfect {
-        ui.painter()
-            .circle_filled(pos2(rect.left() + 7.0 + 3.5, y), 3.5, theme.yellow);
-    }
-    paint_text(
-        ui,
-        galley,
-        rect.left() + 7.0 + dot,
-        y,
-        egui::Align::Min,
-        text_color,
-    );
-    let source = match track.id.provider {
-        music_core::model::ProviderKind::AppleMusic => "Apple Music",
-        music_core::model::ProviderKind::SoundCloud => "SoundCloud",
-        music_core::model::ProviderKind::Navidrome => "Navidrome",
-    };
-    let clicked = response
-        .on_hover_cursor(egui::CursorIcon::PointingHand)
-        .on_hover_text(format!(
-            "{source} · {label}\n{}",
-            super::signal::tooltip(&assessment)
-        ))
-        .clicked();
-    if clicked {
-        app.signal_open = if open {
-            None
-        } else {
-            Some(crate::app::SignalAnchor::PlayerBar)
-        };
-    }
-    rect.left()
 }
 
 /// The position as a hairline along the LCD's bottom: 2 px, 4 px with a knob
