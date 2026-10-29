@@ -118,10 +118,10 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
                 width,
             );
             let name_y = top.bottom() - 132.0;
-            ui.painter().galley(
+            ui.painter().galley_with_override_text_color(
                 pos2(left, name_y - name.size().y / 2.0 + 2.0),
                 name.clone(),
-                Color32::from_black_alpha(110),
+                Color32::from_black_alpha(90),
             );
             paint_text(ui, name, left, name_y, egui::Align::Min, Color32::WHITE);
             let favourite = app.is_favourite(FavouriteKind::Artist, &artist.artist.id);
