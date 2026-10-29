@@ -34,6 +34,8 @@ pub struct Settings {
     pub volume: Option<f32>,
     /// Muted when last left.
     pub muted: Option<bool>,
+    /// Shuffle was on when last left.
+    pub shuffle: Option<bool>,
     /// Covers move where Apple made them move (on unless turned off).
     pub animated_artwork: Option<bool>,
     /// How sharp the moving covers are; Automatic unless set.

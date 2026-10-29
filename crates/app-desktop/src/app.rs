@@ -549,9 +549,10 @@ impl App {
             theme_changed,
             zoom: None,
         };
-        // The volume as it was left.
+        // The volume and shuffle as they were left.
         app.player
             .set_volume(if app.muted { 0.0 } else { app.volume });
+        app.queue.set_shuffle(app.settings.shuffle.unwrap_or(false));
         // The first page loads what it shows, as any page does on arrival.
         app.arrived();
         app
@@ -1869,6 +1870,8 @@ impl App {
     pub fn toggle_shuffle(&mut self) {
         self.queue.set_shuffle(!self.queue.shuffle());
         self.prefetch_next();
+        self.settings.shuffle = Some(self.queue.shuffle());
+        self.settings.save();
     }
 
     pub fn cycle_repeat(&mut self) {
