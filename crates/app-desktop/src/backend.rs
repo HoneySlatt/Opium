@@ -7,8 +7,8 @@ use std::sync::mpsc;
 
 use apple_music::{AppleMusic, AudioStream};
 use music_core::model::{
-    Album, Artist, ArtistDetail, Collection, Cursor, ItemId, Lyrics, Page, Playlist, SearchResults,
-    Shelf, Track,
+    Album, Artist, ArtistDetail, Collection, Cursor, FavouriteKind, ItemId, Lyrics, Page, Playlist,
+    SearchResults, Shelf, Track,
 };
 use music_core::{Error, Provider};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -30,6 +30,14 @@ pub enum Request {
     SignIn,
     /// Connect again with the saved token (after a sign-in).
     Reconnect,
+    /// Add to the favourites, or take out.
+    SetFavourite {
+        kind: FavouriteKind,
+        id: ItemId,
+        on: bool,
+    },
+    /// Whether something is a favourite.
+    Favourite { kind: FavouriteKind, id: ItemId },
     /// A track's audio, ready to hand to the player.
     Fetch { token: player::Token, track: ItemId },
     /// An album and its tracks.
@@ -54,6 +62,12 @@ pub enum Reply {
     },
     /// The browser sign-in ended: the token is saved, or why not.
     SignedIn(Result<(), String>),
+    /// A favourite was set (`set: Some(on)`) or looked up; the state or why not.
+    Favourite {
+        id: ItemId,
+        set: Option<bool>,
+        result: Result<Option<bool>, String>,
+    },
     NotSignedIn,
     Failed(String),
     Songs {
@@ -311,6 +325,30 @@ async fn run(
                     replies.send(Reply::Search {
                         scope,
                         query,
+                        result,
+                    });
+                });
+            }
+            Request::SetFavourite { kind, id, on } => {
+                tokio::spawn(async move {
+                    let result = am
+                        .set_favourite(kind, &id, on)
+                        .await
+                        .map(|()| Some(on))
+                        .map_err(|e| e.to_string());
+                    replies.send(Reply::Favourite {
+                        id,
+                        set: Some(on),
+                        result,
+                    });
+                });
+            }
+            Request::Favourite { kind, id } => {
+                tokio::spawn(async move {
+                    let result = am.is_favourite(kind, &id).await.map_err(|e| e.to_string());
+                    replies.send(Reply::Favourite {
+                        id,
+                        set: None,
                         result,
                     });
                 });

@@ -191,6 +191,8 @@ pub enum RowAction {
     OpenAlbum(ItemId),
     /// From the right-click menu: play next, or add to the queue.
     Enqueue(Enqueue),
+    /// From the right-click menu: add to the favourites, or take out.
+    Favourite,
 }
 
 /// How a row shows.
@@ -202,6 +204,8 @@ pub struct RowState {
     pub now: bool,
     /// …and it is playing.
     pub playing: bool,
+    /// It is among the favourites: a star follows the title.
+    pub favourite: bool,
     /// Rows are told apart by this and their position.
     pub list: &'static str,
     pub position: usize,
@@ -276,7 +280,10 @@ pub fn row(
         t0
     };
     let title_color = if state.now { theme.accent } else { theme.text };
-    let max = t1 - tx - if track.explicit { 18.0 } else { 0.0 };
+    let max = t1
+        - tx
+        - if track.explicit { 18.0 } else { 0.0 }
+        - if state.favourite { 17.0 } else { 0.0 };
     let title = text(
         ui,
         &track.title,
@@ -286,8 +293,13 @@ pub fn row(
     );
     let title_end = tx + title.size().x;
     paint_text(ui, title, tx, y, egui::Align::Min, title_color);
+    let mut end = title_end;
     if track.explicit {
         explicit_badge(ui, theme, pos2(title_end + 6.0 + 6.0, y));
+        end += 6.0 + 12.0;
+    }
+    if state.favourite {
+        favourite_star(ui, theme, pos2(end + 6.0 + 6.0, y));
     }
 
     // Artist, and the album as a link to its page.
@@ -359,7 +371,8 @@ pub fn row(
         paint_text(ui, g, d1, y, egui::Align::Max, theme.muted());
     }
 
-    match super::menu::track_menu(&response, theme, track.album_id.is_some()) {
+    match super::menu::track_menu(&response, theme, track.album_id.is_some(), state.favourite) {
+        Some(TrackChoice::Favourite) => action = RowAction::Favourite,
         Some(TrackChoice::PlayNext) => action = RowAction::Enqueue(Enqueue::Next),
         Some(TrackChoice::AddToQueue) => action = RowAction::Enqueue(Enqueue::Last),
         Some(TrackChoice::GoToAlbum) => {
@@ -377,6 +390,11 @@ pub fn row(
         }
     }
     action
+}
+
+/// The star after a favourite's title, as Cider marks them.
+pub fn favourite_star(ui: &Ui, theme: &Theme, center: egui::Pos2) {
+    paint_icon(ui, icons::STAR_FILL, center, 11.0, theme.red);
 }
 
 /// Three accent bars for the playing row, moving while it plays.

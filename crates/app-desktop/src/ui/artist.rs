@@ -3,7 +3,7 @@
 //! songs in sideways columns; then shelves of albums and of singles and EPs.
 
 use egui::{Id, Rect, Sense, Ui, pos2, vec2};
-use music_core::model::{Album, ArtistDetail, ItemId};
+use music_core::model::{Album, ArtistDetail, FavouriteKind, ItemId};
 
 use crate::app::{App, Enqueue, Loaded, Page};
 use crate::fonts::{Weight, font};
@@ -112,10 +112,19 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
             );
             let name_y = photo.bottom() + 20.0 + 29.0;
             paint_text(ui, name, center, name_y, egui::Align::Center, theme.text);
-            if let Some(shuffle) =
-                play_buttons(ui, &theme, pos2(center, name_y + 29.0 + 16.0 + 28.0))
-            {
-                app.play_shuffled_or_not(artist.top_songs.clone(), shuffle, ui.input(|i| i.time));
+            let favourite = app.is_favourite(FavouriteKind::Artist, &artist.artist.id);
+            let buttons_at = pos2(center, name_y + 29.0 + 16.0 + 28.0);
+            match hero_buttons(ui, &theme, buttons_at, favourite) {
+                Some(HeroButton::Play) => {
+                    app.play_shuffled_or_not(artist.top_songs.clone(), false, ui.input(|i| i.time));
+                }
+                Some(HeroButton::Shuffle) => {
+                    app.play_shuffled_or_not(artist.top_songs.clone(), true, ui.input(|i| i.time));
+                }
+                Some(HeroButton::Favourite) => {
+                    app.toggle_favourite(FavouriteKind::Artist, artist.artist.id.clone());
+                }
+                None => {}
             }
 
             if top_songs {
@@ -169,44 +178,78 @@ fn date_line(album: &Album) -> String {
         .unwrap_or_default()
 }
 
-/// The big round Play and Shuffle beside it, the pair centred on `center`.
-/// Returns `Some(shuffle)` when one was clicked.
-fn play_buttons(ui: &mut Ui, theme: &Theme, center: egui::Pos2) -> Option<bool> {
-    let mut clicked = None;
-    let (play, shuffle, gap) = (28.0, 20.0, 16.0);
-    let left = center.x - (2.0 * play + gap + 2.0 * shuffle) / 2.0;
+/// What a round button under the name asked for.
+#[derive(Clone, Copy, PartialEq)]
+enum HeroButton {
+    Play,
+    Shuffle,
+    Favourite,
+}
+
+/// Shuffle, the big round Play centred on `center`, and the favourite star.
+fn hero_buttons(
+    ui: &mut Ui,
+    theme: &Theme,
+    center: egui::Pos2,
+    favourite: bool,
+) -> Option<HeroButton> {
+    let (big, small, gap) = (28.0, 20.0, 16.0);
+    let side = big + gap + small;
+    let star = if favourite {
+        icons::STAR_FILL
+    } else {
+        icons::STAR
+    };
     let buttons = [
         (
-            pos2(left + play, center.y),
-            play,
+            center - vec2(side, 0.0),
+            small,
+            icons::SHUFFLE,
+            17.0,
+            HeroButton::Shuffle,
+            "Shuffle",
+        ),
+        (
+            center,
+            big,
             icons::PLAY_FILL,
             22.0,
-            false,
+            HeroButton::Play,
             "Play",
         ),
         (
-            pos2(left + 2.0 * play + gap + shuffle, center.y),
-            shuffle,
-            icons::SHUFFLE,
+            center + vec2(side, 0.0),
+            small,
+            star,
             17.0,
-            true,
-            "Shuffle",
+            HeroButton::Favourite,
+            if favourite {
+                "Remove from Favourites"
+            } else {
+                "Favourite"
+            },
         ),
     ];
-    for (c, radius, icon, size, shuffle, label) in buttons {
+    let mut clicked = None;
+    for (c, radius, icon, size, button, label) in buttons {
         let rect = Rect::from_center_size(c, vec2(radius * 2.0, radius * 2.0));
-        let response = ui.interact(rect, Id::unique(("artist-play", label)), Sense::click());
+        let response = ui.interact(rect, Id::unique(("artist-hero", label)), Sense::click());
         let fill = theme.text_a(if response.hovered() { 0.16 } else { 0.10 });
         ui.painter().circle_filled(c, radius, fill);
+        let color = if button == HeroButton::Favourite && favourite {
+            theme.red
+        } else {
+            theme.text
+        };
         // The triangle is drawn off-centre in its icon already, so that it
         // looks centred.
-        paint_icon(ui, icon, c, size, theme.text);
+        paint_icon(ui, icon, c, size, color);
         if response
             .on_hover_text(label)
             .on_hover_cursor(egui::CursorIcon::PointingHand)
             .clicked()
         {
-            clicked = Some(shuffle);
+            clicked = Some(button);
         }
     }
     clicked
@@ -379,7 +422,12 @@ fn songs_section(
             egui::Align::Min,
             muted,
         );
-        if let Some(choice) = track_menu(&response, theme, track.album_id.is_some()) {
+        let favourite = app.is_favourite(FavouriteKind::Song, &track.id);
+        if favourite {
+            let end = title_end + if track.explicit { 18.0 } else { 0.0 };
+            super::tracks::favourite_star(&row_ui, theme, pos2(end + 12.0, cell.center().y - 9.0));
+        }
+        if let Some(choice) = track_menu(&response, theme, track.album_id.is_some(), favourite) {
             chosen = Some((i, choice));
         } else if response
             .on_hover_cursor(egui::CursorIcon::PointingHand)
@@ -397,6 +445,7 @@ fn songs_section(
         match choice {
             TrackChoice::PlayNext => app.enqueue(vec![track], Enqueue::Next, now),
             TrackChoice::AddToQueue => app.enqueue(vec![track], Enqueue::Last, now),
+            TrackChoice::Favourite => app.toggle_favourite(FavouriteKind::Song, track.id),
             TrackChoice::GoToAlbum => {
                 if let Some(album) = track.album_id {
                     app.go(Page::Album(album));

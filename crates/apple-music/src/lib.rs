@@ -17,8 +17,8 @@ pub use stream::AudioStream;
 
 use async_trait::async_trait;
 use music_core::model::{
-    Album, Artist, ArtistDetail, Collection, Cursor, ItemId, Lyrics, Page, Playlist, ProviderKind,
-    SearchResults, Shelf, Track,
+    Album, Artist, ArtistDetail, Collection, Cursor, FavouriteKind, ItemId, Lyrics, Page, Playlist,
+    ProviderKind, SearchResults, Shelf, Track,
 };
 use music_core::{Error, Provider, Result};
 use serde::de::DeserializeOwned;
@@ -28,6 +28,16 @@ const WEB_PLAYER: &str = "https://music.apple.com";
 const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
 /// The largest page the library and catalog endpoints accept.
 const PAGE: u32 = 100;
+/// The catalog's name for a kind of item.
+fn catalog_type(kind: FavouriteKind) -> &'static str {
+    match kind {
+        FavouriteKind::Song => "songs",
+        FavouriteKind::Album => "albums",
+        FavouriteKind::Artist => "artists",
+        FavouriteKind::Playlist => "playlists",
+    }
+}
+
 /// Album details in English, as the app's text is: Apple writes most editorial
 /// notes in English only, and names genres in the storefront's language otherwise.
 const NOTES_LANGUAGE: &str = "en-US";
@@ -217,7 +227,9 @@ impl Provider for AppleMusic {
     }
 
     async fn library_playlists(&self, cursor: Option<&Cursor>) -> Result<Page<Playlist>> {
-        let first = format!("/v1/me/library/playlists?limit={PAGE}");
+        // With the tags, which mark Apple's playlist of favourite songs.
+        let first =
+            format!("/v1/me/library/playlists?limit={PAGE}&extend%5Blibrary-playlists%5D=tags");
         self.page(&first, cursor, convert::playlist).await
     }
 
@@ -240,7 +252,7 @@ impl Provider for AppleMusic {
         // counterpart has them, so the header reads that one when there is one.
         let path = if album.id.starts_with("l.") {
             let catalog = format!(
-                "/v1/me/library/albums/{}/catalog?include=artists&l={NOTES_LANGUAGE}",
+                "/v1/me/library/albums/{}/catalog?include=artists&extend=inFavorites&l={NOTES_LANGUAGE}",
                 album.id
             );
             if let Some(resp) = self
@@ -248,16 +260,18 @@ impl Provider for AppleMusic {
                 .await?
                 && let Some(found) = resp.data.into_iter().next()
             {
+                let catalog = convert::album(found);
                 return Ok(Album {
                     id: album.clone(),
-                    ..convert::album(found)
+                    catalog_id: Some(catalog.id.clone()),
+                    ..catalog
                 });
             }
             format!("/v1/me/library/albums/{}", album.id)
         } else {
             // With the artists, for the header's photo of them.
             format!(
-                "/v1/catalog/{}/albums/{}?include=artists&l={NOTES_LANGUAGE}",
+                "/v1/catalog/{}/albums/{}?include=artists&extend=inFavorites&l={NOTES_LANGUAGE}",
                 self.storefront, album.id
             )
         };
@@ -327,7 +341,7 @@ impl Provider for AppleMusic {
             artist.id.clone()
         };
         let path = format!(
-            "/v1/catalog/{}/artists/{catalog_id}?views=top-songs,latest-release,full-albums,singles&limit[view.top-songs]=30&limit[view.full-albums]=50&limit[view.singles]=50",
+            "/v1/catalog/{}/artists/{catalog_id}?views=top-songs,latest-release,full-albums,singles&extend=inFavorites&limit[view.top-songs]=30&limit[view.full-albums]=50&limit[view.singles]=50",
             self.storefront
         );
         let resp: types::Response<types::ArtistWithViews> = self.get(&path).await?;
@@ -356,6 +370,49 @@ impl Provider for AppleMusic {
             albums: all(views.full_albums, convert::album),
             singles: all(views.singles, convert::album),
         })
+    }
+
+    /// Apple's favourites, as its own client sets them: `POST` adds, `DELETE`
+    /// removes, the item named in the query (Kopuz found the form).
+    async fn set_favourite(&self, kind: FavouriteKind, id: &ItemId, on: bool) -> Result<()> {
+        let path = format!("/v1/me/favorites?ids%5B{}%5D={}", catalog_type(kind), id.id);
+        let req = if on {
+            self.http
+                .post(format!("{API}{path}"))
+                .header("Content-Length", "0")
+        } else {
+            self.http.delete(format!("{API}{path}"))
+        };
+        let resp = self
+            .authorized(req)
+            .header("Media-User-Token", &self.user_token)
+            .send()
+            .await
+            .map_err(|e| Error::Network(format!("{path}: {e}")))?;
+        match resp.status().as_u16() {
+            401 | 403 => Err(Error::NotSignedIn),
+            code if (200..300).contains(&code) => Ok(()),
+            _ => Err(Error::Protocol(format!("{path}: HTTP {}", resp.status()))),
+        }
+    }
+
+    async fn is_favourite(&self, kind: FavouriteKind, id: &ItemId) -> Result<Option<bool>> {
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Favourite {
+            in_favorites: Option<bool>,
+        }
+        let path = format!(
+            "/v1/catalog/{}/{}/{}?extend=inFavorites",
+            self.storefront,
+            catalog_type(kind),
+            id.id
+        );
+        let resp: Option<types::Response<types::Resource<Favourite>>> = self.fetch(&path).await?;
+        Ok(resp
+            .and_then(|r| r.data.into_iter().next())
+            .and_then(|r| r.attributes)
+            .and_then(|a| a.in_favorites))
     }
 
     /// Apple's home: the shelves the web player shows, titled in English as

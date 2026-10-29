@@ -8,6 +8,7 @@
 //!   cargo run -p apple-music --example am -- play 1463409605 1463409610
 //!   cargo run -p apple-music --example am -- lyrics 1463409605
 //!   cargo run -p apple-music --example am -- artist 5468295
+//!   cargo run -p apple-music --example am -- favourite song 1840800867 [on|off]
 //!
 //! The browser defaults to `brave-origin`; set `MUSIC_BROWSER` for another one.
 //! The token is stored under `$XDG_CONFIG_HOME/music/apple-music/` and never printed.
@@ -42,6 +43,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some("fetch") if args.len() == 3 => fetch(&connect().await?, &args[1], &args[2]).await,
         Some("play") if args.len() >= 2 => play(&connect().await?, &args[1..]).await,
         Some("artist") if args.len() == 2 => artist(&connect().await?, &args[1]).await,
+        Some("favourite") if args.len() >= 3 => {
+            favourite(
+                &connect().await?,
+                &args[1],
+                &args[2],
+                args.get(3).map(String::as_str),
+            )
+            .await
+        }
         Some("lyrics") if args.len() == 2 => lyrics(&connect().await?, &args[1]).await,
         _ => {
             eprintln!(
@@ -152,6 +162,30 @@ async fn artist(am: &AppleMusic, id: &str) -> Result<(), Box<dyn std::error::Err
     for al in a.albums.iter().chain(&a.singles) {
         println!("  [album] {} ({:?})", al.title, al.year);
     }
+    Ok(())
+}
+
+/// Read whether an item is a favourite; with `on` or `off`, set it first.
+async fn favourite(
+    am: &AppleMusic,
+    kind: &str,
+    id: &str,
+    set: Option<&str>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use music_core::model::FavouriteKind;
+    let kind = match kind {
+        "song" => FavouriteKind::Song,
+        "album" => FavouriteKind::Album,
+        "artist" => FavouriteKind::Artist,
+        "playlist" => FavouriteKind::Playlist,
+        _ => return Err("kind is song, album, artist or playlist".into()),
+    };
+    let id = music_core::model::ItemId::new(music_core::model::ProviderKind::AppleMusic, id);
+    if let Some(set) = set {
+        am.set_favourite(kind, &id, set == "on").await?;
+        println!("set {set}");
+    }
+    println!("in favourites: {:?}", am.is_favourite(kind, &id).await?);
     Ok(())
 }
 

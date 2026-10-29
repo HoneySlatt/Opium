@@ -5,7 +5,7 @@
 use std::sync::Arc;
 
 use egui::{Id, Rect, Sense, Ui, pos2, vec2};
-use music_core::model::{Artwork, ItemId, ProviderKind, SearchResults, Track};
+use music_core::model::{Artwork, FavouriteKind, ItemId, ProviderKind, SearchResults, Track};
 
 use crate::app::{App, Loaded, Page, SearchScope};
 use crate::fonts::{Weight, font};
@@ -441,6 +441,7 @@ fn song_list(app: &mut App, ui: &mut Ui, theme: &Theme, area: Rect, top: f32, so
             selected: app.detail_selected == Some(position),
             now,
             playing: now && app.is_playing(),
+            favourite: app.is_favourite(FavouriteKind::Song, &track.id),
             list: "search",
             position,
         };
@@ -452,6 +453,10 @@ fn song_list(app: &mut App, ui: &mut Ui, theme: &Theme, area: Rect, top: f32, so
                 app.play_list(songs.to_vec(), position);
             }
             RowAction::OpenAlbum(id) => app.go(Page::Album(id)),
+            RowAction::Favourite => {
+                let id = track.id.clone();
+                app.toggle_favourite(FavouriteKind::Song, id);
+            }
             RowAction::Enqueue(how) => {
                 let track = track.clone();
                 app.enqueue(vec![track], how, ui.input(|i| i.time));

@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use egui::{Color32, Rect, Sense, Ui, pos2, vec2};
-use music_core::model::{Album, ItemId, Track};
+use music_core::model::{Album, FavouriteKind, ItemId, Track};
 
 use crate::app::{App, Loaded, Page};
 use crate::color::mix;
@@ -30,12 +30,15 @@ struct Header {
     meta: Vec<(Option<Icon>, String)>,
     description: Option<String>,
     art: Option<String>,
+    /// The star after the title: what it names, and whether it is lit.
+    favourite: Option<(FavouriteKind, ItemId, bool)>,
 }
 
 /// What a click in the header asked for.
 enum HeaderAction {
     Play { shuffle: bool },
     OpenArtist(ItemId),
+    Favourite(FavouriteKind, ItemId),
 }
 
 const ART_TOP: f32 = 60.0;
@@ -63,7 +66,11 @@ struct Listing {
 pub fn album(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
     let (header, tracks, loading, error) = match app.albums.get(id) {
         Some(Loaded::Ready((album, tracks))) => (
-            Some(album_header(album, tracks)),
+            Some(album_header(
+                album,
+                tracks,
+                app.is_favourite(FavouriteKind::Album, &App::album_favourite_id(album)),
+            )),
             tracks.clone(),
             false,
             None,
@@ -111,6 +118,11 @@ pub fn playlist(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
         meta,
         description: playlist.description.clone(),
         art: playlist.artwork.as_ref().map(|a| a.url(600)),
+        // Catalog playlists can be favourites; the user's own are theirs already.
+        favourite: playlist.id.id.starts_with("pl.").then(|| {
+            let on = app.is_favourite(FavouriteKind::Playlist, &playlist.id);
+            (FavouriteKind::Playlist, playlist.id.clone(), on)
+        }),
     };
     let listing = Listing {
         columns: Kind::Playlist,
@@ -124,7 +136,7 @@ pub fn playlist(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
 
 /// Cider's details: genre, year, track count; then the quality, which is this
 /// app's business.
-fn album_header(album: &Album, tracks: &[Track]) -> Header {
+fn album_header(album: &Album, tracks: &[Track], favourite: bool) -> Header {
     let mut meta = Vec::new();
     if let Some(genre) = &album.genre {
         meta.push((Some(icons::MIC), genre.to_uppercase()));
@@ -154,6 +166,11 @@ fn album_header(album: &Album, tracks: &[Track]) -> Header {
         meta,
         description: album.description.clone(),
         art: album.artwork.as_ref().map(|a| a.url(640)),
+        favourite: Some((
+            FavouriteKind::Album,
+            App::album_favourite_id(album),
+            favourite,
+        )),
     }
 }
 
@@ -204,6 +221,7 @@ fn page(
                     app.play_shuffled_or_not(tracks.to_vec(), shuffle, ui.input(|i| i.time));
                 }
                 Some(HeaderAction::OpenArtist(id)) => app.go(Page::Artist(id)),
+                Some(HeaderAction::Favourite(kind, id)) => app.toggle_favourite(kind, id),
                 None => {}
             }
 
@@ -255,6 +273,7 @@ fn page(
                     selected: app.detail_selected == Some(position),
                     now,
                     playing: now && app.is_playing(),
+                    favourite: app.is_favourite(FavouriteKind::Song, &track.id),
                     list: listing.list,
                     position,
                 };
@@ -266,6 +285,10 @@ fn page(
                         app.play_list(tracks.to_vec(), position);
                     }
                     RowAction::OpenAlbum(id) => app.go(Page::Album(id)),
+                    RowAction::Favourite => {
+                        let id = track.id.clone();
+                        app.toggle_favourite(FavouriteKind::Song, id);
+                    }
                     RowAction::Enqueue(how) => {
                         let track = track.clone();
                         app.enqueue(vec![track], how, ui.input(|i| i.time));
@@ -376,12 +399,18 @@ fn header_text(
 ) -> Option<HeaderAction> {
     let x = art.right() + 32.0;
     let width = (right - x).max(0.0);
+    let room = width
+        - if header.favourite.is_some() {
+            48.0
+        } else {
+            0.0
+        };
     let title = text(
         ui,
         &header.title,
         font(40.0, Weight::Bold),
         theme.text,
-        width,
+        room,
     );
     let by = header.by.as_ref().map(|by| {
         text(
@@ -409,9 +438,26 @@ fn header_text(
     let mut y = art.center().y - height / 2.0;
 
     let h = title.size().y;
+    let title_end = x + title.size().x;
     paint_text(ui, title, x, y + h / 2.0, egui::Align::Min, theme.text);
-    y += h + gap;
     let mut action = None;
+    if let Some((kind, id, on)) = &header.favourite {
+        let star =
+            Rect::from_center_size(pos2(title_end + 14.0 + 16.0, y + h / 2.0), vec2(32.0, 32.0));
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(star));
+        let (icon, color, hint) = if *on {
+            (icons::STAR_FILL, theme.red, "Remove from Favourites")
+        } else {
+            (icons::STAR, theme.subtext0, "Favourite")
+        };
+        if super::icon_button(&mut child, theme, icon, 32.0, 18.0, color, true)
+            .on_hover_text(hint)
+            .clicked()
+        {
+            action = Some(HeaderAction::Favourite(*kind, id.clone()));
+        }
+    }
+    y += h + gap;
     if let Some(by) = by {
         let cy = y + by_height / 2.0;
         let mut tx = x;

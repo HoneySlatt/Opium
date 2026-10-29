@@ -6,8 +6,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use music_core::model::{
-    Album, Artist, ArtistDetail, Collection, ItemId, Lyrics, Playlist, ProviderKind, SearchResults,
-    Shelf, Track,
+    Album, Artist, ArtistDetail, Collection, FavouriteKind, ItemId, Lyrics, Playlist, ProviderKind,
+    SearchResults, Shelf, Track,
 };
 use music_core::{Queue, Repeat};
 use player::{Event, Player, Status, Token};
@@ -213,6 +213,11 @@ pub struct App {
     pub library_albums: Streamed<Album>,
     pub library_artists: Streamed<Artist>,
     pub recently_added: Streamed<Collection>,
+    /// The songs in Apple's playlist of favourites.
+    favourite_songs: std::collections::HashSet<ItemId>,
+    /// What is known to be a favourite or not: set by the user here, or read
+    /// from the service. It wins over `favourite_songs`.
+    favourites_known: HashMap<ItemId, bool>,
     /// The home shelves, once asked for.
     pub home: Option<Loaded<Arc<Vec<Shelf>>>>,
     /// The source filter on the cover grids.
@@ -296,6 +301,8 @@ impl App {
             library_albums: Streamed::default(),
             library_artists: Streamed::default(),
             recently_added: Streamed::default(),
+            favourite_songs: Default::default(),
+            favourites_known: HashMap::new(),
             home: None,
             grid_source: None,
             albums: HashMap::new(),
@@ -348,6 +355,12 @@ impl App {
     /// Fetch what the page shows, unless it already has been.
     fn arrived(&mut self) {
         self.detail_selected = None;
+        // Favourite Songs is Apple's playlist of them, once the library says which.
+        if self.page == Page::Favourites
+            && let Some(id) = self.favourites()
+        {
+            self.page = Page::Playlist(id);
+        }
         match &self.page {
             Page::Album(id) if !self.albums.contains_key(id) => {
                 self.albums.insert(id.clone(), Loaded::Loading);
@@ -374,6 +387,20 @@ impl App {
                     self.backend
                         .send(Request::Search(self.search_scope, query.clone()));
                 }
+            }
+            // A catalog playlist says whether it is a favourite when asked.
+            Page::Playlist(id)
+                if id.id.starts_with("pl.") && !self.favourites_known.contains_key(id) =>
+            {
+                if !self.playlist_tracks.contains_key(id) {
+                    self.playlist_tracks
+                        .insert(id.clone(), PlaylistTracks::default());
+                    self.backend.send(Request::Playlist(id.clone()));
+                }
+                self.backend.send(Request::Favourite {
+                    kind: FavouriteKind::Playlist,
+                    id: id.clone(),
+                });
             }
             Page::Playlist(id) if !self.playlist_tracks.contains_key(id) => {
                 self.playlist_tracks
@@ -441,6 +468,36 @@ impl App {
     pub fn refresh_home(&mut self) {
         self.home = Some(Loaded::Loading);
         self.backend.send(Request::Home);
+    }
+
+    /// Whether `id` is among the favourites, as far as the app knows.
+    pub fn is_favourite(&self, kind: FavouriteKind, id: &ItemId) -> bool {
+        match self.favourites_known.get(id) {
+            Some(&on) => on,
+            None => kind == FavouriteKind::Song && self.favourite_songs.contains(id),
+        }
+    }
+
+    /// Add to the favourites, or take out; shown at once, undone if the
+    /// service refuses.
+    pub fn toggle_favourite(&mut self, kind: FavouriteKind, id: ItemId) {
+        let on = !self.is_favourite(kind, &id);
+        self.favourites_known.insert(id.clone(), on);
+        if kind == FavouriteKind::Song {
+            // Apple's playlist changes with it: load it again when next opened.
+            if let Some(favourites) = self.favourites() {
+                self.playlist_tracks.remove(&favourites);
+                if self.page == Page::Playlist(favourites) {
+                    self.arrived();
+                }
+            }
+        }
+        self.backend.send(Request::SetFavourite { kind, id, on });
+    }
+
+    /// The id favourites know an album by: its catalog one.
+    pub fn album_favourite_id(album: &Album) -> ItemId {
+        album.catalog_id.clone().unwrap_or_else(|| album.id.clone())
     }
 
     /// The library's playlist of favourite songs, when there is one.
@@ -879,6 +936,14 @@ impl App {
                 }
                 Reply::Playlists(playlists) => {
                     self.playlists = playlists;
+                    // Which songs are favourites: those in Apple's playlist of them.
+                    if let Some(id) = self.favourites()
+                        && !self.playlist_tracks.contains_key(&id)
+                    {
+                        self.playlist_tracks
+                            .insert(id.clone(), PlaylistTracks::default());
+                        self.backend.send(Request::Playlist(id));
+                    }
                     // Favourite Songs was opened before the library said which
                     // playlist it is.
                     if self.page == Page::Favourites
@@ -901,19 +966,41 @@ impl App {
                 Reply::RecentlyAdded { items, done } => self.recently_added.extend(items, done),
                 Reply::Album { id, result } => {
                     let loaded = match result {
-                        Ok((album, tracks)) => Loaded::Ready((album, Arc::new(tracks))),
+                        Ok((album, tracks)) => {
+                            if let Some(on) = album.in_favourites {
+                                self.favourites_known
+                                    .entry(Self::album_favourite_id(&album))
+                                    .or_insert(on);
+                            }
+                            Loaded::Ready((album, Arc::new(tracks)))
+                        }
                         Err(e) => Loaded::Failed(e),
                     };
                     self.albums.insert(id, loaded);
                 }
                 Reply::Artist { id, result } => {
                     let loaded = match result {
-                        Ok(artist) => Loaded::Ready(Arc::new(artist)),
+                        Ok(artist) => {
+                            if let Some(on) = artist.artist.in_favourites {
+                                self.favourites_known
+                                    .entry(artist.artist.id.clone())
+                                    .or_insert(on);
+                            }
+                            Loaded::Ready(Arc::new(artist))
+                        }
                         Err(e) => Loaded::Failed(e),
                     };
                     self.artists.insert(id, loaded);
                 }
                 Reply::PlaylistTracks { id, result, done } => {
+                    // The favourites fill in page by page: Apple's playlist of
+                    // them can run to thousands of songs.
+                    if self.favourites().as_ref() == Some(&id)
+                        && let Ok(tracks) = &result
+                    {
+                        self.favourite_songs
+                            .extend(tracks.iter().map(|t| t.id.clone()));
+                    }
                     let entry = self.playlist_tracks.entry(id).or_default();
                     match result {
                         Ok(tracks) => Arc::make_mut(&mut entry.tracks).extend(tracks),
@@ -921,6 +1008,24 @@ impl App {
                     }
                     entry.done = done;
                 }
+                Reply::Favourite { id, set, result } => match (set, result) {
+                    (Some(on), Ok(_)) => {
+                        let message = if on {
+                            "Added to Favourites"
+                        } else {
+                            "Removed from Favourites"
+                        };
+                        self.notify(message, now);
+                    }
+                    (Some(on), Err(e)) => {
+                        self.favourites_known.insert(id, !on);
+                        self.notify(format!("Couldn't change the favourites: {e}"), now);
+                    }
+                    (None, Ok(Some(on))) => {
+                        self.favourites_known.entry(id).or_insert(on);
+                    }
+                    (None, _) => {}
+                },
                 Reply::Palette { url, palette } => {
                     let state = palette.map_or(PaletteState::Failed, PaletteState::Ready);
                     self.palettes.insert(url, state);

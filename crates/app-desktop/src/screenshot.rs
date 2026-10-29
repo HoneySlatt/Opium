@@ -2,7 +2,7 @@
 //! [MUSIC_SCREENSHOT_PLAY=row]` saves the window once it has had time to load,
 //! then quits, optionally playing a Songs row first. `MUSIC_SCREENSHOT_PAGE`
 //! opens a page first: `playlist:<index>`, `album:<id>`, `artist:<id>` or
-//! `search:<query>`, or `page:home|albums|artists|recent|settings`; `MUSIC_SCREENSHOT_DRAWER`
+//! `search:<query>`, or `page:home|albums|artists|recent|settings|favourites`; `MUSIC_SCREENSHOT_DRAWER`
 //! opens the queue drawer. Only the app's own window is captured.
 
 use std::path::PathBuf;
@@ -60,6 +60,7 @@ impl Screenshot {
             "page" => match value {
                 "home" => Some(crate::app::Page::Home),
                 "settings" => Some(crate::app::Page::Settings),
+                "favourites" => Some(crate::app::Page::Favourites),
                 "albums" => Some(crate::app::Page::Albums),
                 "artists" => Some(crate::app::Page::Artists),
                 "recent" => Some(crate::app::Page::RecentlyAdded),

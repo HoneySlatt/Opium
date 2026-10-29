@@ -1,8 +1,8 @@
 use async_trait::async_trait;
 
 use crate::model::{
-    Album, Artist, ArtistDetail, Collection, Cursor, ItemId, Lyrics, Page, Playlist, ProviderKind,
-    SearchResults, Shelf, Track,
+    Album, Artist, ArtistDetail, Collection, Cursor, FavouriteKind, ItemId, Lyrics, Page, Playlist,
+    ProviderKind, SearchResults, Shelf, Track,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -47,6 +47,17 @@ pub trait Provider: Send + Sync {
     async fn album_tracks(&self, album: &ItemId) -> Result<Vec<Track>>;
 
     async fn artist(&self, artist: &ItemId) -> Result<ArtistDetail>;
+
+    /// Add `id` to the user's favourites, or take it out. `id` names the
+    /// service's catalog item.
+    async fn set_favourite(&self, _kind: FavouriteKind, _id: &ItemId, _on: bool) -> Result<()> {
+        Err(Error::Protocol("this service has no favourites".into()))
+    }
+
+    /// Whether `id` is among the user's favourites, when the service can say.
+    async fn is_favourite(&self, _kind: FavouriteKind, _id: &ItemId) -> Result<Option<bool>> {
+        Ok(None)
+    }
 
     /// What the service recommends, shelf by shelf. Not every service has this.
     async fn home(&self) -> Result<Vec<Shelf>> {

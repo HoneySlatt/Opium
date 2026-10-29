@@ -113,6 +113,8 @@ pub fn album(album: types::Album) -> Album {
                 .and_then(|a| a.artwork.as_ref()),
         ),
         released: attrs.release_date.clone(),
+        catalog_id: None,
+        in_favourites: attrs.in_favorites,
         genre,
         description,
         artwork: artwork(attrs.artwork.as_ref()),
@@ -145,14 +147,15 @@ fn strip_tags(s: &str) -> String {
     out.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// A library playlist the user can neither edit nor delete is the one Apple
-/// keeps of their favourite songs; it is named in the storefront's language
+/// Apple tags the playlist it keeps of the user's favourite songs
+/// `favorited` (as Kopuz found); it is named in the storefront's language
 /// ("Morceaux préférés"), so the app names it in its own.
 pub fn playlist(playlist: types::Playlist) -> Playlist {
     let attrs = playlist.attributes.unwrap_or_default();
-    let favourites = playlist.id.starts_with("p.")
-        && attrs.can_edit == Some(false)
-        && attrs.can_delete == Some(false);
+    let favourites = attrs
+        .tags
+        .as_ref()
+        .is_some_and(|tags| tags.iter().any(|t| t == "favorited"));
     Playlist {
         id: id(playlist.id),
         artwork: artwork(attrs.artwork.as_ref()),
@@ -186,6 +189,7 @@ pub fn library_artist(artist: types::Artist) -> Artist {
         id,
         artwork,
         name: artist.attributes.unwrap_or_default().name,
+        in_favourites: None,
     }
 }
 
@@ -235,6 +239,7 @@ pub fn artist(artist: types::Artist) -> Artist {
         id: id(artist.id),
         artwork: artwork(attrs.artwork.as_ref()),
         name: attrs.name,
+        in_favourites: attrs.in_favorites,
     }
 }
 

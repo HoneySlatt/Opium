@@ -2,7 +2,7 @@
 //! sortable track list that only lays out the rows on screen.
 
 use egui::{Id, Rect, Sense, Stroke, Ui, pos2, vec2};
-use music_core::model::{ProviderKind, Track};
+use music_core::model::{FavouriteKind, ProviderKind, Track};
 
 use crate::app::{App, Connection, Page, SortKey};
 use crate::fonts::{Weight, font};
@@ -59,6 +59,7 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
                     selected: app.songs_view.selected == Some(position),
                     now,
                     playing: now && app.is_playing(),
+                    favourite: app.is_favourite(FavouriteKind::Song, &track.id),
                     list: "songs",
                     position,
                 };
@@ -70,6 +71,10 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
                         app.play_list(shown_tracks(app), position);
                     }
                     RowAction::OpenAlbum(id) => app.go(Page::Album(id)),
+                    RowAction::Favourite => {
+                        let id = track.id.clone();
+                        app.toggle_favourite(FavouriteKind::Song, id);
+                    }
                     RowAction::Enqueue(how) => {
                         let track = track.clone();
                         app.enqueue(vec![track], how, ui.input(|i| i.time));

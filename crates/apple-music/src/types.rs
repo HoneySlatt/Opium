@@ -88,6 +88,8 @@ pub struct AlbumAttributes {
     pub track_count: Option<u32>,
     pub genre_names: Vec<String>,
     pub editorial_notes: Option<EditorialNotes>,
+    /// With `extend=inFavorites`.
+    pub in_favorites: Option<bool>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -111,16 +113,19 @@ pub struct PlaylistAttributes {
     pub description: Option<Description>,
     pub artwork: Option<Artwork>,
     pub curator_name: Option<String>,
-    /// Library playlists: false for those Apple keeps itself.
-    pub can_edit: Option<bool>,
-    pub can_delete: Option<bool>,
+    /// With `extend[library-playlists]=tags`: `favorited` marks the playlist
+    /// Apple keeps of the user's favourite songs, and nothing else.
+    pub tags: Option<Vec<String>>,
 }
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
+#[serde(rename_all = "camelCase")]
 pub struct ArtistAttributes {
     pub name: String,
     pub artwork: Option<Artwork>,
+    /// With `extend=inFavorites`.
+    pub in_favorites: Option<bool>,
 }
 
 pub type Song = Resource<SongAttributes>;

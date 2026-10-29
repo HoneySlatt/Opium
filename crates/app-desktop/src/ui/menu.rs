@@ -100,6 +100,8 @@ fn item(ui: &mut Ui, theme: &Theme, icon: Icon, label: &str) -> bool {
 pub(super) enum TrackChoice {
     PlayNext,
     AddToQueue,
+    /// Add to the favourites, or take out.
+    Favourite,
     GoToAlbum,
 }
 
@@ -108,10 +110,22 @@ pub(super) fn track_menu(
     response: &Response,
     theme: &Theme,
     has_album: bool,
+    favourite: bool,
 ) -> Option<TrackChoice> {
+    let star = if favourite {
+        Entry::Item(
+            icons::STAR_FILL,
+            "Remove from Favourites",
+            TrackChoice::Favourite,
+        )
+    } else {
+        Entry::Item(icons::STAR, "Favourite", TrackChoice::Favourite)
+    };
     let mut entries = vec![
         Entry::Item(icons::NEXT, "Play Next", TrackChoice::PlayNext),
         Entry::Item(icons::LATER, "Add to Queue", TrackChoice::AddToQueue),
+        Entry::Line,
+        star,
     ];
     if has_album {
         entries.push(Entry::Line);

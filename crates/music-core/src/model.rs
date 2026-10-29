@@ -104,6 +104,10 @@ pub struct Album {
     pub genre: Option<String>,
     /// The service's words about the album.
     pub description: Option<String>,
+    /// A library album's catalog counterpart, which favourites name.
+    pub catalog_id: Option<ItemId>,
+    /// Whether the user has it in their favourites, when the service said.
+    pub in_favourites: Option<bool>,
     pub year: Option<u16>,
     pub artwork: Option<Artwork>,
     pub track_count: Option<u32>,
@@ -114,6 +118,17 @@ pub struct Artist {
     pub id: ItemId,
     pub name: String,
     pub artwork: Option<Artwork>,
+    /// Whether the user has them in their favourites, when the service said.
+    pub in_favourites: Option<bool>,
+}
+
+/// What can be a favourite.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum FavouriteKind {
+    Song,
+    Album,
+    Artist,
+    Playlist,
 }
 
 /// An album or a playlist: what Recently Added and the home shelves list.
