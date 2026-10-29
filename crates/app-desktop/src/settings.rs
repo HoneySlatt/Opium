@@ -30,6 +30,10 @@ pub struct Settings {
     pub playlist_songs_to_library: Option<bool>,
     /// The playlists songs were last added to, most recent first.
     pub recent_playlists: Vec<String>,
+    /// The volume, 0 to 1, as left last time; full unless set.
+    pub volume: Option<f32>,
+    /// Muted when last left.
+    pub muted: Option<bool>,
     /// Covers move where Apple made them move (on unless turned off).
     pub animated_artwork: Option<bool>,
     /// How sharp the moving covers are; Automatic unless set.

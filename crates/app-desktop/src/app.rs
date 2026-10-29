@@ -431,6 +431,8 @@ pub struct App {
     pub status: Status,
     pub volume: f32,
     pub muted: bool,
+    /// When the volume last changed, until it is kept in the settings.
+    volume_changed: Option<std::time::Instant>,
     pub toast: Option<(String, f64)>,
     screenshot: Option<crate::screenshot::Screenshot>,
     settings: crate::settings::Settings,
@@ -531,8 +533,9 @@ impl App {
             failed_in_row: 0,
             now: None,
             status: Status::default(),
-            volume: 1.0,
-            muted: false,
+            volume: settings.volume.unwrap_or(1.0).clamp(0.0, 1.0),
+            muted: settings.muted.unwrap_or(false),
+            volume_changed: None,
             toast: None,
             drawer_open: std::env::var_os("MUSIC_SCREENSHOT_DRAWER").is_some(),
             signal_open: std::env::var_os("MUSIC_SCREENSHOT_SIGNAL").map(|_| SignalAnchor::TopBar),
@@ -546,6 +549,9 @@ impl App {
             theme_changed,
             zoom: None,
         };
+        // The volume as it was left.
+        app.player
+            .set_volume(if app.muted { 0.0 } else { app.volume });
         // The first page loads what it shows, as any page does on arrival.
         app.arrived();
         app
@@ -1651,12 +1657,32 @@ impl App {
         self.volume = volume.clamp(0.0, 1.0);
         self.muted = false;
         self.player.set_volume(self.volume);
+        self.volume_changed = Some(std::time::Instant::now());
     }
 
     pub fn toggle_mute(&mut self) {
         self.muted = !self.muted;
         self.player
             .set_volume(if self.muted { 0.0 } else { self.volume });
+        self.volume_changed = Some(std::time::Instant::now());
+    }
+
+    /// Keep the volume for next time, once it has stopped moving: a drag of
+    /// the slider changes it every frame.
+    fn keep_volume(&mut self, ctx: &egui::Context) {
+        const SETTLED: Duration = Duration::from_millis(500);
+        let Some(changed) = self.volume_changed else {
+            return;
+        };
+        let since = changed.elapsed();
+        if since < SETTLED {
+            ctx.request_repaint_after(SETTLED - since);
+            return;
+        }
+        self.volume_changed = None;
+        self.settings.volume = Some(self.volume);
+        self.settings.muted = Some(self.muted);
+        self.settings.save();
     }
 
     /// Put `tracks` in the queue: instead of it, after the current track, or
@@ -2348,8 +2374,18 @@ impl App {
 }
 
 impl eframe::App for App {
+    fn on_exit(&mut self) {
+        // A volume still settling is kept as it is.
+        if self.volume_changed.is_some() {
+            self.settings.volume = Some(self.volume);
+            self.settings.muted = Some(self.muted);
+            self.settings.save();
+        }
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.zoom(ui.ctx());
+        self.keep_volume(ui.ctx());
         if self.theme_changed.swap(false, Ordering::Relaxed) {
             let theme = resolve_theme(&self.settings);
             if theme != self.theme {
