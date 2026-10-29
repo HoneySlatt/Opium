@@ -361,6 +361,21 @@ fn shortcuts(app: &mut App, ui: &mut Ui) {
     }
 }
 
+/// Note the song the pointer is on this frame, for the app to fetch ahead.
+pub(super) fn pointer_on(ui: &Ui, track: &music_core::model::Track) {
+    ui.ctx().data_mut(|d| {
+        d.insert_temp(egui::Id::unique("pointer-on-song"), Some(track.clone()));
+    });
+}
+
+/// The song the pointer was on this frame, if any.
+pub fn song_under_pointer(ctx: &egui::Context) -> Option<music_core::model::Track> {
+    ctx.data_mut(|d| {
+        d.remove_temp::<Option<music_core::model::Track>>(egui::Id::unique("pointer-on-song"))
+    })
+    .flatten()
+}
+
 // ---- Shared drawing helpers ----
 
 /// One line of text, cut with an ellipsis past `max_width`.

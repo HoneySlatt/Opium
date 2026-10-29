@@ -689,6 +689,7 @@ pub(super) fn song_columns(
         let response = row_ui.interact(cell, id.with(i), Sense::click());
         if response.hovered() {
             row_ui.painter().rect_filled(cell, 8.0, theme.hover());
+            super::pointer_on(&row_ui, track);
         }
         let now = app.is_current(track);
         let thumb = Rect::from_min_size(

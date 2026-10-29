@@ -227,6 +227,9 @@ pub fn row(
         Sense::click(),
     );
     let hovered = response.contains_pointer();
+    if hovered {
+        super::pointer_on(ui, track);
+    }
     let fill = if state.selected {
         Some(alpha(theme.accent, 0.16))
     } else if hovered {

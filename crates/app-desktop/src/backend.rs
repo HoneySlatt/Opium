@@ -99,6 +99,12 @@ pub enum Request {
         token: player::Token,
         track: ItemId,
     },
+    /// Fetch a track the pointer rests on, in case it is played: as `Fetch`,
+    /// but a newer one calls off the last.
+    Warm {
+        token: player::Token,
+        track: ItemId,
+    },
     /// An album and its tracks.
     Album(ItemId),
     /// An artist's top songs and releases.
@@ -351,6 +357,7 @@ async fn run(
         .and_then(|path| widevine::Cdm::open(&path).map_err(|e| e.to_string()));
 
     let http = reqwest::Client::new();
+    let mut warming: Option<tokio::task::JoinHandle<()>> = None;
     while let Some(request) = requests.recv().await {
         let replies = replies.clone();
         match request {
@@ -377,7 +384,7 @@ async fn run(
         // Without a connection there is nothing to ask; a track to play
         // still hears why.
         let Some(am) = apple.clone() else {
-            if let Request::Fetch { token, .. } = request {
+            if let Request::Fetch { token, .. } | Request::Warm { token, .. } = request {
                 replies.send(Reply::Fetched {
                     token,
                     result: Err("Apple Music isn't connected".into()),
@@ -658,22 +665,19 @@ async fn run(
             Request::Fetch { token, track } => {
                 let cdm = cdm.clone();
                 tokio::spawn(async move {
-                    // Stations (`ra.`) stream; everything else is a track.
-                    let result = match cdm {
-                        Ok(cdm) if track.id.starts_with("ra.") => am
-                            .live_station(&cdm, &track)
-                            .await
-                            .map(Playable::Live)
-                            .map_err(|e| e.to_string()),
-                        Ok(cdm) => am
-                            .fetch_track(&cdm, &track)
-                            .await
-                            .map(Playable::Track)
-                            .map_err(|e| e.to_string()),
-                        Err(e) => Err(e),
-                    };
+                    let result = playable(&am, cdm, &track).await;
                     replies.send(Reply::Fetched { token, result });
                 });
+            }
+            Request::Warm { token, track } => {
+                if let Some(last) = warming.take() {
+                    last.abort();
+                }
+                let cdm = cdm.clone();
+                warming = Some(tokio::spawn(async move {
+                    let result = playable(&am, cdm, &track).await;
+                    replies.send(Reply::Fetched { token, result });
+                }));
             }
         }
     }
@@ -684,6 +688,28 @@ const STATION_BATCH: usize = 20;
 
 /// How far back Recently Added goes.
 const RECENT_LIMIT: usize = 200;
+
+/// A track or a station, ready to play: stations (`ra.`) stream, everything
+/// else is a track.
+async fn playable(
+    am: &AppleMusic,
+    cdm: Result<widevine::Cdm, String>,
+    track: &ItemId,
+) -> Result<Playable, String> {
+    match cdm {
+        Ok(cdm) if track.id.starts_with("ra.") => am
+            .live_station(&cdm, track)
+            .await
+            .map(Playable::Live)
+            .map_err(|e| e.to_string()),
+        Ok(cdm) => am
+            .fetch_track(&cdm, track)
+            .await
+            .map(Playable::Track)
+            .map_err(|e| e.to_string()),
+        Err(e) => Err(e),
+    }
+}
 
 /// A list that failed part way: it ends with `done`, and the failure shows
 /// as a toast.

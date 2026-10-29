@@ -116,6 +116,18 @@ pub enum Enqueue {
     Last,
 }
 
+/// A song fetched ahead because the pointer rests on it.
+struct Warm {
+    token: Token,
+    track: Track,
+    /// Once fetched.
+    ready: Option<Playable>,
+}
+
+/// How long the pointer rests on a song before it is fetched ahead: longer
+/// than passing over it, shorter than reaching for a double click.
+const WARM_AFTER: f64 = 0.3;
+
 /// What a playlist's menu asked for.
 #[derive(Clone, Copy)]
 pub enum PlaylistChoice {
@@ -341,6 +353,10 @@ pub struct App {
     queued_next: Option<Token>,
     /// The player has `queued_next` as its next track, fetched.
     next_ready: bool,
+    /// The song the pointer rests on, fetched in case it is played.
+    warm: Option<Warm>,
+    /// The song the pointer is on, and since when.
+    resting: Option<(ItemId, f64)>,
     /// An album or playlist to queue once its tracks are in.
     waiting: Option<(Waiting, Enqueue)>,
     /// Tracks that failed to start one after the other, skipped.
@@ -437,6 +453,8 @@ impl App {
             pending_play: None,
             queued_next: None,
             next_ready: false,
+            warm: None,
+            resting: None,
             waiting: None,
             failed_in_row: 0,
             now: None,
@@ -1197,8 +1215,66 @@ impl App {
             // What played stops at once, as in Apple Music, rather than go on
             // over the wait.
             self.player.stop();
+            // Fetched already, or on its way, while the pointer rested on it.
+            if let Some(warm) = self.warm.take_if(|w| w.track.id == track.id) {
+                self.tracks.insert(warm.token, track);
+                match warm.ready {
+                    Some(stream) => {
+                        self.pending_play = None;
+                        self.player.play(warm.token, Self::source(stream));
+                    }
+                    None => self.pending_play = Some(warm.token),
+                }
+                return;
+            }
             self.pending_play = Some(self.issue(track));
         }
+    }
+
+    /// Fetch the song the pointer has rested on a moment, in case it is
+    /// played: one at a time, the last called off.
+    fn rest_on(&mut self, track: Option<Track>, now: f64, ctx: &egui::Context) {
+        let Some(track) = track else {
+            self.resting = None;
+            return;
+        };
+        let since = match &self.resting {
+            Some((id, since)) if *id == track.id => *since,
+            _ => {
+                self.resting = Some((track.id.clone(), now));
+                now
+            }
+        };
+        if now - since < WARM_AFTER {
+            ctx.request_repaint_after(Duration::from_secs_f64(WARM_AFTER - (now - since)));
+            return;
+        }
+        let lined_up = self
+            .queued_next
+            .and_then(|t| self.tracks.get(&t))
+            .is_some_and(|t| t.id == track.id);
+        let fetched = self.warm.as_ref().is_some_and(|w| w.track.id == track.id);
+        // Nothing to do for what plays, is on its way or is ready; and none
+        // while a track the user picked is still coming.
+        if self.pending_play.is_some()
+            || self.is_current(&track)
+            || lined_up
+            || fetched
+            || track.id.id.starts_with("ra.")
+        {
+            return;
+        }
+        let token = self.next_token;
+        self.next_token += 1;
+        self.backend.send(Request::Warm {
+            token,
+            track: track.id.clone(),
+        });
+        self.warm = Some(Warm {
+            token,
+            track,
+            ready: None,
+        });
     }
 
     /// Have the track after the current one fetched, so it follows without a gap.
@@ -1845,8 +1921,17 @@ impl App {
                         self.player.set_next(token, Self::source(stream));
                         self.next_ready = true;
                     }
+                    Ok(stream) if self.warm.as_ref().is_some_and(|w| w.token == token) => {
+                        if let Some(warm) = &mut self.warm {
+                            warm.ready = Some(stream);
+                        }
+                    }
                     // Superseded while it was fetching.
                     Ok(_) => {}
+                    // Fetched ahead and not played: nothing to say.
+                    Err(_) if self.warm.as_ref().is_some_and(|w| w.token == token) => {
+                        self.warm = None;
+                    }
                     Err(e) => {
                         let title = self
                             .tracks
@@ -1973,6 +2058,8 @@ impl eframe::App for App {
             }
         }
         ui::show(self, ui);
+        let under = ui::song_under_pointer(ui.ctx());
+        self.rest_on(under, now, ui.ctx());
         // The covers just drawn that Apple hasn't said about yet.
         self.ask_in_library();
         if let Some(page) = self
