@@ -7,8 +7,8 @@ use std::sync::mpsc;
 
 use apple_music::{AppleMusic, AudioStream};
 use music_core::model::{
-    Album, Artist, ArtistDetail, Cursor, ItemId, LibraryItem, Lyrics, Page, Playlist,
-    SearchResults, Track,
+    Album, Artist, ArtistDetail, Collection, Cursor, ItemId, Lyrics, Page, Playlist, SearchResults,
+    Shelf, Track,
 };
 use music_core::{Error, Provider};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -24,6 +24,8 @@ pub enum Request {
     LibraryArtists,
     /// What was added to the library lately.
     RecentlyAdded,
+    /// The home page's shelves.
+    Home,
     /// A track's audio, ready to hand to the player.
     Fetch { token: player::Token, track: ItemId },
     /// An album and its tracks.
@@ -59,9 +61,10 @@ pub enum Reply {
         done: bool,
     },
     RecentlyAdded {
-        items: Vec<LibraryItem>,
+        items: Vec<Collection>,
         done: bool,
     },
+    Home(Result<Vec<Shelf>, String>),
     Fetched {
         token: player::Token,
         result: Result<AudioStream, String>,
@@ -225,6 +228,11 @@ async fn run(mut requests: UnboundedReceiver<Request>, replies: Replies) {
                         query,
                         result,
                     });
+                });
+            }
+            Request::Home => {
+                tokio::spawn(async move {
+                    replies.send(Reply::Home(am.home().await.map_err(|e| e.to_string())));
                 });
             }
             Request::LibraryAlbums => {

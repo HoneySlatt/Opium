@@ -50,6 +50,9 @@ pub struct RelatedAttributes {
 #[derive(Debug, Deserialize)]
 pub struct Artwork {
     pub url: String,
+    /// `cb6900`.
+    #[serde(rename = "bgColor")]
+    pub bg_color: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -102,10 +105,12 @@ pub struct Description {
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
+#[serde(rename_all = "camelCase")]
 pub struct PlaylistAttributes {
     pub name: String,
     pub description: Option<Description>,
     pub artwork: Option<Artwork>,
+    pub curator_name: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -161,6 +166,38 @@ pub struct SearchResults {
 #[derive(Debug, Deserialize)]
 pub struct LyricsAttributes {
     pub ttml: Option<String>,
+}
+
+/// One shelf of `/v1/me/recommendations`.
+#[derive(Debug, Deserialize)]
+pub struct Recommendation {
+    pub attributes: Option<RecommendationAttributes>,
+    pub relationships: Option<RecommendationContents>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct RecommendationAttributes {
+    pub title: Option<DisplayTitle>,
+    pub display: Option<Display>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct DisplayTitle {
+    pub string_for_display: String,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct Display {
+    pub kind: String,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct RecommendationContents {
+    pub contents: Option<Response<Resource<serde_json::Value>>>,
 }
 
 pub type LyricsResponse = Response<Resource<LyricsAttributes>>;

@@ -6,8 +6,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use music_core::model::{
-    Album, Artist, ArtistDetail, ItemId, LibraryItem, Lyrics, Playlist, ProviderKind,
-    SearchResults, Track,
+    Album, Artist, ArtistDetail, Collection, ItemId, Lyrics, Playlist, ProviderKind, SearchResults,
+    Shelf, Track,
 };
 use music_core::{Queue, Repeat};
 use player::{Event, Player, Status, Token};
@@ -191,7 +191,9 @@ pub struct App {
     pub playlists: Vec<Playlist>,
     pub library_albums: Streamed<Album>,
     pub library_artists: Streamed<Artist>,
-    pub recently_added: Streamed<LibraryItem>,
+    pub recently_added: Streamed<Collection>,
+    /// The home shelves, once asked for.
+    pub home: Option<Loaded<Arc<Vec<Shelf>>>>,
     /// The source filter on the cover grids.
     pub grid_source: Option<ProviderKind>,
     pub albums: HashMap<ItemId, Loaded<AlbumPage>>,
@@ -242,12 +244,12 @@ impl App {
         cc.egui_ctx.options_mut(|o| o.zoom_with_keyboard = false);
         let backend = Backend::start(cc.egui_ctx.clone());
         backend.send(Request::Library);
-        Self {
+        let mut app = Self {
             theme,
             backend,
             player: Player::new(),
             connection: Connection::Connecting,
-            page: Page::Songs,
+            page: Page::Home,
             back: Vec::new(),
             forward: Vec::new(),
             sidebar_collapsed: false,
@@ -269,6 +271,7 @@ impl App {
             library_albums: Streamed::default(),
             library_artists: Streamed::default(),
             recently_added: Streamed::default(),
+            home: None,
             grid_source: None,
             albums: HashMap::new(),
             artists: HashMap::new(),
@@ -300,7 +303,10 @@ impl App {
             settings,
             theme_changed,
             zoom: None,
-        }
+        };
+        // The first page loads what it shows, as any page does on arrival.
+        app.arrived();
+        app
     }
 
     // ---- Navigation ----
@@ -321,6 +327,7 @@ impl App {
                 self.albums.insert(id.clone(), Loaded::Loading);
                 self.backend.send(Request::Album(id.clone()));
             }
+            Page::Home if self.home.is_none() => self.refresh_home(),
             Page::Albums if self.library_albums.first_ask() => {
                 self.backend.send(Request::LibraryAlbums);
             }
@@ -349,6 +356,12 @@ impl App {
             }
             _ => {}
         }
+    }
+
+    /// Ask for the home shelves again.
+    pub fn refresh_home(&mut self) {
+        self.home = Some(Loaded::Loading);
+        self.backend.send(Request::Home);
     }
 
     pub fn playlist(&self, id: &ItemId) -> Option<&Playlist> {
@@ -671,6 +684,12 @@ impl App {
                 Reply::LibraryAlbums { albums, done } => self.library_albums.extend(albums, done),
                 Reply::LibraryArtists { artists, done } => {
                     self.library_artists.extend(artists, done)
+                }
+                Reply::Home(result) => {
+                    self.home = Some(match result {
+                        Ok(shelves) => Loaded::Ready(Arc::new(shelves)),
+                        Err(e) => Loaded::Failed(e),
+                    });
                 }
                 Reply::RecentlyAdded { items, done } => self.recently_added.extend(items, done),
                 Reply::Album { id, result } => {

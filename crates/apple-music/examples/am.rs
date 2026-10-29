@@ -135,8 +135,8 @@ async fn library(am: &AppleMusic) -> Result<(), Box<dyn std::error::Error>> {
     println!("\nrecently added (first page: {})", recent.items.len());
     for item in recent.items.iter().take(5) {
         match item {
-            music_core::model::LibraryItem::Album(a) => println!("  [album] {}", a.title),
-            music_core::model::LibraryItem::Playlist(p) => println!("  [playlist] {}", p.name),
+            music_core::model::Collection::Album(a) => println!("  [album] {}", a.title),
+            music_core::model::Collection::Playlist(p) => println!("  [playlist] {}", p.name),
         }
     }
     Ok(())

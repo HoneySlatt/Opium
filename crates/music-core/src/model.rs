@@ -38,6 +38,8 @@ impl fmt::Display for ItemId {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Artwork {
     pub url_template: String,
+    /// The colour behind the art, when the service gives it (Apple does).
+    pub background: Option<[u8; 3]>,
 }
 
 impl Artwork {
@@ -114,9 +116,9 @@ pub struct Artist {
     pub artwork: Option<Artwork>,
 }
 
-/// Something added to the library: an album or a playlist.
+/// An album or a playlist: what Recently Added and the home shelves list.
 #[derive(Debug, Clone, PartialEq)]
-pub enum LibraryItem {
+pub enum Collection {
     Album(Album),
     Playlist(Playlist),
 }
@@ -137,8 +139,19 @@ pub struct Playlist {
     pub id: ItemId,
     pub name: String,
     pub description: Option<String>,
+    /// Who made it: `Apple Music Hip-Hop`, a user.
+    pub curator: Option<String>,
     pub artwork: Option<Artwork>,
     pub track_count: Option<u32>,
+}
+
+/// A row of the home page.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Shelf {
+    pub title: String,
+    /// Shown large: the playlists made for the user.
+    pub hero: bool,
+    pub items: Vec<Collection>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]

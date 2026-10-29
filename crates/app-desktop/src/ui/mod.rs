@@ -4,6 +4,7 @@ mod artist;
 mod detail;
 mod drawer;
 mod grid;
+mod home;
 mod lyrics;
 mod now_playing;
 mod player_bar;
@@ -99,6 +100,7 @@ fn page(app: &mut App, ui: &mut Ui, narrow: bool) -> f32 {
         Page::Playlist(id) => detail::playlist(app, ui, pad, &id),
         Page::Search(query) => search::show(app, ui, pad, &query),
         Page::Artist(id) => artist::show(app, ui, pad, &id),
+        Page::Home => home::show(app, ui, pad),
         Page::Albums => grid::albums(app, ui, pad),
         Page::Artists => grid::artists(app, ui, pad),
         Page::RecentlyAdded => grid::recently_added(app, ui, pad),

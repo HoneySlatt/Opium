@@ -17,8 +17,8 @@ pub use stream::AudioStream;
 
 use async_trait::async_trait;
 use music_core::model::{
-    Album, Artist, ArtistDetail, Cursor, ItemId, LibraryItem, Lyrics, Page, Playlist, ProviderKind,
-    SearchResults, Track,
+    Album, Artist, ArtistDetail, Collection, Cursor, ItemId, Lyrics, Page, Playlist, ProviderKind,
+    SearchResults, Shelf, Track,
 };
 use music_core::{Error, Provider, Result};
 use serde::de::DeserializeOwned;
@@ -226,9 +226,9 @@ impl Provider for AppleMusic {
         self.page(&first, cursor, convert::library_artist).await
     }
 
-    async fn recently_added(&self, cursor: Option<&Cursor>) -> Result<Page<LibraryItem>> {
+    async fn recently_added(&self, cursor: Option<&Cursor>) -> Result<Page<Collection>> {
         let first = format!("/v1/me/library/recently-added?limit={RECENT_PAGE}");
-        let page = self.page(&first, cursor, convert::library_item).await?;
+        let page = self.page(&first, cursor, convert::collection).await?;
         Ok(Page {
             items: page.items.into_iter().flatten().collect(),
             next: page.next,
@@ -356,6 +356,19 @@ impl Provider for AppleMusic {
             albums: all(views.full_albums, convert::album),
             singles: all(views.singles, convert::album),
         })
+    }
+
+    /// Apple's home: the shelves the web player shows, titled in English as
+    /// the app is.
+    async fn home(&self) -> Result<Vec<Shelf>> {
+        let path = format!("/v1/me/recommendations?limit=20&l={NOTES_LANGUAGE}");
+        let Some(resp) = self
+            .fetch::<types::Response<types::Recommendation>>(&path)
+            .await?
+        else {
+            return Ok(Vec::new());
+        };
+        Ok(resp.data.into_iter().filter_map(convert::shelf).collect())
     }
 
     /// Line-timed lyrics, else the word-timed ones read line by line. Uploads

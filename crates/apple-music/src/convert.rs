@@ -3,7 +3,8 @@
 use std::time::Duration;
 
 use music_core::model::{
-    Album, Artist, Artwork, AudioQuality, Codec, ItemId, LibraryItem, Playlist, ProviderKind, Track,
+    Album, Artist, Artwork, AudioQuality, Codec, Collection, ItemId, Playlist, ProviderKind, Shelf,
+    Track,
 };
 
 use crate::types;
@@ -16,7 +17,14 @@ fn id(id: impl Into<String>) -> ItemId {
 fn artwork(art: Option<&types::Artwork>) -> Option<Artwork> {
     art.filter(|a| !a.url.is_empty()).map(|a| Artwork {
         url_template: a.url.replace("{w}", "{size}").replace("{h}", "{size}"),
+        background: a.bg_color.as_deref().and_then(hex_color),
     })
+}
+
+/// `cb6900` → `[0xcb, 0x69, 0x00]`.
+fn hex_color(hex: &str) -> Option<[u8; 3]> {
+    let value = u32::from_str_radix(hex.get(..6)?, 16).ok()?;
+    Some([(value >> 16) as u8, (value >> 8) as u8, value as u8])
 }
 
 /// What the web player's `28:ctrp256` flavour delivers, the best Apple serves us.
@@ -144,6 +152,7 @@ pub fn playlist(playlist: types::Playlist) -> Playlist {
         artwork: artwork(attrs.artwork.as_ref()),
         name: attrs.name,
         description: attrs.description.and_then(|d| d.standard),
+        curator: attrs.curator_name,
         track_count: None,
     }
 }
@@ -170,7 +179,7 @@ pub fn library_artist(artist: types::Artist) -> Artist {
 }
 
 /// An entry of Recently Added; stations and anything else are skipped.
-pub fn library_item(item: types::Resource<serde_json::Value>) -> Option<LibraryItem> {
+pub fn collection(item: types::Resource<serde_json::Value>) -> Option<Collection> {
     fn typed<A: serde::de::DeserializeOwned>(
         item: types::Resource<serde_json::Value>,
     ) -> types::Resource<A> {
@@ -182,10 +191,31 @@ pub fn library_item(item: types::Resource<serde_json::Value>) -> Option<LibraryI
         }
     }
     match item.kind.as_str() {
-        "albums" | "library-albums" => Some(LibraryItem::Album(album(typed(item)))),
-        "playlists" | "library-playlists" => Some(LibraryItem::Playlist(playlist(typed(item)))),
+        "albums" | "library-albums" => Some(Collection::Album(album(typed(item)))),
+        "playlists" | "library-playlists" => Some(Collection::Playlist(playlist(typed(item)))),
         _ => None,
     }
+}
+
+/// A home shelf; stations and anything else it holds are left out.
+pub fn shelf(recommendation: types::Recommendation) -> Option<Shelf> {
+    let attrs = recommendation.attributes.unwrap_or_default();
+    let items: Vec<Collection> = recommendation
+        .relationships
+        .and_then(|r| r.contents)
+        .map(|c| c.data.into_iter().filter_map(collection).collect())
+        .unwrap_or_default();
+    let title = attrs
+        .title
+        .map(|t| t.string_for_display)
+        .unwrap_or_default();
+    (!items.is_empty() && !title.is_empty()).then(|| Shelf {
+        title,
+        hero: attrs
+            .display
+            .is_some_and(|d| d.kind == "MusicNotesHeroShelf"),
+        items,
+    })
 }
 
 pub fn artist(artist: types::Artist) -> Artist {
@@ -200,6 +230,12 @@ pub fn artist(artist: types::Artist) -> Artist {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn background_colours_read_from_hex() {
+        assert_eq!(hex_color("cb6900"), Some([0xcb, 0x69, 0x00]));
+        assert_eq!(hex_color("zz"), None);
+    }
 
     #[test]
     fn notes_lose_their_tags() {

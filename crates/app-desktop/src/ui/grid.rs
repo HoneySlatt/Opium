@@ -2,7 +2,7 @@
 //! cover card and grid layout the artist page and search share.
 
 use egui::{Id, Rect, Sense, Stroke, Ui, pos2, vec2};
-use music_core::model::{ItemId, LibraryItem, Playlist, ProviderKind};
+use music_core::model::{Collection, ItemId, Playlist, ProviderKind};
 
 use crate::app::{App, Page};
 use crate::fonts::{Weight, font};
@@ -427,10 +427,10 @@ fn indices<T>(items: &[T], keep: impl Fn(&T) -> bool) -> Vec<usize> {
         .collect()
 }
 
-fn item_id(item: &LibraryItem) -> &ItemId {
+fn item_id(item: &Collection) -> &ItemId {
     match item {
-        LibraryItem::Album(a) => &a.id,
-        LibraryItem::Playlist(p) => &p.id,
+        Collection::Album(a) => &a.id,
+        Collection::Playlist(p) => &p.id,
     }
 }
 
@@ -461,8 +461,8 @@ fn card(app: &App, kind: Kind, i: usize) -> (String, String, Option<String>, Ope
             )
         }
         Kind::Recent => match &app.recently_added.items[i] {
-            LibraryItem::Album(a) => album(a),
-            LibraryItem::Playlist(p) => (
+            Collection::Album(a) => album(a),
+            Collection::Playlist(p) => (
                 p.name.clone(),
                 "Playlist".into(),
                 p.artwork.as_ref().map(|art| art.url(376)),

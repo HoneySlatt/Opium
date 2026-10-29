@@ -1,8 +1,8 @@
 use async_trait::async_trait;
 
 use crate::model::{
-    Album, Artist, ArtistDetail, Cursor, ItemId, LibraryItem, Lyrics, Page, Playlist, ProviderKind,
-    SearchResults, Track,
+    Album, Artist, ArtistDetail, Collection, Cursor, ItemId, Lyrics, Page, Playlist, ProviderKind,
+    SearchResults, Shelf, Track,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -40,13 +40,18 @@ pub trait Provider: Send + Sync {
     async fn library_artists(&self, cursor: Option<&Cursor>) -> Result<Page<Artist>>;
 
     /// Albums and playlists, most recently added first.
-    async fn recently_added(&self, cursor: Option<&Cursor>) -> Result<Page<LibraryItem>>;
+    async fn recently_added(&self, cursor: Option<&Cursor>) -> Result<Page<Collection>>;
 
     async fn album(&self, album: &ItemId) -> Result<Album>;
 
     async fn album_tracks(&self, album: &ItemId) -> Result<Vec<Track>>;
 
     async fn artist(&self, artist: &ItemId) -> Result<ArtistDetail>;
+
+    /// What the service recommends, shelf by shelf. Not every service has this.
+    async fn home(&self) -> Result<Vec<Shelf>> {
+        Ok(Vec::new())
+    }
 
     async fn playlist_tracks(
         &self,
