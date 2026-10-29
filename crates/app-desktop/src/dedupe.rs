@@ -121,8 +121,13 @@ pub fn album_key(album: &Album) -> (String, String) {
     (title_key(&album.title), artist_key(&album.artists))
 }
 
+/// What copies of a song share.
+pub fn song_key(track: &Track) -> (String, String) {
+    (title_key(&track.title), artist_key(&track.artists))
+}
+
 /// Whether two tracks are one song.
-fn same_song(a: &Track, b: &Track) -> bool {
+pub fn same_song(a: &Track, b: &Track) -> bool {
     title_key(&a.title) == title_key(&b.title)
         && artist_key(&a.artists) == artist_key(&b.artists)
         && match (a.duration, b.duration) {

@@ -252,6 +252,9 @@ const HISTORY: usize = 100;
 /// An album and its tracks.
 pub type AlbumPage = (Album, Arc<Vec<Track>>);
 
+/// Songs by what their copies share: title and first artist.
+type SongIndex = HashMap<(String, String), Vec<Track>>;
+
 /// A playlist's tracks, filled page by page.
 #[derive(Default)]
 pub struct PlaylistTracks {
@@ -445,6 +448,13 @@ pub struct App {
     pub history: Vec<Track>,
     pub queue: Queue,
     tracks: HashMap<Token, Track>,
+    /// The listed track each token plays the server's copy of, when it does.
+    stands_for: HashMap<Token, ItemId>,
+    /// What the track playing stands for, when it is the server's copy.
+    now_stands_for: Option<ItemId>,
+    /// The server's songs by title and artist, and how many songs the
+    /// library had when they were indexed.
+    server_songs: Option<(usize, SongIndex)>,
     next_token: Token,
     /// Fetching, to play as soon as it arrives.
     pending_play: Option<Token>,
@@ -579,6 +589,9 @@ impl App {
             history: Vec::new(),
             queue: Queue::new(),
             tracks: HashMap::new(),
+            stands_for: HashMap::new(),
+            now_stands_for: None,
+            server_songs: None,
             next_token: 0,
             pending_play: None,
             queued_next: None,
@@ -1774,7 +1787,63 @@ impl App {
 
     /// Whether `track` is the one the player has.
     pub fn is_current(&self, track: &Track) -> bool {
-        self.status.token.is_some() && self.now.as_ref().is_some_and(|n| n.id == track.id)
+        self.status.token.is_some()
+            && (self.now.as_ref().is_some_and(|n| n.id == track.id)
+                || self.now_stands_for.as_ref() == Some(&track.id))
+    }
+
+    /// Whether `token` plays `id`, or the server's copy of it.
+    fn token_plays(&self, token: Token, id: &ItemId) -> bool {
+        self.tracks.get(&token).is_some_and(|t| t.id == *id)
+            || self.stands_for.get(&token) == Some(id)
+    }
+
+    /// The server's copy of `track`, when it has one: it plays in its place,
+    /// being the file itself.
+    fn server_copy(&mut self, track: &Track) -> Option<Track> {
+        if track.id.provider == ProviderKind::Navidrome
+            || !matches!(self.navidrome, SoundCloudState::Connected(_))
+        {
+            return None;
+        }
+        if self
+            .server_songs
+            .as_ref()
+            .is_none_or(|(n, _)| *n != self.songs.len())
+        {
+            let mut index = SongIndex::new();
+            for song in self
+                .songs
+                .iter()
+                .filter(|t| t.id.provider == ProviderKind::Navidrome)
+            {
+                index
+                    .entry(crate::dedupe::song_key(song))
+                    .or_default()
+                    .push(song.clone());
+            }
+            self.server_songs = Some((self.songs.len(), index));
+        }
+        let (_, index) = self.server_songs.as_ref()?;
+        index
+            .get(&crate::dedupe::song_key(track))?
+            .iter()
+            .find(|copy| crate::dedupe::same_song(copy, track))
+            .cloned()
+    }
+
+    /// What `token` is to play for `track`: the server's copy if it has
+    /// one, kept as standing for the track listed.
+    fn plays_as(&mut self, token: Token, track: Track) -> Track {
+        let playing = match self.server_copy(&track) {
+            Some(copy) => {
+                self.stands_for.insert(token, track.id.clone());
+                copy
+            }
+            None => track,
+        };
+        self.tracks.insert(token, playing.clone());
+        playing
     }
 
     /// Play `tracks` from the top, or shuffled from a random one.
@@ -1832,13 +1901,13 @@ impl App {
     fn issue(&mut self, track: Track) -> Token {
         let token = self.next_token;
         self.next_token += 1;
+        let track = self.plays_as(token, track);
         self.backend.send(Request::Fetch {
             token,
             track: track.id.clone(),
             fallback: track.library_id.clone(),
             original: self.soundcloud_originals(),
         });
-        self.tracks.insert(token, track);
         token
     }
 
@@ -1851,7 +1920,7 @@ impl App {
             self.player.stop();
             // Fetched already, or on its way, while the pointer rested on it.
             if let Some(warm) = self.warm.take_if(|w| w.track.id == track.id) {
-                self.tracks.insert(warm.token, track);
+                self.plays_as(warm.token, track);
                 match warm.ready {
                     Some(stream) => {
                         self.pending_play = None;
@@ -1896,8 +1965,7 @@ impl App {
         }
         let lined_up = self
             .queued_next
-            .and_then(|t| self.tracks.get(&t))
-            .is_some_and(|t| t.id == track.id);
+            .is_some_and(|t| self.token_plays(t, &track.id));
         let fetched = self.warm.as_ref().is_some_and(|w| w.track.id == track.id);
         // Nothing to do for what plays, is on its way or is ready; and none
         // while a track the user picked is still coming.
@@ -1912,10 +1980,11 @@ impl App {
         }
         let token = self.next_token;
         self.next_token += 1;
+        let playing = self.server_copy(&track).unwrap_or_else(|| track.clone());
         self.backend.send(Request::Warm {
             token,
-            track: track.id.clone(),
-            fallback: track.library_id.clone(),
+            track: playing.id.clone(),
+            fallback: playing.library_id.clone(),
             original: self.soundcloud_originals(),
         });
         self.warm = Some(Warm {
@@ -1947,10 +2016,12 @@ impl App {
         // The track lined up to follow is the one Next moves to, unless the
         // current one repeats: play what was fetched for it rather than fetch
         // it again.
-        let lined_up = self.queued_next.filter(|token| {
+        let lined_up = self.queued_next.filter(|&token| {
             self.queue.repeat() != Repeat::One
-                && self.queue.peek_finished().map(|t| &t.id)
-                    == self.tracks.get(token).map(|t| &t.id)
+                && self
+                    .queue
+                    .peek_finished()
+                    .is_some_and(|t| self.token_plays(token, &t.id))
         });
         match lined_up {
             // It starts at once; its Started moves the queue on.
@@ -2820,9 +2891,12 @@ impl App {
                         }
                     }
                     self.now = started;
+                    self.now_stands_for = self.stands_for.get(&token).cloned();
                     let (pending, queued) = (self.pending_play, self.queued_next);
-                    self.tracks
-                        .retain(|t, _| *t == token || Some(*t) == pending || Some(*t) == queued);
+                    let wanted =
+                        |t: &Token| *t == token || Some(*t) == pending || Some(*t) == queued;
+                    self.tracks.retain(|t, _| wanted(t));
+                    self.stands_for.retain(|t, _| wanted(t));
                     self.prefetch_next();
                     self.failed_in_row = 0;
                     // A station of songs is topped up before it runs dry.
