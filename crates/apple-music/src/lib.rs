@@ -335,7 +335,9 @@ impl AppleMusic {
     fn playlist_tracks_path(&self, playlist: &ItemId) -> String {
         if playlist.id.starts_with("p.") {
             format!(
-                "/v1/me/library/playlists/{}/tracks?limit={PAGE}&relate=albums",
+                // `relate` gives library songs their album's id, but not a
+                // playlist's: those need the albums themselves.
+                "/v1/me/library/playlists/{}/tracks?limit={PAGE}&include=albums",
                 playlist.id
             )
         } else {

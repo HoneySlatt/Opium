@@ -307,7 +307,7 @@ pub fn row(
         favourite_star(ui, theme, pos2(end + 6.0 + 6.0, y));
     }
 
-    // Artist, and the album as a link to its page.
+    // The artist and the album, each a link to its page.
     if let Some((a0, a1)) = columns.artist {
         let g = text(
             ui,
@@ -316,7 +316,28 @@ pub fn row(
             theme.subtext0,
             a1 - a0,
         );
-        paint_text(ui, g, a0, y, egui::Align::Min, theme.subtext0);
+        let link = Rect::from_min_size(pos2(a0, y - g.size().y / 2.0), g.size());
+        let mut color = theme.subtext0;
+        // Only a catalog song leads to its artist; an upload (`i.`) has none.
+        if !track.id.id.starts_with("i.") {
+            let hit = ui.interact(
+                link,
+                Id::unique((state.list, "artist", state.position)),
+                Sense::click(),
+            );
+            if hit.hovered() {
+                color = theme.text;
+                ui.painter()
+                    .hline(link.x_range(), link.bottom(), Stroke::new(1.0, color));
+            }
+            if hit
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .clicked()
+            {
+                action = RowAction::Menu(TrackChoice::GoToArtist);
+            }
+        }
+        paint_text(ui, g, a0, y, egui::Align::Min, color);
     }
     if let Some((c0, c1)) = columns.album {
         let name = track.album.clone().unwrap_or_default();
