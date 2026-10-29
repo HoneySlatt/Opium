@@ -93,6 +93,8 @@ pub struct Album {
     pub id: ItemId,
     pub title: String,
     pub artists: Vec<String>,
+    /// The main artist, when the service says which.
+    pub artist_id: Option<ItemId>,
     pub year: Option<u16>,
     pub artwork: Option<Artwork>,
     pub track_count: Option<u32>,
@@ -103,6 +105,15 @@ pub struct Artist {
     pub id: ItemId,
     pub name: String,
     pub artwork: Option<Artwork>,
+}
+
+/// An artist's page: their best-known songs and their releases.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ArtistDetail {
+    pub artist: Artist,
+    pub top_songs: Vec<Track>,
+    pub albums: Vec<Album>,
+    pub singles: Vec<Album>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

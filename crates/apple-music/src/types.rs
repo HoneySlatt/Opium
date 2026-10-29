@@ -20,6 +20,9 @@ pub struct Resource<A> {
 #[serde(default)]
 pub struct Relationships {
     pub albums: Option<Related>,
+    pub artists: Option<Related>,
+    /// A library item's catalog counterpart.
+    pub catalog: Option<Related>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -57,6 +60,8 @@ pub struct SongAttributes {
     pub artwork: Option<Artwork>,
     pub content_rating: Option<String>,
     pub play_params: Option<PlayParams>,
+    /// The song's page on music.apple.com, which names its album.
+    pub url: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -94,6 +99,25 @@ pub type Song = Resource<SongAttributes>;
 pub type Album = Resource<AlbumAttributes>;
 pub type Playlist = Resource<PlaylistAttributes>;
 pub type Artist = Resource<ArtistAttributes>;
+
+/// An artist fetched with `views=`: lists Apple's web player shows on the page.
+#[derive(Debug, Deserialize)]
+pub struct ArtistWithViews {
+    pub id: String,
+    pub attributes: Option<ArtistAttributes>,
+    #[serde(default)]
+    pub views: ArtistViews,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct ArtistViews {
+    #[serde(rename = "top-songs")]
+    pub top_songs: Option<Response<Song>>,
+    #[serde(rename = "full-albums")]
+    pub full_albums: Option<Response<Album>>,
+    pub singles: Option<Response<Album>>,
+}
 
 #[derive(Debug, Deserialize)]
 pub struct SearchResponse {

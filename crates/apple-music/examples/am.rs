@@ -7,6 +7,7 @@
 //!   cargo run -p apple-music --example am -- fetch 1463409605 out.m4a
 //!   cargo run -p apple-music --example am -- play 1463409605 1463409610
 //!   cargo run -p apple-music --example am -- lyrics 1463409605
+//!   cargo run -p apple-music --example am -- artist 5468295
 //!
 //! The browser defaults to `brave-origin`; set `MUSIC_BROWSER` for another one.
 //! The token is stored under `$XDG_CONFIG_HOME/music/apple-music/` and never printed.
@@ -40,6 +41,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some("search-library") => search_library(&connect().await?, &args[1..].join(" ")).await,
         Some("fetch") if args.len() == 3 => fetch(&connect().await?, &args[1], &args[2]).await,
         Some("play") if args.len() >= 2 => play(&connect().await?, &args[1..]).await,
+        Some("artist") if args.len() == 2 => artist(&connect().await?, &args[1]).await,
         Some("lyrics") if args.len() == 2 => lyrics(&connect().await?, &args[1]).await,
         _ => {
             eprintln!(
@@ -125,6 +127,19 @@ async fn library(am: &AppleMusic) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+async fn artist(am: &AppleMusic, id: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let id = music_core::model::ItemId::new(music_core::model::ProviderKind::AppleMusic, id);
+    let a = am.artist(&id).await?;
+    println!("{} [{}]", a.artist.name, a.artist.id.id);
+    for t in &a.top_songs {
+        println!("  {} ({:?})", t.title, t.album_id.as_ref().map(|i| &i.id));
+    }
+    for al in a.albums.iter().chain(&a.singles) {
+        println!("  [album] {} ({:?})", al.title, al.year);
+    }
+    Ok(())
+}
+
 async fn lyrics(am: &AppleMusic, id: &str) -> Result<(), Box<dyn std::error::Error>> {
     let id = music_core::model::ItemId::new(music_core::model::ProviderKind::AppleMusic, id);
     let Some(lyrics) = am.lyrics(&id).await? else {
@@ -160,6 +175,9 @@ async fn search_library(am: &AppleMusic, term: &str) -> Result<(), Box<dyn std::
     }
     for p in r.playlists.iter().take(3) {
         println!("  [playlist] {} [{}]", p.name, p.id.id);
+    }
+    for a in r.artists.iter().take(3) {
+        println!("  [artist] {} [{}]", a.name, a.id.id);
     }
     Ok(())
 }

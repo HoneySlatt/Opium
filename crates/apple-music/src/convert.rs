@@ -45,7 +45,9 @@ pub fn track(song: types::Song) -> Track {
         .as_ref()
         .and_then(|r| r.albums.as_ref())
         .and_then(|a| a.data.first())
-        .map(|a| id(a.id.clone()));
+        .map(|a| a.id.clone())
+        .or_else(|| attrs.url.as_deref().and_then(album_in_url))
+        .map(id);
 
     Track {
         id: id(catalog_id.unwrap_or(song.id)),
@@ -62,10 +64,25 @@ pub fn track(song: types::Song) -> Track {
     }
 }
 
+/// `https://music.apple.com/fr/album/instant-crush/617154241?i=617154362` → `617154241`.
+fn album_in_url(url: &str) -> Option<String> {
+    let (_, rest) = url.split_once("/album/")?;
+    let album = rest.split('/').nth(1)?;
+    let album = album.split('?').next()?;
+    (!album.is_empty() && album.bytes().all(|b| b.is_ascii_digit())).then(|| album.to_owned())
+}
+
 pub fn album(album: types::Album) -> Album {
     let attrs = album.attributes.unwrap_or_default();
+    let artist_id = album
+        .relationships
+        .as_ref()
+        .and_then(|r| r.artists.as_ref())
+        .and_then(|a| a.data.first())
+        .map(|a| id(a.id.clone()));
     Album {
         id: id(album.id),
+        artist_id,
         artwork: artwork(attrs.artwork.as_ref()),
         title: attrs.name,
         artists: vec![attrs.artist_name],
@@ -101,6 +118,13 @@ pub fn artist(artist: types::Artist) -> Artist {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_song_page_names_its_album() {
+        let url = "https://music.apple.com/fr/album/instant-crush/617154241?i=617154362";
+        assert_eq!(album_in_url(url).as_deref(), Some("617154241"));
+        assert_eq!(album_in_url("https://music.apple.com/fr/song/x/1"), None);
+    }
 
     fn song(json: serde_json::Value) -> types::Song {
         serde_json::from_value(json).expect("song")

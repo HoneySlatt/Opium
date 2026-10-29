@@ -5,7 +5,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use music_core::model::{Album, ItemId, Lyrics, Playlist, ProviderKind, SearchResults, Track};
+use music_core::model::{
+    Album, ArtistDetail, ItemId, Lyrics, Playlist, ProviderKind, SearchResults, Track,
+};
 use music_core::{Queue, Repeat};
 use player::{Event, Player, Status, Token};
 
@@ -26,6 +28,7 @@ pub enum Page {
     Favourites,
     Playlist(ItemId),
     Album(ItemId),
+    Artist(ItemId),
     Search(String),
     Settings,
 }
@@ -157,6 +160,7 @@ pub struct App {
     pub songs_view: SongsView,
     pub playlists: Vec<Playlist>,
     pub albums: HashMap<ItemId, Loaded<AlbumPage>>,
+    pub artists: HashMap<ItemId, Loaded<Arc<ArtistDetail>>>,
     pub playlist_tracks: HashMap<ItemId, PlaylistTracks>,
     palettes: HashMap<String, PaletteState>,
     lyrics: HashMap<ItemId, Loaded<Option<Arc<Lyrics>>>>,
@@ -228,6 +232,7 @@ impl App {
             },
             playlists: Vec::new(),
             albums: HashMap::new(),
+            artists: HashMap::new(),
             playlist_tracks: HashMap::new(),
             palettes: HashMap::new(),
             lyrics: HashMap::new(),
@@ -276,6 +281,10 @@ impl App {
             Page::Album(id) if !self.albums.contains_key(id) => {
                 self.albums.insert(id.clone(), Loaded::Loading);
                 self.backend.send(Request::Album(id.clone()));
+            }
+            Page::Artist(id) if !self.artists.contains_key(id) => {
+                self.artists.insert(id.clone(), Loaded::Loading);
+                self.backend.send(Request::Artist(id.clone()));
             }
             Page::Search(query) => {
                 let key = (self.search_scope, query.clone());
@@ -422,6 +431,10 @@ impl App {
                 .unwrap_or_default(),
             Page::Album(id) => match self.albums.get(id) {
                 Some(Loaded::Ready((album, _))) => album.title.clone(),
+                _ => String::new(),
+            },
+            Page::Artist(id) => match self.artists.get(id) {
+                Some(Loaded::Ready(artist)) => artist.artist.name.clone(),
                 _ => String::new(),
             },
             Page::Search(_) => "Search".into(),
@@ -613,6 +626,13 @@ impl App {
                         Err(e) => Loaded::Failed(e),
                     };
                     self.albums.insert(id, loaded);
+                }
+                Reply::Artist { id, result } => {
+                    let loaded = match result {
+                        Ok(artist) => Loaded::Ready(Arc::new(artist)),
+                        Err(e) => Loaded::Failed(e),
+                    };
+                    self.artists.insert(id, loaded);
                 }
                 Reply::PlaylistTracks { id, result, done } => {
                     let entry = self.playlist_tracks.entry(id).or_default();

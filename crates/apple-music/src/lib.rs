@@ -17,7 +17,7 @@ pub use stream::AudioStream;
 
 use async_trait::async_trait;
 use music_core::model::{
-    Album, Cursor, ItemId, Lyrics, Page, Playlist, ProviderKind, SearchResults, Track,
+    Album, ArtistDetail, Cursor, ItemId, Lyrics, Page, Playlist, ProviderKind, SearchResults, Track,
 };
 use music_core::{Error, Provider, Result};
 use serde::de::DeserializeOwned;
@@ -270,6 +270,47 @@ impl Provider for AppleMusic {
             )
         };
         self.page(&first, cursor, convert::track).await
+    }
+
+    /// The artist's top songs, albums, and singles and EPs, as the web player
+    /// shows them. A library artist (`r.` id) is looked up in the catalog first.
+    async fn artist(&self, artist: &ItemId) -> Result<ArtistDetail> {
+        let catalog_id = if artist.id.starts_with("r.") {
+            let path = format!("/v1/me/library/artists/{}/catalog", artist.id);
+            let resp: types::Response<types::Artist> = self.get(&path).await?;
+            resp.data
+                .into_iter()
+                .next()
+                .map(|a| a.id)
+                .ok_or_else(|| Error::Protocol(format!("{path}: not in the catalog")))?
+        } else {
+            artist.id.clone()
+        };
+        let path = format!(
+            "/v1/catalog/{}/artists/{catalog_id}?views=top-songs,full-albums,singles",
+            self.storefront
+        );
+        let resp: types::Response<types::ArtistWithViews> = self.get(&path).await?;
+        let found = resp
+            .data
+            .into_iter()
+            .next()
+            .ok_or_else(|| Error::Protocol(format!("{path}: no artist")))?;
+        fn all<A, T>(list: Option<types::Response<A>>, f: fn(A) -> T) -> Vec<T> {
+            list.map(|l| l.data.into_iter().map(f).collect())
+                .unwrap_or_default()
+        }
+        let views = found.views;
+        Ok(ArtistDetail {
+            artist: convert::artist(types::Artist {
+                id: found.id,
+                attributes: found.attributes,
+                relationships: None,
+            }),
+            top_songs: all(views.top_songs, convert::track),
+            albums: all(views.full_albums, convert::album),
+            singles: all(views.singles, convert::album),
+        })
     }
 
     /// Line-timed lyrics, else the word-timed ones read line by line. Uploads

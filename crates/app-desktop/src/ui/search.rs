@@ -33,7 +33,7 @@ const CARD_HEIGHT: f32 = CARD + 8.0 + 18.0 + 16.0;
 
 /// The best match, shown large.
 enum Top {
-    Artist(String, Option<Artwork>),
+    Artist(ItemId, String, Option<Artwork>),
     Album(ItemId, String, String, Option<Artwork>),
     Playlist(usize),
 }
@@ -49,6 +49,7 @@ struct Card {
 #[derive(Clone)]
 enum Open {
     Album(ItemId),
+    Artist(ItemId),
     Playlist(usize),
 }
 
@@ -271,7 +272,7 @@ fn filtered(results: &Arc<SearchResults>, source: Option<ProviderKind>) -> Arc<S
 /// An artist first, else an album, else a playlist.
 fn top_result(r: &SearchResults) -> Option<Top> {
     if let Some(a) = r.artists.first() {
-        return Some(Top::Artist(a.name.clone(), a.artwork.clone()));
+        return Some(Top::Artist(a.id.clone(), a.name.clone(), a.artwork.clone()));
     }
     if let Some(a) = r.albums.first() {
         return Some(Top::Album(
@@ -316,6 +317,7 @@ fn playlist_cards(r: &SearchResults) -> Vec<Card> {
 fn open(app: &mut App, what: Open, query: &str) {
     match what {
         Open::Album(id) => app.go(Page::Album(id)),
+        Open::Artist(id) => app.go(Page::Artist(id)),
         Open::Playlist(i) => {
             let playlist = match app.search_results(query) {
                 Some(Loaded::Ready(r)) => filtered(r, app.search_source).playlists.get(i).cloned(),
@@ -328,12 +330,20 @@ fn open(app: &mut App, what: Open, query: &str) {
     }
 }
 
-fn section_head(ui: &Ui, theme: &Theme, left: f32, top: f32, label: &str) {
+pub(super) fn section_head(ui: &Ui, theme: &Theme, left: f32, top: f32, label: &str) {
     let g = text(ui, label, font(18.0, Weight::SemiBold), theme.text, 400.0);
     paint_text(ui, g, left, top + 11.0, egui::Align::Min, theme.text);
 }
 
-fn message(ui: &Ui, theme: &Theme, left: f32, top: f32, width: f32, title: &str, detail: &str) {
+pub(super) fn message(
+    ui: &Ui,
+    theme: &Theme,
+    left: f32,
+    top: f32,
+    width: f32,
+    title: &str,
+    detail: &str,
+) {
     let g = text(ui, title, font(15.0, Weight::SemiBold), theme.text, width);
     paint_text(ui, g, left, top + 20.0, egui::Align::Min, theme.text);
     let g = text(
@@ -349,7 +359,14 @@ fn message(ui: &Ui, theme: &Theme, left: f32, top: f32, width: f32, title: &str,
 /// The top result: large artwork (round for an artist), what it is, its name.
 fn top_card(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect, top: &Top, query: &str) {
     let (kind, title, sub, art, round, target) = match top {
-        Top::Artist(name, art) => ("ARTIST", name.clone(), None, art.clone(), true, None),
+        Top::Artist(id, name, art) => (
+            "ARTIST",
+            name.clone(),
+            None,
+            art.clone(),
+            true,
+            Some(Open::Artist(id.clone())),
+        ),
         Top::Album(id, title, by, art) => (
             "ALBUM",
             title.clone(),
@@ -375,7 +392,6 @@ fn top_card(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect, top: &Top, qu
             )
         }
     };
-    // Artist pages come later: until then an artist is not a link.
     let response = ui.interact(card, Id::unique("search-top"), Sense::click());
     let hovered = target.is_some() && response.hovered();
     ui.painter()
@@ -502,61 +518,63 @@ fn shelf(
 
     let mut row_ui = ui.new_child(egui::UiBuilder::new().max_rect(row));
     row_ui.set_clip_rect(row.intersect(ui.clip_rect()));
-    let muted = theme.muted();
     for (i, card) in cards.iter().enumerate() {
         let x = row.left() + i as f32 * (CARD + CARD_GAP) - scroll.offset;
         if x + CARD < row.left() || x > row.right() {
             continue;
         }
         let art = Rect::from_min_size(pos2(x, row.top()), vec2(CARD, CARD));
-        let response = row_ui.interact(art, id.with(i), Sense::click());
-        artwork(
-            &row_ui,
-            card.art.as_ref().map(|a| a.url(376)),
-            art,
-            8.0,
-            theme,
-        );
-        if response.hovered() {
-            row_ui
-                .painter()
-                .rect_filled(art, 8.0, egui::Color32::from_black_alpha(40));
-        }
-        row_ui.painter().rect_stroke(
-            art,
-            8.0,
-            Stroke::new(1.0, theme.line()),
-            egui::StrokeKind::Inside,
-        );
-        let g = text(
-            &row_ui,
-            &card.title,
-            font(13.0, Weight::Medium),
-            theme.text,
-            CARD,
-        );
-        paint_text(
-            &row_ui,
-            g,
-            x,
-            art.bottom() + 8.0 + 9.0,
-            egui::Align::Min,
-            theme.text,
-        );
-        let g = text(&row_ui, &card.sub, font(12.0, Weight::Regular), muted, CARD);
-        paint_text(
-            &row_ui,
-            g,
-            x,
-            art.bottom() + 8.0 + 18.0 + 8.0,
-            egui::Align::Min,
-            muted,
-        );
-        if response
-            .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .clicked()
-        {
+        let url = card.art.as_ref().map(|a| a.url(376));
+        if cover_card(&row_ui, theme, art, url, &card.title, &card.sub, id.with(i)) {
             open(app, card.open.clone(), query);
         }
     }
+}
+
+/// A cover with its title and a muted line under it; `art` is the cover's
+/// square. Returns whether it was clicked.
+pub(super) fn cover_card(
+    ui: &Ui,
+    theme: &Theme,
+    art: Rect,
+    url: Option<String>,
+    title: &str,
+    sub: &str,
+    id: Id,
+) -> bool {
+    let response = ui.interact(art, id, Sense::click());
+    artwork(ui, url, art, 8.0, theme);
+    if response.hovered() {
+        ui.painter()
+            .rect_filled(art, 8.0, egui::Color32::from_black_alpha(40));
+    }
+    ui.painter().rect_stroke(
+        art,
+        8.0,
+        Stroke::new(1.0, theme.line()),
+        egui::StrokeKind::Inside,
+    );
+    let width = art.width();
+    let g = text(ui, title, font(13.0, Weight::Medium), theme.text, width);
+    paint_text(
+        ui,
+        g,
+        art.left(),
+        art.bottom() + 17.0,
+        egui::Align::Min,
+        theme.text,
+    );
+    let muted = theme.muted();
+    let g = text(ui, sub, font(12.0, Weight::Regular), muted, width);
+    paint_text(
+        ui,
+        g,
+        art.left(),
+        art.bottom() + 34.0,
+        egui::Align::Min,
+        muted,
+    );
+    response
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .clicked()
 }

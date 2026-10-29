@@ -1,5 +1,6 @@
 //! The window: sidebar, page, top bar and player bar, after `design/…/DESIGN.md`.
 
+mod artist;
 mod detail;
 mod drawer;
 mod lyrics;
@@ -77,6 +78,10 @@ pub fn backdrop(app: &mut App) -> Option<[Color32; 3]> {
             _ => return None,
         },
         Page::Playlist(id) => app.playlist(id)?.artwork.as_ref()?.url(96),
+        Page::Artist(id) => match app.artists.get(id) {
+            Some(crate::app::Loaded::Ready(artist)) => artist.artist.artwork.as_ref()?.url(96),
+            _ => return None,
+        },
         _ => return None,
     };
     let light = app.theme.light;
@@ -92,6 +97,7 @@ fn page(app: &mut App, ui: &mut Ui, narrow: bool) -> f32 {
         Page::Album(id) => detail::album(app, ui, pad, &id),
         Page::Playlist(id) => detail::playlist(app, ui, pad, &id),
         Page::Search(query) => search::show(app, ui, pad, &query),
+        Page::Artist(id) => artist::show(app, ui, pad, &id),
         _ => placeholder(app, ui, pad),
     }
 }

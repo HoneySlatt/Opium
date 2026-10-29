@@ -6,7 +6,9 @@ use std::sync::Arc;
 use std::sync::mpsc;
 
 use apple_music::{AppleMusic, AudioStream};
-use music_core::model::{Album, Cursor, ItemId, Lyrics, Playlist, SearchResults, Track};
+use music_core::model::{
+    Album, ArtistDetail, Cursor, ItemId, Lyrics, Playlist, SearchResults, Track,
+};
 use music_core::{Error, Provider};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
@@ -19,6 +21,8 @@ pub enum Request {
     Fetch { token: player::Token, track: ItemId },
     /// An album and its tracks.
     Album(ItemId),
+    /// An artist's top songs and releases.
+    Artist(ItemId),
     /// A playlist's tracks, page by page.
     Playlist(ItemId),
     /// The three colours of the cover at this URL.
@@ -46,6 +50,10 @@ pub enum Reply {
     Album {
         id: ItemId,
         result: Result<(Album, Vec<Track>), String>,
+    },
+    Artist {
+        id: ItemId,
+        result: Result<ArtistDetail, String>,
     },
     PlaylistTracks {
         id: ItemId,
@@ -151,6 +159,12 @@ async fn run(mut requests: UnboundedReceiver<Request>, replies: Replies) {
                     let result = tokio::try_join!(am.album(&id), am.album_tracks(&id))
                         .map_err(|e| e.to_string());
                     replies.send(Reply::Album { id, result });
+                });
+            }
+            Request::Artist(id) => {
+                tokio::spawn(async move {
+                    let result = am.artist(&id).await.map_err(|e| e.to_string());
+                    replies.send(Reply::Artist { id, result });
                 });
             }
             Request::Playlist(id) => {

@@ -1,5 +1,5 @@
 //! Album and playlist pages: a header over a gradient taken from the cover, then
-//! the tracks.
+//! the tracks. The artist page shares the header.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -17,12 +17,28 @@ use super::tracks::{self, Columns, RowAction, RowState};
 use super::{Blob, artwork, page_buttons, paint_icon, paint_text, quality_label, text, wash};
 
 /// What the header shows.
-struct Header {
-    kind: &'static str,
-    title: String,
-    by: Option<String>,
-    meta: Vec<(Option<Icon>, String)>,
-    art: Option<String>,
+pub(super) struct Header {
+    pub kind: &'static str,
+    pub title: String,
+    pub by: Option<String>,
+    /// Where the `by` line leads.
+    pub by_link: Option<ItemId>,
+    pub meta: Vec<(Option<Icon>, String)>,
+    pub art: Option<String>,
+    /// Round artwork, for an artist.
+    pub round: bool,
+}
+
+/// What a click in the header asked for.
+pub(super) enum HeaderAction {
+    Play { shuffle: bool },
+    OpenArtist(ItemId),
+}
+
+pub(super) const ART_TOP: f32 = 64.0;
+
+pub(super) fn art_size(pad: f32) -> f32 {
+    if pad < 40.0 { 200.0 } else { 260.0 }
 }
 
 /// How the list under it reads.
@@ -76,8 +92,10 @@ pub fn playlist(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
         kind: "Playlist",
         title: playlist.name.clone(),
         by: None,
+        by_link: None,
         meta,
         art: playlist.artwork.as_ref().map(|a| a.url(600)),
+        round: false,
     };
     let listing = Listing {
         with_album: true,
@@ -105,8 +123,10 @@ fn album_header(album: &Album, tracks: &[Track]) -> Header {
         kind: "Album",
         title: album.title.clone(),
         by: Some(album.artists.join(", ")),
+        by_link: album.artist_id.clone(),
         meta,
         art: album.artwork.as_ref().map(|a| a.url(600)),
+        round: false,
     }
 }
 
@@ -125,8 +145,6 @@ fn length_label(total: Duration) -> String {
     }
 }
 
-const ART_TOP: f32 = 64.0;
-
 fn page(
     app: &mut App,
     ui: &mut Ui,
@@ -136,8 +154,7 @@ fn page(
     listing: Listing,
 ) -> f32 {
     let theme = app.theme.clone();
-    let art_size = if pad < 40.0 { 200.0 } else { 260.0 };
-    let table_top = ART_TOP + art_size + 26.0;
+    let table_top = ART_TOP + art_size(pad) + 26.0;
     let rows = tracks.len();
     let foot = 18.0 + 16.0 + 18.0;
     let total = table_top + tracks::HEAD_SPACE + rows.max(1) as f32 * tracks::ROW + foot + 104.0;
@@ -148,40 +165,14 @@ fn page(
         .show_viewport(ui, |ui, viewport| {
             let (content, _) =
                 ui.allocate_exact_size(vec2(ui.available_width(), total), Sense::hover());
-            if let Some(colors) = colors {
-                cover_wash(
-                    ui,
-                    &theme,
-                    Rect::from_min_size(content.min, vec2(content.width(), 620.0)),
-                    colors,
-                );
-            }
             let left = content.left() + pad;
             let width = content.width() - 2.0 * pad;
-            let art = Rect::from_min_size(
-                pos2(left, content.top() + ART_TOP),
-                vec2(art_size, art_size),
-            );
-            ui.painter().add(
-                egui::Shadow {
-                    offset: [0, 18],
-                    blur: 48,
-                    spread: 0,
-                    color: Color32::from_black_alpha(110),
+            match hero(ui, &theme, content, pad, header.as_ref(), colors) {
+                Some(HeaderAction::Play { shuffle }) => {
+                    app.play_shuffled_or_not(tracks.to_vec(), shuffle, ui.input(|i| i.time));
                 }
-                .as_shape(art.shrink(6.0), 12.0),
-            );
-            artwork(
-                ui,
-                header.as_ref().and_then(|h| h.art.clone()),
-                art,
-                12.0,
-                &theme,
-            );
-            if let Some(header) = &header
-                && let Some(shuffle) = header_text(ui, &theme, header, art, left + width)
-            {
-                app.play_shuffled_or_not(tracks.to_vec(), shuffle, ui.input(|i| i.time));
+                Some(HeaderAction::OpenArtist(id)) => app.go(Page::Artist(id)),
+                None => {}
             }
 
             let columns = Columns::new(left, width, listing.with_album);
@@ -270,6 +261,41 @@ fn page(
     output.state.clamped_offset().y
 }
 
+/// The cover's colours behind, the artwork, and the text beside it.
+pub(super) fn hero(
+    ui: &mut Ui,
+    theme: &Theme,
+    content: Rect,
+    pad: f32,
+    header: Option<&Header>,
+    colors: Option<[Color32; 3]>,
+) -> Option<HeaderAction> {
+    if let Some(colors) = colors {
+        cover_wash(
+            ui,
+            theme,
+            Rect::from_min_size(content.min, vec2(content.width(), 620.0)),
+            colors,
+        );
+    }
+    let size = art_size(pad);
+    let left = content.left() + pad;
+    let art = Rect::from_min_size(pos2(left, content.top() + ART_TOP), vec2(size, size));
+    let round = header.is_some_and(|h| h.round);
+    let radius = if round { size / 2.0 } else { 12.0 };
+    ui.painter().add(
+        egui::Shadow {
+            offset: [0, 18],
+            blur: 48,
+            spread: 0,
+            color: Color32::from_black_alpha(110),
+        }
+        .as_shape(art.shrink(6.0), radius),
+    );
+    artwork(ui, header.and_then(|h| h.art.clone()), art, radius, theme);
+    header_text(ui, theme, header?, art, content.right() - pad)
+}
+
 /// Three radial blobs of the cover's colours behind the header, fading into
 /// `base`: colour 1 top left behind the artwork at 92 %, colour 2 top centre at
 /// 72 %, colour 3 on the right at 62 %.
@@ -301,8 +327,14 @@ fn cover_wash(ui: &Ui, theme: &Theme, rect: Rect, [c1, c2, c3]: [Color32; 3]) {
 }
 
 /// The text beside the artwork, bottom-aligned with it: kind, title, artist,
-/// details, Play and Shuffle. Returns `Some(shuffle)` when a button was clicked.
-fn header_text(ui: &mut Ui, theme: &Theme, header: &Header, art: Rect, right: f32) -> Option<bool> {
+/// details, Play and Shuffle.
+fn header_text(
+    ui: &mut Ui,
+    theme: &Theme,
+    header: &Header,
+    art: Rect,
+    right: f32,
+) -> Option<HeaderAction> {
     let x = art.right() + 30.0;
     let width = (right - x).max(0.0);
     let eyebrow = text(
@@ -339,10 +371,27 @@ fn header_text(ui: &mut Ui, theme: &Theme, header: &Header, art: Rect, right: f3
     let h = title.size().y;
     paint_text(ui, title, x, y + h / 2.0, egui::Align::Min, theme.text);
     y += h + 8.0;
+    let mut action = None;
     if let Some(by) = by {
-        let h = by.size().y;
-        paint_text(ui, by, x, y + h / 2.0, egui::Align::Min, by_color);
-        y += h + 8.0;
+        let size = by.size();
+        let mut color = by_color;
+        if let Some(id) = &header.by_link {
+            let link = Rect::from_min_size(pos2(x, y), size);
+            let hit = ui.interact(link, egui::Id::unique("header-by"), Sense::click());
+            if hit.hovered() {
+                color = theme.text;
+                ui.painter()
+                    .hline(link.x_range(), link.bottom(), egui::Stroke::new(1.0, color));
+            }
+            if hit
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .clicked()
+            {
+                action = Some(HeaderAction::OpenArtist(id.clone()));
+            }
+        }
+        paint_text(ui, by, x, y + size.y / 2.0, egui::Align::Min, color);
+        y += size.y + 8.0;
     }
 
     let mut mx = x;
@@ -366,4 +415,6 @@ fn header_text(ui: &mut Ui, theme: &Theme, header: &Header, art: Rect, right: f3
     y += meta_height + 18.0;
 
     page_buttons(ui, theme, pos2(x, y), header.kind)
+        .map(|shuffle| HeaderAction::Play { shuffle })
+        .or(action)
 }

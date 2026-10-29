@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 
 use crate::model::{
-    Album, Cursor, ItemId, Lyrics, Page, Playlist, ProviderKind, SearchResults, Track,
+    Album, ArtistDetail, Cursor, ItemId, Lyrics, Page, Playlist, ProviderKind, SearchResults, Track,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -39,6 +39,8 @@ pub trait Provider: Send + Sync {
     async fn album(&self, album: &ItemId) -> Result<Album>;
 
     async fn album_tracks(&self, album: &ItemId) -> Result<Vec<Track>>;
+
+    async fn artist(&self, artist: &ItemId) -> Result<ArtistDetail>;
 
     async fn playlist_tracks(
         &self,
