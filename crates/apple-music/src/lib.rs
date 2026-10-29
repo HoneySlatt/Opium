@@ -8,6 +8,7 @@ pub mod auth;
 mod cenc;
 mod convert;
 mod lyrics;
+mod motion;
 mod playback;
 mod radio;
 pub mod signin;
@@ -603,7 +604,7 @@ impl Provider for AppleMusic {
         // counterpart has them, so the header reads that one when there is one.
         let path = if album.id.starts_with("l.") {
             let catalog = format!(
-                "/v1/me/library/albums/{}/catalog?include=artists&extend=inFavorites&l={NOTES_LANGUAGE}",
+                "/v1/me/library/albums/{}/catalog?include=artists&extend=inFavorites,editorialVideo&l={NOTES_LANGUAGE}",
                 album.id
             );
             if let Some(resp) = self
@@ -622,7 +623,7 @@ impl Provider for AppleMusic {
         } else {
             // With the artists, for the header's photo of them.
             format!(
-                "/v1/catalog/{}/albums/{}?include=artists&extend=inFavorites&l={NOTES_LANGUAGE}",
+                "/v1/catalog/{}/albums/{}?include=artists&extend=inFavorites,editorialVideo&l={NOTES_LANGUAGE}",
                 self.storefront, album.id
             )
         };

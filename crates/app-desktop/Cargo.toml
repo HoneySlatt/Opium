@@ -15,6 +15,8 @@ player = { path = "../player" }
 widevine = { path = "../widevine" }
 eframe = "0.37.0"
 egui_extras = { version = "0.37.0", features = ["svg", "image", "http"] }
+motion = { path = "../motion" }
+bytemuck = { version = "1.25.2", features = ["extern_crate_alloc"] }
 ehttp = "0.7.2"
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png"] }
 tokio = { version = "1.54.1", features = ["rt-multi-thread"] }

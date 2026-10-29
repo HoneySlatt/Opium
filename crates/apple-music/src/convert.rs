@@ -121,8 +121,16 @@ pub fn album(album: types::Album) -> Album {
         .and_then(|a| a.content_rating.as_deref());
     let explicit =
         attrs.content_rating.as_deref() == Some("explicit") || catalog_rating == Some("explicit");
+    let motion = attrs.editorial_video.as_ref().and_then(|v| {
+        v.motion_detail_square
+            .as_ref()
+            .or(v.motion_square_video1x1.as_ref())
+            .map(|m| m.video.clone())
+            .filter(|url| !url.is_empty())
+    });
     Album {
         explicit,
+        motion,
         added: attrs.date_added.clone(),
         id: id(album.id),
         artist_id: artist.map(|a| id(a.id.clone())),

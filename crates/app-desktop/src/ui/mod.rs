@@ -700,6 +700,27 @@ pub fn artwork(ui: &Ui, url: Option<String>, rect: Rect, radius: f32, theme: &Th
     }
 }
 
+/// The animated cover at `master` over the still one in `rect`, once it
+/// plays. `points` is how wide it is meant to be, for the video's size: the
+/// still cover may shrink and grow around it.
+pub(super) fn motion_over(
+    app: &mut App,
+    ui: &Ui,
+    slot: &'static str,
+    master: Option<&str>,
+    rect: Rect,
+    radius: f32,
+    points: f32,
+) {
+    let Some(master) = master else { return };
+    let pixels = points * ui.ctx().pixels_per_point();
+    if let Some(texture) = app.motion_frame(slot, master, pixels, ui.ctx()) {
+        egui::Image::from_texture(texture)
+            .corner_radius(CornerRadius::same(radius as u8))
+            .paint_at(ui, rect);
+    }
+}
+
 /// Artwork URLs share one size so the list, the sidebar and the player bar hit
 /// the same cached image.
 pub fn thumb_url(track: &music_core::model::Track) -> Option<String> {

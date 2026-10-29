@@ -36,6 +36,8 @@ struct Header {
     favourite: Option<(FavouriteKind, ItemId, bool)>,
     /// What an Add button adds to the library, when it isn't there yet.
     add: Option<Collection>,
+    /// The cover's animated version, when there is one.
+    motion: Option<String>,
 }
 
 /// What a click in the header asked for.
@@ -50,6 +52,15 @@ enum HeaderAction {
 }
 
 const ART_TOP: f32 = 60.0;
+
+/// Where the header's cover goes.
+fn art_rect(content: Rect, pad: f32) -> Rect {
+    let size = art_size(pad);
+    Rect::from_min_size(
+        pos2(content.left() + pad, content.top() + ART_TOP),
+        vec2(size, size),
+    )
+}
 
 fn art_size(pad: f32) -> f32 {
     if pad < 40.0 { 220.0 } else { 320.0 }
@@ -85,6 +96,7 @@ pub fn album(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
                 add: app
                     .can_add_album(&album.id)
                     .then(|| Collection::Album(album.clone())),
+                motion: album.motion.clone(),
                 ..album_header(
                     album,
                     tracks,
@@ -146,6 +158,7 @@ pub fn playlist(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
             (FavouriteKind::Playlist, id, on)
         }),
         add: Some(Collection::Playlist(playlist.clone())).filter(|p| app.can_add_to_library(p)),
+        motion: None,
     };
     let listing = Listing {
         columns: Kind::Playlist,
@@ -197,6 +210,7 @@ fn album_header(album: &Album, tracks: &[Track], favourite: bool) -> Header {
             favourite,
         )),
         add: None,
+        motion: None,
     }
 }
 
@@ -252,7 +266,12 @@ fn page(
                 ui.allocate_exact_size(vec2(ui.available_width(), total), Sense::hover());
             let left = content.left() + pad;
             let width = content.width() - 2.0 * pad;
-            match hero(ui, &theme, content, pad, header.as_ref(), colors) {
+            let action = hero(ui, &theme, content, pad, header.as_ref(), colors);
+            // The cover moves, where Apple made it move.
+            let art = art_rect(content, pad);
+            let motion = header.as_ref().and_then(|h| h.motion.as_deref());
+            super::motion_over(app, ui, "album", motion, art, 10.0, art.width());
+            match action {
                 Some(HeaderAction::Play { shuffle }) => {
                     app.play_shuffled_or_not(tracks.to_vec(), shuffle, ui.input(|i| i.time));
                 }
@@ -419,9 +438,7 @@ fn hero(
             colors,
         );
     }
-    let size = art_size(pad);
-    let left = content.left() + pad;
-    let art = Rect::from_min_size(pos2(left, content.top() + ART_TOP), vec2(size, size));
+    let art = art_rect(content, pad);
     ui.painter().add(
         egui::Shadow {
             offset: [0, 18],

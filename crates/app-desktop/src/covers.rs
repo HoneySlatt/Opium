@@ -16,18 +16,42 @@ const LIMIT: u64 = 500 * 1024 * 1024;
 const TRIMMED: u64 = 400 * 1024 * 1024;
 
 fn dir() -> Option<PathBuf> {
+    cache_dir("covers")
+}
+
+fn cache_dir(name: &str) -> Option<PathBuf> {
     let cache = std::env::var_os("XDG_CACHE_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")))?;
-    Some(cache.join("music").join("covers"))
+    Some(cache.join("music").join(name))
 }
 
-/// The file for `url`, named by a hash of it (FNV-1a, which never changes).
-fn file(url: &str) -> Option<PathBuf> {
-    let hash = url.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
+/// A hash of `url` (FNV-1a, which never changes), to name its file.
+fn hash(url: &str) -> u64 {
+    url.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
         (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
-    });
-    Some(dir()?.join(format!("{hash:016x}")))
+    })
+}
+
+fn file(url: &str) -> Option<PathBuf> {
+    Some(dir()?.join(format!("{:016x}", hash(url))))
+}
+
+/// Where the animated cover at `url` is kept at `size`, in
+/// `~/.cache/music/motion/`.
+pub fn motion_file(url: &str, size: u32) -> Option<PathBuf> {
+    Some(cache_dir("motion")?.join(format!("{:016x}-{size}.mp4", hash(url))))
+}
+
+/// Keep an animated cover; returns where.
+pub fn write_motion(url: &str, size: u32, bytes: &[u8]) -> Option<PathBuf> {
+    let path = motion_file(url, size)?;
+    let partial = path.with_extension("part");
+    std::fs::create_dir_all(path.parent()?)
+        .and_then(|()| std::fs::write(&partial, bytes))
+        .and_then(|()| std::fs::rename(&partial, &path))
+        .ok()?;
+    Some(path)
 }
 
 /// The cover kept for `url`, if it was.
@@ -46,10 +70,18 @@ pub fn write(url: &str, bytes: &[u8]) {
         .and_then(|()| std::fs::rename(&partial, &path));
 }
 
-/// Drop the oldest covers if they take too much room; run in the background.
+/// Drop the oldest covers, and moving covers, if they take too much room;
+/// run in the background.
 pub fn trim() {
-    let Some(dir) = dir() else { return };
-    let Ok(entries) = std::fs::read_dir(&dir) else {
+    for name in ["covers", "motion"] {
+        if let Some(dir) = cache_dir(name) {
+            trim_dir(&dir);
+        }
+    }
+}
+
+fn trim_dir(dir: &std::path::Path) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
     let mut files: Vec<(std::time::SystemTime, u64, PathBuf)> = entries

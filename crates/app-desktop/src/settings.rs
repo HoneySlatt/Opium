@@ -30,9 +30,23 @@ pub struct Settings {
     pub playlist_songs_to_library: Option<bool>,
     /// The playlists songs were last added to, most recent first.
     pub recent_playlists: Vec<String>,
+    /// Covers move where Apple made them move (on unless turned off).
+    pub animated_artwork: Option<bool>,
+    /// How sharp the moving covers are; Automatic unless set.
+    pub motion_quality: Option<MotionQuality>,
     /// How the Albums page is sorted; by name, A to Z, unless set.
     pub albums_sort: Option<AlbumSort>,
     pub albums_ascending: Option<bool>,
+}
+
+/// How sharp moving covers are fetched.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MotionQuality {
+    /// As many pixels as the cover takes on screen.
+    Automatic,
+    Low,
+    High,
 }
 
 /// What the Albums page sorts by.

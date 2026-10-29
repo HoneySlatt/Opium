@@ -38,7 +38,7 @@ pub(crate) struct MediaPlaylist {
 }
 
 /// An `ATTR=value` list from an HLS tag, quoted values unquoted.
-fn attribute<'a>(line: &'a str, name: &str) -> Option<&'a str> {
+pub(crate) fn attribute<'a>(line: &'a str, name: &str) -> Option<&'a str> {
     let mut rest = line.split_once(':')?.1;
     while !rest.is_empty() {
         let (key, after) = rest.split_once('=')?;
@@ -118,7 +118,7 @@ pub(crate) fn media_playlist(text: &str) -> MediaPlaylist {
 }
 
 /// `uri` relative to the playlist at `base`.
-fn resolve(base: &str, uri: &str) -> String {
+pub(crate) fn resolve(base: &str, uri: &str) -> String {
     if uri.starts_with("http://") || uri.starts_with("https://") {
         return uri.to_owned();
     }

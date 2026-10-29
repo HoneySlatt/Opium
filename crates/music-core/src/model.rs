@@ -129,6 +129,8 @@ pub struct Album {
     /// When it joined the library, for a library album: RFC 3339, so the
     /// text sorts in time order.
     pub added: Option<String>,
+    /// Its animated cover, square: where the service lists the video.
+    pub motion: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

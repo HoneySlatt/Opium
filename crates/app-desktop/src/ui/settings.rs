@@ -25,7 +25,7 @@ const THEMES: f32 = 14.0 + 10.0 + 74.0 + 10.0 + 18.0 + 18.0 + 4.0 + 14.0 + 12.0 
 pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
     let theme = app.theme.clone();
     let width = (ui.available_width() - 2.0 * pad).min(MAX_WIDTH);
-    let total = BODY_TOP + 5.0 * (GROUP_HEAD + GROUP_GAP) + 3.0 * ROW + THEMES + 4.0 * ROW + 104.0;
+    let total = BODY_TOP + 6.0 * (GROUP_HEAD + GROUP_GAP) + 3.0 * ROW + THEMES + 6.0 * ROW + 104.0;
     let output = egui::ScrollArea::vertical()
         .id_salt("settings")
         .auto_shrink(false)
@@ -124,6 +124,47 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
             let card = Rect::from_min_size(pos2(left, y), vec2(width, THEMES));
             panel(ui, &theme, card, 1);
             appearance(app, ui, &theme, card);
+            y = card.bottom() + GROUP_GAP;
+
+            y = group(
+                ui,
+                &theme,
+                left,
+                y,
+                width,
+                "Artwork",
+                "Covers that move, where Apple made them: on album pages and in Now Playing.",
+            );
+            let card = Rect::from_min_size(pos2(left, y), vec2(width, 2.0 * ROW));
+            panel(ui, &theme, card, 2);
+            let on = app.animated_artwork();
+            if switch(
+                ui,
+                &theme,
+                pos2(card.right() - 16.0, card.top() + ROW / 2.0),
+                on,
+                "animated-artwork",
+            ) {
+                app.set_animated_artwork(!on);
+            }
+            labels(
+                ui,
+                &theme,
+                pos2(card.left() + 16.0, card.top() + ROW / 2.0),
+                "Animated artwork",
+                "Play a cover's video when it has one. It takes a little more power.",
+                width - 32.0 - 60.0,
+            );
+            let quality =
+                motion_quality(app, ui, &theme, card.right() - 16.0, card.top() + 1.5 * ROW);
+            labels(
+                ui,
+                &theme,
+                pos2(card.left() + 16.0, card.top() + 1.5 * ROW),
+                "Animated artwork quality",
+                "Automatic fetches each video at the size it takes on screen.",
+                quality - card.left() - 32.0,
+            );
             y = card.bottom() + GROUP_GAP;
 
             y = group(
@@ -434,6 +475,59 @@ fn paint_preview(ui: &Ui, rect: Rect, c: &Theme) {
         6.0,
         c.accent,
     );
+}
+
+/// Automatic, Low and High, ending at `right`; returns where they begin.
+fn motion_quality(app: &mut App, ui: &mut Ui, theme: &Theme, right: f32, y: f32) -> f32 {
+    use crate::settings::MotionQuality;
+    let chosen = app.motion_quality();
+    let enabled = app.animated_artwork();
+    let options = [
+        (MotionQuality::Automatic, "Automatic"),
+        (MotionQuality::Low, "Low"),
+        (MotionQuality::High, "High"),
+    ];
+    let body = font(12.5, Weight::Medium);
+    let widths: Vec<f32> = options
+        .iter()
+        .map(|(_, label)| text(ui, label, body.clone(), theme.text, 200.0).size().x + 24.0)
+        .collect();
+    let mut x = right - widths.iter().sum::<f32>() - 6.0 * (options.len() - 1) as f32;
+    let left = x;
+    for ((quality, label), w) in options.into_iter().zip(widths) {
+        let rect = Rect::from_min_size(pos2(x, y - 14.0), vec2(w, 28.0));
+        x += w + 6.0;
+        let response = ui.interact(rect, Id::unique(("motion-quality", label)), Sense::click());
+        let on = quality == chosen;
+        let (fill, fg) = if on {
+            (theme.text_a(if enabled { 0.9 } else { 0.4 }), theme.base)
+        } else if enabled && response.hovered() {
+            (theme.text_a(0.14), theme.text)
+        } else {
+            (
+                theme.text_a(0.08),
+                if enabled { theme.text } else { theme.muted() },
+            )
+        };
+        ui.painter().rect_filled(rect, 14.0, fill);
+        let g = text(ui, label, body.clone(), fg, w);
+        paint_text(
+            ui,
+            g,
+            rect.center().x,
+            rect.center().y,
+            egui::Align::Center,
+            fg,
+        );
+        if enabled
+            && response
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .clicked()
+        {
+            app.set_motion_quality(quality);
+        }
+    }
+    left
 }
 
 fn scale(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect) {

@@ -99,6 +99,11 @@ pub enum Request {
         token: player::Token,
         track: ItemId,
     },
+    /// An animated cover's video at `size` pixels, kept on disk.
+    Motion {
+        url: String,
+        size: u32,
+    },
     /// Fetch a track the pointer rests on, in case it is played: as `Fetch`,
     /// but a newer one calls off the last.
     Warm {
@@ -153,6 +158,12 @@ pub enum Reply {
     /// Whether catalog albums or playlists are in the library; those Apple
     /// didn't answer for are left out.
     InLibrary(Vec<(ItemId, bool)>),
+    /// Where an animated cover's video is kept, or why it couldn't be.
+    Motion {
+        url: String,
+        size: u32,
+        result: Result<PathBuf, String>,
+    },
     /// Something was added to the library, or why not.
     AddedToLibrary {
         kind: FavouriteKind,
@@ -667,6 +678,25 @@ async fn run(
                 tokio::spawn(async move {
                     let result = playable(&am, cdm, &track).await;
                     replies.send(Reply::Fetched { token, result });
+                });
+            }
+            Request::Motion { url, size } => {
+                tokio::spawn(async move {
+                    let result = match crate::covers::motion_file(&url, size) {
+                        Some(path) if path.exists() => Ok(path),
+                        _ => match am.motion_video(&url, size).await {
+                            Ok(bytes) => tokio::task::spawn_blocking({
+                                let url = url.clone();
+                                move || crate::covers::write_motion(&url, size, &bytes)
+                            })
+                            .await
+                            .ok()
+                            .flatten()
+                            .ok_or_else(|| "couldn't keep the animated cover".to_owned()),
+                            Err(e) => Err(e.to_string()),
+                        },
+                    };
+                    replies.send(Reply::Motion { url, size, result });
                 });
             }
             Request::Warm { token, track } => {

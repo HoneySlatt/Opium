@@ -162,6 +162,8 @@ fn left_column(app: &mut App, ui: &mut Ui, theme: &Theme, column: Rect, window_h
         14.0,
         theme,
     );
+    let motion = app.album_motion(&track);
+    super::motion_over(app, ui, "now-playing", motion.as_deref(), art, 14.0, size);
 
     // Title, with the E badge, then artist — album, the album a link.
     let mut y = top + size + 28.0;

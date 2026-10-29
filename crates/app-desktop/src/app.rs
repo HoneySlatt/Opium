@@ -153,6 +153,18 @@ pub fn fold(s: &str) -> String {
         .collect()
 }
 
+/// An animated cover playing: its video and size, the decoder, and the
+/// texture its latest frame went into.
+struct MotionView {
+    key: (String, u32),
+    motion: motion::Motion,
+    texture: Option<egui::TextureHandle>,
+}
+
+/// The sizes moving covers are fetched at, as Apple makes them: the smallest
+/// at least as wide as asked is taken.
+const MOTION_SIZES: [u32; 5] = [360, 486, 768, 960, 1080];
+
 /// A song fetched ahead because the pointer rests on it.
 struct Warm {
     token: Token,
@@ -403,6 +415,13 @@ pub struct App {
     next_ready: bool,
     /// The song the pointer rests on, fetched in case it is played.
     warm: Option<Warm>,
+    /// Animated covers' videos, by master playlist and size: on their way,
+    /// kept on disk, or not to be had.
+    motion_files: HashMap<(String, u32), Loaded<std::path::PathBuf>>,
+    /// The animated covers playing, by where they show.
+    motion_views: HashMap<&'static str, MotionView>,
+    /// Where animated covers showed this frame: the others stop.
+    motion_seen: std::collections::HashSet<&'static str>,
     /// The song the pointer is on, and since when.
     resting: Option<(ItemId, f64)>,
     /// An album or playlist to queue once its tracks are in.
@@ -506,6 +525,9 @@ impl App {
             queued_next: None,
             next_ready: false,
             warm: None,
+            motion_files: HashMap::new(),
+            motion_views: HashMap::new(),
+            motion_seen: std::collections::HashSet::new(),
             resting: None,
             waiting: None,
             failed_in_row: 0,
@@ -1254,6 +1276,131 @@ impl App {
         (found, Some(numbers))
     }
 
+    pub fn animated_artwork(&self) -> bool {
+        self.settings.animated_artwork.unwrap_or(true)
+    }
+
+    pub fn set_animated_artwork(&mut self, on: bool) {
+        self.settings.animated_artwork = Some(on);
+        self.settings.save();
+        if !on {
+            self.motion_views.clear();
+        }
+    }
+
+    pub fn motion_quality(&self) -> crate::settings::MotionQuality {
+        self.settings
+            .motion_quality
+            .unwrap_or(crate::settings::MotionQuality::Automatic)
+    }
+
+    pub fn set_motion_quality(&mut self, quality: crate::settings::MotionQuality) {
+        self.settings.motion_quality = Some(quality);
+        self.settings.save();
+    }
+
+    /// The animated cover of `track`'s album, once its album says; asks for
+    /// the album the first time.
+    pub fn album_motion(&mut self, track: &Track) -> Option<String> {
+        let id = track.album_id.clone()?;
+        match self.albums.get(&id) {
+            Some(Loaded::Ready((album, _))) => album.motion.clone(),
+            Some(_) => None,
+            None => {
+                self.albums.insert(id.clone(), Loaded::Loading);
+                self.backend.send(Request::Album(id));
+                None
+            }
+        }
+    }
+
+    /// The latest frame of the animated cover at `master`, shown in `slot`
+    /// over `pixels` on screen; fetches and plays it as needed. `None` until
+    /// it plays, or if it can't: the still cover shows then.
+    pub fn motion_frame(
+        &mut self,
+        slot: &'static str,
+        master: &str,
+        pixels: f32,
+        ctx: &egui::Context,
+    ) -> Option<egui::load::SizedTexture> {
+        if !self.animated_artwork() {
+            return None;
+        }
+        self.motion_seen.insert(slot);
+        let wanted = match self.motion_quality() {
+            crate::settings::MotionQuality::Low => 486,
+            crate::settings::MotionQuality::High => 1080,
+            crate::settings::MotionQuality::Automatic => pixels.ceil() as u32,
+        };
+        let size = MOTION_SIZES
+            .into_iter()
+            .find(|&s| s >= wanted)
+            .unwrap_or(1080);
+        let key = (master.to_owned(), size);
+        if self.motion_views.get(slot).is_none_or(|v| v.key != key) {
+            self.motion_views.remove(slot);
+            match self.motion_files.get(&key) {
+                None => {
+                    self.motion_files.insert(key.clone(), Loaded::Loading);
+                    self.backend.send(Request::Motion {
+                        url: key.0.clone(),
+                        size,
+                    });
+                    return None;
+                }
+                Some(Loaded::Ready(path)) => {
+                    let wake = ctx.clone();
+                    let motion =
+                        motion::Motion::play(path.clone(), size, move || wake.request_repaint());
+                    self.motion_views.insert(
+                        slot,
+                        MotionView {
+                            key,
+                            motion,
+                            texture: None,
+                        },
+                    );
+                }
+                Some(_) => return None,
+            }
+        }
+        let view = self.motion_views.get_mut(slot)?;
+        if view.motion.failed() {
+            return None;
+        }
+        // Back for the next frame when it is due, and only then: a repaint
+        // the decoder asked for each frame would come twice.
+        ctx.request_repaint_after(view.motion.frame_interval());
+        if let Some(frame) = view.motion.take_frame() {
+            // Opaque, so premultiplied as it is: the pixels go to the texture
+            // without a sum or a copy.
+            let image = egui::ColorImage::new(
+                [frame.width as usize, frame.height as usize],
+                bytemuck::cast_vec(frame.pixels),
+            );
+            match &mut view.texture {
+                Some(texture) => texture.set(image, egui::TextureOptions::LINEAR),
+                None => {
+                    view.texture = Some(ctx.load_texture(
+                        format!("motion-{slot}"),
+                        image,
+                        egui::TextureOptions::LINEAR,
+                    ));
+                }
+            }
+        }
+        view.texture
+            .as_ref()
+            .map(egui::load::SizedTexture::from_handle)
+    }
+
+    /// Stop the animated covers that didn't show this frame.
+    fn forget_unseen_motion(&mut self) {
+        let seen = std::mem::take(&mut self.motion_seen);
+        self.motion_views.retain(|slot, _| seen.contains(slot));
+    }
+
     /// How the Albums page is sorted, and whether ascending.
     pub fn albums_sort(&self) -> (crate::settings::AlbumSort, bool) {
         (
@@ -1996,6 +2143,13 @@ impl App {
                     Err(e) => self.notify(e, now),
                 },
                 Reply::InLibrary(known) => self.in_library.extend(known),
+                Reply::Motion { url, size, result } => {
+                    let loaded = match result {
+                        Ok(path) => Loaded::Ready(path),
+                        Err(e) => Loaded::Failed(e),
+                    };
+                    self.motion_files.insert((url, size), loaded);
+                }
                 Reply::AddedToLibrary {
                     kind,
                     id,
@@ -2217,6 +2371,7 @@ impl eframe::App for App {
             }
         }
         ui::show(self, ui);
+        self.forget_unseen_motion();
         let under = ui::song_under_pointer(ui.ctx());
         self.rest_on(under, now, ui.ctx());
         // The covers just drawn that Apple hasn't said about yet.

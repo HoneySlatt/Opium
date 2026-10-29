@@ -108,6 +108,22 @@ pub struct AlbumAttributes {
     pub content_rating: Option<String>,
     /// When a library album was added, as Apple writes it (RFC 3339).
     pub date_added: Option<String>,
+    /// With `extend=editorialVideo`: the animated cover, when there is one.
+    pub editorial_video: Option<EditorialVideo>,
+}
+
+/// An album's animated covers, as HLS master playlists.
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct EditorialVideo {
+    pub motion_detail_square: Option<Video>,
+    pub motion_square_video1x1: Option<Video>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct Video {
+    pub video: String,
 }
 
 #[derive(Debug, Default, Deserialize)]
