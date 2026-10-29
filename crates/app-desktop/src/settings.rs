@@ -36,6 +36,8 @@ pub struct Settings {
     pub muted: Option<bool>,
     /// Shuffle was on when last left.
     pub shuffle: Option<bool>,
+    /// Repeat as last left; off unless set.
+    pub repeat: Option<Repeat>,
     /// Covers move where Apple made them move (on unless turned off).
     pub animated_artwork: Option<bool>,
     /// How sharp the moving covers are; Automatic unless set.
@@ -43,6 +45,35 @@ pub struct Settings {
     /// How the Albums page is sorted; by name, A to Z, unless set.
     pub albums_sort: Option<AlbumSort>,
     pub albums_ascending: Option<bool>,
+}
+
+/// Repeat, as kept: the queue's own, by name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Repeat {
+    Off,
+    All,
+    One,
+}
+
+impl From<Repeat> for music_core::Repeat {
+    fn from(repeat: Repeat) -> Self {
+        match repeat {
+            Repeat::Off => Self::Off,
+            Repeat::All => Self::All,
+            Repeat::One => Self::One,
+        }
+    }
+}
+
+impl From<music_core::Repeat> for Repeat {
+    fn from(repeat: music_core::Repeat) -> Self {
+        match repeat {
+            music_core::Repeat::Off => Self::Off,
+            music_core::Repeat::All => Self::All,
+            music_core::Repeat::One => Self::One,
+        }
+    }
 }
 
 /// How sharp moving covers are fetched.

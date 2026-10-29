@@ -549,10 +549,13 @@ impl App {
             theme_changed,
             zoom: None,
         };
-        // The volume and shuffle as they were left.
+        // The volume, shuffle and repeat as they were left.
         app.player
             .set_volume(if app.muted { 0.0 } else { app.volume });
         app.queue.set_shuffle(app.settings.shuffle.unwrap_or(false));
+        if let Some(repeat) = app.settings.repeat {
+            app.queue.set_repeat(repeat.into());
+        }
         // The first page loads what it shows, as any page does on arrival.
         app.arrived();
         app
@@ -1881,6 +1884,8 @@ impl App {
             Repeat::One => Repeat::Off,
         });
         self.prefetch_next();
+        self.settings.repeat = Some(self.queue.repeat().into());
+        self.settings.save();
     }
 
     /// The track's duration from its metadata, else from the decoder.
