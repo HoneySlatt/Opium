@@ -117,8 +117,18 @@ fn header(app: &mut App, ui: &mut Ui, theme: &Theme, top: f32, left: f32, width:
         theme.text,
     );
 
-    // Source filter, right-aligned.
-    if let Some(source) = source_chips(ui, theme, left + width, top + 73.0, app.songs_view.source) {
+    // The search, right-aligned, then the source filter left of it.
+    let search = super::page_search(app, ui, theme, left + width, top + 71.0, "Search Songs");
+    if search.changed {
+        app.songs_view.selected = None;
+    }
+    if let Some(source) = source_chips(
+        ui,
+        theme,
+        search.left - 10.0,
+        top + 73.0,
+        app.songs_view.source,
+    ) {
         app.songs_view.source = source;
         app.songs_view.selected = None;
     }
@@ -141,6 +151,10 @@ fn empty(app: &App, ui: &Ui, theme: &Theme, top: f32, left: f32, width: f32) {
         ),
         Connection::Failed(e) => ("Couldn't reach Apple Music", e.clone()),
         Connection::Connected if !app.songs_done => ("Loading your library…", String::new()),
+        Connection::Connected if !app.page_search.trim().is_empty() => (
+            "No songs found",
+            format!("None match “{}”.", app.page_search.trim()),
+        ),
         Connection::Connected => (
             "No songs here",
             "Nothing matches this source filter.".to_owned(),
@@ -186,14 +200,28 @@ fn shown_tracks(app: &App) -> Vec<Track> {
 
 fn rebuild_order(app: &mut App) {
     let view = &mut app.songs_view;
-    let key = Some((app.songs.len(), view.sort, view.source));
+    let query = crate::app::fold(app.page_search.trim());
+    let key = Some((app.songs.len(), view.sort, view.source, query.clone()));
     if view.order_key == key {
         return;
     }
     view.order_key = key;
     let songs = &app.songs;
+    // Every word searched for is in the title, the artists or the album.
+    let words: Vec<&str> = query.split_whitespace().collect();
+    let found = |t: &Track| {
+        words.is_empty() || {
+            let text = crate::app::fold(&format!(
+                "{} {} {}",
+                t.title,
+                t.artists.join(" "),
+                t.album.as_deref().unwrap_or_default()
+            ));
+            words.iter().all(|w| text.contains(w))
+        }
+    };
     let mut order: Vec<usize> = (0..songs.len())
-        .filter(|&i| view.source.is_none_or(|s| songs[i].id.provider == s))
+        .filter(|&i| view.source.is_none_or(|s| songs[i].id.provider == s) && found(&songs[i]))
         .collect();
     if let Some((by, ascending)) = view.sort {
         let text_cmp = |a: &str, b: &str| a.to_lowercase().cmp(&b.to_lowercase());

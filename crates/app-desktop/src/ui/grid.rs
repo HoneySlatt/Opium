@@ -431,6 +431,30 @@ fn page(app: &mut App, ui: &mut Ui, pad: f32, kind: Kind) -> f32 {
             app.recently_added.done,
         ),
     };
+    // Albums by their title and artists, artists by name: every word searched
+    // for is there.
+    let query = crate::app::fold(app.page_search.trim());
+    let searching = kind != Kind::Recent && !query.is_empty();
+    let shown: Vec<usize> = if searching {
+        let words: Vec<&str> = query.split_whitespace().collect();
+        let found = |text: String| {
+            let text = crate::app::fold(&text);
+            words.iter().all(|w| text.contains(w))
+        };
+        shown
+            .into_iter()
+            .filter(|&i| match kind {
+                Kind::Albums => {
+                    let a = &app.library_albums.items[i];
+                    found(format!("{} {}", a.title, a.artists.join(" ")))
+                }
+                Kind::Artists => found(app.library_artists.items[i].name.clone()),
+                Kind::Recent => true,
+            })
+            .collect()
+    } else {
+        shown
+    };
     let (title, one, many) = match kind {
         Kind::Albums => ("Albums", "album", "albums"),
         Kind::Artists => ("Artists", "artist", "artists"),
@@ -468,11 +492,23 @@ fn page(app: &mut App, ui: &mut Ui, pad: f32, kind: Kind) -> f32 {
                 egui::Align::Min,
                 theme.text,
             );
+            // The search, right-aligned, then the source filter left of it.
+            let chips_right = if kind == Kind::Recent {
+                left + width
+            } else {
+                let hint = if kind == Kind::Albums {
+                    "Search Albums"
+                } else {
+                    "Search Artists"
+                };
+                let top = content.top() + TITLE_Y - 16.0;
+                super::page_search(app, ui, &theme, left + width, top, hint).left - 10.0
+            };
             if kind != Kind::Artists
                 && let Some(source) = source_chips(
                     ui,
                     &theme,
-                    left + width,
+                    chips_right,
                     content.top() + TITLE_Y - 14.0,
                     app.grid_source,
                 )
@@ -494,7 +530,12 @@ fn page(app: &mut App, ui: &mut Ui, pad: f32, kind: Kind) -> f32 {
                 return;
             }
             if shown.is_empty() {
-                let (head, detail) = if source.is_some() {
+                let (head, detail) = if searching {
+                    (
+                        "Nothing found",
+                        format!("No {many} match “{}”.", app.page_search.trim()),
+                    )
+                } else if source.is_some() {
                     (
                         "Nothing from this source",
                         "Connect it in Settings, or pick another source.".to_owned(),

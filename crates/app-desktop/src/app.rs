@@ -126,7 +126,7 @@ struct Searched {
 
 /// Lower case, with the accents French and its neighbours use taken off, so
 /// that `cafe` finds `Café`.
-fn fold(s: &str) -> String {
+pub fn fold(s: &str) -> String {
     s.to_lowercase()
         .chars()
         .map(|c| match c {
@@ -277,8 +277,9 @@ pub struct SongsView {
     pub order_key: Option<OrderKey>,
 }
 
-/// What `SongsView::order` was built from: the song count, sort and filter.
-pub type OrderKey = (usize, Option<(SortKey, bool)>, Option<ProviderKind>);
+/// What `SongsView::order` was built from: the song count, sort, source
+/// filter and search.
+pub type OrderKey = (usize, Option<(SortKey, bool)>, Option<ProviderKind>, String);
 
 /// A station of songs asks for more when fewer than this many are left.
 const STATION_REFILL: usize = 5;
@@ -364,10 +365,11 @@ pub struct App {
     lyrics: HashMap<ItemId, Loaded<Option<Arc<Lyrics>>>>,
     /// The selected row on an album or playlist page.
     pub detail_selected: Option<usize>,
-    /// What the playlist shown is searched for.
-    pub playlist_search: String,
+    /// What the page shown (a playlist, Songs, Albums, Artists) is searched
+    /// for; emptied on leaving it.
+    pub page_search: String,
     /// Its search field is open, not just its magnifier.
-    pub playlist_search_open: bool,
+    pub page_search_open: bool,
     /// The playlist's songs matching it, kept until either changes.
     searched: Option<Searched>,
     pub drawer_open: bool,
@@ -478,8 +480,8 @@ impl App {
             palettes: HashMap::new(),
             lyrics: HashMap::new(),
             detail_selected: None,
-            playlist_search: String::new(),
-            playlist_search_open: false,
+            page_search: String::new(),
+            page_search_open: false,
             searched: None,
             drawer_tab: DrawerTab::default(),
             history: Vec::new(),
@@ -595,8 +597,8 @@ impl App {
     /// Fetch what the page shows, unless it already has been.
     fn arrived(&mut self) {
         self.detail_selected = None;
-        self.playlist_search.clear();
-        self.playlist_search_open = false;
+        self.page_search.clear();
+        self.page_search_open = false;
         // Favourite Songs is Apple's playlist of them, once the library says which.
         if self.page == Page::Favourites
             && let Some(id) = self.favourites()

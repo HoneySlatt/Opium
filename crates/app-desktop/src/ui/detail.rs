@@ -226,7 +226,7 @@ fn page(
     let theme = app.theme.clone();
     // What the search finds, numbered as in the playlist: Play, Shuffle and
     // the rows play what is shown.
-    let query = app.playlist_search.clone();
+    let query = app.page_search.clone();
     let searching = listing.searchable && !query.trim().is_empty();
     let (tracks, numbers) = if listing.searchable {
         app.search_in(tracks, &query)
@@ -272,7 +272,17 @@ fn page(
             };
             let table = content.top() + table_top;
             if listing.searchable {
-                search_field(app, ui, &theme, left + width, table - search_row + 4.0);
+                let search = super::page_search(
+                    app,
+                    ui,
+                    &theme,
+                    left + width,
+                    table - search_row + 4.0,
+                    "Search in Playlist",
+                );
+                if search.changed {
+                    app.detail_selected = None;
+                }
             }
             if head > 0.0 {
                 tracks::head(ui, &theme, &columns, table, left, width, None);
@@ -594,125 +604,6 @@ fn header_text(
         Some(PageButton::Shuffle) => Some(HeaderAction::Play { shuffle: true }),
         Some(PageButton::Add) => Some(HeaderAction::AddToLibrary),
         None => action,
-    }
-}
-
-/// The playlist's search, ending at `right`: a magnifier that opens into a
-/// field when clicked, or with Ctrl+F. Left empty, or emptied with Escape, it
-/// closes again.
-fn search_field(app: &mut App, ui: &mut Ui, theme: &Theme, right: f32, top: f32) {
-    let id = egui::Id::unique("playlist-search");
-    let shortcut = ui.input(|i| i.modifiers.command && i.key_pressed(egui::Key::F));
-    let mut focus = false;
-    if shortcut {
-        app.playlist_search_open = true;
-        focus = true;
-    }
-    let open = ui
-        .ctx()
-        .animate_bool_with_time(id.with("open"), app.playlist_search_open, 0.18);
-    let eased = 1.0 - (1.0 - open).powi(3);
-    let height = 32.0;
-    let width = height + (260.0 - height) * eased;
-    let field = Rect::from_min_size(pos2(right - width, top), vec2(width, height));
-
-    if open == 0.0 {
-        // Closed: the magnifier alone.
-        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(field));
-        if super::icon_button(
-            &mut child,
-            theme,
-            icons::SEARCH,
-            height,
-            15.0,
-            theme.subtext0,
-            true,
-        )
-        .on_hover_text("Search in Playlist")
-        .clicked()
-        {
-            app.playlist_search_open = true;
-            focus = true;
-        }
-        if focus {
-            // Taken by the field once it shows, from the next frame.
-            ui.data_mut(|d| d.insert_temp(id.with("focus"), true));
-        }
-        return;
-    }
-    let focus = focus
-        || ui
-            .data_mut(|d| d.remove_temp::<bool>(id.with("focus")))
-            .unwrap_or(false);
-
-    ui.painter().rect(
-        field,
-        height / 2.0 * (1.0 - eased) + 9.0 * eased,
-        theme.text_a(0.04 * eased),
-        egui::Stroke::new(1.0, theme.line().gamma_multiply(eased)),
-        egui::StrokeKind::Inside,
-    );
-    let icon_x = field.left() + height / 2.0 + (15.0 - height / 2.0) * eased;
-    paint_icon(
-        ui,
-        icons::SEARCH,
-        pos2(icon_x, field.center().y),
-        14.0,
-        theme.muted(),
-    );
-    let body = font(13.0, Weight::Regular);
-    let line = text(ui, "S", body.clone(), theme.text, 100.0).size().y;
-    let clear = !app.playlist_search.is_empty();
-    let left = field.left() + 32.0;
-    let edit = Rect::from_min_max(
-        pos2(left, field.center().y - line / 2.0),
-        pos2(
-            (field.right() - if clear { 32.0 } else { 12.0 }).max(left + 1.0),
-            field.center().y + line / 2.0,
-        ),
-    );
-    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(edit));
-    // While it opens, the words show only as far as the field reaches.
-    child.set_clip_rect(edit.intersect(field.shrink(1.0)).intersect(ui.clip_rect()));
-    let response = child.add(
-        egui::TextEdit::singleline(&mut app.playlist_search)
-            .id(id)
-            .hint_text(egui::RichText::new("Search in Playlist").color(theme.muted()))
-            .font(body)
-            .frame(egui::Frame::NONE)
-            .margin(egui::Margin::ZERO)
-            .desired_width(edit.width()),
-    );
-    if focus {
-        response.request_focus();
-    }
-    if response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-        app.playlist_search.clear();
-        app.playlist_search_open = false;
-        response.surrender_focus();
-    }
-    if response.changed() {
-        app.detail_selected = None;
-    }
-    // Left empty, it folds back to the magnifier.
-    if response.lost_focus() && app.playlist_search.trim().is_empty() {
-        app.playlist_search.clear();
-        app.playlist_search_open = false;
-    }
-    if clear {
-        let button = Rect::from_center_size(
-            pos2(field.right() - 16.0, field.center().y),
-            vec2(24.0, 24.0),
-        );
-        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(button));
-        if super::icon_button(&mut child, theme, icons::X, 24.0, 12.0, theme.muted(), true)
-            .on_hover_text("Clear")
-            .clicked()
-        {
-            app.playlist_search.clear();
-            app.detail_selected = None;
-            response.request_focus();
-        }
     }
 }
 
