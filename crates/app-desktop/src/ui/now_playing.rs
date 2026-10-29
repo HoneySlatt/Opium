@@ -6,17 +6,15 @@ use std::time::Duration;
 
 use egui::{Color32, Id, Rect, Sense, Stroke, Ui, pos2, vec2};
 use music_core::Repeat;
-use music_core::model::ProviderKind;
 
-use crate::app::{App, NpTab, Page, SignalAnchor};
-use crate::color::alpha;
+use crate::app::{App, NpTab, Page};
 use crate::fonts::{Weight, font};
 use crate::icons;
 use crate::theme::Theme;
 
 use super::{
     Blob, NARROW, artwork, drawer, explicit_badge, format_time, icon_button, paint_icon,
-    paint_text, quality_label, signal, text, wash_with,
+    paint_text, text, wash_with,
 };
 
 pub fn show(app: &mut App, ui: &mut Ui) {
@@ -256,7 +254,12 @@ fn left_column(app: &mut App, ui: &mut Ui, theme: &Theme, column: Rect, window_h
     );
     y += 56.0 + 14.0;
 
-    quality(app, ui, theme, &track, pos2(x + size / 2.0, y + 12.0));
+    volume(
+        app,
+        ui,
+        theme,
+        Rect::from_min_size(pos2(x, y), vec2(size, 24.0)),
+    );
 }
 
 /// The position bar: 3 px, 5 px in the accent with a knob on hover. Returns
@@ -394,75 +397,57 @@ fn transport(app: &mut App, ui: &mut Ui, theme: &Theme, row: Rect) {
     }
 }
 
-/// The quality chip with its status spelled out: source, dot, label · status.
-/// It opens the signal path above it.
-fn quality(
-    app: &mut App,
-    ui: &mut Ui,
-    theme: &Theme,
-    track: &music_core::model::Track,
-    center: egui::Pos2,
-) {
-    let Some((label, lossless)) = quality_label(track) else {
-        return;
-    };
-    let assessment = signal::assess(app);
-    let status = if assessment.perfect() {
-        "Bit-perfect".to_owned()
+/// Mute on the left, then the volume across. The knob always shows, as on the
+/// player bar.
+fn volume(app: &mut App, ui: &mut Ui, theme: &Theme, row: Rect) {
+    let y = row.center().y;
+    let mute = Rect::from_center_size(pos2(row.left() + 12.0, y), vec2(24.0, 24.0));
+    let mut mute_ui = ui.new_child(egui::UiBuilder::new().max_rect(mute));
+    let mute_icon = if app.muted || app.volume == 0.0 {
+        icons::VOL_MUTE
     } else {
-        assessment.issues[0].clone()
+        icons::VOL
     };
-    let caption = format!("{label} · {status}");
-    let color = if lossless {
-        crate::color::mix(theme.accent, theme.text, 0.70)
-    } else {
-        theme.subtext0
-    };
-    let g = text(ui, &caption, font(11.0, Weight::SemiBold), color, 360.0);
-    let width = 8.0 + 12.0 + 6.0 + 7.0 + 6.0 + g.size().x + 8.0;
-    let rect = Rect::from_center_size(center, vec2(width, 24.0));
-    let response = ui.interact(rect, Id::unique("np-quality"), Sense::click());
-    signal::remember_anchor(ui, SignalAnchor::PlayerBar, rect);
-    if response.hovered() {
-        ui.painter().rect_filled(rect, 6.0, theme.hover());
+    if icon_button(
+        &mut mute_ui,
+        theme,
+        mute_icon,
+        24.0,
+        15.0,
+        theme.subtext0,
+        true,
+    )
+    .on_hover_text(if app.muted { "Unmute" } else { "Mute" })
+    .clicked()
+    {
+        app.toggle_mute();
     }
-    let border = if lossless {
-        alpha(theme.accent, 0.4)
-    } else {
-        theme.line()
-    };
-    ui.painter().rect_stroke(
-        rect,
-        6.0,
-        Stroke::new(1.0, border),
-        egui::StrokeKind::Inside,
+    let hit = Rect::from_min_max(
+        pos2(mute.right() + 10.0, y - 7.0),
+        pos2(row.right(), y + 7.0),
     );
-    let mut cx = rect.left() + 8.0;
-    let source = match track.id.provider {
-        ProviderKind::AppleMusic => icons::AM,
-        ProviderKind::SoundCloud => icons::CLOUD,
-        ProviderKind::Navidrome => icons::SERVER,
-    };
-    paint_icon(ui, source, pos2(cx + 6.0, center.y), 12.0, theme.subtext0);
-    cx += 12.0 + 6.0;
-    let dot = if assessment.perfect() {
-        theme.green
+    let response = ui.interact(hit, Id::unique("np-volume"), Sense::click_and_drag());
+    if let Some(pointer) = response.interact_pointer_pos()
+        && (response.dragged() || response.clicked())
+    {
+        app.set_volume((pointer.x - hit.left()) / hit.width());
+    }
+    let level = if app.muted { 0.0 } else { app.volume };
+    let rail = Rect::from_center_size(hit.center(), vec2(hit.width(), 3.0));
+    ui.painter().rect_filled(rail, 3.0, theme.text_a(0.14));
+    let fill = Rect::from_min_size(rail.min, vec2(rail.width() * level, 3.0));
+    ui.painter().rect_filled(fill, 3.0, theme.text_a(0.55));
+    let active = response.hovered() || response.dragged();
+    let knob = if active {
+        theme.text
     } else {
-        theme.yellow
+        crate::color::mix(theme.text, theme.base, 0.70)
     };
     ui.painter()
-        .circle_filled(pos2(cx + 3.5, center.y), 3.5, dot);
-    cx += 7.0 + 6.0;
-    paint_text(ui, g, cx, center.y, egui::Align::Min, color);
-    if response
+        .circle_filled(pos2(rail.left() + rail.width() * level, y), 5.5, knob);
+    response
         .on_hover_cursor(egui::CursorIcon::PointingHand)
-        .clicked()
-    {
-        app.signal_open = match app.signal_open {
-            Some(_) => None,
-            None => Some(SignalAnchor::PlayerBar),
-        };
-    }
+        .on_hover_text(format!("Volume {:.0} %", level * 100.0));
 }
 
 fn right_column(app: &mut App, ui: &mut Ui, theme: &Theme, column: Rect) {
