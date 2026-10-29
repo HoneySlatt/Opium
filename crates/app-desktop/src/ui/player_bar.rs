@@ -27,8 +27,9 @@ pub fn show(app: &mut App, ui: &mut Ui, main: Rect) {
         vec2(width, 44.0),
     );
 
+    // Above the page, but under menus and windows, which may reach over it.
     let mut layer = ui.new_child(egui::UiBuilder::new().max_rect(bar).layer_id(
-        egui::LayerId::new(egui::Order::Foreground, Id::unique("player-bar")),
+        egui::LayerId::new(egui::Order::Middle, Id::unique("player-bar")),
     ));
     let ui = &mut layer;
     let painter = ui.painter();
