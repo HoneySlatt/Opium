@@ -4,7 +4,9 @@
 //! four-minute track has around 9 000 of them, so decrypting everything up front
 //! would hold playback back for ~15 s. Instead a thread decrypts in file order,
 //! about 15× faster than real time, and a read only waits for a sample it starts
-//! inside of. A read that reaches an encrypted sample further on stops short of
+//! inside of. It keeps only [`AHEAD`] in front of the reader: the one CDM is
+//! shared, and a track decrypting to its end would keep the next one waiting
+//! for its licence. A read that reaches an encrypted sample further on stops short of
 //! it: the box headers between samples are clear, so a demuxer walking fragment
 //! headers to seek never waits for audio it is about to skip. Either way the
 //! thread moves to where the reader is. CENC keeps sizes and every sample
@@ -50,11 +52,20 @@ struct State {
     /// Samples ending before this offset may be read undecrypted: a seek is
     /// walking past them.
     skippable_before: usize,
+    /// The first sample at or after where the reader is.
+    reading: usize,
 }
 
 /// How far before a seek target bytes still have to be decrypted, to cover the
 /// difference between the estimated and the actual landing point.
 const SEEK_MARGIN: Duration = Duration::from_secs(2);
+
+/// How much audio is decrypted ahead of the reader: at 15× real time, far more
+/// than the player ever waits for.
+const AHEAD: Duration = Duration::from_secs(30);
+
+/// How long the decrypt thread waits for the reader before looking again.
+const NAP: Duration = Duration::from_millis(250);
 
 impl AudioStream {
     /// A track with nothing to decrypt: the user's own upload.
@@ -72,6 +83,7 @@ impl AudioStream {
                 failed: None,
                 abandoned: false,
                 skippable_before: 0,
+                reading: 0,
             }),
             changed: Condvar::new(),
             samples,
@@ -122,21 +134,46 @@ impl Shared {
     }
 
     fn decrypt_all(&self, mut decrypt: Decrypt) {
+        let ahead = if self.sample_duration.is_zero() {
+            self.samples.len()
+        } else {
+            (AHEAD.as_secs_f64() / self.sample_duration.as_secs_f64()).ceil() as usize
+        };
         let mut next = 0;
         loop {
             // Copy the ciphertext out so the lock isn't held across the CDM call.
             let (index, ciphertext) = {
                 let mut state = self.lock();
-                if state.abandoned {
-                    return;
-                }
-                if let Some(wanted) = state.wanted.take() {
-                    next = wanted;
+                loop {
+                    if state.abandoned {
+                        return;
+                    }
+                    if let Some(wanted) = state.wanted.take() {
+                        next = wanted;
+                    }
+                    // What a reader waits on comes first; then on from it, up
+                    // to the window ahead of the reader.
+                    let n = self.samples.len();
+                    let found = (next..n).find(|&i| !state.decrypted[i]);
+                    let limit = state.reading.saturating_add(ahead);
+                    match found {
+                        Some(index) if index <= limit => break,
+                        _ if state.decrypted.iter().all(|&d| d) => return,
+                        _ => {
+                            // Ahead enough, or done from here: wait for the reader.
+                            next = next.min(state.reading);
+                            state = self
+                                .changed
+                                .wait_timeout(state, NAP)
+                                .unwrap_or_else(|e| e.into_inner())
+                                .0;
+                        }
+                    }
                 }
                 let n = self.samples.len();
-                let Some(index) = (next..n).chain(0..next).find(|&i| !state.decrypted[i]) else {
-                    return;
-                };
+                let index = (next..n)
+                    .find(|&i| !state.decrypted[i])
+                    .expect("found above");
                 let s = &self.samples[index];
                 (index, state.data[s.start..s.end()].to_vec())
             };
@@ -180,6 +217,7 @@ impl Shared {
         // The demuxer resumes at a fragment start; nothing before this one is decoded.
         state.skippable_before = self.samples[index].fragment;
         state.wanted = Some(index);
+        state.reading = index;
         drop(state);
         self.changed.notify_all();
     }
@@ -203,6 +241,13 @@ impl Read for AudioStream {
         let mut end = (start + buf.len()).min(self.len as usize);
 
         let mut state = self.shared.lock();
+        // The window ahead starts where this read does, even one far from the
+        // last, so the sample it may wait on is inside it.
+        let reading = self.shared.samples.partition_point(|s| s.end() <= start);
+        if reading != state.reading {
+            state.reading = reading;
+            self.shared.changed.notify_all();
+        }
         loop {
             if let Some(e) = &state.failed {
                 return Err(io::Error::other(format!("decryption failed: {e}")));
@@ -227,6 +272,16 @@ impl Read for AudioStream {
         let n = end - start;
         buf[..n].copy_from_slice(&state.data[start..end]);
         self.pos += n as u64;
+        // Where the window ahead starts, for the decrypt thread.
+        let reading = self
+            .shared
+            .samples
+            .partition_point(|s| s.end() <= self.pos as usize);
+        if reading != state.reading {
+            state.reading = reading;
+            drop(state);
+            self.shared.changed.notify_all();
+        }
         Ok(n)
     }
 }
@@ -247,6 +302,7 @@ impl Seek for AudioStream {
 impl Drop for AudioStream {
     fn drop(&mut self) {
         self.shared.lock().abandoned = true;
+        self.shared.changed.notify_all();
     }
 }
 
@@ -308,6 +364,57 @@ mod tests {
         let mut buf = [0u8; 100];
         let n = stream.read(&mut buf).unwrap();
         assert_eq!(&buf[..n], &clear[210..210 + n]);
+    }
+
+    #[test]
+    fn decryption_keeps_to_a_window_ahead_of_the_reader() {
+        let count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counted = count.clone();
+        let decrypt: Decrypt = Box::new(move |c, _| {
+            counted.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            Ok(c.to_vec())
+        });
+        // 100 one-second samples: the window is the first 30 s and the next.
+        let samples: Vec<EncryptedSample> = (0..100)
+            .map(|i| EncryptedSample {
+                fragment: i * 10,
+                start: i * 10,
+                len: 10,
+                iv: [0; 16],
+                subs: vec![],
+            })
+            .collect();
+        let stream =
+            AudioStream::decrypting(vec![0; 1000], samples, Duration::from_secs(1), decrypt);
+        std::thread::sleep(Duration::from_millis(200));
+        assert_eq!(count.load(std::sync::atomic::Ordering::Relaxed), 31);
+        drop(stream);
+    }
+
+    #[test]
+    fn a_read_far_past_the_window_still_gets_its_sample() {
+        let samples: Vec<EncryptedSample> = (0..100)
+            .map(|i| EncryptedSample {
+                fragment: i * 10,
+                start: i * 10,
+                len: 10,
+                iv: [0; 16],
+                subs: vec![],
+            })
+            .collect();
+        let data: Vec<u8> = (0..1000).map(|i| (i % 251) as u8 ^ 0xFF).collect();
+        let mut stream = AudioStream::decrypting(data, samples, Duration::from_secs(1), xor());
+        let (done, finished) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            stream.seek(SeekFrom::Start(905)).unwrap();
+            let mut buf = [0u8; 5];
+            let n = stream.read(&mut buf).unwrap();
+            done.send((n, buf[0])).unwrap();
+        });
+        let (n, first) = finished
+            .recv_timeout(Duration::from_secs(2))
+            .expect("the read came back");
+        assert_eq!((n, first), (5, (905 % 251) as u8));
     }
 
     #[test]

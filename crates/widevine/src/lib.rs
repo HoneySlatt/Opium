@@ -10,6 +10,7 @@
 use std::ffi::CString;
 use std::os::raw::{c_char, c_int};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Mutex, MutexGuard};
 
 /// Widevine's DRM system id, `edef8ba9-79d6-4ace-a3c8-27dcd51d21ed`.
@@ -96,6 +97,30 @@ fn call_lock() -> MutexGuard<'static, ()> {
     CALL_LOCK.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+/// Calls other than decrypts waiting for the lock. A track decrypting would
+/// otherwise take it back the moment it lets go, sample after sample, and the
+/// licence of the track the user just picked would wait behind it.
+static URGENT: AtomicUsize = AtomicUsize::new(0);
+
+/// The lock for a session's opening, licence or closing: ahead of decrypts.
+fn urgent_lock() -> MutexGuard<'static, ()> {
+    URGENT.fetch_add(1, Ordering::AcqRel);
+    let guard = call_lock();
+    URGENT.fetch_sub(1, Ordering::AcqRel);
+    guard
+}
+
+/// The lock for one decrypt, once no other call is waiting for it.
+fn decrypt_lock() -> MutexGuard<'static, ()> {
+    // A licence takes a few milliseconds of CDM time; give up waiting long
+    // after, in case one hangs.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(200);
+    while URGENT.load(Ordering::Acquire) > 0 && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_micros(200));
+    }
+    call_lock()
+}
+
 /// Call before the process exits. The CDM's own destructors run at exit, and a
 /// thread still closing a session meanwhile crashes inside it; this takes the
 /// call lock for good, so such threads wait on it instead.
@@ -121,7 +146,7 @@ impl Cdm {
     pub fn open(path: &Path) -> Result<Self> {
         let c = CString::new(path.as_os_str().as_encoded_bytes())
             .map_err(|_| Error::Load(path.to_owned()))?;
-        let _guard = call_lock();
+        let _guard = urgent_lock();
         match unsafe { wv_open(c.as_ptr()) } {
             0 => Ok(Self(())),
             1 => Err(Error::Load(path.to_owned())),
@@ -142,7 +167,7 @@ impl Cdm {
         let mut msg_type = 0u32;
         let mut sid = std::ptr::null_mut();
         let mut sid_len = 0u32;
-        let _guard = call_lock();
+        let _guard = urgent_lock();
         let rc = unsafe {
             wv_challenge(
                 pssh.as_ptr(),
@@ -181,7 +206,7 @@ pub struct Session {
 impl Session {
     /// Load the licence server's response, giving the CDM the content keys.
     pub fn update(&self, license: &[u8]) -> Result<()> {
-        let _guard = call_lock();
+        let _guard = urgent_lock();
         match unsafe {
             wv_update(
                 self.id.as_ptr(),
@@ -209,7 +234,7 @@ impl Session {
         let subs: Vec<u32> = subsamples.iter().flat_map(|&(c, e)| [c, e]).collect();
         let mut out = std::ptr::null_mut();
         let mut len = 0u32;
-        let _guard = call_lock();
+        let _guard = decrypt_lock();
         let rc = unsafe {
             wv_decrypt(
                 data.as_ptr(),
@@ -247,7 +272,7 @@ impl Session {
         let subs: Vec<u32> = subsamples.iter().flat_map(|&(c, e)| [c, e]).collect();
         let mut out = std::ptr::null_mut();
         let mut len = 0u32;
-        let _guard = call_lock();
+        let _guard = decrypt_lock();
         let rc = unsafe {
             wv_decrypt_scheme(
                 data.as_ptr(),
@@ -275,7 +300,7 @@ impl Session {
 
 impl Drop for Session {
     fn drop(&mut self) {
-        let _guard = call_lock();
+        let _guard = urgent_lock();
         unsafe { wv_close(self.id.as_ptr(), self.id.len() as u32) };
     }
 }
