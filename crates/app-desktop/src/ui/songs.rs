@@ -111,72 +111,9 @@ fn header(app: &mut App, ui: &mut Ui, theme: &Theme, top: f32, left: f32, width:
     );
 
     // Source filter, right-aligned.
-    let chips: [(Option<ProviderKind>, Option<Icon>, &str); 4] = [
-        (None, None, "All"),
-        (
-            Some(ProviderKind::AppleMusic),
-            Some(icons::AM),
-            "Apple Music",
-        ),
-        (
-            Some(ProviderKind::SoundCloud),
-            Some(icons::CLOUD),
-            "SoundCloud",
-        ),
-        (
-            Some(ProviderKind::Navidrome),
-            Some(icons::SERVER),
-            "Navidrome",
-        ),
-    ];
-    let font_chip = font(13.0, Weight::Regular);
-    let widths: Vec<f32> = chips
-        .iter()
-        .map(|(_, icon, label)| {
-            text(ui, label, font_chip.clone(), theme.text, 300.0)
-                .size()
-                .x
-                + 24.0
-                + if icon.is_some() { 19.0 } else { 0.0 }
-        })
-        .collect();
-    let mut x = left + width - widths.iter().sum::<f32>() - 6.0 * (chips.len() - 1) as f32;
-    for ((source, icon, label), w) in chips.into_iter().zip(widths) {
-        let rect = Rect::from_min_size(pos2(x, top + 73.0), vec2(w, 28.0));
-        x += w + 6.0;
-        let response = ui.interact(rect, Id::unique(("source-filter", label)), Sense::click());
-        let on = app.songs_view.source == source;
-        let (fill, fg, border) = if on {
-            (Some(theme.text), theme.base, theme.text)
-        } else if response.hovered() {
-            (Some(theme.hover()), theme.text, theme.line())
-        } else {
-            (None, theme.subtext0, theme.line())
-        };
-        if let Some(fill) = fill {
-            ui.painter().rect_filled(rect, 14.0, fill);
-        }
-        ui.painter().rect_stroke(
-            rect,
-            14.0,
-            Stroke::new(1.0, border),
-            egui::StrokeKind::Inside,
-        );
-        let mut cx = rect.left() + 12.0;
-        if let Some(icon) = icon {
-            let icon_color = if on { theme.base } else { theme.muted() };
-            paint_icon(ui, icon, pos2(cx + 6.5, rect.center().y), 13.0, icon_color);
-            cx += 19.0;
-        }
-        let galley = text(ui, label, font_chip.clone(), fg, 300.0);
-        paint_text(ui, galley, cx, rect.center().y, egui::Align::Min, fg);
-        if response
-            .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .clicked()
-        {
-            app.songs_view.source = source;
-            app.songs_view.selected = None;
-        }
+    if let Some(source) = source_chips(ui, theme, left + width, top + 73.0, app.songs_view.source) {
+        app.songs_view.source = source;
+        app.songs_view.selected = None;
     }
 
     // Play and Shuffle.
@@ -267,4 +204,83 @@ fn rebuild_order(app: &mut App) {
         view.selected = None;
     }
     view.order = order;
+}
+
+/// The source filter chips (All · Apple Music · SoundCloud · Navidrome), ending
+/// at `right`. Returns the source clicked.
+pub(super) fn source_chips(
+    ui: &Ui,
+    theme: &Theme,
+    right: f32,
+    top: f32,
+    current: Option<ProviderKind>,
+) -> Option<Option<ProviderKind>> {
+    let mut clicked = None;
+    let chips: [(Option<ProviderKind>, Option<Icon>, &str); 4] = [
+        (None, None, "All"),
+        (
+            Some(ProviderKind::AppleMusic),
+            Some(icons::AM),
+            "Apple Music",
+        ),
+        (
+            Some(ProviderKind::SoundCloud),
+            Some(icons::CLOUD),
+            "SoundCloud",
+        ),
+        (
+            Some(ProviderKind::Navidrome),
+            Some(icons::SERVER),
+            "Navidrome",
+        ),
+    ];
+    let font_chip = font(13.0, Weight::Regular);
+    let widths: Vec<f32> = chips
+        .iter()
+        .map(|(_, icon, label)| {
+            text(ui, label, font_chip.clone(), theme.text, 300.0)
+                .size()
+                .x
+                + 24.0
+                + if icon.is_some() { 19.0 } else { 0.0 }
+        })
+        .collect();
+    let mut x = right - widths.iter().sum::<f32>() - 6.0 * (chips.len() - 1) as f32;
+    for ((source, icon, label), w) in chips.into_iter().zip(widths) {
+        let rect = Rect::from_min_size(pos2(x, top), vec2(w, 28.0));
+        x += w + 6.0;
+        let response = ui.interact(rect, Id::unique(("source-filter", label)), Sense::click());
+        let on = current == source;
+        let (fill, fg, border) = if on {
+            (Some(theme.text), theme.base, theme.text)
+        } else if response.hovered() {
+            (Some(theme.hover()), theme.text, theme.line())
+        } else {
+            (None, theme.subtext0, theme.line())
+        };
+        if let Some(fill) = fill {
+            ui.painter().rect_filled(rect, 14.0, fill);
+        }
+        ui.painter().rect_stroke(
+            rect,
+            14.0,
+            Stroke::new(1.0, border),
+            egui::StrokeKind::Inside,
+        );
+        let mut cx = rect.left() + 12.0;
+        if let Some(icon) = icon {
+            let icon_color = if on { theme.base } else { theme.muted() };
+            paint_icon(ui, icon, pos2(cx + 6.5, rect.center().y), 13.0, icon_color);
+            cx += 19.0;
+        }
+        let galley = text(ui, label, font_chip.clone(), fg, 300.0);
+        paint_text(ui, galley, cx, rect.center().y, egui::Align::Min, fg);
+        if response
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .clicked()
+        {
+            clicked = Some(source);
+        }
+    }
+    clicked
 }

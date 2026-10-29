@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::sync::mpsc;
 
 use apple_music::{AppleMusic, AudioStream};
-use music_core::model::{Album, Cursor, ItemId, Lyrics, Playlist, Track};
+use music_core::model::{Album, Cursor, ItemId, Lyrics, Playlist, SearchResults, Track};
 use music_core::{Error, Provider};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
@@ -23,6 +23,8 @@ pub enum Request {
     Palette(String),
     /// A track's lyrics.
     Lyrics(ItemId),
+    /// Songs, albums, artists and playlists matching a query.
+    Search(String),
 }
 
 pub enum Reply {
@@ -54,6 +56,10 @@ pub enum Reply {
     Lyrics {
         id: ItemId,
         result: Result<Option<Lyrics>, String>,
+    },
+    Search {
+        query: String,
+        result: Result<SearchResults, String>,
     },
 }
 
@@ -168,6 +174,12 @@ async fn run(mut requests: UnboundedReceiver<Request>, replies: Replies) {
                 tokio::spawn(async move {
                     let result = am.lyrics(&id).await.map_err(|e| e.to_string());
                     replies.send(Reply::Lyrics { id, result });
+                });
+            }
+            Request::Search(query) => {
+                tokio::spawn(async move {
+                    let result = am.search(&query).await.map_err(|e| e.to_string());
+                    replies.send(Reply::Search { query, result });
                 });
             }
             Request::Library => {

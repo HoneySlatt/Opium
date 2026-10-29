@@ -5,6 +5,7 @@ mod drawer;
 mod lyrics;
 mod now_playing;
 mod player_bar;
+mod search;
 mod sidebar;
 mod signal;
 mod songs;
@@ -90,6 +91,7 @@ fn page(app: &mut App, ui: &mut Ui, narrow: bool) -> f32 {
         Page::Songs => songs::show(app, ui, pad),
         Page::Album(id) => detail::album(app, ui, pad, &id),
         Page::Playlist(id) => detail::playlist(app, ui, pad, &id),
+        Page::Search(query) => search::show(app, ui, pad, &query),
         _ => placeholder(app, ui, pad),
     }
 }

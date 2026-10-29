@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use music_core::model::{Album, ItemId, Lyrics, Playlist, ProviderKind, Track};
+use music_core::model::{Album, ItemId, Lyrics, Playlist, ProviderKind, SearchResults, Track};
 use music_core::{Queue, Repeat};
 use player::{Event, Player, Status, Token};
 
@@ -26,6 +26,7 @@ pub enum Page {
     Favourites,
     Playlist(ItemId),
     Album(ItemId),
+    Search(String),
     Settings,
 }
 
@@ -121,6 +122,9 @@ pub struct SongsView {
 /// What `SongsView::order` was built from: the song count, sort and filter.
 pub type OrderKey = (usize, Option<(SortKey, bool)>, Option<ProviderKind>);
 
+/// How long typing pauses before the search runs, in seconds.
+const SEARCH_PAUSE: f64 = 0.16;
+
 pub struct App {
     pub theme: Theme,
     backend: Backend,
@@ -131,6 +135,14 @@ pub struct App {
     forward: Vec<Page>,
     pub sidebar_collapsed: bool,
     pub search: String,
+    /// When the search field last changed, to search once typing pauses.
+    pub search_edited: Option<f64>,
+    /// Put the cursor in the search field on the next frame.
+    pub focus_search: bool,
+    pub searches: HashMap<String, Loaded<Arc<SearchResults>>>,
+    pub search_source: Option<ProviderKind>,
+    /// Playlists opened from outside the library (search results).
+    other_playlists: HashMap<ItemId, Playlist>,
     pub songs: Vec<Track>,
     pub songs_done: bool,
     pub songs_view: SongsView,
@@ -192,6 +204,11 @@ impl App {
             forward: Vec::new(),
             sidebar_collapsed: false,
             search: String::new(),
+            search_edited: None,
+            focus_search: false,
+            searches: HashMap::new(),
+            search_source: None,
+            other_playlists: HashMap::new(),
             songs: Vec::new(),
             songs_done: false,
             // Apple returns the library in no useful order; the Music app sorts by title.
@@ -250,6 +267,10 @@ impl App {
                 self.albums.insert(id.clone(), Loaded::Loading);
                 self.backend.send(Request::Album(id.clone()));
             }
+            Page::Search(query) if !self.searches.contains_key(query) => {
+                self.searches.insert(query.clone(), Loaded::Loading);
+                self.backend.send(Request::Search(query.clone()));
+            }
             Page::Playlist(id) if !self.playlist_tracks.contains_key(id) => {
                 self.playlist_tracks
                     .insert(id.clone(), PlaylistTracks::default());
@@ -260,7 +281,38 @@ impl App {
     }
 
     pub fn playlist(&self, id: &ItemId) -> Option<&Playlist> {
-        self.playlists.iter().find(|p| &p.id == id)
+        self.playlists
+            .iter()
+            .find(|p| &p.id == id)
+            .or_else(|| self.other_playlists.get(id))
+    }
+
+    /// Open a playlist that is not in the library.
+    pub fn open_playlist(&mut self, playlist: &Playlist) {
+        self.other_playlists
+            .entry(playlist.id.clone())
+            .or_insert_with(|| playlist.clone());
+        self.go(Page::Playlist(playlist.id.clone()));
+    }
+
+    /// Search for what the field holds: a new page, or the search page
+    /// updated in place while typing.
+    pub fn submit_search(&mut self) {
+        self.search_edited = None;
+        let query = self.search.trim().to_owned();
+        if query.is_empty() {
+            return;
+        }
+        // A search that failed is tried again.
+        if matches!(self.searches.get(&query), Some(Loaded::Failed(_))) {
+            self.searches.remove(&query);
+        }
+        if matches!(self.page, Page::Search(_)) {
+            self.page = Page::Search(query);
+            self.arrived();
+        } else {
+            self.go(Page::Search(query));
+        }
     }
 
     /// The cover colours for `url`, fetched on first ask.
@@ -344,6 +396,7 @@ impl App {
                 Some(Loaded::Ready((album, _))) => album.title.clone(),
                 _ => String::new(),
             },
+            Page::Search(_) => "Search".into(),
             Page::Settings => "Settings".into(),
         }
     }
@@ -552,6 +605,13 @@ impl App {
                     };
                     self.lyrics.insert(id, loaded);
                 }
+                Reply::Search { query, result } => {
+                    let loaded = match result {
+                        Ok(results) => Loaded::Ready(Arc::new(results)),
+                        Err(e) => Loaded::Failed(e),
+                    };
+                    self.searches.insert(query, loaded);
+                }
                 Reply::Fetched { token, result } => match result {
                     Ok(stream) if self.pending_play == Some(token) => {
                         self.pending_play = None;
@@ -656,6 +716,14 @@ impl eframe::App for App {
         }
         let now = ui.input(|i| i.time);
         self.pump(now);
+        if let Some(edited) = self.search_edited {
+            if now - edited >= SEARCH_PAUSE {
+                self.submit_search();
+            } else {
+                ui.ctx()
+                    .request_repaint_after(Duration::from_secs_f64(SEARCH_PAUSE));
+            }
+        }
         ui::show(self, ui);
         if let Some(page) = self
             .screenshot

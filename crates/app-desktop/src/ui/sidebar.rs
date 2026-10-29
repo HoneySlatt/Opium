@@ -1,6 +1,6 @@
 //! The sidebar: search, navigation, library, playlists and the account row.
 
-use egui::{Rect, Sense, Stroke, Ui, pos2, vec2};
+use egui::{Id, Rect, Sense, Stroke, Ui, pos2, vec2};
 
 use crate::app::{App, Connection, Page};
 use crate::color::{alpha, mix};
@@ -84,6 +84,16 @@ fn search(app: &mut App, ui: &mut Ui, theme: &Theme, full: Rect, collapsed: bool
     );
     if collapsed {
         paint_icon(ui, icons::SEARCH, rect.center(), 14.0, theme.muted());
+        // A click opens the sidebar on the field.
+        if ui
+            .interact(rect, Id::unique("search-collapsed"), Sense::click())
+            .on_hover_text("Search")
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .clicked()
+        {
+            app.sidebar_collapsed = false;
+            app.focus_search = true;
+        }
         return;
     }
     paint_icon(
@@ -104,7 +114,7 @@ fn search(app: &mut App, ui: &mut Ui, theme: &Theme, full: Rect, collapsed: bool
         pos2(rect.right() - 30.0, rect.center().y + line / 2.0),
     );
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(field));
-    child.add(
+    let response = child.add(
         egui::TextEdit::singleline(&mut app.search)
             .hint_text(egui::RichText::new("Search").color(theme.muted()))
             .font(body)
@@ -112,6 +122,15 @@ fn search(app: &mut App, ui: &mut Ui, theme: &Theme, full: Rect, collapsed: bool
             .margin(egui::Margin::ZERO)
             .desired_width(field.width()),
     );
+    if std::mem::take(&mut app.focus_search) {
+        response.request_focus();
+    }
+    if response.changed() {
+        app.search_edited = Some(ui.input(|i| i.time));
+    }
+    if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+        app.submit_search();
+    }
 }
 
 fn section(ui: &mut Ui, theme: &Theme, label: &str, icon: Icon, collapsed: bool) {
