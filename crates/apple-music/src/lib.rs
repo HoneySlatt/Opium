@@ -17,7 +17,8 @@ pub use stream::AudioStream;
 
 use async_trait::async_trait;
 use music_core::model::{
-    Album, ArtistDetail, Cursor, ItemId, Lyrics, Page, Playlist, ProviderKind, SearchResults, Track,
+    Album, Artist, ArtistDetail, Cursor, ItemId, LibraryItem, Lyrics, Page, Playlist, ProviderKind,
+    SearchResults, Track,
 };
 use music_core::{Error, Provider, Result};
 use serde::de::DeserializeOwned;
@@ -27,6 +28,8 @@ const WEB_PLAYER: &str = "https://music.apple.com";
 const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
 /// The largest page the library and catalog endpoints accept.
 const PAGE: u32 = 100;
+/// Recently Added answers at most 25 at a time.
+const RECENT_PAGE: u32 = 25;
 /// Search caps each result type at 25.
 const SEARCH_LIMIT: u32 = 25;
 
@@ -215,6 +218,20 @@ impl Provider for AppleMusic {
         self.page(&first, cursor, convert::playlist).await
     }
 
+    async fn library_artists(&self, cursor: Option<&Cursor>) -> Result<Page<Artist>> {
+        let first = format!("/v1/me/library/artists?limit={PAGE}&include=catalog");
+        self.page(&first, cursor, convert::library_artist).await
+    }
+
+    async fn recently_added(&self, cursor: Option<&Cursor>) -> Result<Page<LibraryItem>> {
+        let first = format!("/v1/me/library/recently-added?limit={RECENT_PAGE}");
+        let page = self.page(&first, cursor, convert::library_item).await?;
+        Ok(Page {
+            items: page.items.into_iter().flatten().collect(),
+            next: page.next,
+        })
+    }
+
     async fn album(&self, album: &ItemId) -> Result<Album> {
         let path = if album.id.starts_with("l.") {
             format!("/v1/me/library/albums/{}", album.id)
@@ -304,6 +321,7 @@ impl Provider for AppleMusic {
         Ok(ArtistDetail {
             artist: convert::artist(types::Artist {
                 id: found.id,
+                kind: String::new(),
                 attributes: found.attributes,
                 relationships: None,
             }),

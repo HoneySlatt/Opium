@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use egui::{Id, Rect, Sense, Stroke, Ui, pos2, vec2};
+use egui::{Id, Rect, Sense, Ui, pos2, vec2};
 use music_core::model::{Artwork, ItemId, ProviderKind, SearchResults, Track};
 
 use crate::app::{App, Loaded, Page, SearchScope};
@@ -12,6 +12,7 @@ use crate::fonts::{Weight, font};
 use crate::icons;
 use crate::theme::Theme;
 
+use super::grid::{CoverCard, cover_card};
 use super::songs::source_chips;
 use super::tracks::{self, Columns, RowAction, RowState};
 use super::{artwork, glow, icon_button, paint_text, text};
@@ -524,57 +525,14 @@ fn shelf(
             continue;
         }
         let art = Rect::from_min_size(pos2(x, row.top()), vec2(CARD, CARD));
-        let url = card.art.as_ref().map(|a| a.url(376));
-        if cover_card(&row_ui, theme, art, url, &card.title, &card.sub, id.with(i)) {
+        let cover = CoverCard {
+            url: card.art.as_ref().map(|a| a.url(376)),
+            title: &card.title,
+            sub: &card.sub,
+            round: false,
+        };
+        if cover_card(&row_ui, theme, art, &cover, id.with(i)) {
             open(app, card.open.clone(), query);
         }
     }
-}
-
-/// A cover with its title and a muted line under it; `art` is the cover's
-/// square. Returns whether it was clicked.
-pub(super) fn cover_card(
-    ui: &Ui,
-    theme: &Theme,
-    art: Rect,
-    url: Option<String>,
-    title: &str,
-    sub: &str,
-    id: Id,
-) -> bool {
-    let response = ui.interact(art, id, Sense::click());
-    artwork(ui, url, art, 8.0, theme);
-    if response.hovered() {
-        ui.painter()
-            .rect_filled(art, 8.0, egui::Color32::from_black_alpha(40));
-    }
-    ui.painter().rect_stroke(
-        art,
-        8.0,
-        Stroke::new(1.0, theme.line()),
-        egui::StrokeKind::Inside,
-    );
-    let width = art.width();
-    let g = text(ui, title, font(13.0, Weight::Medium), theme.text, width);
-    paint_text(
-        ui,
-        g,
-        art.left(),
-        art.bottom() + 17.0,
-        egui::Align::Min,
-        theme.text,
-    );
-    let muted = theme.muted();
-    let g = text(ui, sub, font(12.0, Weight::Regular), muted, width);
-    paint_text(
-        ui,
-        g,
-        art.left(),
-        art.bottom() + 34.0,
-        egui::Align::Min,
-        muted,
-    );
-    response
-        .on_hover_cursor(egui::CursorIcon::PointingHand)
-        .clicked()
 }

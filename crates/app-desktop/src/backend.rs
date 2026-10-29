@@ -7,7 +7,8 @@ use std::sync::mpsc;
 
 use apple_music::{AppleMusic, AudioStream};
 use music_core::model::{
-    Album, ArtistDetail, Cursor, ItemId, Lyrics, Playlist, SearchResults, Track,
+    Album, Artist, ArtistDetail, Cursor, ItemId, LibraryItem, Lyrics, Page, Playlist,
+    SearchResults, Track,
 };
 use music_core::{Error, Provider};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -17,6 +18,12 @@ use crate::app::SearchScope;
 pub enum Request {
     /// The library songs and playlists, page by page.
     Library,
+    /// The library albums, page by page.
+    LibraryAlbums,
+    /// The library artists, page by page.
+    LibraryArtists,
+    /// What was added to the library lately.
+    RecentlyAdded,
     /// A track's audio, ready to hand to the player.
     Fetch { token: player::Token, track: ItemId },
     /// An album and its tracks.
@@ -43,6 +50,18 @@ pub enum Reply {
         done: bool,
     },
     Playlists(Vec<Playlist>),
+    LibraryAlbums {
+        albums: Vec<Album>,
+        done: bool,
+    },
+    LibraryArtists {
+        artists: Vec<Artist>,
+        done: bool,
+    },
+    RecentlyAdded {
+        items: Vec<LibraryItem>,
+        done: bool,
+    },
     Fetched {
         token: player::Token,
         result: Result<AudioStream, String>,
@@ -208,6 +227,39 @@ async fn run(mut requests: UnboundedReceiver<Request>, replies: Replies) {
                     });
                 });
             }
+            Request::LibraryAlbums => {
+                tokio::spawn(stream(
+                    move |cursor| {
+                        let am = am.clone();
+                        async move { am.library_albums(cursor.as_ref()).await }
+                    },
+                    |albums, done| Reply::LibraryAlbums { albums, done },
+                    usize::MAX,
+                    replies,
+                ));
+            }
+            Request::LibraryArtists => {
+                tokio::spawn(stream(
+                    move |cursor| {
+                        let am = am.clone();
+                        async move { am.library_artists(cursor.as_ref()).await }
+                    },
+                    |artists, done| Reply::LibraryArtists { artists, done },
+                    usize::MAX,
+                    replies,
+                ));
+            }
+            Request::RecentlyAdded => {
+                tokio::spawn(stream(
+                    move |cursor| {
+                        let am = am.clone();
+                        async move { am.recently_added(cursor.as_ref()).await }
+                    },
+                    |items, done| Reply::RecentlyAdded { items, done },
+                    RECENT_LIMIT,
+                    replies,
+                ));
+            }
             Request::Library => {
                 tokio::spawn(load_library(am, replies));
             }
@@ -223,6 +275,42 @@ async fn run(mut requests: UnboundedReceiver<Request>, replies: Replies) {
                     };
                     replies.send(Reply::Fetched { token, result });
                 });
+            }
+        }
+    }
+}
+
+/// How far back Recently Added goes.
+const RECENT_LIMIT: usize = 200;
+
+/// Send a list page by page as it arrives, stopping after `limit` items. A
+/// failure ends the list and shows as a toast.
+async fn stream<T, F, Fut>(
+    mut fetch: F,
+    reply: fn(Vec<T>, bool) -> Reply,
+    limit: usize,
+    replies: Replies,
+) where
+    F: FnMut(Option<Cursor>) -> Fut,
+    Fut: std::future::Future<Output = music_core::Result<Page<T>>>,
+{
+    let mut cursor = None;
+    let mut sent = 0;
+    loop {
+        match fetch(cursor.take()).await {
+            Ok(page) => {
+                sent += page.items.len();
+                let done = page.next.is_none() || sent >= limit;
+                replies.send(reply(page.items, done));
+                if done {
+                    return;
+                }
+                cursor = page.next;
+            }
+            Err(e) => {
+                replies.send(reply(Vec::new(), true));
+                replies.send(Reply::Failed(e.to_string()));
+                return;
             }
         }
     }

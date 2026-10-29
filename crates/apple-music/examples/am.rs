@@ -124,6 +124,21 @@ async fn library(am: &AppleMusic) -> Result<(), Box<dyn std::error::Error>> {
         let tracks = am.playlist_tracks(&playlist.id, None).await?;
         println!("  tracks of « {} »: {}", playlist.name, tracks.items.len());
     }
+
+    let artists = am.library_artists(None).await?;
+    println!("\nartists (first page: {})", artists.items.len());
+    for a in artists.items.iter().take(5) {
+        println!("  {} [{}] photo: {}", a.name, a.id.id, a.artwork.is_some());
+    }
+
+    let recent = am.recently_added(None).await?;
+    println!("\nrecently added (first page: {})", recent.items.len());
+    for item in recent.items.iter().take(5) {
+        match item {
+            music_core::model::LibraryItem::Album(a) => println!("  [album] {}", a.title),
+            music_core::model::LibraryItem::Playlist(p) => println!("  [playlist] {}", p.name),
+        }
+    }
     Ok(())
 }
 

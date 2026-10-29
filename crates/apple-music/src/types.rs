@@ -11,6 +11,9 @@ pub struct Response<T> {
 #[derive(Debug, Deserialize)]
 pub struct Resource<A> {
     pub id: String,
+    /// `songs`, `library-albums`…; read where one list mixes kinds.
+    #[serde(rename = "type", default)]
+    pub kind: String,
     pub attributes: Option<A>,
     /// Present when the request asked for them with `include=`.
     pub relationships: Option<Relationships>,
@@ -34,6 +37,14 @@ pub struct Related {
 #[derive(Debug, Deserialize)]
 pub struct RelatedRef {
     pub id: String,
+    /// Present when the request asked for the related items with `include=`.
+    pub attributes: Option<RelatedAttributes>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct RelatedAttributes {
+    pub artwork: Option<Artwork>,
 }
 
 #[derive(Debug, Deserialize)]

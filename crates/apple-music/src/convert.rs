@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use music_core::model::{
-    Album, Artist, Artwork, AudioQuality, Codec, ItemId, Playlist, ProviderKind, Track,
+    Album, Artist, Artwork, AudioQuality, Codec, ItemId, LibraryItem, Playlist, ProviderKind, Track,
 };
 
 use crate::types;
@@ -103,6 +103,46 @@ pub fn playlist(playlist: types::Playlist) -> Playlist {
         name: attrs.name,
         description: attrs.description.and_then(|d| d.standard),
         track_count: None,
+    }
+}
+
+/// A library artist fetched with `include=catalog`: the catalog artist's id and
+/// photo, so the artist page needs no extra lookup.
+pub fn library_artist(artist: types::Artist) -> Artist {
+    let catalog = artist
+        .relationships
+        .as_ref()
+        .and_then(|r| r.catalog.as_ref())
+        .and_then(|c| c.data.first());
+    let artwork = artwork(
+        catalog
+            .and_then(|c| c.attributes.as_ref())
+            .and_then(|a| a.artwork.as_ref()),
+    );
+    let id = id(catalog.map_or_else(|| artist.id.clone(), |c| c.id.clone()));
+    Artist {
+        id,
+        artwork,
+        name: artist.attributes.unwrap_or_default().name,
+    }
+}
+
+/// An entry of Recently Added; stations and anything else are skipped.
+pub fn library_item(item: types::Resource<serde_json::Value>) -> Option<LibraryItem> {
+    fn typed<A: serde::de::DeserializeOwned>(
+        item: types::Resource<serde_json::Value>,
+    ) -> types::Resource<A> {
+        types::Resource {
+            id: item.id,
+            kind: item.kind,
+            attributes: item.attributes.and_then(|v| serde_json::from_value(v).ok()),
+            relationships: item.relationships,
+        }
+    }
+    match item.kind.as_str() {
+        "albums" | "library-albums" => Some(LibraryItem::Album(album(typed(item)))),
+        "playlists" | "library-playlists" => Some(LibraryItem::Playlist(playlist(typed(item)))),
+        _ => None,
     }
 }
 

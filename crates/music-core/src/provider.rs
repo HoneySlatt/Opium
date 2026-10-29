@@ -1,7 +1,8 @@
 use async_trait::async_trait;
 
 use crate::model::{
-    Album, ArtistDetail, Cursor, ItemId, Lyrics, Page, Playlist, ProviderKind, SearchResults, Track,
+    Album, Artist, ArtistDetail, Cursor, ItemId, LibraryItem, Lyrics, Page, Playlist, ProviderKind,
+    SearchResults, Track,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -35,6 +36,11 @@ pub trait Provider: Send + Sync {
     async fn library_albums(&self, cursor: Option<&Cursor>) -> Result<Page<Album>>;
 
     async fn library_playlists(&self, cursor: Option<&Cursor>) -> Result<Page<Playlist>>;
+
+    async fn library_artists(&self, cursor: Option<&Cursor>) -> Result<Page<Artist>>;
+
+    /// Albums and playlists, most recently added first.
+    async fn recently_added(&self, cursor: Option<&Cursor>) -> Result<Page<LibraryItem>>;
 
     async fn album(&self, album: &ItemId) -> Result<Album>;
 

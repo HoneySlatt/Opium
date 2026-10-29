@@ -6,7 +6,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use music_core::model::{
-    Album, ArtistDetail, ItemId, Lyrics, Playlist, ProviderKind, SearchResults, Track,
+    Album, Artist, ArtistDetail, ItemId, LibraryItem, Lyrics, Playlist, ProviderKind,
+    SearchResults, Track,
 };
 use music_core::{Queue, Repeat};
 use player::{Event, Player, Status, Token};
@@ -31,6 +32,35 @@ pub enum Page {
     Artist(ItemId),
     Search(String),
     Settings,
+}
+
+/// A list that arrives page by page, fetched on first visit.
+pub struct Streamed<T> {
+    pub items: Vec<T>,
+    pub done: bool,
+    requested: bool,
+}
+
+impl<T> Default for Streamed<T> {
+    fn default() -> Self {
+        Self {
+            items: Vec::new(),
+            done: false,
+            requested: false,
+        }
+    }
+}
+
+impl<T> Streamed<T> {
+    /// Whether to ask for it now: true once.
+    fn first_ask(&mut self) -> bool {
+        !std::mem::replace(&mut self.requested, true)
+    }
+
+    fn extend(&mut self, items: Vec<T>, done: bool) {
+        self.items.extend(items);
+        self.done = done;
+    }
 }
 
 /// Something fetched on demand.
@@ -159,6 +189,11 @@ pub struct App {
     pub songs_done: bool,
     pub songs_view: SongsView,
     pub playlists: Vec<Playlist>,
+    pub library_albums: Streamed<Album>,
+    pub library_artists: Streamed<Artist>,
+    pub recently_added: Streamed<LibraryItem>,
+    /// The source filter on the cover grids.
+    pub grid_source: Option<ProviderKind>,
     pub albums: HashMap<ItemId, Loaded<AlbumPage>>,
     pub artists: HashMap<ItemId, Loaded<Arc<ArtistDetail>>>,
     pub playlist_tracks: HashMap<ItemId, PlaylistTracks>,
@@ -231,6 +266,10 @@ impl App {
                 ..SongsView::default()
             },
             playlists: Vec::new(),
+            library_albums: Streamed::default(),
+            library_artists: Streamed::default(),
+            recently_added: Streamed::default(),
+            grid_source: None,
             albums: HashMap::new(),
             artists: HashMap::new(),
             playlist_tracks: HashMap::new(),
@@ -281,6 +320,15 @@ impl App {
             Page::Album(id) if !self.albums.contains_key(id) => {
                 self.albums.insert(id.clone(), Loaded::Loading);
                 self.backend.send(Request::Album(id.clone()));
+            }
+            Page::Albums if self.library_albums.first_ask() => {
+                self.backend.send(Request::LibraryAlbums);
+            }
+            Page::Artists if self.library_artists.first_ask() => {
+                self.backend.send(Request::LibraryArtists);
+            }
+            Page::RecentlyAdded if self.recently_added.first_ask() => {
+                self.backend.send(Request::RecentlyAdded);
             }
             Page::Artist(id) if !self.artists.contains_key(id) => {
                 self.artists.insert(id.clone(), Loaded::Loading);
@@ -620,6 +668,11 @@ impl App {
                     self.songs_done = done;
                 }
                 Reply::Playlists(playlists) => self.playlists = playlists,
+                Reply::LibraryAlbums { albums, done } => self.library_albums.extend(albums, done),
+                Reply::LibraryArtists { artists, done } => {
+                    self.library_artists.extend(artists, done)
+                }
+                Reply::RecentlyAdded { items, done } => self.recently_added.extend(items, done),
                 Reply::Album { id, result } => {
                     let loaded = match result {
                         Ok((album, tracks)) => Loaded::Ready((album, Arc::new(tracks))),

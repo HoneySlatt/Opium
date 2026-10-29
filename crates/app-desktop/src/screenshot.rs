@@ -2,7 +2,7 @@
 //! [MUSIC_SCREENSHOT_PLAY=row]` saves the window once it has had time to load,
 //! then quits, optionally playing a Songs row first. `MUSIC_SCREENSHOT_PAGE`
 //! opens a page first: `playlist:<index>`, `album:<id>`, `artist:<id>` or
-//! `search:<query>`; `MUSIC_SCREENSHOT_DRAWER`
+//! `search:<query>`, or `page:albums|artists|recent`; `MUSIC_SCREENSHOT_DRAWER`
 //! opens the queue drawer. Only the app's own window is captured.
 
 use std::path::PathBuf;
@@ -57,6 +57,12 @@ impl Screenshot {
                 value,
             ))),
             "search" => Some(crate::app::Page::Search(value.to_owned())),
+            "page" => match value {
+                "albums" => Some(crate::app::Page::Albums),
+                "artists" => Some(crate::app::Page::Artists),
+                "recent" => Some(crate::app::Page::RecentlyAdded),
+                _ => None,
+            },
             "artist" => Some(crate::app::Page::Artist(music_core::model::ItemId::new(
                 music_core::model::ProviderKind::AppleMusic,
                 value,

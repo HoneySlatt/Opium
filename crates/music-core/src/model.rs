@@ -107,6 +107,13 @@ pub struct Artist {
     pub artwork: Option<Artwork>,
 }
 
+/// Something added to the library: an album or a playlist.
+#[derive(Debug, Clone, PartialEq)]
+pub enum LibraryItem {
+    Album(Album),
+    Playlist(Playlist),
+}
+
 /// An artist's page: their best-known songs and their releases.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ArtistDetail {
