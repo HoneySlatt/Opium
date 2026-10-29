@@ -26,6 +26,10 @@ pub enum Request {
     RecentlyAdded,
     /// The home page's shelves.
     Home,
+    /// Sign in to Apple Music in the browser, then connect with the new token.
+    SignIn,
+    /// Connect again with the saved token (after a sign-in).
+    Reconnect,
     /// A track's audio, ready to hand to the player.
     Fetch { token: player::Token, track: ItemId },
     /// An album and its tracks.
@@ -44,7 +48,12 @@ pub enum Request {
 }
 
 pub enum Reply {
-    Connected,
+    /// Connected to Apple Music, in this storefront (country).
+    Connected {
+        storefront: String,
+    },
+    /// The browser sign-in ended: the token is saved, or why not.
+    SignedIn(Result<(), String>),
     NotSignedIn,
     Failed(String),
     Songs {
@@ -127,6 +136,7 @@ impl Replies {
 impl Backend {
     pub fn start(ctx: egui::Context) -> Self {
         let (requests, request_rx) = tokio::sync::mpsc::unbounded_channel();
+        let again = requests.clone();
         let (tx, replies) = mpsc::channel();
         let replies_out = Replies { tx, ctx };
         std::thread::Builder::new()
@@ -136,7 +146,7 @@ impl Backend {
                     .enable_all()
                     .build()
                     .expect("start the tokio runtime");
-                runtime.block_on(run(request_rx, replies_out));
+                runtime.block_on(run(request_rx, again, replies_out));
             })
             .expect("spawn the backend thread");
         Self { requests, replies }
@@ -151,31 +161,106 @@ impl Backend {
     }
 }
 
-async fn run(mut requests: UnboundedReceiver<Request>, replies: Replies) {
+/// The browser the sign-in opens: `MUSIC_BROWSER`, else Brave Origin.
+fn sign_in_browser() -> std::ffi::OsString {
+    std::env::var_os("MUSIC_BROWSER").unwrap_or_else(|| "brave-origin".into())
+}
+
+/// Connect with the saved token, telling the UI how it went.
+async fn connect(replies: &Replies) -> Option<Arc<AppleMusic>> {
     let Ok(token) = std::fs::read_to_string(apple_music_dir().join("media-user-token")) else {
         replies.send(Reply::NotSignedIn);
-        return;
+        return None;
     };
-    let am = match AppleMusic::connect(token.trim()).await {
-        Ok(am) => Arc::new(am),
+    match AppleMusic::connect(token.trim()).await {
+        Ok(am) => {
+            replies.send(Reply::Connected {
+                storefront: am.storefront().to_owned(),
+            });
+            Some(Arc::new(am))
+        }
         Err(Error::NotSignedIn) => {
             replies.send(Reply::NotSignedIn);
-            return;
+            None
         }
         Err(e) => {
             replies.send(Reply::Failed(e.to_string()));
-            return;
+            None
         }
-    };
-    replies.send(Reply::Connected);
+    }
+}
+
+/// Open the browser on Apple's sign-in page, wait for the user, and save the
+/// token readable by the user only, where the `am` example keeps it too.
+async fn sign_in() -> Result<(), String> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    let dir = apple_music_dir();
+    let profile = dir.join("browser-profile");
+    std::fs::create_dir_all(&profile).map_err(|e| e.to_string())?;
+    let browser = sign_in_browser();
+    let token = apple_music::signin::sign_in(
+        browser.as_ref(),
+        &profile,
+        std::time::Duration::from_secs(600),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(dir.join("media-user-token"))
+        .map_err(|e| e.to_string())?;
+    file.write_all(token.as_bytes()).map_err(|e| e.to_string())
+}
+
+async fn run(
+    mut requests: UnboundedReceiver<Request>,
+    again: UnboundedSender<Request>,
+    replies: Replies,
+) {
+    let mut apple = connect(&replies).await;
     let cdm = widevine::locate()
         .ok_or_else(|| "no Widevine module found: install Brave, Chrome or Firefox".to_owned())
         .and_then(|path| widevine::Cdm::open(&path).map_err(|e| e.to_string()));
 
     let http = reqwest::Client::new();
     while let Some(request) = requests.recv().await {
-        let (am, replies) = (am.clone(), replies.clone());
+        let replies = replies.clone();
         match request {
+            Request::SignIn => {
+                let again = again.clone();
+                tokio::spawn(async move {
+                    let result = sign_in().await;
+                    let ok = result.is_ok();
+                    replies.send(Reply::SignedIn(result));
+                    if ok {
+                        let _ = again.send(Request::Reconnect);
+                    }
+                });
+                continue;
+            }
+            Request::Reconnect => {
+                apple = connect(&replies).await;
+                continue;
+            }
+            _ => {}
+        }
+        // Without a connection there is nothing to ask; a track to play
+        // still hears why.
+        let Some(am) = apple.clone() else {
+            if let Request::Fetch { token, .. } = request {
+                replies.send(Reply::Fetched {
+                    token,
+                    result: Err("Apple Music isn't connected".into()),
+                });
+            }
+            continue;
+        };
+        match request {
+            Request::SignIn | Request::Reconnect => {}
             Request::Album(id) => {
                 tokio::spawn(async move {
                     let result = tokio::try_join!(am.album(&id), am.album_tracks(&id))

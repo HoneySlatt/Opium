@@ -129,11 +129,14 @@ fn empty(app: &App, ui: &Ui, theme: &Theme, top: f32, left: f32, width: f32) {
         Connection::Connecting => ("Loading your library…", String::new()),
         Connection::NotSignedIn => (
             "Apple Music isn't connected",
-            "Sign in for now with `cargo run -p apple-music --example am -- signin`; the in-app sign-in comes in a later step.".to_owned(),
+            "Sign in from Settings, under your name at the bottom of the sidebar.".to_owned(),
         ),
         Connection::Failed(e) => ("Couldn't reach Apple Music", e.clone()),
         Connection::Connected if !app.songs_done => ("Loading your library…", String::new()),
-        Connection::Connected => ("No songs here", "Nothing matches this source filter.".to_owned()),
+        Connection::Connected => (
+            "No songs here",
+            "Nothing matches this source filter.".to_owned(),
+        ),
     };
     if title.starts_with("Loading") {
         tracks::skeleton(ui, theme, top, left, width, 8);

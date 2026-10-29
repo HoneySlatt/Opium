@@ -171,6 +171,10 @@ pub struct App {
     backend: Backend,
     pub player: Player,
     pub connection: Connection,
+    /// The Apple Music storefront (country) of the account, once connected.
+    pub storefront: Option<String>,
+    /// The browser sign-in is open, waiting for the user.
+    pub signing_in: bool,
     pub page: Page,
     back: Vec<Page>,
     forward: Vec<Page>,
@@ -249,6 +253,8 @@ impl App {
             backend,
             player: Player::new(),
             connection: Connection::Connecting,
+            storefront: None,
+            signing_in: false,
             page: Page::Home,
             back: Vec::new(),
             forward: Vec::new(),
@@ -356,6 +362,59 @@ impl App {
             }
             _ => {}
         }
+    }
+
+    /// Sign in to Apple Music in the browser; the app reconnects when done.
+    pub fn sign_in(&mut self) {
+        if !self.signing_in {
+            self.signing_in = true;
+            self.backend.send(Request::SignIn);
+        }
+    }
+
+    /// Load the library again, as at start: after signing in anew.
+    fn reload_library(&mut self) {
+        self.songs.clear();
+        self.songs_done = false;
+        self.playlists.clear();
+        self.library_albums = Streamed::default();
+        self.library_artists = Streamed::default();
+        self.recently_added = Streamed::default();
+        self.home = None;
+        self.searches.clear();
+        self.backend.send(Request::Library);
+        self.arrived();
+    }
+
+    /// Where the colours come from; recolours at once.
+    pub fn set_appearance(&mut self, appearance: crate::settings::Appearance, ctx: &egui::Context) {
+        self.settings.appearance = Some(appearance);
+        self.settings.save();
+        let theme = resolve_theme(&self.settings);
+        theme.apply(ctx);
+        self.theme = theme;
+    }
+
+    pub fn appearance(&self) -> crate::settings::Appearance {
+        use crate::settings::Appearance;
+        match self.settings.appearance {
+            Some(a) => a,
+            None if Theme::amane().is_some() => Appearance::Amane,
+            None => Appearance::Stock,
+        }
+    }
+
+    /// The interface scale in use, once the first frame has set it.
+    pub fn scale(&self) -> Option<f32> {
+        self.zoom
+    }
+
+    /// Choose the interface scale, or go back to the one that suits the screen.
+    pub fn set_scale(&mut self, scale: Option<f32>) {
+        self.settings.ui_scale = scale.map(|s| ((s * 10.0).round() / 10.0).clamp(0.75, 3.0));
+        self.settings.save();
+        // The next frame applies it.
+        self.zoom = None;
     }
 
     /// Ask for the home shelves again.
@@ -668,10 +727,26 @@ impl App {
     fn pump(&mut self, now: f64) {
         while let Some(reply) = self.backend.try_recv() {
             match reply {
-                Reply::Connected => self.connection = Connection::Connected,
+                Reply::Connected { storefront } => {
+                    // After a sign-in, the library loads now; at start it was
+                    // already asked for.
+                    let reconnected = self.connection != Connection::Connecting;
+                    self.connection = Connection::Connected;
+                    self.storefront = Some(storefront);
+                    if reconnected {
+                        self.reload_library();
+                    }
+                }
+                Reply::SignedIn(result) => {
+                    self.signing_in = false;
+                    match result {
+                        Ok(()) => self.notify("Signed in to Apple Music", now),
+                        Err(e) => self.notify(format!("Sign-in didn't finish: {e}"), now),
+                    }
+                }
                 Reply::NotSignedIn => self.connection = Connection::NotSignedIn,
                 Reply::Failed(e) => {
-                    if self.connection == Connection::Connecting {
+                    if self.connection != Connection::Connected {
                         self.connection = Connection::Failed(e.clone());
                     }
                     self.notify(e, now);

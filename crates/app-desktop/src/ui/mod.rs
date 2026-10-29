@@ -9,6 +9,7 @@ mod lyrics;
 mod now_playing;
 mod player_bar;
 mod search;
+mod settings;
 mod sidebar;
 mod signal;
 mod songs;
@@ -101,6 +102,7 @@ fn page(app: &mut App, ui: &mut Ui, narrow: bool) -> f32 {
         Page::Search(query) => search::show(app, ui, pad, &query),
         Page::Artist(id) => artist::show(app, ui, pad, &id),
         Page::Home => home::show(app, ui, pad),
+        Page::Settings => settings::show(app, ui, pad),
         Page::Albums => grid::albums(app, ui, pad),
         Page::Artists => grid::artists(app, ui, pad),
         Page::RecentlyAdded => grid::recently_added(app, ui, pad),
