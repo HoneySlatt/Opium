@@ -375,6 +375,7 @@ pub fn row(
         has_album: track.album_id.is_some(),
         favourite: state.favourite,
         in_library: state.in_library,
+        removable: track.library_id.is_some(),
     };
     if let Some(choice) = super::menu::track_menu(&response, theme, facts) {
         action = RowAction::Menu(choice);

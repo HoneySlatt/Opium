@@ -638,6 +638,7 @@ pub(super) fn song_columns(
             has_album: track.album_id.is_some(),
             favourite,
             in_library: app.track_in_library(track),
+            removable: track.library_id.is_some(),
         };
         // "…" at the end of the row, as in Cider: the same menu, on a click.
         let more =

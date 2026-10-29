@@ -20,7 +20,7 @@ pub use stream::AudioStream;
 use async_trait::async_trait;
 use music_core::model::{
     Album, Artist, ArtistDetail, Artwork, Collection, Cursor, FavouriteKind, ItemId, Lyrics, Page,
-    Pick, Playlist, ProviderKind, SearchResults, Shelf, Track,
+    Pick, Playlist, ProviderKind, SearchResults, Shelf, SongLinks, Track,
 };
 use music_core::{Error, Provider, Result};
 use serde::de::DeserializeOwned;
@@ -528,6 +528,34 @@ impl Provider for AppleMusic {
             .http
             .post(format!("{API}{path}"))
             .header("Content-Length", "0");
+        self.send_change(req, &path).await
+    }
+
+    /// Both from one request for the catalog song (Kopuz asks for the station
+    /// the same way).
+    async fn song_links(&self, song: &ItemId) -> Result<SongLinks> {
+        let path = format!(
+            "/v1/catalog/{}/songs/{}?include=artists,station",
+            self.storefront, song.id
+        );
+        let resp: Option<types::Response<types::Song>> = self.fetch(&path).await?;
+        let relationships = resp
+            .and_then(|r| r.data.into_iter().next())
+            .and_then(|s| s.relationships);
+        let first = |related: Option<&types::Related>| {
+            related
+                .and_then(|r| r.data.first())
+                .map(|r| ItemId::new(ProviderKind::AppleMusic, r.id.clone()))
+        };
+        Ok(SongLinks {
+            artist: first(relationships.as_ref().and_then(|r| r.artists.as_ref())),
+            station: first(relationships.as_ref().and_then(|r| r.station.as_ref())),
+        })
+    }
+
+    async fn remove_from_library(&self, library_id: &ItemId) -> Result<()> {
+        let path = format!("/v1/me/library/songs/{}", library_id.id);
+        let req = self.http.delete(format!("{API}{path}"));
         self.send_change(req, &path).await
     }
 

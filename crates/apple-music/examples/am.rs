@@ -8,6 +8,7 @@
 //!   cargo run -p apple-music --example am -- play 1463409605 1463409610
 //!   cargo run -p apple-music --example am -- lyrics 1463409605
 //!   cargo run -p apple-music --example am -- radio
+//!   cargo run -p apple-music --example am -- links 617154366
 //!   cargo run -p apple-music --example am -- new
 //!   cargo run -p apple-music --example am -- add-library song 1247608150
 //!   cargo run -p apple-music --example am -- station ra.u-…
@@ -67,6 +68,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .await
         }
         Some("radio") => radio(&connect().await?).await,
+        Some("links") if args.len() == 2 => {
+            let id = music_core::model::ItemId::new(
+                music_core::model::ProviderKind::AppleMusic,
+                &args[1],
+            );
+            println!("{:?}", connect().await?.song_links(&id).await?);
+            Ok(())
+        }
         Some("new") => new_music(&connect().await?).await,
         Some("station") if args.len() == 2 => station(&connect().await?, &args[1]).await,
         Some("add-library") if args.len() == 3 => {
@@ -75,7 +84,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some("lyrics") if args.len() == 2 => lyrics(&connect().await?, &args[1]).await,
         _ => {
             eprintln!(
-                "usage: am signin | library | search <term> | search-library <term> | fetch <id> <out> | play <id>… | lyrics <id> | radio | new | station <id> | add-library <kind> <id> | live <station> <out.aac> [seconds]"
+                "usage: am signin | library | search <term> | search-library <term> | fetch <id> <out> | play <id>… | lyrics <id> | radio | new | links <id> | station <id> | add-library <kind> <id> | live <station> <out.aac> [seconds]"
             );
             Ok(())
         }

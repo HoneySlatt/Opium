@@ -114,7 +114,11 @@ pub enum TrackChoice {
     Favourite,
     AddToLibrary,
     AddToPlaylist,
+    /// Play the song's station.
+    StartRadio,
+    GoToArtist,
     GoToAlbum,
+    RemoveFromLibrary,
 }
 
 /// An album or playlist waiting for its tracks before going into the queue.
@@ -241,6 +245,8 @@ pub struct App {
     pub recently_added: Streamed<Collection>,
     /// The songs in the library, by catalog id.
     library_songs: std::collections::HashSet<ItemId>,
+    /// The song whose station is being looked up, to play it.
+    radio_from: Option<Track>,
     /// The Add to Playlists window, when open.
     pub playlist_dialog: Option<PlaylistDialog>,
     /// The songs in Apple's playlist of favourites.
@@ -343,6 +349,7 @@ impl App {
             recently_added: Streamed::default(),
             favourite_songs: Default::default(),
             library_songs: Default::default(),
+            radio_from: None,
             playlist_dialog: None,
             favourites_known: HashMap::new(),
             new_music: None,
@@ -547,6 +554,7 @@ impl App {
                     explicit: false,
                     quality: None,
                     in_library: false,
+                    library_id: None,
                 };
                 self.play_list(vec![track], 0);
             }
@@ -1053,6 +1061,25 @@ impl App {
                     self.go(Page::Album(album));
                 }
             }
+            TrackChoice::GoToArtist => self.backend.send(Request::SongLinks {
+                song: track.id,
+                radio: false,
+            }),
+            TrackChoice::StartRadio => {
+                self.backend.send(Request::SongLinks {
+                    song: track.id.clone(),
+                    radio: true,
+                });
+                self.radio_from = Some(track);
+            }
+            TrackChoice::RemoveFromLibrary => {
+                if let Some(library_id) = track.library_id {
+                    self.library_songs.remove(&track.id);
+                    // The Songs list rebuilds its order when its count changes.
+                    self.songs.retain(|t| t.id != track.id);
+                    self.backend.send(Request::RemoveFromLibrary(library_id));
+                }
+            }
         }
     }
 
@@ -1323,6 +1350,25 @@ impl App {
                     }
                     entry.done = done;
                 }
+                Reply::SongLinks { radio, result } => match (radio, result) {
+                    (false, Ok(links)) => match links.artist {
+                        Some(artist) => self.go(Page::Artist(artist)),
+                        None => self.notify("This song has no artist page", now),
+                    },
+                    (true, Ok(links)) => match (links.station, self.radio_from.take()) {
+                        (Some(id), Some(track)) => {
+                            self.play_station(&Station {
+                                id,
+                                name: format!("{} Radio", track.title),
+                                description: None,
+                                artwork: track.artwork,
+                                kind: StationKind::Tracks,
+                            });
+                        }
+                        _ => self.notify("This song has no station", now),
+                    },
+                    (_, Err(e)) => self.notify(e, now),
+                },
                 Reply::Changed(result) => match result {
                     Ok(message) | Err(message) => self.notify(message, now),
                 },

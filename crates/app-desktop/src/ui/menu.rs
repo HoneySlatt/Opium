@@ -113,6 +113,8 @@ pub(super) struct TrackFacts {
     pub has_album: bool,
     pub favourite: bool,
     pub in_library: bool,
+    /// Its library id is known, so it can be taken out of the library.
+    pub removable: bool,
 }
 
 /// The track menu; Add to Library only when the song isn't there yet, Go to
@@ -147,6 +149,7 @@ fn track_entries(facts: TrackFacts) -> Vec<Entry<TrackChoice>> {
     let mut entries = vec![
         Entry::Item(icons::NEXT, "Play Next", TrackChoice::PlayNext),
         Entry::Item(icons::LATER, "Add to Queue", TrackChoice::AddToQueue),
+        Entry::Item(icons::RADIO, "Start Radio", TrackChoice::StartRadio),
         Entry::Line,
         star,
     ];
@@ -162,12 +165,25 @@ fn track_entries(facts: TrackFacts) -> Vec<Entry<TrackChoice>> {
         "Add to Playlist…",
         TrackChoice::AddToPlaylist,
     ));
+    entries.push(Entry::Line);
+    entries.push(Entry::Item(
+        icons::MIC,
+        "Go to Artist",
+        TrackChoice::GoToArtist,
+    ));
     if facts.has_album {
-        entries.push(Entry::Line);
         entries.push(Entry::Item(
             icons::DISC,
             "Go to Album",
             TrackChoice::GoToAlbum,
+        ));
+    }
+    if facts.removable {
+        entries.push(Entry::Line);
+        entries.push(Entry::Item(
+            icons::TRASH,
+            "Remove from Library",
+            TrackChoice::RemoveFromLibrary,
         ));
     }
     entries

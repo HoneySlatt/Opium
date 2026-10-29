@@ -2,7 +2,7 @@ use async_trait::async_trait;
 
 use crate::model::{
     Album, Artist, ArtistDetail, Collection, Cursor, FavouriteKind, ItemId, Lyrics, Page, Playlist,
-    ProviderKind, SearchResults, Shelf, Track,
+    ProviderKind, SearchResults, Shelf, SongLinks, Track,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -58,6 +58,18 @@ pub trait Provider: Send + Sync {
     async fn add_to_library(&self, _kind: FavouriteKind, _id: &ItemId) -> Result<()> {
         Err(Error::Protocol(
             "this service has no library to add to".into(),
+        ))
+    }
+
+    /// A song's artist and station.
+    async fn song_links(&self, _song: &ItemId) -> Result<SongLinks> {
+        Ok(SongLinks::default())
+    }
+
+    /// Take a song out of the user's library, by its library id.
+    async fn remove_from_library(&self, _library_id: &ItemId) -> Result<()> {
+        Err(Error::Protocol(
+            "this service has no library to remove from".into(),
         ))
     }
 

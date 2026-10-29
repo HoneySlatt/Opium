@@ -273,10 +273,12 @@ fn now_playing(app: &mut App, ui: &mut Ui, theme: &Theme, lcd: Rect) {
         app.is_favourite(FavouriteKind::Song, &track.id),
         app.track_in_library(&track),
     );
+    let removable = track.library_id.is_some();
     let facts = || TrackFacts {
         has_album,
         favourite,
         in_library,
+        removable,
     };
     let station = track.id.id.starts_with("ra.");
     let mut choice = None;

@@ -90,6 +90,15 @@ pub struct Track {
     pub quality: Option<AudioQuality>,
     /// It came from the user's library, so it is there.
     pub in_library: bool,
+    /// Its id in the library, which removing it from there names.
+    pub library_id: Option<ItemId>,
+}
+
+/// Where a song leads: its artist's page and its station.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct SongLinks {
+    pub artist: Option<ItemId>,
+    pub station: Option<ItemId>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

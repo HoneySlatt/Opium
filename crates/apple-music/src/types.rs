@@ -24,6 +24,8 @@ pub struct Resource<A> {
 pub struct Relationships {
     pub albums: Option<Related>,
     pub artists: Option<Related>,
+    /// A song's station.
+    pub station: Option<Related>,
     /// A library item's catalog counterpart.
     pub catalog: Option<Related>,
 }

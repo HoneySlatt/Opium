@@ -194,6 +194,7 @@ mod tests {
             explicit: false,
             quality: None,
             in_library: false,
+            library_id: None,
         }
     }
 

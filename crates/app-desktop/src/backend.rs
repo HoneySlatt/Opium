@@ -49,6 +49,10 @@ pub enum Request {
         id: ItemId,
         quiet: bool,
     },
+    /// Where a song leads, to go there: its artist's page or its station.
+    SongLinks { song: ItemId, radio: bool },
+    /// Take a song out of the library, by its library id.
+    RemoveFromLibrary(ItemId),
     /// Add songs to playlists.
     AddToPlaylists {
         playlists: Vec<ItemId>,
@@ -80,6 +84,11 @@ pub enum Reply {
     },
     /// The browser sign-in ended: the token is saved, or why not.
     SignedIn(Result<(), String>),
+    /// A song's links, asked for its artist (`radio: false`) or its station.
+    SongLinks {
+        radio: bool,
+        result: Result<music_core::model::SongLinks, String>,
+    },
     /// A change to the library went through (the message to show), or why not.
     Changed(Result<String, String>),
     /// A favourite was set (`set: Some(on)`) or looked up; the state or why not.
@@ -385,6 +394,22 @@ async fn run(
                     if !(quiet && result.is_ok()) {
                         replies.send(Reply::Changed(result));
                     }
+                });
+            }
+            Request::SongLinks { song, radio } => {
+                tokio::spawn(async move {
+                    let result = am.song_links(&song).await.map_err(|e| e.to_string());
+                    replies.send(Reply::SongLinks { radio, result });
+                });
+            }
+            Request::RemoveFromLibrary(id) => {
+                tokio::spawn(async move {
+                    let result = am
+                        .remove_from_library(&id)
+                        .await
+                        .map(|()| "Removed from the library".to_owned())
+                        .map_err(|e| format!("Couldn't remove it from the library: {e}"));
+                    replies.send(Reply::Changed(result));
                 });
             }
             Request::AddToPlaylists { playlists, tracks } => {
