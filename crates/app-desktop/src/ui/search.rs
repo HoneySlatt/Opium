@@ -309,7 +309,8 @@ fn playlist_cards(r: &SearchResults) -> Vec<Card> {
         .enumerate()
         .map(|(i, p)| Card {
             title: p.name.clone(),
-            sub: "Apple Music".into(),
+            // Who made it: Apple's editors, or a SoundCloud user.
+            sub: p.curator.clone().unwrap_or_else(|| "Apple Music".into()),
             art: p.artwork.clone(),
             open: Open::Playlist(i),
             explicit: false,

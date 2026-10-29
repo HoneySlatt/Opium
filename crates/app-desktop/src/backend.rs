@@ -7,12 +7,13 @@ use std::sync::mpsc;
 
 use apple_music::{AppleMusic, AudioStream, LiveStream};
 use music_core::model::{
-    Album, Artist, ArtistDetail, Collection, FavouriteKind, ItemId, Lyrics, Playlist,
-    SearchResults, Shelf, Track,
+    Album, Artist, ArtistDetail, Collection, Cursor, FavouriteKind, ItemId, Lyrics, Playlist,
+    ProviderKind, SearchResults, Shelf, Track,
 };
 use music_core::{Error, Provider};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
+use soundcloud::SoundCloud;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 use crate::app::SearchScope;
@@ -50,6 +51,9 @@ pub enum Request {
     SignIn,
     /// Connect again with the saved token (after a sign-in).
     Reconnect,
+    /// Sign in to SoundCloud in the browser, then connect and load its library.
+    SignInSoundCloud,
+    ReconnectSoundCloud,
     /// Add to the favourites, or take out.
     SetFavourite {
         kind: FavouriteKind,
@@ -104,6 +108,8 @@ pub enum Request {
         track: ItemId,
         /// The library's copy, played if the catalog's can't be.
         fallback: Option<ItemId>,
+        /// A SoundCloud uploader's original file, when they allow it.
+        original: bool,
     },
     /// An animated cover's video at `size` pixels, kept on disk.
     Motion {
@@ -116,6 +122,7 @@ pub enum Request {
         token: player::Token,
         track: ItemId,
         fallback: Option<ItemId>,
+        original: bool,
     },
     /// An album and its tracks.
     Album(ItemId),
@@ -139,6 +146,10 @@ pub enum Reply {
     },
     /// The browser sign-in ended: the token is saved, or why not.
     SignedIn(Result<(), String>),
+    /// SoundCloud is connected as this user, or isn't signed in (`None`),
+    /// or failed to connect.
+    SoundCloud(Result<Option<String>, String>),
+    SignedInSoundCloud(Result<(), String>),
     /// A song's links, asked for its artist (`radio: false`) or its station.
     SongLinks {
         radio: bool,
@@ -186,14 +197,20 @@ pub enum Reply {
     },
     NotSignedIn,
     Failed(String),
-    /// A page of songs, or with `whole` all of them, to replace those shown:
-    /// the list kept from last time, or the fresh one that follows it.
+    /// A page of a service's songs, or with `whole` all of them, to replace
+    /// those of it shown: the list kept from last time, or the fresh one
+    /// that follows it.
     Songs {
+        provider: ProviderKind,
         tracks: Vec<Track>,
         done: bool,
         whole: bool,
     },
-    Playlists(Vec<Playlist>),
+    /// A service's playlists, all of them.
+    Playlists {
+        provider: ProviderKind,
+        playlists: Vec<Playlist>,
+    },
     LibraryAlbums {
         albums: Vec<Album>,
         done: bool,
@@ -256,9 +273,15 @@ pub enum Reply {
     },
 }
 
-/// What a fetch hands the player: a track, or a station's stream.
+/// What a fetch hands the player: a track, a station's stream, or a whole
+/// file in memory.
 pub enum Playable {
     Track(AudioStream),
+    File {
+        bytes: Vec<u8>,
+        /// A hint for the decoder: `m4a`, `flac`, `wav`…
+        extension: &'static str,
+    },
     Live(LiveStream),
 }
 
@@ -274,6 +297,77 @@ pub fn apple_music_dir() -> PathBuf {
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
         .unwrap_or_default();
     config.join("music/apple-music")
+}
+
+/// Where the SoundCloud sign-in keeps its tokens (see the `sc` example).
+fn soundcloud_dir() -> PathBuf {
+    apple_music_dir().with_file_name("soundcloud")
+}
+
+/// Keep SoundCloud's tokens, readable by the user only.
+fn keep_soundcloud_tokens(tokens: &soundcloud::Tokens) {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    let dir = soundcloud_dir();
+    let _ = std::fs::create_dir_all(&dir);
+    let json = serde_json::json!({ "oauth": tokens.oauth, "refresh": tokens.refresh });
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(dir.join("tokens.json"))
+    {
+        let _ = file.write_all(json.to_string().as_bytes());
+    }
+}
+
+fn kept_soundcloud_tokens() -> Option<soundcloud::Tokens> {
+    let text = std::fs::read_to_string(soundcloud_dir().join("tokens.json")).ok()?;
+    let json: serde_json::Value = serde_json::from_str(&text).ok()?;
+    Some(soundcloud::Tokens {
+        oauth: json["oauth"].as_str()?.to_owned(),
+        refresh: json["refresh"].as_str().map(str::to_owned),
+    })
+}
+
+/// Connect to SoundCloud with the kept tokens, telling the UI how it went.
+async fn connect_soundcloud(replies: &Replies) -> Option<Arc<SoundCloud>> {
+    let Some(tokens) = kept_soundcloud_tokens() else {
+        replies.send(Reply::SoundCloud(Ok(None)));
+        return None;
+    };
+    match SoundCloud::connect(tokens, Box::new(keep_soundcloud_tokens)).await {
+        Ok(sc) => {
+            replies.send(Reply::SoundCloud(Ok(Some(sc.username().to_owned()))));
+            Some(Arc::new(sc))
+        }
+        Err(Error::NotSignedIn) => {
+            replies.send(Reply::SoundCloud(Ok(None)));
+            None
+        }
+        Err(e) => {
+            replies.send(Reply::SoundCloud(Err(e.to_string())));
+            None
+        }
+    }
+}
+
+/// Open the browser on SoundCloud's sign-in page, wait for the user to sign
+/// in and close it, and keep the tokens.
+async fn sign_in_soundcloud() -> Result<(), String> {
+    let profile = soundcloud_dir().join("browser-profile");
+    std::fs::create_dir_all(&profile).map_err(|e| e.to_string())?;
+    let browser = sign_in_browser();
+    let tokens = soundcloud::signin::sign_in(
+        browser.as_ref(),
+        &profile,
+        std::time::Duration::from_secs(600),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    keep_soundcloud_tokens(&tokens);
+    Ok(())
 }
 
 #[derive(Clone)]
@@ -378,6 +472,7 @@ async fn run(
     replies: Replies,
 ) {
     let mut apple = connect(&replies).await;
+    let mut sc = connect_soundcloud(&replies).await;
     let cdm = widevine::locate()
         .ok_or_else(|| "no Widevine module found: install Brave, Chrome or Firefox".to_owned())
         .and_then(|path| widevine::Cdm::open(&path).map_err(|e| e.to_string()));
@@ -405,7 +500,80 @@ async fn run(
                 apple = connect(&replies).await;
                 continue;
             }
+            Request::SignInSoundCloud => {
+                let again = again.clone();
+                tokio::spawn(async move {
+                    let result = sign_in_soundcloud().await;
+                    let ok = result.is_ok();
+                    replies.send(Reply::SignedInSoundCloud(result));
+                    if ok {
+                        let _ = again.send(Request::ReconnectSoundCloud);
+                    }
+                });
+                continue;
+            }
+            Request::ReconnectSoundCloud => {
+                sc = connect_soundcloud(&replies).await;
+                if let Some(sc) = sc.clone() {
+                    tokio::spawn(load_soundcloud_library(sc, replies));
+                }
+                continue;
+            }
+            // Both services at once.
+            Request::Library => {
+                if let Some(am) = apple.clone() {
+                    tokio::spawn(load_library(am, replies.clone()));
+                }
+                if let Some(sc) = sc.clone() {
+                    tokio::spawn(load_soundcloud_library(sc, replies));
+                }
+                continue;
+            }
+            Request::Playlists => {
+                if let Some(am) = apple.clone() {
+                    let replies = replies.clone();
+                    tokio::spawn(async move {
+                        // Only a whole list replaces the one shown.
+                        if let (playlists, true) = load_playlists(&am, &replies).await {
+                            replies.send(Reply::Playlists {
+                                provider: ProviderKind::AppleMusic,
+                                playlists,
+                            });
+                        }
+                    });
+                }
+                if let Some(sc) = sc.clone() {
+                    tokio::spawn(async move {
+                        if let Ok(playlists) = soundcloud_playlists(&sc).await {
+                            replies.send(Reply::Playlists {
+                                provider: ProviderKind::SoundCloud,
+                                playlists,
+                            });
+                        }
+                    });
+                }
+                continue;
+            }
+            Request::Search(scope, query) => {
+                tokio::spawn(search(apple.clone(), sc.clone(), scope, query, replies));
+                continue;
+            }
             _ => {}
+        }
+        // What is SoundCloud's goes there.
+        if target(&request) == Some(ProviderKind::SoundCloud) {
+            match sc.clone() {
+                Some(sc) => soundcloud_request(sc, request, replies, &mut warming),
+                None => {
+                    if let Request::Fetch { token, .. } | Request::Warm { token, .. } = request {
+                        replies.send(Reply::Fetched {
+                            token,
+                            result: Err("SoundCloud isn't connected".into()),
+                        });
+                    }
+                }
+            }
+            continue;
         }
         // Without a connection there is nothing to ask; a track to play
         // still hears why.
@@ -419,7 +587,13 @@ async fn run(
             continue;
         };
         match request {
-            Request::SignIn | Request::Reconnect => {}
+            Request::SignIn
+            | Request::Reconnect
+            | Request::SignInSoundCloud
+            | Request::ReconnectSoundCloud
+            | Request::Library
+            | Request::Playlists
+            | Request::Search(..) => {}
             Request::Album(id) => {
                 tokio::spawn(async move {
                     let result = tokio::try_join!(am.album(&id), am.album_tracks(&id))
@@ -468,20 +642,6 @@ async fn run(
                 tokio::spawn(async move {
                     let result = am.lyrics(&id).await.map_err(|e| e.to_string());
                     replies.send(Reply::Lyrics { id, result });
-                });
-            }
-            Request::Search(scope, query) => {
-                tokio::spawn(async move {
-                    let result = match scope {
-                        SearchScope::AppleMusic => am.search(&query).await,
-                        SearchScope::Library => am.search_library(&query).await,
-                    };
-                    let result = result.map_err(|e| e.to_string());
-                    replies.send(Reply::Search {
-                        scope,
-                        query,
-                        result,
-                    });
                 });
             }
             Request::SetFavourite { kind, id, on } => {
@@ -693,9 +853,6 @@ async fn run(
                     });
                 });
             }
-            Request::Library => {
-                tokio::spawn(load_library(am, replies));
-            }
             Request::InLibrary { kind, ids } => {
                 tokio::spawn(async move {
                     // A failure only leaves Add to Library unoffered.
@@ -704,18 +861,11 @@ async fn run(
                     }
                 });
             }
-            Request::Playlists => {
-                tokio::spawn(async move {
-                    // Only a whole list replaces the one shown.
-                    if let (playlists, true) = load_playlists(&am, &replies).await {
-                        replies.send(Reply::Playlists(playlists));
-                    }
-                });
-            }
             Request::Fetch {
                 token,
                 track,
                 fallback,
+                ..
             } => {
                 let cdm = cdm.clone();
                 tokio::spawn(async move {
@@ -746,6 +896,7 @@ async fn run(
                 token,
                 track,
                 fallback,
+                ..
             } => {
                 if let Some(last) = warming.take() {
                     last.abort();
@@ -828,18 +979,26 @@ async fn load_playlists(am: &AppleMusic, replies: &Replies) -> (Vec<Playlist>, b
 }
 
 async fn load_library(am: Arc<AppleMusic>, replies: Replies) {
+    let provider = ProviderKind::AppleMusic;
     if let Some(playlists) = cache::read::<Vec<Playlist>>("playlists") {
-        replies.send(Reply::Playlists(playlists));
+        replies.send(Reply::Playlists {
+            provider,
+            playlists,
+        });
     }
     let (playlists, whole) = load_playlists(&am, &replies).await;
     if whole {
         let kept = playlists.clone();
         tokio::task::spawn_blocking(move || cache::write("playlists", &kept));
     }
-    replies.send(Reply::Playlists(playlists));
+    replies.send(Reply::Playlists {
+        provider,
+        playlists,
+    });
 
     let show = |tracks, done, whole| {
         replies.send(Reply::Songs {
+            provider,
             tracks,
             done,
             whole,
@@ -850,6 +1009,296 @@ async fn load_library(am: Arc<AppleMusic>, replies: Replies) {
         .each_library_track(|tracks, done| list.page(tracks, done, &show))
         .await;
     list.failed(&replies, result, &show);
+}
+
+/// Which service a request is for, when it names an item.
+fn target(request: &Request) -> Option<ProviderKind> {
+    let id = match request {
+        Request::Album(id)
+        | Request::Artist(id)
+        | Request::Playlist(id)
+        | Request::Lyrics(id)
+        | Request::StationTracks(id)
+        | Request::AlbumExtras(id)
+        | Request::LibraryArtistAlbums(id)
+        | Request::RemoveFromLibrary(id)
+        | Request::DeletePlaylist(id) => id,
+        Request::SongLinks { song: id, .. }
+        | Request::Fetch { track: id, .. }
+        | Request::Warm { track: id, .. }
+        | Request::SetFavourite { id, .. }
+        | Request::AddToLibrary { id, .. }
+        | Request::Favourite { id, .. }
+        | Request::EditPlaylist { id, .. }
+        | Request::RemoveFromPlaylist { playlist: id, .. } => id,
+        Request::InLibrary { ids, .. } => ids.first()?,
+        Request::AddToPlaylists { playlists, .. } => playlists.first()?,
+        Request::CreatePlaylist { tracks, .. } => tracks.first()?,
+        _ => return None,
+    };
+    Some(id.provider)
+}
+
+/// A request about a SoundCloud item.
+fn soundcloud_request(
+    sc: Arc<SoundCloud>,
+    request: Request,
+    replies: Replies,
+    warming: &mut Option<tokio::task::JoinHandle<()>>,
+) {
+    match request {
+        Request::Album(id) => {
+            tokio::spawn(async move {
+                let result = tokio::try_join!(sc.album(&id), sc.album_tracks(&id))
+                    .map(Box::new)
+                    .map_err(|e| e.to_string());
+                replies.send(Reply::Album { id, result });
+            });
+        }
+        Request::Artist(id) => {
+            tokio::spawn(async move {
+                let result = sc
+                    .artist(&id)
+                    .await
+                    .map(Arc::new)
+                    .map_err(|e| e.to_string());
+                replies.send(Reply::Artist { id, result });
+            });
+        }
+        Request::Playlist(id) => {
+            tokio::spawn(async move {
+                let result = sc
+                    .playlist_tracks(&id, None)
+                    .await
+                    .map(|page| page.items)
+                    .map_err(|e| e.to_string());
+                replies.send(Reply::PlaylistTracks {
+                    id,
+                    result,
+                    done: true,
+                    whole: true,
+                });
+            });
+        }
+        Request::Lyrics(id) => replies.send(Reply::Lyrics {
+            id,
+            result: Ok(None),
+        }),
+        Request::SongLinks { song, radio } => {
+            tokio::spawn(async move {
+                let result = sc.song_links(&song).await.map_err(|e| e.to_string());
+                replies.send(Reply::SongLinks { radio, result });
+            });
+        }
+        Request::Favourite { id, .. } => replies.send(Reply::Favourite {
+            id,
+            set: None,
+            result: Ok(None),
+        }),
+        Request::Fetch {
+            token,
+            track,
+            original,
+            ..
+        } => {
+            tokio::spawn(async move {
+                let result = soundcloud_playable(&sc, &track, original).await;
+                replies.send(Reply::Fetched { token, result });
+            });
+        }
+        Request::Warm {
+            token,
+            track,
+            original,
+            ..
+        } => {
+            if let Some(last) = warming.take() {
+                last.abort();
+            }
+            *warming = Some(tokio::spawn(async move {
+                let result = soundcloud_playable(&sc, &track, original).await;
+                replies.send(Reply::Fetched { token, result });
+            }));
+        }
+        // Covers that are SoundCloud's aren't asked about.
+        Request::InLibrary { .. } => {}
+        // SoundCloud has no other editions or videos to show.
+        Request::AlbumExtras(id) => replies.send(Reply::AlbumExtras {
+            id,
+            result: Ok(Arc::default()),
+        }),
+        _ => replies.send(Reply::Changed(Err(
+            "That comes to SoundCloud in a later version".into(),
+        ))),
+    }
+}
+
+async fn soundcloud_playable(
+    sc: &SoundCloud,
+    track: &ItemId,
+    original: bool,
+) -> Result<Playable, String> {
+    sc.audio(track, original)
+        .await
+        .map(|audio| Playable::File {
+            bytes: audio.bytes,
+            extension: audio.extension,
+        })
+        .map_err(|e| e.to_string())
+}
+
+/// Every SoundCloud playlist of the user's: their own, then those they liked.
+async fn soundcloud_playlists(sc: &SoundCloud) -> music_core::Result<Vec<Playlist>> {
+    let mut playlists = Vec::new();
+    let mut cursor: Option<Cursor> = None;
+    loop {
+        let page = sc.library_playlists(cursor.as_ref()).await?;
+        playlists.extend(page.items);
+        match page.next {
+            Some(next) => cursor = Some(next),
+            None => return Ok(playlists),
+        }
+    }
+}
+
+/// SoundCloud's side of the library: the playlists, then the liked tracks,
+/// kept as Apple Music's are.
+async fn load_soundcloud_library(sc: Arc<SoundCloud>, replies: Replies) {
+    let provider = ProviderKind::SoundCloud;
+    if let Some(playlists) = cache::read::<Vec<Playlist>>("soundcloud-playlists") {
+        replies.send(Reply::Playlists {
+            provider,
+            playlists,
+        });
+    }
+    match soundcloud_playlists(&sc).await {
+        Ok(playlists) => {
+            let kept = playlists.clone();
+            tokio::task::spawn_blocking(move || cache::write("soundcloud-playlists", &kept));
+            replies.send(Reply::Playlists {
+                provider,
+                playlists,
+            });
+        }
+        Err(e) => replies.send(Reply::Failed(e.to_string())),
+    }
+
+    let show = |tracks, done, whole| {
+        replies.send(Reply::Songs {
+            provider,
+            tracks,
+            done,
+            whole,
+        })
+    };
+    let mut list = Kept::start("soundcloud-songs", &show);
+    let mut cursor: Option<Cursor> = None;
+    let result = loop {
+        match sc.library_tracks(cursor.as_ref()).await {
+            Ok(page) => {
+                let done = page.next.is_none();
+                list.page(page.items, done, &show);
+                match page.next {
+                    Some(next) => cursor = Some(next),
+                    None => break Ok(()),
+                }
+            }
+            Err(e) => break Err(e),
+        }
+    };
+    list.failed(&replies, result, &show);
+}
+
+/// A search of both services: the catalog's in both, the library's in Apple
+/// Music's. One that fails leaves the other's results.
+async fn search(
+    apple: Option<Arc<AppleMusic>>,
+    sc: Option<Arc<SoundCloud>>,
+    scope: SearchScope,
+    query: String,
+    replies: Replies,
+) {
+    let apple_side = async {
+        let am = apple?;
+        Some(match scope {
+            SearchScope::AppleMusic => am.search(&query).await,
+            SearchScope::Library => am.search_library(&query).await,
+        })
+    };
+    let sc_side = async {
+        match (sc, scope) {
+            (Some(sc), SearchScope::AppleMusic) => Some(sc.search(&query).await),
+            _ => None,
+        }
+    };
+    let (a, b) = tokio::join!(apple_side, sc_side);
+    let mut sides = Vec::new();
+    let mut error = None;
+    for side in [a, b].into_iter().flatten() {
+        match side {
+            Ok(r) => sides.push(r),
+            Err(e) => error = Some(e.to_string()),
+        }
+    }
+    let any = !sides.is_empty();
+    // Taken in turns, Apple Music's first: the first rows show both. What
+    // both have is Apple Music's, at its better quality.
+    let mut merged = SearchResults::default();
+    let mut sides = sides.into_iter();
+    if let Some(first) = sides.next() {
+        merged = first;
+        for mut other in sides {
+            let key = |title: &str, artists: &[String]| {
+                (
+                    crate::app::fold(title),
+                    crate::app::fold(artists.first().map_or("", String::as_str)),
+                )
+            };
+            let songs: std::collections::HashSet<_> = merged
+                .tracks
+                .iter()
+                .map(|t| key(&t.title, &t.artists))
+                .collect();
+            other
+                .tracks
+                .retain(|t| !songs.contains(&key(&t.title, &t.artists)));
+            let albums: std::collections::HashSet<_> = merged
+                .albums
+                .iter()
+                .map(|a| key(&a.title, &a.artists))
+                .collect();
+            other
+                .albums
+                .retain(|a| !albums.contains(&key(&a.title, &a.artists)));
+            merged.tracks = in_turns(merged.tracks, other.tracks);
+            merged.albums = in_turns(merged.albums, other.albums);
+            merged.artists = in_turns(merged.artists, other.artists);
+            merged.playlists = in_turns(merged.playlists, other.playlists);
+        }
+    }
+    let result = match (any, error) {
+        (false, Some(e)) => Err(e),
+        (false, None) => Err("No service is connected".into()),
+        _ => Ok(merged),
+    };
+    replies.send(Reply::Search {
+        scope,
+        query,
+        result,
+    });
+}
+
+/// `a`'s and `b`'s items in turns, starting with `a`'s; the longer one's
+/// rest after.
+fn in_turns<T>(a: Vec<T>, b: Vec<T>) -> Vec<T> {
+    let mut out = Vec::with_capacity(a.len() + b.len());
+    let (mut a, mut b) = (a.into_iter(), b.into_iter());
+    loop {
+        match (a.next(), b.next()) {
+            (None, None) => return out,
+            (x, y) => out.extend(x.into_iter().chain(y)),
+        }
+    }
 }
 
 async fn load_playlist(am: Arc<AppleMusic>, id: ItemId, replies: Replies) {
@@ -951,5 +1400,16 @@ impl<T: Clone + Serialize + DeserializeOwned + Send + 'static> Kept<T> {
             }
             replies.send(Reply::Failed(e.to_string()));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::in_turns;
+
+    #[test]
+    fn results_come_in_turns_then_the_rest() {
+        assert_eq!(in_turns(vec![1, 3, 5, 7], vec![2, 4]), [1, 2, 3, 4, 5, 7]);
+        assert_eq!(in_turns(Vec::new(), vec![2, 4]), [2, 4]);
     }
 }

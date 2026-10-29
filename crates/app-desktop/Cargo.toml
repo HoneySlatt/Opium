@@ -11,6 +11,7 @@ path = "src/main.rs"
 [dependencies]
 music-core = { path = "../music-core" }
 apple-music = { path = "../apple-music" }
+soundcloud = { path = "../soundcloud" }
 player = { path = "../player" }
 widevine = { path = "../widevine" }
 eframe = "0.37.0"

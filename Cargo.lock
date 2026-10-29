@@ -228,6 +228,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "soundcloud",
  "tokio",
  "toml",
  "widevine",

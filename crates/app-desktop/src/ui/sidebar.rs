@@ -2,7 +2,7 @@
 
 use egui::{Id, Rect, Sense, Stroke, Ui, pos2, vec2};
 
-use crate::app::{App, Connection, Page, PlaylistChoice};
+use crate::app::{App, Connection, Page, PlaylistChoice, SoundCloudState};
 use crate::color::{alpha, mix};
 use crate::fonts::{Weight, font};
 use crate::icons::{self, Icon};
@@ -323,7 +323,8 @@ fn account(app: &mut App, ui: &mut Ui, theme: &Theme, full: Rect, collapsed: boo
     if collapsed {
         return;
     }
-    let services = usize::from(app.connection == Connection::Connected);
+    let services = usize::from(app.connection == Connection::Connected)
+        + usize::from(matches!(app.soundcloud, SoundCloudState::Connected(_)));
     let left = rect.left() + 8.0 + 30.0 + 10.0;
     let width = rect.right() - left - 8.0;
     let galley = text(ui, &name, font(13.0, Weight::Medium), theme.text, width);

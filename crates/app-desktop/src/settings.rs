@@ -47,6 +47,9 @@ pub struct Settings {
     /// How the Albums page is sorted; by name, A to Z, unless set.
     pub albums_sort: Option<AlbumSort>,
     pub albums_ascending: Option<bool>,
+    /// A SoundCloud track plays from the uploader's original file when they
+    /// let it be downloaded (on unless turned off).
+    pub soundcloud_originals: Option<bool>,
 }
 
 /// Repeat, as kept: the queue's own, by name.

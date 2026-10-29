@@ -16,7 +16,7 @@ use std::sync::{Mutex, RwLock};
 use async_trait::async_trait;
 use music_core::model::{
     Album, Artist, ArtistDetail, Collection, Cursor, ItemId, Page, Playlist, ProviderKind,
-    SearchResults, Track,
+    SearchResults, SongLinks, Track,
 };
 use music_core::{Error, Provider, Result};
 use serde::de::DeserializeOwned;
@@ -457,6 +457,15 @@ impl Provider for SoundCloud {
             playlists: Vec::new(),
             motion: None,
             banner: None,
+        })
+    }
+
+    /// A track leads to its uploader's profile.
+    async fn song_links(&self, song: &ItemId) -> Result<SongLinks> {
+        let track: types::Track = self.get(&format!("/tracks/{}", song.id)).await?;
+        Ok(SongLinks {
+            artist: track.user.map(|u| convert::id(u.id)),
+            station: None,
         })
     }
 

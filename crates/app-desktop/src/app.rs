@@ -273,6 +273,15 @@ pub enum Connection {
     Failed(String),
 }
 
+/// SoundCloud's connection: as Apple Music's, and the user's name once in.
+#[derive(Debug, Clone, PartialEq)]
+pub enum SoundCloudState {
+    Connecting,
+    Connected(String),
+    NotSignedIn,
+    Failed(String),
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SortKey {
     Title,
@@ -319,6 +328,11 @@ pub struct App {
     pub storefront: Option<String>,
     /// The browser sign-in is open, waiting for the user.
     pub signing_in: bool,
+    pub soundcloud: SoundCloudState,
+    /// SoundCloud's browser sign-in is open.
+    pub soundcloud_signing_in: bool,
+    /// The services whose songs are still coming.
+    songs_coming: std::collections::HashSet<ProviderKind>,
     pub page: Page,
     back: Vec<Page>,
     forward: Vec<Page>,
@@ -473,6 +487,9 @@ impl App {
             connection: Connection::Connecting,
             storefront: None,
             signing_in: false,
+            soundcloud: SoundCloudState::Connecting,
+            soundcloud_signing_in: false,
+            songs_coming: Default::default(),
             page: Page::Home,
             back: Vec::new(),
             forward: Vec::new(),
@@ -610,6 +627,8 @@ impl App {
                 .iter()
                 .filter(|(k, _)| *k == kind)
                 .map(|(_, id)| id.clone())
+                // Apple answers for its own only.
+                .filter(|id| id.provider == ProviderKind::AppleMusic)
                 .filter(|id| self.in_library_asked.insert(id.clone()))
                 .collect();
             if !ids.is_empty() {
@@ -720,6 +739,22 @@ impl App {
             self.signing_in = true;
             self.backend.send(Request::SignIn);
         }
+    }
+
+    pub fn sign_in_soundcloud(&mut self) {
+        if !self.soundcloud_signing_in {
+            self.soundcloud_signing_in = true;
+            self.backend.send(Request::SignInSoundCloud);
+        }
+    }
+
+    pub fn soundcloud_originals(&self) -> bool {
+        self.settings.soundcloud_originals.unwrap_or(true)
+    }
+
+    pub fn set_soundcloud_originals(&mut self, on: bool) {
+        self.settings.soundcloud_originals = Some(on);
+        self.settings.save();
     }
 
     /// Load the library again, as at start: after signing in anew.
@@ -920,9 +955,10 @@ impl App {
 
     /// The user's own playlists, which songs can be added to.
     pub fn editable_playlists(&self) -> Vec<Playlist> {
+        // SoundCloud's take songs in a later version.
         self.playlists
             .iter()
-            .filter(|p| p.editable)
+            .filter(|p| p.editable && p.id.provider == ProviderKind::AppleMusic)
             .cloned()
             .collect()
     }
@@ -1615,6 +1651,7 @@ impl App {
             token,
             track: track.id.clone(),
             fallback: track.library_id.clone(),
+            original: self.soundcloud_originals(),
         });
         self.tracks.insert(token, track);
         token
@@ -1682,6 +1719,7 @@ impl App {
             token,
             track: track.id.clone(),
             fallback: track.library_id.clone(),
+            original: self.soundcloud_originals(),
         });
         self.warm = Some(Warm {
             token,
@@ -2024,6 +2062,42 @@ impl App {
             }
             // A station's stream is ADTS, forward only.
             Playable::Live(stream) => player::Source::stream(stream, Some("aac")),
+            Playable::File { bytes, extension } => {
+                let len = bytes.len() as u64;
+                player::Source::new(std::io::Cursor::new(bytes), len, Some(extension))
+            }
+        }
+    }
+
+    /// Apple Music's playlists came: which are favourites, and which is the
+    /// playlist of favourite songs.
+    fn apple_playlists_arrived(&mut self) {
+        for playlist in &self.playlists {
+            if playlist.id.provider != ProviderKind::AppleMusic {
+                continue;
+            }
+            if let (Some(id), Some(on)) = (
+                Self::playlist_favourite_id(playlist),
+                playlist.in_favourites,
+            ) {
+                self.favourites_known.entry(id).or_insert(on);
+            }
+        }
+        // Which songs are favourites: those in Apple's playlist of them.
+        if let Some(id) = self.favourites()
+            && !self.playlist_tracks.contains_key(&id)
+        {
+            self.playlist_tracks
+                .insert(id.clone(), PlaylistTracks::default());
+            self.backend.send(Request::Playlist(id));
+        }
+        // Favourite Songs was opened before the library said which
+        // playlist it is.
+        if self.page == Page::Favourites
+            && let Some(id) = self.favourites()
+        {
+            self.page = Page::Playlist(id);
+            self.arrived();
         }
     }
 
@@ -2050,6 +2124,20 @@ impl App {
                     }
                 }
                 Reply::NotSignedIn => self.connection = Connection::NotSignedIn,
+                Reply::SoundCloud(result) => {
+                    self.soundcloud = match result {
+                        Ok(Some(name)) => SoundCloudState::Connected(name),
+                        Ok(None) => SoundCloudState::NotSignedIn,
+                        Err(e) => SoundCloudState::Failed(e),
+                    };
+                }
+                Reply::SignedInSoundCloud(result) => {
+                    self.soundcloud_signing_in = false;
+                    match result {
+                        Ok(()) => self.notify("Signed in to SoundCloud", now),
+                        Err(e) => self.notify(format!("Sign-in didn't finish: {e}"), now),
+                    }
+                }
                 Reply::Failed(e) => {
                     if self.connection != Connection::Connected {
                         self.connection = Connection::Failed(e.clone());
@@ -2057,47 +2145,43 @@ impl App {
                     self.notify(e, now);
                 }
                 Reply::Songs {
+                    provider,
                     tracks,
                     done,
                     whole,
                 } => {
-                    // The songs kept from last time, or the fresh list after
-                    // them: the Songs page sorts it anew.
+                    // A service's songs kept from last time, or the fresh
+                    // list after them, in place of its others: the Songs page
+                    // sorts them all anew.
                     if whole {
-                        self.songs.clear();
+                        self.songs.retain(|t| t.id.provider != provider);
+                        self.library_songs.retain(|id| id.provider != provider);
                         self.songs_view.order_key = None;
                         self.songs_view.selected = None;
                     }
                     self.library_songs
                         .extend(tracks.iter().map(|t| t.id.clone()));
                     self.songs.extend(tracks);
-                    self.songs_done = done;
+                    if done {
+                        self.songs_coming.remove(&provider);
+                    } else {
+                        self.songs_coming.insert(provider);
+                    }
+                    self.songs_done = self.songs_coming.is_empty();
                 }
-                Reply::Playlists(playlists) => {
-                    for playlist in &playlists {
-                        if let (Some(id), Some(on)) = (
-                            Self::playlist_favourite_id(playlist),
-                            playlist.in_favourites,
-                        ) {
-                            self.favourites_known.entry(id).or_insert(on);
-                        }
-                    }
-                    self.playlists = playlists;
-                    // Which songs are favourites: those in Apple's playlist of them.
-                    if let Some(id) = self.favourites()
-                        && !self.playlist_tracks.contains_key(&id)
-                    {
-                        self.playlist_tracks
-                            .insert(id.clone(), PlaylistTracks::default());
-                        self.backend.send(Request::Playlist(id));
-                    }
-                    // Favourite Songs was opened before the library said which
-                    // playlist it is.
-                    if self.page == Page::Favourites
-                        && let Some(id) = self.favourites()
-                    {
-                        self.page = Page::Playlist(id);
-                        self.arrived();
+                Reply::Playlists {
+                    provider,
+                    playlists,
+                } => {
+                    // A service's in place of its others, Apple Music's first.
+                    self.playlists.retain(|p| p.id.provider != provider);
+                    let at = match provider {
+                        ProviderKind::AppleMusic => 0,
+                        _ => self.playlists.len(),
+                    };
+                    self.playlists.splice(at..at, playlists);
+                    if provider == ProviderKind::AppleMusic {
+                        self.apple_playlists_arrived();
                     }
                 }
                 Reply::LibraryAlbums {

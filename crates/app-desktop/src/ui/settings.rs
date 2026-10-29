@@ -3,7 +3,7 @@
 
 use egui::{Id, Rect, Sense, Stroke, Ui, pos2, vec2};
 
-use crate::app::{App, Connection};
+use crate::app::{App, Connection, SoundCloudState};
 use crate::fonts::{Weight, font};
 use crate::icons::{self, Icon};
 use crate::settings::Appearance;
@@ -25,7 +25,7 @@ const THEMES: f32 = 14.0 + 10.0 + 74.0 + 10.0 + 18.0 + 18.0 + 4.0 + 14.0 + 12.0 
 pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
     let theme = app.theme.clone();
     let width = (ui.available_width() - 2.0 * pad).min(MAX_WIDTH);
-    let total = BODY_TOP + 6.0 * (GROUP_HEAD + GROUP_GAP) + 3.0 * ROW + THEMES + 6.0 * ROW + 104.0;
+    let total = BODY_TOP + 7.0 * (GROUP_HEAD + GROUP_GAP) + 3.0 * ROW + THEMES + 7.0 * ROW + 104.0;
     let output = egui::ScrollArea::vertical()
         .id_salt("settings")
         .auto_shrink(false)
@@ -108,6 +108,37 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
                 pos2(card.left() + 16.0, card.top() + 1.5 * ROW),
                 "Add playlist songs to the library",
                 "A song you add to a playlist joins your library if it isn't there yet.",
+                width - 32.0 - 60.0,
+            );
+            y = card.bottom() + GROUP_GAP;
+
+            y = group(
+                ui,
+                &theme,
+                left,
+                y,
+                width,
+                "SoundCloud",
+                "Where its tracks play from.",
+            );
+            let card = Rect::from_min_size(pos2(left, y), vec2(width, ROW));
+            panel(ui, &theme, card, 1);
+            let on = app.soundcloud_originals();
+            if switch(
+                ui,
+                &theme,
+                pos2(card.right() - 16.0, card.center().y),
+                on,
+                "soundcloud-originals",
+            ) {
+                app.set_soundcloud_originals(!on);
+            }
+            labels(
+                ui,
+                &theme,
+                pos2(card.left() + 16.0, card.center().y),
+                "Play the uploader's own file",
+                "When the artist allows downloads, their file plays (often WAV or FLAC, lossless) instead of the AAC stream. SoundCloud counts it as a download, not a play.",
                 width - 32.0 - 60.0,
             );
             y = card.bottom() + GROUP_GAP;
@@ -285,18 +316,67 @@ fn services(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect) {
     for (i, (icon, name)) in rows.into_iter().enumerate() {
         let y = card.top() + i as f32 * ROW + ROW / 2.0;
         let tile = Rect::from_center_size(pos2(card.left() + 16.0 + 20.0, y), vec2(40.0, 40.0));
-        let active = i == 0;
-        let tile_fill = if active {
-            theme.accent
-        } else {
-            theme.text_a(0.08)
+        let x = tile.right() + 14.0;
+        let right = card.right() - 16.0;
+        // What the row says, its button (label, enabled) and whether the
+        // service is connected.
+        let (detail, button_state, connected) = match i {
+            0 => {
+                let detail = match &app.connection {
+                    Connection::Connected => format!(
+                        "Storefront {} · AAC 256 kbps at best (ALAC is FairPlay-only)",
+                        app.storefront.as_deref().unwrap_or("?").to_uppercase()
+                    ),
+                    Connection::Connecting => "Connecting…".to_owned(),
+                    Connection::NotSignedIn => {
+                        "Not signed in. Signing in opens Apple's page in Brave Origin.".to_owned()
+                    }
+                    Connection::Failed(e) => e.clone(),
+                };
+                let connected = app.connection == Connection::Connected;
+                let button = if app.signing_in {
+                    ("Waiting for you in the browser…", false)
+                } else if connected {
+                    ("Sign in again", true)
+                } else {
+                    ("Sign in", app.connection != Connection::Connecting)
+                };
+                (detail, button, connected)
+            }
+            1 => {
+                let detail = match &app.soundcloud {
+                    SoundCloudState::Connected(user) => format!(
+                        "{user} · AAC 160 kbps (256 with Go+), the uploader's own file when they allow it"
+                    ),
+                    SoundCloudState::Connecting => "Connecting…".to_owned(),
+                    SoundCloudState::NotSignedIn => "Not signed in. Signing in opens SoundCloud in Brave Origin: close it once you're in.".to_owned(),
+                    SoundCloudState::Failed(e) => e.clone(),
+                };
+                let connected = matches!(app.soundcloud, SoundCloudState::Connected(_));
+                let button = if app.soundcloud_signing_in {
+                    ("Sign in, then close the browser…", false)
+                } else if connected {
+                    ("Sign in again", true)
+                } else {
+                    ("Sign in", app.soundcloud != SoundCloudState::Connecting)
+                };
+                (detail, button, connected)
+            }
+            _ => {
+                ui.painter().rect_filled(tile, 10.0, theme.text_a(0.08));
+                paint_icon(ui, icon, tile.center(), 20.0, theme.muted());
+                labels(
+                    ui,
+                    theme,
+                    pos2(x, y),
+                    name,
+                    "Your own server, original files up to 24-bit. Comes in a later version.",
+                    right - x - 20.0,
+                );
+                continue;
+            }
         };
-        let glyph = if active {
-            theme.on_accent()
-        } else {
-            theme.muted()
-        };
-        if active {
+        if i == 0 {
             // Apple Music's own logo, tile and all.
             paint_icon(
                 ui,
@@ -306,47 +386,28 @@ fn services(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect) {
                 egui::Color32::WHITE,
             );
         } else {
-            ui.painter().rect_filled(tile, 10.0, tile_fill);
+            let (fill, glyph) = if connected {
+                (theme.accent, theme.on_accent())
+            } else {
+                (theme.text_a(0.08), theme.muted())
+            };
+            ui.painter().rect_filled(tile, 10.0, fill);
             paint_icon(ui, icon, tile.center(), 20.0, glyph);
         }
-        let x = tile.right() + 14.0;
-        let right = card.right() - 16.0;
-        if !active {
-            let detail = if i == 1 {
-                "AAC 160 through SoundCloud's API. Comes in a later version."
-            } else {
-                "Your own server, original files up to 24-bit. Comes in a later version."
-            };
-            labels(ui, theme, pos2(x, y), name, detail, right - x - 20.0);
-            continue;
-        }
 
-        let detail = match &app.connection {
-            Connection::Connected => format!(
-                "Storefront {} · AAC 256 kbps at best (ALAC is FairPlay-only)",
-                app.storefront.as_deref().unwrap_or("?").to_uppercase()
-            ),
-            Connection::Connecting => "Connecting…".to_owned(),
-            Connection::NotSignedIn => {
-                "Not signed in. Signing in opens Apple's page in Brave Origin.".to_owned()
-            }
-            Connection::Failed(e) => e.clone(),
-        };
-        let (label, enabled) = if app.signing_in {
-            ("Waiting for you in the browser…", false)
-        } else if app.connection == Connection::Connected {
-            ("Sign in again", true)
-        } else {
-            ("Sign in", app.connection != Connection::Connecting)
-        };
+        let (label, enabled) = button_state;
         // The button first, so the words know how much room is left.
         let g = text(ui, label, font(12.5, Weight::Medium), theme.text, 300.0);
         let button_left = right - g.size().x - 28.0;
         if button(ui, theme, right, y, label, enabled) {
-            app.sign_in();
+            if i == 0 {
+                app.sign_in();
+            } else {
+                app.sign_in_soundcloud();
+            }
         }
         let mut state_right = button_left - 14.0;
-        if app.connection == Connection::Connected {
+        if connected {
             let g = text(
                 ui,
                 "Connected",
