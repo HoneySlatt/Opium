@@ -123,6 +123,7 @@ pub fn album(album: types::Album) -> Album {
         attrs.content_rating.as_deref() == Some("explicit") || catalog_rating == Some("explicit");
     Album {
         explicit,
+        added: attrs.date_added.clone(),
         id: id(album.id),
         artist_id: artist.map(|a| id(a.id.clone())),
         artist_artwork: artwork(

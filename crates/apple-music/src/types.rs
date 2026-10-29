@@ -106,6 +106,8 @@ pub struct AlbumAttributes {
     pub in_favorites: Option<bool>,
     /// `explicit` or `clean`, when rated.
     pub content_rating: Option<String>,
+    /// When a library album was added, as Apple writes it (RFC 3339).
+    pub date_added: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]

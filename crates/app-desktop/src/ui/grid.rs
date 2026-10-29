@@ -417,7 +417,11 @@ fn page(app: &mut App, ui: &mut Ui, pad: f32, kind: Kind) -> f32 {
     // The items shown, as indices into the list.
     let (shown, done): (Vec<usize>, bool) = match kind {
         Kind::Albums => (
-            indices(&app.library_albums.items, |a| keep(a.id.provider)),
+            app.albums_in_order()
+                .iter()
+                .copied()
+                .filter(|&i| keep(app.library_albums.items[i].id.provider))
+                .collect(),
             app.library_albums.done,
         ),
         Kind::Artists => (
@@ -484,6 +488,7 @@ fn page(app: &mut App, ui: &mut Ui, pad: f32, kind: Kind) -> f32 {
             );
             let left = content.left() + pad;
             let g = text(ui, title, font(22.0, Weight::Bold), theme.text, width);
+            let title_end = left + g.size().x;
             paint_text(
                 ui,
                 g,
@@ -492,6 +497,32 @@ fn page(app: &mut App, ui: &mut Ui, pad: f32, kind: Kind) -> f32 {
                 egui::Align::Min,
                 theme.text,
             );
+            // Albums sort as the menu after the title says.
+            if kind == Kind::Albums {
+                let button = Rect::from_center_size(
+                    pos2(title_end + 10.0 + 16.0, content.top() + TITLE_Y),
+                    vec2(32.0, 32.0),
+                );
+                let mut child = ui.new_child(egui::UiBuilder::new().max_rect(button));
+                let response = icon_button(
+                    &mut child,
+                    &theme,
+                    icons::SORT,
+                    32.0,
+                    16.0,
+                    theme.subtext0,
+                    true,
+                )
+                .on_hover_text("Sort");
+                let (by, ascending) = app.albums_sort();
+                match super::menu::albums_sort_menu(&response, &theme, by, ascending) {
+                    Some(super::menu::SortChoice::By(by)) => app.set_albums_sort(by, ascending),
+                    Some(super::menu::SortChoice::Ascending(ascending)) => {
+                        app.set_albums_sort(by, ascending);
+                    }
+                    None => {}
+                }
+            }
             // The search, right-aligned, then the source filter left of it.
             let chips_right = if kind == Kind::Recent {
                 left + width

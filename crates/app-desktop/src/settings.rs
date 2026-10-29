@@ -30,6 +30,19 @@ pub struct Settings {
     pub playlist_songs_to_library: Option<bool>,
     /// The playlists songs were last added to, most recent first.
     pub recent_playlists: Vec<String>,
+    /// How the Albums page is sorted; by name, A to Z, unless set.
+    pub albums_sort: Option<AlbumSort>,
+    pub albums_ascending: Option<bool>,
+}
+
+/// What the Albums page sorts by.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AlbumSort {
+    Added,
+    Name,
+    Artist,
+    Released,
 }
 
 fn path() -> PathBuf {

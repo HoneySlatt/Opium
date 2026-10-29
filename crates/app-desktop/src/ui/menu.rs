@@ -6,6 +6,7 @@ use egui::{Frame, Response, Sense, Stroke, Ui, pos2, vec2};
 use crate::app::{Enqueue, PlaylistChoice, TrackChoice};
 use crate::fonts::{Weight, font};
 use crate::icons::{self, Icon};
+use crate::settings::AlbumSort;
 use crate::theme::Theme;
 
 use super::grid::CardClick;
@@ -14,6 +15,8 @@ use super::{paint_icon, paint_text, text};
 /// A menu line: an item with its icon, label and what it means, or a hairline.
 pub(super) enum Entry<T> {
     Item(Icon, &'static str, T),
+    /// An item with a check after it when it is the one chosen.
+    Choice(Icon, &'static str, T, bool),
     Line,
 }
 
@@ -65,7 +68,13 @@ fn menu<T: Clone>(
                     );
                 }
                 Entry::Item(icon, label, value) => {
-                    if item(ui, theme, *icon, label) {
+                    if item(ui, theme, *icon, label, false) {
+                        chosen = Some(value.clone());
+                        ui.close();
+                    }
+                }
+                Entry::Choice(icon, label, value, on) => {
+                    if item(ui, theme, *icon, label, *on) {
                         chosen = Some(value.clone());
                         ui.close();
                     }
@@ -76,7 +85,7 @@ fn menu<T: Clone>(
     chosen
 }
 
-fn item(ui: &mut Ui, theme: &Theme, icon: Icon, label: &str) -> bool {
+fn item(ui: &mut Ui, theme: &Theme, icon: Icon, label: &str, checked: bool) -> bool {
     let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), 32.0), Sense::click());
     let (fg, glyph) = if response.hovered() {
         ui.painter().rect_filled(rect, 7.0, theme.accent);
@@ -106,7 +115,73 @@ fn item(ui: &mut Ui, theme: &Theme, icon: Icon, label: &str) -> bool {
         egui::Align::Min,
         fg,
     );
+    if checked {
+        paint_icon(
+            ui,
+            icons::CHECK,
+            pos2(rect.right() - 10.0 - 7.0, rect.center().y),
+            14.0,
+            glyph,
+        );
+    }
     response.clicked()
+}
+
+/// What the Albums page's sort menu asked for.
+#[derive(Clone, Copy)]
+pub(super) enum SortChoice {
+    By(AlbumSort),
+    Ascending(bool),
+}
+
+/// The Albums page's sort menu, opened by a click on `response`: what to sort
+/// by, then which way, each with a check by the one in use.
+pub(super) fn albums_sort_menu(
+    response: &Response,
+    theme: &Theme,
+    by: AlbumSort,
+    ascending: bool,
+) -> Option<SortChoice> {
+    let entries = [
+        Entry::Choice(
+            icons::HISTORY,
+            "Date Added",
+            SortChoice::By(AlbumSort::Added),
+            by == AlbumSort::Added,
+        ),
+        Entry::Choice(
+            icons::TYPE,
+            "Name",
+            SortChoice::By(AlbumSort::Name),
+            by == AlbumSort::Name,
+        ),
+        Entry::Choice(
+            icons::USER,
+            "Artist",
+            SortChoice::By(AlbumSort::Artist),
+            by == AlbumSort::Artist,
+        ),
+        Entry::Choice(
+            icons::CALENDAR,
+            "Release Date",
+            SortChoice::By(AlbumSort::Released),
+            by == AlbumSort::Released,
+        ),
+        Entry::Line,
+        Entry::Choice(
+            icons::ARROW_UP,
+            "Ascending",
+            SortChoice::Ascending(true),
+            ascending,
+        ),
+        Entry::Choice(
+            icons::ARROW_DOWN,
+            "Descending",
+            SortChoice::Ascending(false),
+            !ascending,
+        ),
+    ];
+    menu(response, theme, &entries, true)
 }
 
 /// What the track menu knows about its track.

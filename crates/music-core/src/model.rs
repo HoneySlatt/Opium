@@ -126,6 +126,9 @@ pub struct Album {
     pub track_count: Option<u32>,
     /// Rated explicit.
     pub explicit: bool,
+    /// When it joined the library, for a library album: RFC 3339, so the
+    /// text sorts in time order.
+    pub added: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

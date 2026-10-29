@@ -49,6 +49,8 @@ pub struct Streamed<T> {
     pub items: Vec<T>,
     pub done: bool,
     requested: bool,
+    /// Moves on with every change, for what is built from the items.
+    pub version: u64,
 }
 
 impl<T> Default for Streamed<T> {
@@ -57,6 +59,7 @@ impl<T> Default for Streamed<T> {
             items: Vec::new(),
             done: false,
             requested: false,
+            version: 0,
         }
     }
 }
@@ -70,6 +73,10 @@ impl<T> Streamed<T> {
     fn extend(&mut self, items: Vec<T>, done: bool) {
         self.items.extend(items);
         self.done = done;
+        // From one count for every list, so a list emptied and read again
+        // never meets an old version.
+        static VERSIONS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        self.version = VERSIONS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// A page, or with `whole` the whole list, replacing what is there.
@@ -115,6 +122,9 @@ pub enum Enqueue {
     /// At the end.
     Last,
 }
+
+/// What the albums' order was built from: the list's version and the sort.
+type AlbumsOrderKey = (u64, crate::settings::AlbumSort, bool);
 
 /// A playlist's songs that match a search, and where each is in the playlist.
 struct Searched {
@@ -319,6 +329,9 @@ pub struct App {
     pub songs_view: SongsView,
     pub playlists: Vec<Playlist>,
     pub library_albums: Streamed<Album>,
+    /// The library albums in the order the Albums page sorts them, and what
+    /// it was sorted from.
+    albums_order: Option<(AlbumsOrderKey, Arc<Vec<usize>>)>,
     /// Albums and playlists added to the library since its lists were read.
     added_to_library: std::collections::HashSet<ItemId>,
     /// Whether catalog albums and playlists are wholly in the library, as
@@ -454,6 +467,7 @@ impl App {
             },
             playlists: Vec::new(),
             library_albums: Streamed::default(),
+            albums_order: None,
             added_to_library: std::collections::HashSet::new(),
             in_library: HashMap::new(),
             in_library_wanted: Default::default(),
@@ -1238,6 +1252,70 @@ impl App {
             numbers: numbers.clone(),
         });
         (found, Some(numbers))
+    }
+
+    /// How the Albums page is sorted, and whether ascending.
+    pub fn albums_sort(&self) -> (crate::settings::AlbumSort, bool) {
+        (
+            self.settings
+                .albums_sort
+                .unwrap_or(crate::settings::AlbumSort::Name),
+            self.settings.albums_ascending.unwrap_or(true),
+        )
+    }
+
+    pub fn set_albums_sort(&mut self, by: crate::settings::AlbumSort, ascending: bool) {
+        self.settings.albums_sort = Some(by);
+        self.settings.albums_ascending = Some(ascending);
+        self.settings.save();
+    }
+
+    /// The library albums' indices, sorted as the Albums page shows them:
+    /// names without case or accents, dates as Apple writes them; those
+    /// without the date sorted by go last either way.
+    pub fn albums_in_order(&mut self) -> Arc<Vec<usize>> {
+        let (by, ascending) = self.albums_sort();
+        let key = (self.library_albums.version, by, ascending);
+        if let Some((built, order)) = &self.albums_order
+            && *built == key
+        {
+            return order.clone();
+        }
+        let albums = &self.library_albums.items;
+        let name = |i: usize| fold(&albums[i].title);
+        let mut order: Vec<usize> = (0..albums.len()).collect();
+        let direct = |o: std::cmp::Ordering| if ascending { o } else { o.reverse() };
+        match by {
+            crate::settings::AlbumSort::Name => {
+                let names: Vec<String> = (0..albums.len()).map(name).collect();
+                order.sort_by(|&a, &b| direct(names[a].cmp(&names[b])));
+            }
+            crate::settings::AlbumSort::Artist => {
+                let keys: Vec<(String, String)> = (0..albums.len())
+                    .map(|i| (fold(&albums[i].artists.join(", ")), name(i)))
+                    .collect();
+                order.sort_by(|&a, &b| direct(keys[a].cmp(&keys[b])));
+            }
+            crate::settings::AlbumSort::Added | crate::settings::AlbumSort::Released => {
+                let date = |i: usize| match by {
+                    crate::settings::AlbumSort::Added => albums[i].added.clone(),
+                    _ => albums[i]
+                        .released
+                        .clone()
+                        .or_else(|| albums[i].year.map(|y| y.to_string())),
+                };
+                let dates: Vec<Option<String>> = (0..albums.len()).map(date).collect();
+                order.sort_by(|&a, &b| match (&dates[a], &dates[b]) {
+                    (Some(x), Some(y)) => direct(x.cmp(y)),
+                    (Some(_), None) => std::cmp::Ordering::Less,
+                    (None, Some(_)) => std::cmp::Ordering::Greater,
+                    (None, None) => std::cmp::Ordering::Equal,
+                });
+            }
+        }
+        let order = Arc::new(order);
+        self.albums_order = Some((key, order.clone()));
+        order
     }
 
     /// The track being fetched to play now, until it starts.
