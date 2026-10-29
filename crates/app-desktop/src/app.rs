@@ -71,6 +71,14 @@ impl<T> Streamed<T> {
         self.items.extend(items);
         self.done = done;
     }
+
+    /// A page, or with `whole` the whole list, replacing what is there.
+    fn arrived(&mut self, items: Vec<T>, done: bool, whole: bool) {
+        if whole {
+            self.items.clear();
+        }
+        self.extend(items, done);
+    }
 }
 
 /// Something fetched on demand.
@@ -355,6 +363,10 @@ impl App {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         crate::fonts::install(&cc.egui_ctx);
         egui_extras::install_image_loaders(&cc.egui_ctx);
+        // Covers come from disk when kept; tried before the HTTP loader.
+        cc.egui_ctx
+            .add_bytes_loader(Arc::new(crate::covers::CoverLoader::default()));
+        std::thread::spawn(crate::covers::trim);
         let settings = crate::settings::Settings::load();
         let theme = resolve_theme(&settings);
         theme.apply(&cc.egui_ctx);
@@ -1512,7 +1524,18 @@ impl App {
                     }
                     self.notify(e, now);
                 }
-                Reply::Songs { tracks, done } => {
+                Reply::Songs {
+                    tracks,
+                    done,
+                    whole,
+                } => {
+                    // The songs kept from last time, or the fresh list after
+                    // them: the Songs page sorts it anew.
+                    if whole {
+                        self.songs.clear();
+                        self.songs_view.order_key = None;
+                        self.songs_view.selected = None;
+                    }
                     self.library_songs
                         .extend(tracks.iter().map(|t| t.id.clone()));
                     self.songs.extend(tracks);
@@ -1545,10 +1568,16 @@ impl App {
                         self.arrived();
                     }
                 }
-                Reply::LibraryAlbums { albums, done } => self.library_albums.extend(albums, done),
-                Reply::LibraryArtists { artists, done } => {
-                    self.library_artists.extend(artists, done)
-                }
+                Reply::LibraryAlbums {
+                    albums,
+                    done,
+                    whole,
+                } => self.library_albums.arrived(albums, done, whole),
+                Reply::LibraryArtists {
+                    artists,
+                    done,
+                    whole,
+                } => self.library_artists.arrived(artists, done, whole),
                 Reply::NewMusic(result) => {
                     self.new_music = Some(match result {
                         Ok(shelves) => Loaded::Ready(Arc::new(shelves)),
@@ -1618,7 +1647,12 @@ impl App {
                     };
                     self.artists.insert(id, loaded);
                 }
-                Reply::PlaylistTracks { id, result, done } => {
+                Reply::PlaylistTracks {
+                    id,
+                    result,
+                    done,
+                    whole,
+                } => {
                     // The favourites fill in page by page: Apple's playlist of
                     // them can run to thousands of songs.
                     if self.favourites().as_ref() == Some(&id)
@@ -1634,6 +1668,11 @@ impl App {
                     }
                     let entry = self.playlist_tracks.entry(id).or_default();
                     match result {
+                        // As kept from last time, or fresh after it.
+                        Ok(tracks) if whole => {
+                            entry.tracks = Arc::new(tracks);
+                            entry.error = None;
+                        }
                         Ok(tracks) => Arc::make_mut(&mut entry.tracks).extend(tracks),
                         Err(e) => entry.error = Some(e),
                     }

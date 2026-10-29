@@ -1,8 +1,10 @@
 use std::fmt;
 use std::time::Duration;
 
+use serde::{Deserialize, Serialize};
+
 /// A music service the app can pull from.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ProviderKind {
     AppleMusic,
     SoundCloud,
@@ -10,7 +12,7 @@ pub enum ProviderKind {
 }
 
 /// An item within one provider. The id is opaque: only its provider knows what it means.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ItemId {
     pub provider: ProviderKind,
     pub id: String,
@@ -35,7 +37,7 @@ impl fmt::Display for ItemId {
 ///
 /// Each service sizes art differently (Apple's `{w}x{h}`, SoundCloud's `-t500x500`,
 /// Subsonic's `size=`); providers translate theirs into this one placeholder.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Artwork {
     pub url_template: String,
     /// The colour behind the art, when the service gives it (Apple does).
@@ -48,7 +50,7 @@ impl Artwork {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Codec {
     Aac,
     Alac,
@@ -67,7 +69,7 @@ impl Codec {
 }
 
 /// What a source actually delivers, as far as the provider knows before decoding.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AudioQuality {
     pub codec: Codec,
     pub sample_rate: Option<u32>,
@@ -75,7 +77,7 @@ pub struct AudioQuality {
     pub bitrate_kbps: Option<u32>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Track {
     pub id: ItemId,
     pub title: String,
@@ -101,7 +103,7 @@ pub struct SongLinks {
     pub station: Option<ItemId>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Album {
     pub id: ItemId,
     pub title: String,
@@ -126,7 +128,7 @@ pub struct Album {
     pub explicit: bool,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Artist {
     pub id: ItemId,
     pub name: String,
@@ -185,7 +187,7 @@ pub struct ArtistDetail {
     pub singles: Vec<Album>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Playlist {
     pub id: ItemId,
     pub name: String,

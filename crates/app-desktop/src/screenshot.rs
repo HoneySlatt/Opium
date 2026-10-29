@@ -2,7 +2,7 @@
 //! [MUSIC_SCREENSHOT_PLAY=row]` saves the window once it has had time to load,
 //! then quits, optionally playing a Songs row first. `MUSIC_SCREENSHOT_PAGE`
 //! opens a page first: `playlist:<index>`, `album:<id>`, `artist:<id>` or
-//! `search:<query>`, `shelf:home|new|radio:<title>`, or `page:home|new|radio|albums|artists|recent|settings|favourites`; `MUSIC_SCREENSHOT_DRAWER`
+//! `search:<query>`, `shelf:home|new|radio:<title>`, or `page:home|new|radio|albums|artists|recent|songs|settings|favourites`; `MUSIC_SCREENSHOT_DRAWER`
 //! opens the queue drawer; `MUSIC_SCREENSHOT_STATION=ra.…` tunes in to a station.
 //! Only the app's own window is captured.
 
@@ -75,6 +75,7 @@ impl Screenshot {
                 "albums" => Some(crate::app::Page::Albums),
                 "artists" => Some(crate::app::Page::Artists),
                 "recent" => Some(crate::app::Page::RecentlyAdded),
+                "songs" => Some(crate::app::Page::Songs),
                 _ => None,
             },
             // `shelf:home|new|radio:<title>`

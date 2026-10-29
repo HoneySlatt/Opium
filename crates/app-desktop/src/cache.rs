@@ -1,0 +1,57 @@
+//! The library as it was last read, kept in `~/.cache/music/library/`: shown at
+//! once when the app starts or a playlist opens, while Apple is asked again.
+
+use std::path::PathBuf;
+
+use serde::Serialize;
+use serde::de::DeserializeOwned;
+
+fn dir() -> Option<PathBuf> {
+    let cache = std::env::var_os("XDG_CACHE_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")))?;
+    Some(cache.join("music").join("library"))
+}
+
+/// `playlist p.AbC` → `playlist-p.AbC.json`: ids are letters, digits and dots.
+fn file(name: &str) -> Option<PathBuf> {
+    let safe: String = name
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '.' {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    Some(dir()?.join(format!("{safe}.json")))
+}
+
+/// What was kept under `name`, if anything readable was.
+pub fn read<T: DeserializeOwned>(name: &str) -> Option<T> {
+    let bytes = std::fs::read(file(name)?).ok()?;
+    serde_json::from_slice(&bytes).ok()
+}
+
+/// Keep `value` under `name`, replacing the old one whole: written aside, then
+/// moved over it.
+pub fn write<T: Serialize>(name: &str, value: &T) {
+    let (Some(dir), Some(path)) = (dir(), file(name)) else {
+        return;
+    };
+    let Ok(bytes) = serde_json::to_vec(value) else {
+        return;
+    };
+    let partial = path.with_extension("json.part");
+    let _ = std::fs::create_dir_all(&dir)
+        .and_then(|()| std::fs::write(&partial, bytes))
+        .and_then(|()| std::fs::rename(&partial, &path));
+}
+
+/// Forget everything kept: another account may sign in.
+pub fn clear() {
+    if let Some(dir) = dir() {
+        let _ = std::fs::remove_dir_all(dir);
+    }
+}

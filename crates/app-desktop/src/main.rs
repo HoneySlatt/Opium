@@ -2,7 +2,9 @@
 
 mod app;
 mod backend;
+mod cache;
 mod color;
+mod covers;
 mod fonts;
 mod icons;
 mod palette;

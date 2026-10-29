@@ -7,13 +7,16 @@ use std::sync::mpsc;
 
 use apple_music::{AppleMusic, AudioStream, LiveStream};
 use music_core::model::{
-    Album, Artist, ArtistDetail, Collection, Cursor, FavouriteKind, ItemId, Lyrics, Page, Playlist,
+    Album, Artist, ArtistDetail, Collection, FavouriteKind, ItemId, Lyrics, Playlist,
     SearchResults, Shelf, Track,
 };
 use music_core::{Error, Provider};
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 use crate::app::SearchScope;
+use crate::cache;
 
 pub enum Request {
     /// The library songs and playlists, page by page.
@@ -159,18 +162,23 @@ pub enum Reply {
     },
     NotSignedIn,
     Failed(String),
+    /// A page of songs, or with `whole` all of them, to replace those shown:
+    /// the list kept from last time, or the fresh one that follows it.
     Songs {
         tracks: Vec<Track>,
         done: bool,
+        whole: bool,
     },
     Playlists(Vec<Playlist>),
     LibraryAlbums {
         albums: Vec<Album>,
         done: bool,
+        whole: bool,
     },
     LibraryArtists {
         artists: Vec<Artist>,
         done: bool,
+        whole: bool,
     },
     RecentlyAdded {
         items: Vec<Collection>,
@@ -199,6 +207,7 @@ pub enum Reply {
         id: ItemId,
         result: Result<Vec<Track>, String>,
         done: bool,
+        whole: bool,
     },
     Palette {
         url: String,
@@ -352,6 +361,8 @@ async fn run(
                     let ok = result.is_ok();
                     replies.send(Reply::SignedIn(result));
                     if ok {
+                        // The library kept may be another account's.
+                        cache::clear();
                         let _ = again.send(Request::Reconnect);
                     }
                 });
@@ -395,17 +406,22 @@ async fn run(
             Request::Palette(url) => {
                 let http = http.clone();
                 tokio::spawn(async move {
-                    let palette = match http.get(&url).send().await {
-                        Ok(resp) => match resp.bytes().await {
-                            Ok(bytes) => tokio::task::spawn_blocking(move || {
-                                crate::palette::from_image(&bytes)
-                            })
-                            .await
-                            .ok()
-                            .flatten(),
+                    // The cover is often kept already, the page showing it.
+                    let bytes = match crate::covers::read(&url) {
+                        Some(bytes) => Some(bytes),
+                        None => match http.get(&url).send().await {
+                            Ok(resp) => resp.bytes().await.ok().map(|b| b.to_vec()),
                             Err(_) => None,
                         },
-                        Err(_) => None,
+                    };
+                    let palette = match bytes {
+                        Some(bytes) => {
+                            tokio::task::spawn_blocking(move || crate::palette::from_image(&bytes))
+                                .await
+                                .ok()
+                                .flatten()
+                        }
+                        None => None,
                     };
                     replies.send(Reply::Palette { url, palette });
                 });
@@ -576,37 +592,49 @@ async fn run(
                 });
             }
             Request::LibraryAlbums => {
-                tokio::spawn(stream(
-                    move |cursor| {
-                        let am = am.clone();
-                        async move { am.library_albums(cursor.as_ref()).await }
-                    },
-                    |albums, done| Reply::LibraryAlbums { albums, done },
-                    usize::MAX,
-                    replies,
-                ));
+                tokio::spawn(async move {
+                    let show = |albums, done, whole| {
+                        replies.send(Reply::LibraryAlbums {
+                            albums,
+                            done,
+                            whole,
+                        })
+                    };
+                    let mut list = Kept::start("albums", &show);
+                    let result = am
+                        .each_library_album(|albums, done| list.page(albums, done, &show))
+                        .await;
+                    list.failed(&replies, result, &show);
+                });
             }
             Request::LibraryArtists => {
-                tokio::spawn(stream(
-                    move |cursor| {
-                        let am = am.clone();
-                        async move { am.library_artists(cursor.as_ref()).await }
-                    },
-                    |artists, done| Reply::LibraryArtists { artists, done },
-                    usize::MAX,
-                    replies,
-                ));
+                tokio::spawn(async move {
+                    let show = |artists, done, whole| {
+                        replies.send(Reply::LibraryArtists {
+                            artists,
+                            done,
+                            whole,
+                        })
+                    };
+                    let mut list = Kept::start("artists", &show);
+                    let result = am
+                        .each_library_artist(|artists, done| list.page(artists, done, &show))
+                        .await;
+                    list.failed(&replies, result, &show);
+                });
             }
             Request::RecentlyAdded => {
-                tokio::spawn(stream(
-                    move |cursor| {
-                        let am = am.clone();
-                        async move { am.recently_added(cursor.as_ref()).await }
-                    },
-                    |items, done| Reply::RecentlyAdded { items, done },
-                    RECENT_LIMIT,
-                    replies,
-                ));
+                tokio::spawn(async move {
+                    let result = am
+                        .each_recently_added(RECENT_LIMIT, |items, done| {
+                            replies.send(Reply::RecentlyAdded { items, done })
+                        })
+                        .await;
+                    failed(&replies, result, || Reply::RecentlyAdded {
+                        items: Vec::new(),
+                        done: true,
+                    });
+                });
             }
             Request::Library => {
                 tokio::spawn(load_library(am, replies));
@@ -657,36 +685,12 @@ const STATION_BATCH: usize = 20;
 /// How far back Recently Added goes.
 const RECENT_LIMIT: usize = 200;
 
-/// Send a list page by page as it arrives, stopping after `limit` items. A
-/// failure ends the list and shows as a toast.
-async fn stream<T, F, Fut>(
-    mut fetch: F,
-    reply: fn(Vec<T>, bool) -> Reply,
-    limit: usize,
-    replies: Replies,
-) where
-    F: FnMut(Option<Cursor>) -> Fut,
-    Fut: std::future::Future<Output = music_core::Result<Page<T>>>,
-{
-    let mut cursor = None;
-    let mut sent = 0;
-    loop {
-        match fetch(cursor.take()).await {
-            Ok(page) => {
-                sent += page.items.len();
-                let done = page.next.is_none() || sent >= limit;
-                replies.send(reply(page.items, done));
-                if done {
-                    return;
-                }
-                cursor = page.next;
-            }
-            Err(e) => {
-                replies.send(reply(Vec::new(), true));
-                replies.send(Reply::Failed(e.to_string()));
-                return;
-            }
-        }
+/// A list that failed part way: it ends with `done`, and the failure shows
+/// as a toast.
+fn failed(replies: &Replies, result: music_core::Result<()>, done: impl FnOnce() -> Reply) {
+    if let Err(e) = result {
+        replies.send(done());
+        replies.send(Reply::Failed(e.to_string()));
     }
 }
 
@@ -694,74 +698,141 @@ async fn stream<T, F, Fut>(
 /// ends the list there.
 async fn load_playlists(am: &AppleMusic, replies: &Replies) -> (Vec<Playlist>, bool) {
     let mut playlists = Vec::new();
-    let mut cursor: Option<Cursor> = None;
-    loop {
-        match am.library_playlists(cursor.as_ref()).await {
-            Ok(page) => {
-                playlists.extend(page.items);
-                match page.next {
-                    Some(next) => cursor = Some(next),
-                    None => return (playlists, true),
-                }
-            }
-            Err(e) => {
-                replies.send(Reply::Failed(e.to_string()));
-                return (playlists, false);
-            }
+    match am
+        .each_library_playlist(|page, _| playlists.extend(page))
+        .await
+    {
+        Ok(()) => (playlists, true),
+        Err(e) => {
+            replies.send(Reply::Failed(e.to_string()));
+            (playlists, false)
         }
     }
 }
 
 async fn load_library(am: Arc<AppleMusic>, replies: Replies) {
-    let (playlists, _) = load_playlists(&am, &replies).await;
+    if let Some(playlists) = cache::read::<Vec<Playlist>>("playlists") {
+        replies.send(Reply::Playlists(playlists));
+    }
+    let (playlists, whole) = load_playlists(&am, &replies).await;
+    if whole {
+        let kept = playlists.clone();
+        tokio::task::spawn_blocking(move || cache::write("playlists", &kept));
+    }
     replies.send(Reply::Playlists(playlists));
 
-    let mut cursor: Option<Cursor> = None;
-    loop {
-        match am.library_tracks(cursor.as_ref()).await {
-            Ok(page) => {
-                let done = page.next.is_none();
-                replies.send(Reply::Songs {
-                    tracks: page.items,
-                    done,
-                });
-                match page.next {
-                    Some(next) => cursor = Some(next),
-                    None => return,
-                }
-            }
-            Err(e) => {
-                replies.send(Reply::Failed(e.to_string()));
-                return;
-            }
+    let show = |tracks, done, whole| {
+        replies.send(Reply::Songs {
+            tracks,
+            done,
+            whole,
+        })
+    };
+    let mut list = Kept::start("songs", &show);
+    let result = am
+        .each_library_track(|tracks, done| list.page(tracks, done, &show))
+        .await;
+    list.failed(&replies, result, &show);
+}
+
+async fn load_playlist(am: Arc<AppleMusic>, id: ItemId, replies: Replies) {
+    let show = |tracks, done, whole| {
+        replies.send(Reply::PlaylistTracks {
+            id: id.clone(),
+            result: Ok(tracks),
+            done,
+            whole,
+        })
+    };
+    // Only the library's own playlists are kept: a catalog one is read once.
+    let mut list = if id.id.starts_with("p.") {
+        Kept::start(&format!("playlist {}", id.id), &show)
+    } else {
+        Kept::none()
+    };
+    let result = am
+        .each_playlist_track(&id, |tracks, done| list.page(tracks, done, &show))
+        .await;
+    if let Err(e) = result {
+        if list.shown {
+            replies.send(Reply::Failed(e.to_string()));
+        } else {
+            replies.send(Reply::PlaylistTracks {
+                id,
+                result: Err(e.to_string()),
+                done: true,
+                whole: false,
+            });
         }
     }
 }
 
-async fn load_playlist(am: Arc<AppleMusic>, id: ItemId, replies: Replies) {
-    let mut cursor: Option<Cursor> = None;
-    loop {
-        match am.playlist_tracks(&id, cursor.as_ref()).await {
-            Ok(page) => {
-                let done = page.next.is_none();
-                replies.send(Reply::PlaylistTracks {
-                    id: id.clone(),
-                    result: Ok(page.items),
-                    done,
-                });
-                match page.next {
-                    Some(next) => cursor = Some(next),
-                    None => return,
-                }
+/// A list read from Apple, kept on disk once complete. What was kept from
+/// last time shows at once, and the fresh list then replaces it whole when
+/// read; with nothing kept, the list shows page by page as it comes.
+struct Kept<T> {
+    /// Where it is kept, if it is.
+    name: Option<String>,
+    /// The kept list was shown.
+    shown: bool,
+    all: Vec<T>,
+}
+
+impl<T: Clone + Serialize + DeserializeOwned + Send + 'static> Kept<T> {
+    /// Show what was kept under `name` with `show(items, done, whole)`.
+    fn start(name: &str, show: &impl Fn(Vec<T>, bool, bool)) -> Self {
+        let kept = cache::read::<Vec<T>>(name);
+        let shown = kept.is_some();
+        if let Some(items) = kept {
+            show(items, true, true);
+        }
+        Self {
+            name: Some(name.to_owned()),
+            shown,
+            all: Vec::new(),
+        }
+    }
+
+    /// A list not kept: it shows page by page.
+    fn none() -> Self {
+        Self {
+            name: None,
+            shown: false,
+            all: Vec::new(),
+        }
+    }
+
+    fn page(&mut self, items: Vec<T>, done: bool, show: &impl Fn(Vec<T>, bool, bool)) {
+        if self.shown {
+            self.all.extend(items);
+            if done {
+                show(self.all.clone(), true, true);
             }
-            Err(e) => {
-                replies.send(Reply::PlaylistTracks {
-                    id,
-                    result: Err(e.to_string()),
-                    done: true,
-                });
-                return;
+        } else {
+            if self.name.is_some() {
+                self.all.extend(items.iter().cloned());
             }
+            show(items, done, false);
+        }
+        if done && let Some(name) = self.name.take() {
+            let all = std::mem::take(&mut self.all);
+            tokio::task::spawn_blocking(move || cache::write(&name, &all));
+        }
+    }
+
+    /// A failure part way: the kept list stays shown, or the pages so far
+    /// end there. Either way it shows as a toast.
+    fn failed(
+        &self,
+        replies: &Replies,
+        result: music_core::Result<()>,
+        show: &impl Fn(Vec<T>, bool, bool),
+    ) {
+        if let Err(e) = result {
+            if !self.shown {
+                show(Vec::new(), true, false);
+            }
+            replies.send(Reply::Failed(e.to_string()));
         }
     }
 }

@@ -15,9 +15,11 @@ player = { path = "../player" }
 widevine = { path = "../widevine" }
 eframe = "0.37.0"
 egui_extras = { version = "0.37.0", features = ["svg", "image", "http"] }
+ehttp = "0.7.2"
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png"] }
 tokio = { version = "1.54.1", features = ["rt-multi-thread"] }
 serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
 toml = "1.1.8"
 egui = "0.37"
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "http2"] }
