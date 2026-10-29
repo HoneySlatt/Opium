@@ -64,10 +64,11 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         .frame(egui::Frame::new().fill(theme.base))
         .show(ui, |ui| {
             let main = ui.max_rect();
-            // The sidebar's right hairline.
+            let scrolled = page(app, ui, narrow);
+            // The sidebar's right hairline, over the page: a cover's colours
+            // at the top of it would hide it otherwise.
             ui.painter()
                 .vline(main.left(), main.y_range(), Stroke::new(1.0, theme.line()));
-            let scrolled = page(app, ui, narrow);
             top_bar(app, ui, main, scrolled);
             drawer::show(app, ui, main);
             player_bar::show(app, ui, main);
