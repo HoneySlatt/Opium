@@ -193,12 +193,16 @@ fn right_side(app: &mut App, ui: &mut Ui, theme: &Theme, inner: Rect) -> f32 {
     row.add_space(6.0);
     volume_slider(app, &mut row, theme);
     row.add_space(8.0);
-    let queue_color = if app.drawer_open { theme.accent } else { dim };
+    let queue_color = if app.drawer_shows(false) {
+        theme.accent
+    } else {
+        dim
+    };
     if icon_button(&mut row, theme, icons::QUEUE, 30.0, 16.0, queue_color, true)
         .on_hover_text("Playing next")
         .clicked()
     {
-        app.drawer_open = !app.drawer_open;
+        app.toggle_drawer(false);
     }
     if icon_button(&mut row, theme, icons::EXPAND, 30.0, 15.0, dim, true)
         .on_hover_text("Now Playing")

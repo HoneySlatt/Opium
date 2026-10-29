@@ -42,6 +42,7 @@ pub enum DrawerTab {
     #[default]
     PlayingNext,
     History,
+    Lyrics,
 }
 
 /// Now Playing's tabs.
@@ -281,6 +282,26 @@ impl App {
             self.backend.send(Request::Lyrics(id.clone()));
         }
         self.lyrics.entry(id.clone()).or_insert(Loaded::Loading)
+    }
+
+    /// Whether the drawer is open on the lyrics, or on the queue.
+    pub fn drawer_shows(&self, lyrics: bool) -> bool {
+        self.drawer_open && (self.drawer_tab == DrawerTab::Lyrics) == lyrics
+    }
+
+    /// Open the drawer on the lyrics or on the queue, or close it when it
+    /// already shows them.
+    pub fn toggle_drawer(&mut self, lyrics: bool) {
+        if self.drawer_shows(lyrics) {
+            self.drawer_open = false;
+            return;
+        }
+        self.drawer_open = true;
+        if lyrics {
+            self.drawer_tab = DrawerTab::Lyrics;
+        } else if self.drawer_tab == DrawerTab::Lyrics {
+            self.drawer_tab = DrawerTab::PlayingNext;
+        }
     }
 
     pub fn can_go_back(&self) -> bool {

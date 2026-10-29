@@ -1,5 +1,5 @@
-//! The queue drawer: 360 px on the right between the top bar and the player
-//! bar, with Playing Next and History tabs.
+//! The drawer: 360 px on the right between the top bar and the player bar,
+//! with Playing Next, History and Lyrics tabs.
 
 use egui::{Color32, Id, LayerId, Order, Rect, Sense, Stroke, Ui, pos2, vec2};
 use music_core::Repeat;
@@ -71,6 +71,7 @@ pub fn show(app: &mut App, ui: &mut Ui, main: Rect) {
     let labels = [
         (DrawerTab::PlayingNext, "Playing Next"),
         (DrawerTab::History, "History"),
+        (DrawerTab::Lyrics, "Lyrics"),
     ];
     if let Some(tab) = tabs(ui, &theme, tabs_at, &labels, app.drawer_tab) {
         app.drawer_tab = tab;
@@ -95,8 +96,14 @@ pub fn show(app: &mut App, ui: &mut Ui, main: Rect) {
         app.drawer_open = false;
     }
 
+    // Lyrics lines carry their own padding: their text lines up with the tabs.
+    let inset = if app.drawer_tab == DrawerTab::Lyrics {
+        4.0
+    } else {
+        8.0
+    };
     let body = Rect::from_min_max(
-        pos2(rect.left() + 8.0, rect.top() + 12.0 + 32.0 + 8.0),
+        pos2(rect.left() + inset, rect.top() + 12.0 + 32.0 + 8.0),
         pos2(rect.right() - 8.0, rect.bottom() - 12.0),
     );
     let mut body_ui = ui.new_child(egui::UiBuilder::new().max_rect(body));
@@ -111,6 +118,18 @@ pub fn show(app: &mut App, ui: &mut Ui, main: Rect) {
                     ui.spacing_mut().item_spacing.y = 0.0;
                     history(app, ui, &theme);
                 });
+        }
+        DrawerTab::Lyrics => {
+            let reach = body.height();
+            super::lyrics::show(
+                app,
+                &mut body_ui,
+                &theme,
+                body,
+                21.0,
+                reach,
+                "drawer-lyrics",
+            );
         }
     }
     if open < 1.0 {

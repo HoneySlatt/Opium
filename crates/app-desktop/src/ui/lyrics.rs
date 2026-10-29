@@ -13,7 +13,6 @@ use crate::theme::Theme;
 
 use super::{paint_text, text};
 
-const SIZE: f32 = 27.0;
 const PAD: egui::Vec2 = vec2(12.0, 9.0);
 /// The current line's scale.
 const LIT: f32 = 1.025;
@@ -39,7 +38,17 @@ pub fn ready(app: &mut App) -> Option<Arc<Lyrics>> {
     }
 }
 
-pub fn show(app: &mut App, ui: &mut Ui, theme: &Theme, body: Rect, window_height: f32) {
+/// The lyrics in `body` at `size` px. `reach` is the height the blank below the
+/// last line scales with; `salt` tells two lists apart.
+pub fn show(
+    app: &mut App,
+    ui: &mut Ui,
+    theme: &Theme,
+    body: Rect,
+    size: f32,
+    reach: f32,
+    salt: &str,
+) {
     let Some(track) = app.now.clone() else {
         return;
     };
@@ -68,15 +77,17 @@ pub fn show(app: &mut App, ui: &mut Ui, theme: &Theme, body: Rect, window_height
     let galleys: Vec<_> = lyrics
         .lines
         .iter()
-        .map(|l| (!l.text.is_empty()).then(|| layout(ui, &l.text, wrap, 1.0, theme)))
+        .map(|l| (!l.text.is_empty()).then(|| layout(ui, &l.text, size, wrap, 1.0, theme)))
         .collect();
     let heights: Vec<f32> = galleys
         .iter()
         .map(|g| g.as_ref().map_or(9.0 + 16.0, |g| g.size().y) + 2.0 * PAD.y)
         .collect();
-    let (pad_top, pad_bottom) = (window_height * 0.26, window_height * 0.44);
+    // The first line starts at the top; the blank below lets the last one
+    // climb to a third of the way down.
+    let pad_bottom = reach * 0.44;
     let mut tops = Vec::with_capacity(heights.len());
-    let mut y = pad_top;
+    let mut y = 0.0;
     for h in &heights {
         tops.push(y);
         y += h;
@@ -85,7 +96,7 @@ pub fn show(app: &mut App, ui: &mut Ui, theme: &Theme, body: Rect, window_height
 
     let position = app.status.position;
     let current = lyrics.current(position);
-    let scroll_id = Id::unique("np-lyrics-scroll");
+    let scroll_id = Id::unique((salt, "scroll"));
     let mut scroll: Scroll = ui.ctx().data(|d| d.get_temp(scroll_id)).unwrap_or_default();
     let new_track = scroll.track.as_ref() != Some(&track.id);
     if new_track || scroll.current != current {
@@ -96,7 +107,7 @@ pub fn show(app: &mut App, ui: &mut Ui, theme: &Theme, body: Rect, window_height
         scroll.track = Some(track.id.clone());
         scroll.current = current;
     }
-    let list_response = ui.interact(list, Id::unique("np-lyrics"), Sense::hover());
+    let list_response = ui.interact(list, Id::unique((salt, "list")), Sense::hover());
     if list_response.hovered() {
         scroll.target -= ui.input(|i| i.smooth_scroll_delta.y);
     }
@@ -125,11 +136,11 @@ pub fn show(app: &mut App, ui: &mut Ui, theme: &Theme, body: Rect, window_height
         let on = Some(i) == current;
         let lit = ui
             .ctx()
-            .animate_bool_with_time(Id::unique("np-lyric").with(i), on, 0.35);
+            .animate_bool_with_time(Id::unique((salt, "lit", i)), on, 0.35);
         // Unsynced lyrics have no current line: all of them read in full.
         let mut opacity = if lyrics.synced { 0.3 + 0.7 * lit } else { 1.0 };
         if lyrics.synced {
-            let response = ui.interact(rect, Id::unique("np-lyric-hit").with(i), Sense::click());
+            let response = ui.interact(rect, Id::unique((salt, "hit", i)), Sense::click());
             if response.hovered() {
                 painter.rect_filled(rect, 10.0, theme.hover());
                 opacity = opacity.max(0.62);
@@ -141,13 +152,13 @@ pub fn show(app: &mut App, ui: &mut Ui, theme: &Theme, body: Rect, window_height
                 app.play_from(line.start);
             }
         }
-        opacity *= edge_fade(rect.center().y, list);
+        opacity *= edge_fade(rect.center().y, list, offset);
         let color = theme.text_a(opacity);
         let scale = 1.0 + (LIT - 1.0) * lit;
         match &galleys[i] {
             Some(galley) => {
                 let galley = if scale > 1.0 {
-                    layout(ui, &line.text, wrap, scale, theme)
+                    layout(ui, &line.text, size, wrap, scale, theme)
                 } else {
                     galley.clone()
                 };
@@ -163,8 +174,8 @@ pub fn show(app: &mut App, ui: &mut Ui, theme: &Theme, body: Rect, window_height
     }
 }
 
-fn layout(ui: &Ui, s: &str, wrap: f32, scale: f32, theme: &Theme) -> Arc<egui::Galley> {
-    let size = SIZE * scale;
+fn layout(ui: &Ui, s: &str, size: f32, wrap: f32, scale: f32, theme: &Theme) -> Arc<egui::Galley> {
+    let size = size * scale;
     let mut job = LayoutJob::single_section(
         s.to_owned(),
         TextFormat {
@@ -180,9 +191,11 @@ fn layout(ui: &Ui, s: &str, wrap: f32, scale: f32, theme: &Theme) -> Arc<egui::G
 }
 
 /// The list's top 16 % and bottom 26 % fade out.
-fn edge_fade(y: f32, list: Rect) -> f32 {
+fn edge_fade(y: f32, list: Rect, offset: f32) -> f32 {
     let f = ((y - list.top()) / list.height()).clamp(0.0, 1.0);
-    let top = (f / FADE_TOP).min(1.0);
+    // Nothing above to fade until the list has scrolled.
+    let above = (offset / (list.height() * FADE_TOP)).clamp(0.0, 1.0);
+    let top = 1.0 - above * (1.0 - (f / FADE_TOP).min(1.0));
     let bottom = ((1.0 - f) / FADE_BOTTOM).min(1.0);
     top.min(bottom)
 }

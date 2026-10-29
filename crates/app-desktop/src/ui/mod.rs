@@ -214,22 +214,26 @@ fn top_bar(app: &mut App, ui: &mut Ui, main: Rect, scrolled: f32) {
             .layout(egui::Layout::left_to_right(egui::Align::Center)),
     );
     right.spacing_mut().item_spacing.x = 4.0;
+    let lyrics_color = if app.drawer_shows(true) {
+        theme.accent
+    } else {
+        theme.subtext0
+    };
     if icon_button(
         &mut right,
         &theme,
         icons::LYRICS,
         32.0,
         17.0,
-        theme.subtext0,
+        lyrics_color,
         true,
     )
     .on_hover_text("Lyrics")
     .clicked()
     {
-        app.np_tab = crate::app::NpTab::Lyrics;
-        app.now_playing = true;
+        app.toggle_drawer(true);
     }
-    let queue_color = if app.drawer_open {
+    let queue_color = if app.drawer_shows(false) {
         theme.accent
     } else {
         theme.subtext0
@@ -246,7 +250,7 @@ fn top_bar(app: &mut App, ui: &mut Ui, main: Rect, scrolled: f32) {
     .on_hover_text("Playing next")
     .clicked()
     {
-        app.drawer_open = !app.drawer_open;
+        app.toggle_drawer(false);
     }
     let wave_color = if app.signal_open == Some(SignalAnchor::TopBar) {
         theme.accent

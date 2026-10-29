@@ -478,7 +478,7 @@ fn right_column(app: &mut App, ui: &mut Ui, theme: &Theme, column: Rect, window_
                 pos2(column.left() - 12.0, top),
                 pos2(column.right() + 12.0, column.bottom()),
             );
-            lyrics::show(app, ui, theme, body, window_height);
+            lyrics::show(app, ui, theme, body, 27.0, window_height, "np-lyrics");
         }
     }
 }
