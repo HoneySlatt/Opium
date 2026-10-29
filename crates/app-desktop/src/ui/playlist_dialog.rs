@@ -243,9 +243,8 @@ pub fn show_new(app: &mut App, ctx: &egui::Context) {
     };
     let theme = app.theme.clone();
     let count = new.tracks.len();
-    let renaming = new.renaming.is_some();
-    let (title, action) = if renaming {
-        ("Rename Playlist", "Rename")
+    let (title, action) = if new.editing.is_some() {
+        ("Edit Playlist", "Save")
     } else {
         ("New Playlist", "Create")
     };
@@ -327,18 +326,54 @@ pub fn show_new(app: &mut App, ctx: &egui::Context) {
                 pos2(field.right() - 14.0, field.center().y + line / 2.0),
             );
             let mut child = ui.new_child(egui::UiBuilder::new().max_rect(edit));
+            let mut writing_notes = false;
             if let Some(new) = &mut app.new_playlist {
                 let response = child.add(
                     egui::TextEdit::singleline(&mut new.name)
                         .hint_text(egui::RichText::new("Playlist Name").color(theme.muted()))
-                        .font(body)
+                        .font(body.clone())
                         .frame(Frame::NONE)
                         .margin(egui::Margin::ZERO)
                         .desired_width(edit.width()),
                 );
-                if !response.has_focus() && !response.lost_focus() {
+                // The name has the keyboard when the window opens.
+                if ui.ctx().memory(|m| m.focused()).is_none() {
                     response.request_focus();
                 }
+
+                // The description, a few lines.
+                ui.add_space(12.0);
+                let (row, _) = ui.allocate_exact_size(vec2(width, 96.0), Sense::hover());
+                let field = Rect::from_min_max(
+                    pos2(row.left() + 24.0, row.top()),
+                    pos2(row.right() - 24.0, row.bottom()),
+                );
+                ui.painter().rect(
+                    field,
+                    9.0,
+                    theme.text_a(0.04),
+                    Stroke::new(1.0, theme.line()),
+                    egui::StrokeKind::Inside,
+                );
+                let mut child = ui.new_child(egui::UiBuilder::new().max_rect(field.shrink(12.0)));
+                let notes = egui::ScrollArea::vertical()
+                    .id_salt("new-playlist-description")
+                    .max_height(field.height() - 24.0)
+                    .show(&mut child, |ui| {
+                        ui.add(
+                            egui::TextEdit::multiline(&mut new.description)
+                                .hint_text(
+                                    egui::RichText::new("Description (Optional)")
+                                        .color(theme.muted()),
+                                )
+                                .font(body)
+                                .frame(Frame::NONE)
+                                .margin(egui::Margin::ZERO)
+                                .desired_rows(4)
+                                .desired_width(field.width() - 24.0),
+                        )
+                    });
+                writing_notes = notes.inner.has_focus();
             }
             let named = app
                 .new_playlist
@@ -360,7 +395,8 @@ pub fn show_new(app: &mut App, ctx: &egui::Context) {
             if pill(ui, &theme, create_rect, action, true, named) {
                 create = true;
             }
-            if named && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+            // Enter makes a new line in the description, and saves elsewhere.
+            if named && !writing_notes && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                 create = true;
             }
         });

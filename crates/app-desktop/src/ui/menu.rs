@@ -189,7 +189,7 @@ fn track_entries(facts: TrackFacts) -> Vec<Entry<TrackChoice>> {
     entries
 }
 
-/// A library playlist's menu in the sidebar: playing it, then renaming it if
+/// A library playlist's menu in the sidebar: playing it, then editing it if
 /// it is the user's own, and deleting it unless it is Apple's favourites.
 pub(super) fn playlist_menu(
     response: &Response,
@@ -219,7 +219,7 @@ pub(super) fn playlist_menu(
         entries.push(Entry::Line);
     }
     if editable {
-        entries.push(Entry::Item(icons::EDIT, "Rename…", PlaylistChoice::Rename));
+        entries.push(Entry::Item(icons::EDIT, "Edit…", PlaylistChoice::Edit));
     }
     if deletable {
         entries.push(Entry::Item(

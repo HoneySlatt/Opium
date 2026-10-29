@@ -102,16 +102,18 @@ pub enum Enqueue {
 #[derive(Clone, Copy)]
 pub enum PlaylistChoice {
     Enqueue(Enqueue),
-    Rename,
+    Edit,
     Delete,
 }
 
-/// The New Playlist window: its name so far, and the songs it starts with.
+/// The New Playlist window: its name and description so far, and the songs
+/// it starts with.
 pub struct NewPlaylist {
     pub name: String,
+    pub description: String,
     pub tracks: Vec<Track>,
-    /// The playlist being renamed, when the window renames one instead.
-    pub renaming: Option<ItemId>,
+    /// The playlist being edited, when the window edits one instead.
+    pub editing: Option<ItemId>,
 }
 
 /// The Add to Playlists window: the songs, the playlists ticked, the search.
@@ -726,8 +728,9 @@ impl App {
         self.playlist_dialog = None;
         self.new_playlist = Some(NewPlaylist {
             name: String::new(),
+            description: String::new(),
             tracks,
-            renaming: None,
+            editing: None,
         });
     }
 
@@ -738,12 +741,13 @@ impl App {
         };
         match choice {
             PlaylistChoice::Enqueue(how) => self.enqueue_playlist(&playlist, how, now),
-            PlaylistChoice::Rename => {
+            PlaylistChoice::Edit => {
                 self.playlist_dialog = None;
                 self.new_playlist = Some(NewPlaylist {
                     name: playlist.name,
+                    description: playlist.description.unwrap_or_default(),
                     tracks: Vec::new(),
-                    renaming: Some(playlist.id),
+                    editing: Some(playlist.id),
                 });
             }
             PlaylistChoice::Delete => self.deleting = Some(playlist),
@@ -757,19 +761,28 @@ impl App {
         }
     }
 
-    /// Make the playlist the New Playlist window names, and close it. Made
-    /// empty (from the sidebar), it opens once it exists.
+    /// Make the playlist the New Playlist window names, or save the one it
+    /// edits, and close it. Made empty (from the sidebar), it opens once it
+    /// exists.
     pub fn create_playlist(&mut self) {
         let Some(new) = self.new_playlist.take() else {
             return;
         };
         let name = new.name.trim().to_owned();
+        let description = new.description.trim().to_owned();
         if name.is_empty() {
             return;
         }
-        if let Some(id) = new.renaming {
-            if self.playlist(&id).is_some_and(|p| p.name != name) {
-                self.backend.send(Request::RenamePlaylist { id, name });
+        if let Some(id) = new.editing {
+            let changed = self.playlist(&id).is_some_and(|p| {
+                p.name != name || p.description.as_deref().unwrap_or_default() != description
+            });
+            if changed {
+                self.backend.send(Request::EditPlaylist {
+                    id,
+                    name,
+                    description,
+                });
             }
             return;
         }
@@ -788,6 +801,7 @@ impl App {
         }
         self.backend.send(Request::CreatePlaylist {
             name,
+            description,
             tracks: new.tracks.into_iter().map(|t| t.id).collect(),
         });
     }
@@ -1500,12 +1514,18 @@ impl App {
                     }
                     Err(e) => self.notify(e, now),
                 },
-                Reply::PlaylistRenamed { id, name, result } => match result {
+                Reply::PlaylistEdited {
+                    id,
+                    name,
+                    description,
+                    result,
+                } => match result {
                     Ok(()) => {
                         if let Some(p) = self.playlists.iter_mut().find(|p| p.id == id) {
                             p.name.clone_from(&name);
+                            p.description = Some(description).filter(|d| !d.is_empty());
                         }
-                        self.notify(format!("Renamed to “{name}”"), now);
+                        self.notify(format!("Saved “{name}”"), now);
                     }
                     Err(e) => self.notify(e, now),
                 },

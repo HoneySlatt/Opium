@@ -59,11 +59,14 @@ pub enum Request {
     /// Make a playlist with these songs.
     CreatePlaylist {
         name: String,
+        description: String,
         tracks: Vec<ItemId>,
     },
-    RenamePlaylist {
+    /// Change a playlist's name and description.
+    EditPlaylist {
         id: ItemId,
         name: String,
+        description: String,
     },
     DeletePlaylist(ItemId),
     /// Add songs to playlists.
@@ -110,9 +113,10 @@ pub enum Reply {
     },
     /// A playlist was made, or why not.
     PlaylistCreated(Result<Playlist, String>),
-    PlaylistRenamed {
+    PlaylistEdited {
         id: ItemId,
         name: String,
+        description: String,
         result: Result<(), String>,
     },
     PlaylistDeleted {
@@ -442,22 +446,35 @@ async fn run(
                     replies.send(Reply::Changed(result));
                 });
             }
-            Request::CreatePlaylist { name, tracks } => {
+            Request::CreatePlaylist {
+                name,
+                description,
+                tracks,
+            } => {
                 tokio::spawn(async move {
                     let result = am
-                        .create_playlist(&name, &tracks)
+                        .create_playlist(&name, &description, &tracks)
                         .await
                         .map_err(|e| format!("Couldn't make the playlist: {e}"));
                     replies.send(Reply::PlaylistCreated(result));
                 });
             }
-            Request::RenamePlaylist { id, name } => {
+            Request::EditPlaylist {
+                id,
+                name,
+                description,
+            } => {
                 tokio::spawn(async move {
                     let result = am
-                        .rename_playlist(&id, &name)
+                        .edit_playlist(&id, &name, &description)
                         .await
-                        .map_err(|e| format!("Couldn't rename the playlist: {e}"));
-                    replies.send(Reply::PlaylistRenamed { id, name, result });
+                        .map_err(|e| format!("Couldn't change the playlist: {e}"));
+                    replies.send(Reply::PlaylistEdited {
+                        id,
+                        name,
+                        description,
+                        result,
+                    });
                 });
             }
             Request::DeletePlaylist(id) => {

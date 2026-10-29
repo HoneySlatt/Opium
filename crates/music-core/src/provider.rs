@@ -74,16 +74,27 @@ pub trait Provider: Send + Sync {
     }
 
     /// Make a playlist in the user's library, with `tracks` in it.
-    async fn create_playlist(&self, _name: &str, _tracks: &[ItemId]) -> Result<Playlist> {
+    async fn create_playlist(
+        &self,
+        _name: &str,
+        _description: &str,
+        _tracks: &[ItemId],
+    ) -> Result<Playlist> {
         Err(Error::Protocol(
             "this service's playlists can't be made".into(),
         ))
     }
 
-    /// Give one of the user's playlists a new name.
-    async fn rename_playlist(&self, _playlist: &ItemId, _name: &str) -> Result<()> {
+    /// Give one of the user's playlists a new name and description; an empty
+    /// description takes it away.
+    async fn edit_playlist(
+        &self,
+        _playlist: &ItemId,
+        _name: &str,
+        _description: &str,
+    ) -> Result<()> {
         Err(Error::Protocol(
-            "this service's playlists can't be renamed".into(),
+            "this service's playlists can't be edited".into(),
         ))
     }
 

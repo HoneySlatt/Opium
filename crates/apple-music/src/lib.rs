@@ -559,10 +559,12 @@ impl Provider for AppleMusic {
         self.send_change(req, &path).await
     }
 
-    /// As the web player renames them.
-    async fn rename_playlist(&self, playlist: &ItemId, name: &str) -> Result<()> {
+    /// As the web player edits them. Apple takes no cover from it.
+    async fn edit_playlist(&self, playlist: &ItemId, name: &str, description: &str) -> Result<()> {
         let path = format!("/v1/me/library/playlists/{}", playlist.id);
-        let body = serde_json::json!({ "attributes": { "name": name } });
+        let body = serde_json::json!({
+            "attributes": { "name": name, "description": description },
+        });
         let req = self.http.patch(format!("{API}{path}")).json(&body);
         self.send_change(req, &path).await
     }
@@ -575,14 +577,23 @@ impl Provider for AppleMusic {
     }
 
     /// As Kopuz makes them: the name, and the songs as the playlist's tracks.
-    async fn create_playlist(&self, name: &str, tracks: &[ItemId]) -> Result<Playlist> {
+    async fn create_playlist(
+        &self,
+        name: &str,
+        description: &str,
+        tracks: &[ItemId],
+    ) -> Result<Playlist> {
         let path = "/v1/me/library/playlists";
         let data: Vec<serde_json::Value> = tracks
             .iter()
             .map(|t| serde_json::json!({ "id": t.id, "type": "songs" }))
             .collect();
+        let mut attributes = serde_json::json!({ "name": name });
+        if !description.is_empty() {
+            attributes["description"] = description.into();
+        }
         let body = serde_json::json!({
-            "attributes": { "name": name },
+            "attributes": attributes,
             "relationships": { "tracks": { "data": data } },
         });
         let resp = self
