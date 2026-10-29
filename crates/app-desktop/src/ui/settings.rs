@@ -296,8 +296,19 @@ fn services(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect) {
         } else {
             theme.muted()
         };
-        ui.painter().rect_filled(tile, 10.0, tile_fill);
-        paint_icon(ui, icon, tile.center(), 20.0, glyph);
+        if active {
+            // Apple Music's own logo, tile and all.
+            paint_icon(
+                ui,
+                icons::APPLE_MUSIC,
+                tile.center(),
+                40.0,
+                egui::Color32::WHITE,
+            );
+        } else {
+            ui.painter().rect_filled(tile, 10.0, tile_fill);
+            paint_icon(ui, icon, tile.center(), 20.0, glyph);
+        }
         let x = tile.right() + 14.0;
         let right = card.right() - 16.0;
         if !active {
