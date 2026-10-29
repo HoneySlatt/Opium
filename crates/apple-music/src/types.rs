@@ -6,6 +6,15 @@ use serde::Deserialize;
 pub struct Response<T> {
     pub data: Vec<T>,
     pub next: Option<String>,
+    /// A list's length, on its pages.
+    #[serde(default)]
+    pub meta: Option<Meta>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct Meta {
+    pub total: Option<usize>,
 }
 
 #[derive(Debug, Deserialize)]

@@ -302,6 +302,228 @@ impl AppleMusic {
     }
 }
 
+fn library_songs_path() -> String {
+    format!("/v1/me/library/songs?limit={PAGE}&relate=albums")
+}
+
+/// With the catalog's rating, for the E under explicit covers.
+fn library_albums_path() -> String {
+    format!("/v1/me/library/albums?limit={PAGE}&include=catalog&fields%5Balbums%5D=contentRating")
+}
+
+/// With the tags, which mark Apple's playlist of favourite songs.
+fn library_playlists_path() -> String {
+    format!("/v1/me/library/playlists?limit={PAGE}&extend%5Blibrary-playlists%5D=tags,inFavorites")
+}
+
+fn library_artists_path() -> String {
+    format!("/v1/me/library/artists?limit={PAGE}&include=catalog")
+}
+
+fn recently_added_path() -> String {
+    format!(
+        "/v1/me/library/recently-added?limit={RECENT_PAGE}&include=catalog&fields%5Balbums%5D=contentRating"
+    )
+}
+
+/// How many pages of a list are asked for at once: Apple answers 32 about as
+/// fast as one, where one after another a 5 000-song playlist took a minute.
+const PAGES_AT_ONCE: usize = 32;
+
+impl AppleMusic {
+    fn playlist_tracks_path(&self, playlist: &ItemId) -> String {
+        if playlist.id.starts_with("p.") {
+            format!(
+                "/v1/me/library/playlists/{}/tracks?limit={PAGE}&relate=albums",
+                playlist.id
+            )
+        } else {
+            format!(
+                "/v1/catalog/{}/playlists/{}/tracks?limit={PAGE}&include=albums",
+                self.storefront, playlist.id
+            )
+        }
+    }
+
+    /// Every library song, page by page: `each` gets them in order, and
+    /// whether that was the last page.
+    pub async fn each_library_track(&self, each: impl FnMut(Vec<Track>, bool)) -> Result<()> {
+        self.each_page(&library_songs_path(), convert::track, usize::MAX, each)
+            .await
+    }
+
+    /// Every song of a playlist, as [`each_library_track`](Self::each_library_track).
+    pub async fn each_playlist_track(
+        &self,
+        playlist: &ItemId,
+        each: impl FnMut(Vec<Track>, bool),
+    ) -> Result<()> {
+        let first = self.playlist_tracks_path(playlist);
+        self.each_page(&first, convert::track, usize::MAX, each)
+            .await
+    }
+
+    pub async fn each_library_album(&self, each: impl FnMut(Vec<Album>, bool)) -> Result<()> {
+        self.each_page(&library_albums_path(), convert::album, usize::MAX, each)
+            .await
+    }
+
+    pub async fn each_library_artist(&self, each: impl FnMut(Vec<Artist>, bool)) -> Result<()> {
+        self.each_page(
+            &library_artists_path(),
+            convert::library_artist,
+            usize::MAX,
+            each,
+        )
+        .await
+    }
+
+    pub async fn each_library_playlist(&self, each: impl FnMut(Vec<Playlist>, bool)) -> Result<()> {
+        self.each_page(
+            &library_playlists_path(),
+            convert::playlist,
+            usize::MAX,
+            each,
+        )
+        .await
+    }
+
+    /// What was added last, as far back as `limit` items.
+    pub async fn each_recently_added(
+        &self,
+        limit: usize,
+        mut each: impl FnMut(Vec<Collection>, bool),
+    ) -> Result<()> {
+        self.each_page(
+            &recently_added_path(),
+            convert::collection,
+            limit,
+            |items, last| each(items.into_iter().flatten().collect(), last),
+        )
+        .await
+    }
+
+    /// Every page of the list `first` begins, up to `limit` items, handed to
+    /// `each` in order with whether it is the last. The first page says how
+    /// long the list is; Apple's lists page by offset, so the rest are then
+    /// asked for many at once. Without a length, they come one by one.
+    async fn each_page<A, T>(
+        &self,
+        first: &str,
+        convert: fn(types::Resource<A>) -> T,
+        limit: usize,
+        mut each: impl FnMut(Vec<T>, bool),
+    ) -> Result<()>
+    where
+        A: DeserializeOwned,
+    {
+        use futures_util::StreamExt;
+
+        let Some(resp) = self
+            .fetch::<types::Response<types::Resource<A>>>(first)
+            .await?
+        else {
+            each(Vec::new(), true);
+            return Ok(());
+        };
+        let got = resp.data.len();
+        let total = resp.meta.as_ref().and_then(|m| m.total);
+        let items: Vec<T> = resp.data.into_iter().map(convert).collect();
+        let next = resp.next.filter(|_| got > 0 && got < limit);
+        let Some(next) = next else {
+            each(items, true);
+            return Ok(());
+        };
+        let Some(total) = total else {
+            each(items, false);
+            return self
+                .each_page_in_turn(first, next, convert, got, limit, each)
+                .await;
+        };
+        let total = total.min(limit);
+        let offsets: Vec<usize> = (got..total).step_by(got).collect();
+        each(items, offsets.is_empty());
+        let count = offsets.len();
+        let mut pages = futures_util::stream::iter(offsets)
+            .map(|offset| {
+                let path = at_offset(&next, offset, first);
+                async move { self.fetch_page::<A>(&path).await }
+            })
+            .buffered(PAGES_AT_ONCE)
+            .enumerate();
+        while let Some((i, page)) = pages.next().await {
+            let items = page?.into_iter().map(convert).collect();
+            each(items, i + 1 == count);
+        }
+        Ok(())
+    }
+
+    /// One page, tried again once: with many asked at once, one may fail
+    /// where asking again works.
+    async fn fetch_page<A: DeserializeOwned>(&self, path: &str) -> Result<Vec<types::Resource<A>>> {
+        let resp = match self
+            .fetch::<types::Response<types::Resource<A>>>(path)
+            .await
+        {
+            Err(Error::NotSignedIn) => return Err(Error::NotSignedIn),
+            Err(_) => {
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                self.fetch(path).await?
+            }
+            Ok(resp) => resp,
+        };
+        Ok(resp.map(|r| r.data).unwrap_or_default())
+    }
+
+    /// The rest of a list after its first `got` items, one page after another.
+    async fn each_page_in_turn<A, T>(
+        &self,
+        first: &str,
+        next: String,
+        convert: fn(types::Resource<A>) -> T,
+        mut got: usize,
+        limit: usize,
+        mut each: impl FnMut(Vec<T>, bool),
+    ) -> Result<()>
+    where
+        A: DeserializeOwned,
+    {
+        let mut next = Some(next);
+        while let Some(path) = next.take() {
+            let path = carry_query_forward(&path, first);
+            let Some(resp) = self
+                .fetch::<types::Response<types::Resource<A>>>(&path)
+                .await?
+            else {
+                break;
+            };
+            got += resp.data.len();
+            next = resp.next.filter(|_| got < limit);
+            each(resp.data.into_iter().map(convert).collect(), next.is_none());
+        }
+        Ok(())
+    }
+}
+
+/// The page of `next`'s list starting at `offset`, with `first`'s parameters.
+fn at_offset(next: &str, offset: usize, first: &str) -> String {
+    let base = url::Url::parse(API).expect("API base");
+    let Ok(mut url) = base.join(next) else {
+        return carry_query_forward(next, first);
+    };
+    let kept: Vec<(String, String)> = url
+        .query_pairs()
+        .filter(|(k, _)| k != "offset")
+        .map(|(k, v)| (k.into_owned(), v.into_owned()))
+        .collect();
+    url.query_pairs_mut()
+        .clear()
+        .extend_pairs(kept)
+        .append_pair("offset", &offset.to_string());
+    let path = format!("{}?{}", url.path(), url.query().unwrap_or_default());
+    carry_query_forward(&path, first)
+}
+
 /// Apple's `next` keeps the path and the offset but drops `limit` and `include`,
 /// so later pages would shrink to the default size. Re-add whatever the first
 /// request had that `next` doesn't.
@@ -347,36 +569,29 @@ impl Provider for AppleMusic {
     }
 
     async fn library_tracks(&self, cursor: Option<&Cursor>) -> Result<Page<Track>> {
-        let first = format!("/v1/me/library/songs?limit={PAGE}&include=albums");
-        self.page(&first, cursor, convert::track).await
+        self.page(&library_songs_path(), cursor, convert::track)
+            .await
     }
 
     async fn library_albums(&self, cursor: Option<&Cursor>) -> Result<Page<Album>> {
-        // With the catalog's rating, for the E under explicit covers.
-        let first = format!(
-            "/v1/me/library/albums?limit={PAGE}&include=catalog&fields%5Balbums%5D=contentRating"
-        );
-        self.page(&first, cursor, convert::album).await
+        self.page(&library_albums_path(), cursor, convert::album)
+            .await
     }
 
     async fn library_playlists(&self, cursor: Option<&Cursor>) -> Result<Page<Playlist>> {
-        // With the tags, which mark Apple's playlist of favourite songs.
-        let first = format!(
-            "/v1/me/library/playlists?limit={PAGE}&extend%5Blibrary-playlists%5D=tags,inFavorites"
-        );
-        self.page(&first, cursor, convert::playlist).await
+        self.page(&library_playlists_path(), cursor, convert::playlist)
+            .await
     }
 
     async fn library_artists(&self, cursor: Option<&Cursor>) -> Result<Page<Artist>> {
-        let first = format!("/v1/me/library/artists?limit={PAGE}&include=catalog");
-        self.page(&first, cursor, convert::library_artist).await
+        self.page(&library_artists_path(), cursor, convert::library_artist)
+            .await
     }
 
     async fn recently_added(&self, cursor: Option<&Cursor>) -> Result<Page<Collection>> {
-        let first = format!(
-            "/v1/me/library/recently-added?limit={RECENT_PAGE}&include=catalog&fields%5Balbums%5D=contentRating"
-        );
-        let page = self.page(&first, cursor, convert::collection).await?;
+        let page = self
+            .page(&recently_added_path(), cursor, convert::collection)
+            .await?;
         Ok(Page {
             items: page.items.into_iter().flatten().collect(),
             next: page.next,
@@ -448,18 +663,8 @@ impl Provider for AppleMusic {
         playlist: &ItemId,
         cursor: Option<&Cursor>,
     ) -> Result<Page<Track>> {
-        let first = if playlist.id.starts_with("p.") {
-            format!(
-                "/v1/me/library/playlists/{}/tracks?limit={PAGE}&include=albums",
-                playlist.id
-            )
-        } else {
-            format!(
-                "/v1/catalog/{}/playlists/{}/tracks?limit={PAGE}&include=albums",
-                self.storefront, playlist.id
-            )
-        };
-        self.page(&first, cursor, convert::track).await
+        self.page(&self.playlist_tracks_path(playlist), cursor, convert::track)
+            .await
     }
 
     /// The artist's top songs, albums, and singles and EPs, as the web player
@@ -827,6 +1032,18 @@ mod tests {
         assert_eq!(
             next,
             "/v1/me/library/songs?offset=100&limit=100&include=albums"
+        );
+    }
+
+    #[test]
+    fn a_page_at_an_offset_keeps_the_first_requests_parameters() {
+        assert_eq!(
+            at_offset(
+                "/v1/me/library/songs?offset=100",
+                700,
+                "/v1/me/library/songs?limit=100&include=albums"
+            ),
+            "/v1/me/library/songs?offset=700&limit=100&include=albums"
         );
     }
 
