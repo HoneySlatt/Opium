@@ -246,7 +246,11 @@ fn left_column(app: &mut App, ui: &mut Ui, theme: &Theme, column: Rect, window_h
         80.0,
     );
     paint_text(ui, g, x, y + 8.0, egui::Align::Min, muted);
-    let remaining = format!("-{}", format_time(total.saturating_sub(position)));
+    let remaining = if app.duration().is_none() && app.is_playing() {
+        "LIVE".to_owned()
+    } else {
+        format!("-{}", format_time(total.saturating_sub(position)))
+    };
     let g = text(ui, &remaining, font(11.5, Weight::Regular), muted, 80.0);
     paint_text(ui, g, x + size, y + 8.0, egui::Align::Max, muted);
     y += 16.0 + 12.0;

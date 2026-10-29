@@ -59,6 +59,16 @@ pub trait Provider: Send + Sync {
         Ok(None)
     }
 
+    /// The radio page: stations on air, then shelves of stations and shows.
+    async fn radio(&self) -> Result<Vec<Shelf>> {
+        Ok(Vec::new())
+    }
+
+    /// The next songs of a station that plays songs, about `count` of them.
+    async fn station_tracks(&self, _station: &ItemId, _count: usize) -> Result<Vec<Track>> {
+        Ok(Vec::new())
+    }
+
     /// What the service recommends, shelf by shelf. Not every service has this.
     async fn home(&self) -> Result<Vec<Shelf>> {
         Ok(Vec::new())

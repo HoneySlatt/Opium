@@ -242,9 +242,12 @@ int wv_update(const uint8_t* sid, uint32_t sid_len, const uint8_t* license, uint
 
 // Decrypt one CENC buffer. subs is a flattened [clear0,cipher0,clear1,...] array
 // of num_subs pairs; num_subs == 0 means the whole buffer is encrypted.
-int wv_decrypt(const uint8_t* data, uint32_t data_size, const uint8_t* key_id,
-               uint32_t key_id_size, const uint8_t* iv, uint32_t iv_size, const uint32_t* subs,
-               uint32_t num_subs, uint8_t** out, uint32_t* out_len) {
+// `cbcs` is 0 for CENC (AES-CTR, songs) and 1 for CBCS (AES-CBC with a
+// crypt:skip pattern, Apple's live radio).
+int wv_decrypt_scheme(const uint8_t* data, uint32_t data_size, const uint8_t* key_id,
+                      uint32_t key_id_size, const uint8_t* iv, uint32_t iv_size,
+                      const uint32_t* subs, uint32_t num_subs, int cbcs, uint32_t crypt_blocks,
+                      uint32_t skip_blocks, uint8_t** out, uint32_t* out_len) {
   if (!g_host || !g_host->cdm) return 30;
   std::vector<SubsampleEntry> subsamples;
   subsamples.reserve(num_subs);
@@ -258,7 +261,9 @@ int wv_decrypt(const uint8_t* data, uint32_t data_size, const uint8_t* key_id,
   memset(&in, 0, sizeof(in));
   in.data = data;
   in.data_size = data_size;
-  in.encryption_scheme = EncryptionScheme::kCenc;
+  in.encryption_scheme = cbcs ? EncryptionScheme::kCbcs : EncryptionScheme::kCenc;
+  in.pattern.crypt_byte_block = crypt_blocks;
+  in.pattern.skip_byte_block = skip_blocks;
   in.key_id = key_id;
   in.key_id_size = key_id_size;
   in.iv = iv;
@@ -283,6 +288,13 @@ int wv_decrypt(const uint8_t* data, uint32_t data_size, const uint8_t* key_id,
   bool ok = emit(b->Data(), b->Size(), out, out_len);
   b->Destroy();
   return ok ? 0 : 41;
+}
+
+int wv_decrypt(const uint8_t* data, uint32_t data_size, const uint8_t* key_id,
+               uint32_t key_id_size, const uint8_t* iv, uint32_t iv_size, const uint32_t* subs,
+               uint32_t num_subs, uint8_t** out, uint32_t* out_len) {
+  return wv_decrypt_scheme(data, data_size, key_id, key_id_size, iv, iv_size, subs, num_subs, 0,
+                           0, 0, out, out_len);
 }
 
 void wv_free(uint8_t* p) { free(p); }

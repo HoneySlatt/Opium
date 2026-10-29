@@ -213,7 +213,7 @@ impl AppleMusic {
             .map_err(|e| playback_error(e.to_string()))
     }
 
-    async fn download(&self, url: &str) -> Result<Vec<u8>> {
+    pub(crate) async fn download(&self, url: &str) -> Result<Vec<u8>> {
         let resp = self
             .http
             .get(url)

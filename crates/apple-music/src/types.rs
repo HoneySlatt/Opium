@@ -218,4 +218,29 @@ pub struct RecommendationContents {
     pub contents: Option<Response<Resource<serde_json::Value>>>,
 }
 
+#[derive(Debug, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct StationAttributes {
+    pub name: String,
+    pub artwork: Option<Artwork>,
+    pub is_live: bool,
+    pub media_kind: Option<String>,
+    pub play_params: Option<StationPlayParams>,
+    pub editorial_notes: Option<StationNotes>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct StationPlayParams {
+    /// `stream` for what airs or aired, `tracks` for a station of songs.
+    pub format: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct StationNotes {
+    pub short: Option<String>,
+    pub tagline: Option<String>,
+}
+
 pub type LyricsResponse = Response<Resource<LyricsAttributes>>;

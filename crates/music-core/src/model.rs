@@ -136,6 +136,29 @@ pub enum FavouriteKind {
 pub enum Collection {
     Album(Album),
     Playlist(Playlist),
+    Station(Station),
+}
+
+/// A radio station.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Station {
+    pub id: ItemId,
+    pub name: String,
+    /// What it plays, in a line.
+    pub description: Option<String>,
+    pub artwork: Option<Artwork>,
+    pub kind: StationKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StationKind {
+    /// On air now (Apple Music 1, Hits…).
+    Live,
+    /// A show that aired, streamed from the start.
+    Episode,
+    /// Songs one after the other, picked by the service (an artist's or the
+    /// user's station).
+    Tracks,
 }
 
 /// An artist's page: their best-known songs and their releases.

@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::mpsc;
 
-use apple_music::{AppleMusic, AudioStream};
+use apple_music::{AppleMusic, AudioStream, LiveStream};
 use music_core::model::{
     Album, Artist, ArtistDetail, Collection, Cursor, FavouriteKind, ItemId, Lyrics, Page, Playlist,
     SearchResults, Shelf, Track,
@@ -26,6 +26,10 @@ pub enum Request {
     RecentlyAdded,
     /// The home page's shelves.
     Home,
+    /// The radio page's shelves.
+    Radio,
+    /// The next songs of a station of songs.
+    StationTracks(ItemId),
     /// Sign in to Apple Music in the browser, then connect with the new token.
     SignIn,
     /// Connect again with the saved token (after a sign-in).
@@ -90,8 +94,13 @@ pub enum Reply {
     Home(Result<Vec<Shelf>, String>),
     Fetched {
         token: player::Token,
-        result: Result<AudioStream, String>,
+        result: Result<Playable, String>,
     },
+    StationTracks {
+        id: ItemId,
+        result: Result<Vec<Track>, String>,
+    },
+    Radio(Result<Vec<Shelf>, String>),
     Album {
         id: ItemId,
         result: Result<(Album, Vec<Track>), String>,
@@ -118,6 +127,12 @@ pub enum Reply {
         query: String,
         result: Result<SearchResults, String>,
     },
+}
+
+/// What a fetch hands the player: a track, or a station's stream.
+pub enum Playable {
+    Track(AudioStream),
+    Live(LiveStream),
 }
 
 pub struct Backend {
@@ -353,6 +368,20 @@ async fn run(
                     });
                 });
             }
+            Request::Radio => {
+                tokio::spawn(async move {
+                    replies.send(Reply::Radio(am.radio().await.map_err(|e| e.to_string())));
+                });
+            }
+            Request::StationTracks(id) => {
+                tokio::spawn(async move {
+                    let result = am
+                        .station_tracks(&id, STATION_BATCH)
+                        .await
+                        .map_err(|e| e.to_string());
+                    replies.send(Reply::StationTracks { id, result });
+                });
+            }
             Request::Home => {
                 tokio::spawn(async move {
                     replies.send(Reply::Home(am.home().await.map_err(|e| e.to_string())));
@@ -397,10 +426,17 @@ async fn run(
             Request::Fetch { token, track } => {
                 let cdm = cdm.clone();
                 tokio::spawn(async move {
+                    // Stations (`ra.`) stream; everything else is a track.
                     let result = match cdm {
+                        Ok(cdm) if track.id.starts_with("ra.") => am
+                            .live_station(&cdm, &track)
+                            .await
+                            .map(Playable::Live)
+                            .map_err(|e| e.to_string()),
                         Ok(cdm) => am
                             .fetch_track(&cdm, &track)
                             .await
+                            .map(Playable::Track)
                             .map_err(|e| e.to_string()),
                         Err(e) => Err(e),
                     };
@@ -410,6 +446,9 @@ async fn run(
         }
     }
 }
+
+/// How many songs a station of songs is asked for at a time.
+const STATION_BATCH: usize = 20;
 
 /// How far back Recently Added goes.
 const RECENT_LIMIT: usize = 200;

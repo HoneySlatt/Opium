@@ -2,7 +2,7 @@
 //! cover card and grid layout the artist page and search share.
 
 use egui::{Id, Rect, Sense, Stroke, Ui, pos2, vec2};
-use music_core::model::{Collection, ItemId, Playlist, ProviderKind};
+use music_core::model::{Collection, ItemId, Playlist, ProviderKind, Station};
 
 use crate::app::{App, Enqueue, Page};
 use crate::fonts::{Weight, font};
@@ -275,6 +275,7 @@ enum Open {
     Album(ItemId),
     Artist(ItemId),
     Playlist(Playlist),
+    Station(Station),
 }
 
 pub fn albums(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
@@ -434,6 +435,7 @@ fn page(app: &mut App, ui: &mut Ui, pad: f32, kind: Kind) -> f32 {
         Some((Open::Album(id), CardClick::Open)) => app.go(Page::Album(id)),
         Some((Open::Artist(id), CardClick::Open)) => app.go(Page::Artist(id)),
         Some((Open::Playlist(playlist), CardClick::Open)) => app.open_playlist(&playlist),
+        Some((Open::Station(station), _)) => app.play_station(&station),
         Some((Open::Album(id), CardClick::Enqueue(how))) => app.enqueue_album(id, how, now),
         Some((Open::Playlist(p), CardClick::Enqueue(how))) => app.enqueue_playlist(&p, how, now),
         Some((Open::Artist(_), CardClick::Enqueue(_))) | None => {}
@@ -454,6 +456,7 @@ fn item_id(item: &Collection) -> &ItemId {
     match item {
         Collection::Album(a) => &a.id,
         Collection::Playlist(p) => &p.id,
+        Collection::Station(s) => &s.id,
     }
 }
 
@@ -490,6 +493,12 @@ fn card(app: &App, kind: Kind, i: usize) -> (String, String, Option<String>, Ope
                 "Playlist".into(),
                 p.artwork.as_ref().map(|art| art.url(376)),
                 Open::Playlist(p.clone()),
+            ),
+            Collection::Station(s) => (
+                s.name.clone(),
+                "Station".into(),
+                s.artwork.as_ref().map(|art| art.url(376)),
+                Open::Station(s.clone()),
             ),
         },
     }

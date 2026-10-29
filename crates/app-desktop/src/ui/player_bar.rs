@@ -146,6 +146,8 @@ fn transport(app: &mut App, ui: &mut Ui, theme: &Theme, inner: Rect) -> f32 {
             format_time(position),
             format_time(total.saturating_sub(position))
         ),
+        // A station on air has no end.
+        None if app.is_playing() => format!("{} · LIVE", format_time(position)),
         _ => "0:00 / -0:00".into(),
     };
     row.add_space(10.0);

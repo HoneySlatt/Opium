@@ -7,12 +7,12 @@ use std::time::Duration;
 
 use music_core::model::{
     Album, Artist, ArtistDetail, Collection, FavouriteKind, ItemId, Lyrics, Playlist, ProviderKind,
-    SearchResults, Shelf, Track,
+    SearchResults, Shelf, Station, StationKind, Track,
 };
 use music_core::{Queue, Repeat};
 use player::{Event, Player, Status, Token};
 
-use crate::backend::{Backend, Reply, Request};
+use crate::backend::{Backend, Playable, Reply, Request};
 use crate::palette::Palette;
 use crate::theme::Theme;
 use crate::ui;
@@ -180,6 +180,9 @@ pub struct SongsView {
 /// What `SongsView::order` was built from: the song count, sort and filter.
 pub type OrderKey = (usize, Option<(SortKey, bool)>, Option<ProviderKind>);
 
+/// A station of songs asks for more when fewer than this many are left.
+const STATION_REFILL: usize = 5;
+
 /// How many tracks in a row may fail to start, and be skipped, before the
 /// app stops trying.
 const MAX_SKIPS: usize = 5;
@@ -222,6 +225,12 @@ pub struct App {
     /// What is known to be a favourite or not: set by the user here, or read
     /// from the service. It wins over `favourite_songs`.
     favourites_known: HashMap<ItemId, bool>,
+    /// The radio page's shelves, once asked for.
+    pub radio: Option<Loaded<Arc<Vec<Shelf>>>>,
+    /// The station of songs playing, which the queue keeps topping up.
+    station: Option<ItemId>,
+    /// More of its songs are on their way.
+    station_loading: bool,
     /// The home shelves, once asked for.
     pub home: Option<Loaded<Arc<Vec<Shelf>>>>,
     /// The source filter on the cover grids.
@@ -309,6 +318,9 @@ impl App {
             recently_added: Streamed::default(),
             favourite_songs: Default::default(),
             favourites_known: HashMap::new(),
+            radio: None,
+            station: None,
+            station_loading: false,
             home: None,
             grid_source: None,
             albums: HashMap::new(),
@@ -374,6 +386,7 @@ impl App {
                 self.backend.send(Request::Album(id.clone()));
             }
             Page::Home if self.home.is_none() => self.refresh_home(),
+            Page::Radio if self.radio.is_none() => self.refresh_radio(),
             Page::Albums if self.library_albums.first_ask() => {
                 self.backend.send(Request::LibraryAlbums);
             }
@@ -469,6 +482,45 @@ impl App {
         self.settings.save();
         // The next frame applies it.
         self.zoom = None;
+    }
+
+    /// Ask for the radio page again.
+    pub fn refresh_radio(&mut self) {
+        self.radio = Some(Loaded::Loading);
+        self.backend.send(Request::Radio);
+    }
+
+    /// Play a station: what airs (or an episode) as one endless track, a
+    /// station of songs as a queue that tops itself up.
+    pub fn play_station(&mut self, station: &Station) {
+        match station.kind {
+            StationKind::Live | StationKind::Episode => {
+                let track = Track {
+                    id: station.id.clone(),
+                    title: station.name.clone(),
+                    artists: vec![match station.kind {
+                        StationKind::Live => "Live radio".to_owned(),
+                        _ => "Radio".to_owned(),
+                    }],
+                    album: station.description.clone(),
+                    album_id: None,
+                    duration: None,
+                    track_number: None,
+                    disc_number: None,
+                    artwork: station.artwork.clone(),
+                    explicit: false,
+                    quality: None,
+                };
+                self.play_list(vec![track], 0);
+            }
+            StationKind::Tracks => {
+                self.play_list(Vec::new(), 0);
+                self.station = Some(station.id.clone());
+                self.station_loading = true;
+                self.backend
+                    .send(Request::StationTracks(station.id.clone()));
+            }
+        }
     }
 
     /// Ask for the home shelves again.
@@ -699,6 +751,8 @@ impl App {
 
     /// Replace the queue with `tracks` and play from `start`.
     pub fn play_list(&mut self, tracks: Vec<Track>, start: usize) {
+        // Whatever plays now is no longer a station of songs.
+        self.station = None;
         self.queue.replace(tracks, start);
         self.start_current();
     }
@@ -914,10 +968,16 @@ impl App {
             .or_else(|| self.status.source.as_ref().and_then(|s| s.duration))
     }
 
-    fn source(stream: apple_music::AudioStream) -> player::Source {
-        let len = stream.len();
-        let hint = stream.seek_hint();
-        player::Source::new(stream, len, Some("m4a")).with_seek_hint(hint)
+    fn source(playable: Playable) -> player::Source {
+        match playable {
+            Playable::Track(stream) => {
+                let len = stream.len();
+                let hint = stream.seek_hint();
+                player::Source::new(stream, len, Some("m4a")).with_seek_hint(hint)
+            }
+            // A station's stream is ADTS, forward only.
+            Playable::Live(stream) => player::Source::stream(stream, Some("aac")),
+        }
     }
 
     // ---- Each frame ----
@@ -983,6 +1043,34 @@ impl App {
                 Reply::LibraryAlbums { albums, done } => self.library_albums.extend(albums, done),
                 Reply::LibraryArtists { artists, done } => {
                     self.library_artists.extend(artists, done)
+                }
+                Reply::Radio(result) => {
+                    self.radio = Some(match result {
+                        Ok(shelves) => Loaded::Ready(Arc::new(shelves)),
+                        Err(e) => Loaded::Failed(e),
+                    });
+                }
+                Reply::StationTracks { id, result } => {
+                    if self.station.as_ref() == Some(&id) {
+                        self.station_loading = false;
+                        match result {
+                            // The first songs start it; later ones go on the end.
+                            Ok(tracks) if self.queue.current().is_none() => {
+                                self.queue.replace(tracks, 0);
+                                self.start_current();
+                            }
+                            Ok(tracks) => {
+                                let was_last = self.queue.upcoming_len() == 0;
+                                for track in tracks {
+                                    self.queue.add_last(track);
+                                }
+                                if was_last {
+                                    self.prefetch_next();
+                                }
+                            }
+                            Err(e) => self.notify(format!("The station stopped: {e}"), now),
+                        }
+                    }
                 }
                 Reply::Home(result) => {
                     self.home = Some(match result {
@@ -1138,6 +1226,14 @@ impl App {
                         .retain(|t, _| *t == token || Some(*t) == pending || Some(*t) == queued);
                     self.prefetch_next();
                     self.failed_in_row = 0;
+                    // A station of songs is topped up before it runs dry.
+                    if let Some(station) = &self.station
+                        && !self.station_loading
+                        && self.queue.upcoming_len() < STATION_REFILL
+                    {
+                        self.station_loading = true;
+                        self.backend.send(Request::StationTracks(station.clone()));
+                    }
                 }
                 Event::Finished => {}
                 Event::Error { message, .. } => self.notify(message, now),
@@ -1237,6 +1333,22 @@ impl eframe::App for App {
             .filter(|&row| row < shown.len())
         {
             self.play_list(shown, row);
+        }
+        let connected = self.connection == Connection::Connected;
+        if let Some(id) = self.screenshot.as_mut().and_then(|s| s.station(connected)) {
+            let live =
+                id.starts_with("ra.") && !id.starts_with("ra.u-") && !id.starts_with("ra.q-");
+            self.play_station(&Station {
+                id: ItemId::new(ProviderKind::AppleMusic, id),
+                name: "Station".into(),
+                description: None,
+                artwork: None,
+                kind: if live {
+                    StationKind::Live
+                } else {
+                    StationKind::Tracks
+                },
+            });
         }
         if let Some(screenshot) = &mut self.screenshot {
             screenshot.update(ui.ctx());

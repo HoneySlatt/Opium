@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use music_core::model::{
     Album, Artist, Artwork, AudioQuality, Codec, Collection, ItemId, Playlist, ProviderKind, Shelf,
-    Track,
+    Station, StationKind, Track,
 };
 
 use crate::types;
@@ -210,11 +210,37 @@ pub fn collection(item: types::Resource<serde_json::Value>) -> Option<Collection
     match item.kind.as_str() {
         "albums" | "library-albums" => Some(Collection::Album(album(typed(item)))),
         "playlists" | "library-playlists" => Some(Collection::Playlist(playlist(typed(item)))),
+        "stations" => station(typed(item)).map(Collection::Station),
         _ => None,
     }
 }
 
-/// A home shelf; stations and anything else it holds are left out.
+/// A station the app can play: on air, an episode, or songs. Video stations
+/// are left out.
+pub fn station(station: types::Resource<types::StationAttributes>) -> Option<Station> {
+    let attrs = station.attributes?;
+    if attrs.media_kind.as_deref().is_some_and(|k| k != "audio") {
+        return None;
+    }
+    let stream = attrs.play_params.as_ref().and_then(|p| p.format.as_deref()) == Some("stream");
+    let kind = match (stream, attrs.is_live) {
+        (true, true) => StationKind::Live,
+        (true, false) => StationKind::Episode,
+        (false, _) => StationKind::Tracks,
+    };
+    Some(Station {
+        id: id(station.id),
+        name: attrs.name,
+        description: attrs
+            .editorial_notes
+            .and_then(|n| n.short.or(n.tagline))
+            .filter(|d| !d.is_empty()),
+        artwork: artwork(attrs.artwork.as_ref()),
+        kind,
+    })
+}
+
+/// A home shelf; anything it holds the app can't show is left out.
 pub fn shelf(recommendation: types::Recommendation) -> Option<Shelf> {
     let attrs = recommendation.attributes.unwrap_or_default();
     let items: Vec<Collection> = recommendation

@@ -1,6 +1,7 @@
-//! Home: the shelves Apple Music recommends, as its web player and Cider show
-//! them. The playlists made for the user come first as tall cards on their
-//! artwork's colour; every other shelf is a row of covers.
+//! Home and Radio: shelves as Apple Music's web player and Cider show them.
+//! On Home, the playlists made for the user come first as tall cards on their
+//! artwork's colour; on Radio, the stations on air as large covers. Every
+//! other shelf is a row of covers.
 
 use egui::{Color32, Id, Rect, Sense, Ui, pos2, vec2};
 use music_core::model::{Collection, Shelf};
@@ -23,9 +24,35 @@ const HERO: f32 = 240.0;
 const HERO_FOOT: f32 = 78.0;
 const HERO_GAP: f32 = 20.0;
 
+/// The stations on air, on Radio.
+const LIVE: f32 = 230.0;
+
+/// Which page of shelves.
+#[derive(Clone, Copy, PartialEq)]
+enum Which {
+    Home,
+    Radio,
+}
+
 pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
+    page(app, ui, pad, Which::Home)
+}
+
+pub fn radio(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
+    page(app, ui, pad, Which::Radio)
+}
+
+fn page(app: &mut App, ui: &mut Ui, pad: f32, which: Which) -> f32 {
     let theme = app.theme.clone();
-    let shelves = match &app.home {
+    let loaded = match which {
+        Which::Home => &app.home,
+        Which::Radio => &app.radio,
+    };
+    let (title, salt) = match which {
+        Which::Home => ("Home", "home"),
+        Which::Radio => ("Radio", "radio"),
+    };
+    let shelves = match loaded {
         Some(Loaded::Ready(shelves)) => Ok(Some(shelves.clone())),
         Some(Loaded::Failed(e)) => Err(e.clone()),
         _ => Ok(None),
@@ -33,10 +60,10 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
     let width = ui.available_width() - 2.0 * pad;
     let height = |shelf: &Shelf| {
         SHELF_HEAD
-            + if shelf.hero {
-                HERO + HERO_FOOT
-            } else {
-                COVER + CARD_TEXT
+            + match (shelf.hero, which) {
+                (true, Which::Home) => HERO + HERO_FOOT,
+                (true, Which::Radio) => LIVE + CARD_TEXT,
+                (false, _) => COVER + CARD_TEXT,
             }
             + SECTION_GAP
     };
@@ -49,7 +76,7 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
 
     let mut refresh = false;
     let output = egui::ScrollArea::vertical()
-        .id_salt("home")
+        .id_salt(salt)
         .auto_shrink(false)
         .show_viewport(ui, |ui, viewport| {
             let (content, _) =
@@ -60,7 +87,7 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
                 Rect::from_min_size(content.min, vec2(content.width(), 460.0)),
             );
             let left = content.left() + pad;
-            let g = text(ui, "Home", font(22.0, Weight::Bold), theme.text, width);
+            let g = text(ui, title, font(22.0, Weight::Bold), theme.text, width);
             paint_text(
                 ui,
                 g,
@@ -92,7 +119,8 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
             let mut y = content.top() + BODY_TOP;
             let shelves = match &shelves {
                 Err(e) => {
-                    message(ui, &theme, left, y, width, "Couldn't load Home", e);
+                    let head = format!("Couldn't load {title}");
+                    message(ui, &theme, left, y, width, &head, e);
                     return;
                 }
                 Ok(None) => {
@@ -122,43 +150,46 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
                 if visible.end > viewport.top() && visible.start < viewport.bottom() {
                     let at = pos2(left, y);
                     let id = Id::unique(("home-shelf", n));
-                    let clicked = if shelf.hero {
-                        hero_shelf(ui, &theme, at, width, shelf, id)
-                    } else {
-                        let cards: Vec<ShelfCard> = shelf.items.iter().map(card).collect();
-                        cover_shelf(ui, &theme, at, width, &shelf.title, &cards, COVER, id)
+                    let cards = || -> Vec<ShelfCard> { shelf.items.iter().map(card).collect() };
+                    let clicked = match (shelf.hero, which) {
+                        (true, Which::Home) => hero_shelf(ui, &theme, at, width, shelf, id),
+                        (true, Which::Radio) => {
+                            cover_shelf(ui, &theme, at, width, &shelf.title, &cards(), LIVE, id)
+                        }
+                        (false, _) => {
+                            cover_shelf(ui, &theme, at, width, &shelf.title, &cards(), COVER, id)
+                        }
                     };
                     if let Some((i, click)) = clicked {
-                        let item = &shelf.items[i];
-                        let now = ui.input(|i| i.time);
-                        match (click, item) {
-                            (CardClick::Open, _) => open(app, item),
-                            (CardClick::Enqueue(how), Collection::Album(a)) => {
-                                app.enqueue_album(a.id.clone(), how, now);
-                            }
-                            (CardClick::Enqueue(how), Collection::Playlist(p)) => {
-                                app.enqueue_playlist(p, how, now);
-                            }
-                        }
+                        act(app, &shelf.items[i], click, ui.input(|i| i.time));
                     }
                 }
                 y += h;
             }
         });
     if refresh {
-        app.refresh_home();
+        match which {
+            Which::Home => app.refresh_home(),
+            Which::Radio => app.refresh_radio(),
+        }
     }
     output.state.clamped_offset().y
 }
 
-fn open(app: &mut App, item: &Collection) {
-    match item {
-        Collection::Album(a) => app.go(Page::Album(a.id.clone())),
-        Collection::Playlist(p) => app.open_playlist(p),
+/// Do what a click on a shelf's cover asked: open it, queue it, or tune in.
+pub(super) fn act(app: &mut App, item: &Collection, click: CardClick, now: f64) {
+    match (click, item) {
+        (_, Collection::Station(s)) => app.play_station(s),
+        (CardClick::Open, Collection::Album(a)) => app.go(Page::Album(a.id.clone())),
+        (CardClick::Open, Collection::Playlist(p)) => app.open_playlist(p),
+        (CardClick::Enqueue(how), Collection::Album(a)) => {
+            app.enqueue_album(a.id.clone(), how, now);
+        }
+        (CardClick::Enqueue(how), Collection::Playlist(p)) => app.enqueue_playlist(p, how, now),
     }
 }
 
-fn card(item: &Collection) -> ShelfCard {
+pub(super) fn card(item: &Collection) -> ShelfCard {
     match item {
         Collection::Album(a) => ShelfCard {
             title: a.title.clone(),
@@ -169,6 +200,11 @@ fn card(item: &Collection) -> ShelfCard {
             title: p.name.clone(),
             sub: p.curator.clone().unwrap_or_else(|| "Playlist".into()),
             url: p.artwork.as_ref().map(|art| art.url(400)),
+        },
+        Collection::Station(s) => ShelfCard {
+            title: s.name.clone(),
+            sub: s.description.clone().unwrap_or_else(|| "Station".into()),
+            url: s.artwork.as_ref().map(|art| art.url(400)),
         },
     }
 }
@@ -210,6 +246,7 @@ fn hero_shelf(
         let (name, sub, art) = match item {
             Collection::Playlist(p) => (&p.name, p.description.clone(), p.artwork.as_ref()),
             Collection::Album(a) => (&a.title, Some(a.artists.join(", ")), a.artwork.as_ref()),
+            Collection::Station(s) => (&s.name, s.description.clone(), s.artwork.as_ref()),
         };
         let response = row_ui.interact(rect, id.with(i), Sense::click());
         // Lift a little on hover, as Cider does.

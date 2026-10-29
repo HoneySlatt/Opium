@@ -7,6 +7,9 @@
 //!   cargo run -p apple-music --example am -- fetch 1463409605 out.m4a
 //!   cargo run -p apple-music --example am -- play 1463409605 1463409610
 //!   cargo run -p apple-music --example am -- lyrics 1463409605
+//!   cargo run -p apple-music --example am -- radio
+//!   cargo run -p apple-music --example am -- station ra.u-…
+//!   cargo run -p apple-music --example am -- live ra.978194965 out.aac [seconds]
 //!   cargo run -p apple-music --example am -- artist 5468295
 //!   cargo run -p apple-music --example am -- favourite song 1840800867 [on|off]
 //!
@@ -52,10 +55,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             )
             .await
         }
+        Some("live") if args.len() >= 3 => {
+            live(
+                &connect().await?,
+                &args[1],
+                &args[2],
+                args.get(3).and_then(|s| s.parse().ok()).unwrap_or(20),
+            )
+            .await
+        }
+        Some("radio") => radio(&connect().await?).await,
+        Some("station") if args.len() == 2 => station(&connect().await?, &args[1]).await,
         Some("lyrics") if args.len() == 2 => lyrics(&connect().await?, &args[1]).await,
         _ => {
             eprintln!(
-                "usage: am signin | library | search <term> | search-library <term> | fetch <id> <out> | play <id>… | lyrics <id>"
+                "usage: am signin | library | search <term> | search-library <term> | fetch <id> <out> | play <id>… | lyrics <id> | radio | station <id> | live <station> <out.aac> [seconds]"
             );
             Ok(())
         }
@@ -147,6 +161,7 @@ async fn library(am: &AppleMusic) -> Result<(), Box<dyn std::error::Error>> {
         match item {
             music_core::model::Collection::Album(a) => println!("  [album] {}", a.title),
             music_core::model::Collection::Playlist(p) => println!("  [playlist] {}", p.name),
+            music_core::model::Collection::Station(s) => println!("  [station] {}", s.name),
         }
     }
     Ok(())
@@ -186,6 +201,67 @@ async fn favourite(
         println!("set {set}");
     }
     println!("in favourites: {:?}", am.is_favourite(kind, &id).await?);
+    Ok(())
+}
+
+/// Record a live station's decrypted stream as ADTS, about `seconds` long.
+async fn live(
+    am: &AppleMusic,
+    station: &str,
+    out: &str,
+    seconds: u64,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use std::io::Read;
+    let cdm = widevine::Cdm::open(&widevine::locate().ok_or("no Widevine module")?)?;
+    let id = music_core::model::ItemId::new(music_core::model::ProviderKind::AppleMusic, station);
+    let stream = am.live_station(&cdm, &id).await?;
+    // 256 kbps: about 32 kB a second.
+    let want = seconds as usize * 32_000;
+    let bytes = tokio::task::spawn_blocking(move || {
+        let mut stream = stream;
+        let mut buf = vec![0u8; want];
+        let mut got = 0;
+        while got < want {
+            match stream.read(&mut buf[got..]) {
+                Ok(0) => break,
+                Err(e) => {
+                    eprintln!("stream error: {e}");
+                    break;
+                }
+                Ok(n) => got += n,
+            }
+        }
+        buf.truncate(got);
+        buf
+    })
+    .await?;
+    std::fs::write(out, &bytes)?;
+    println!("wrote {} bytes to {out}", bytes.len());
+    Ok(())
+}
+
+async fn radio(am: &AppleMusic) -> Result<(), Box<dyn std::error::Error>> {
+    for shelf in am.radio().await? {
+        println!(
+            "{} ({} items{})",
+            shelf.title,
+            shelf.items.len(),
+            if shelf.hero { ", on air" } else { "" }
+        );
+        for item in shelf.items.iter().take(3) {
+            if let music_core::model::Collection::Station(s) = item {
+                println!("  {:?} {} [{}]", s.kind, s.name, s.id.id);
+            }
+        }
+    }
+    Ok(())
+}
+
+async fn station(am: &AppleMusic, id: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let id = music_core::model::ItemId::new(music_core::model::ProviderKind::AppleMusic, id);
+    for t in am.station_tracks(&id, 12).await? {
+        println!("  {} — {} [{}]", t.title, t.artists.join(", "), t.id.id);
+    }
     Ok(())
 }
 

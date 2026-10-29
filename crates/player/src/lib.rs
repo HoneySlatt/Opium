@@ -57,6 +57,19 @@ impl Source {
         }
     }
 
+    /// A stream that only goes forward and has no end in sight, as live radio:
+    /// no seeking, no length.
+    pub fn stream<R>(reader: R, extension: Option<&str>) -> Self
+    where
+        R: Read + Send + Sync + 'static,
+    {
+        Self {
+            reader: Box::new(Forward(reader)),
+            extension: extension.map(str::to_owned),
+            seek_hint: None,
+        }
+    }
+
     /// Have `hint` told where a seek is headed before it happens, for sources
     /// that can prepare (decrypt ahead, fetch a range…).
     pub fn with_seek_hint(mut self, hint: impl FnMut(Duration) + Send + 'static) -> Self {
@@ -89,6 +102,33 @@ impl<R: Read + Seek + Send + Sync> MediaSource for Bytes<R> {
 
     fn byte_len(&self) -> Option<u64> {
         Some(self.len)
+    }
+}
+
+struct Forward<R>(R);
+
+impl<R: Read> Read for Forward<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.0.read(buf)
+    }
+}
+
+impl<R> Seek for Forward<R> {
+    fn seek(&mut self, _: std::io::SeekFrom) -> std::io::Result<u64> {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "a live stream can't seek",
+        ))
+    }
+}
+
+impl<R: Read + Send + Sync> MediaSource for Forward<R> {
+    fn is_seekable(&self) -> bool {
+        false
+    }
+
+    fn byte_len(&self) -> Option<u64> {
+        None
     }
 }
 

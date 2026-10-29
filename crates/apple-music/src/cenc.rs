@@ -666,3 +666,131 @@ mod tests {
         );
     }
 }
+
+/// A track's protection defaults, from its `tenc` box.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Tenc {
+    pub key_id: [u8; 16],
+    /// `cbcs`'s crypt:skip blocks; 0:0 encrypts every whole block.
+    pub pattern: (u32, u32),
+    /// The IV every sample shares, when samples carry none of their own.
+    pub constant_iv: Option<Vec<u8>>,
+}
+
+/// The body of the first `kind` box anywhere in `data`, found by its four
+/// characters: init segments are small and these boxes are unique in them.
+fn find_box_anywhere<'a>(data: &'a [u8], kind: &[u8; 4]) -> Option<&'a [u8]> {
+    (4..data.len().saturating_sub(4)).find_map(|i| {
+        if &data[i..i + 4] != kind {
+            return None;
+        }
+        let size = u32be(data, i - 4) as usize;
+        (size >= 8 && i - 4 + size <= data.len()).then(|| &data[i + 4..i - 4 + size])
+    })
+}
+
+pub fn tenc(init: &[u8]) -> Option<Tenc> {
+    let body = find_box_anywhere(init, b"tenc")?;
+    // version, flags (3), reserved, pattern (version 1) or reserved,
+    // is_protected, per-sample IV size, key id (16), then a constant IV.
+    if body.len() < 24 {
+        return None;
+    }
+    let pattern = if body[0] >= 1 {
+        (u32::from(body[5] >> 4), u32::from(body[5] & 0x0f))
+    } else {
+        (0, 0)
+    };
+    let mut key_id = [0u8; 16];
+    key_id.copy_from_slice(&body[8..24]);
+    let constant_iv = (body[6] == 1 && body[7] == 0 && body.len() > 24)
+        .then(|| {
+            let n = body[24] as usize;
+            body.get(25..25 + n).map(<[u8]>::to_vec)
+        })
+        .flatten();
+    Some(Tenc {
+        key_id,
+        pattern,
+        constant_iv,
+    })
+}
+
+/// The AAC `AudioSpecificConfig` in an init segment's `esds`.
+pub fn audio_specific_config(init: &[u8]) -> Option<Vec<u8>> {
+    let body = find_box_anywhere(init, b"esds")?;
+    // Full box header, then descriptors: tag, length (1 to 4 bytes of 7 bits).
+    let mut pos = 4;
+    let read_len = |pos: &mut usize| -> Option<usize> {
+        let mut len = 0usize;
+        for _ in 0..4 {
+            let b = *body.get(*pos)?;
+            *pos += 1;
+            len = (len << 7) | usize::from(b & 0x7f);
+            if b & 0x80 == 0 {
+                break;
+            }
+        }
+        Some(len)
+    };
+    while pos < body.len() {
+        let tag = body[pos];
+        pos += 1;
+        let len = read_len(&mut pos)?;
+        match tag {
+            // ES_Descriptor: id (2), flags (1), then its children.
+            0x03 => {
+                let flags = *body.get(pos + 2)?;
+                pos += 3;
+                if flags & 0x80 != 0 {
+                    pos += 2;
+                }
+                if flags & 0x40 != 0 {
+                    pos += 1 + usize::from(*body.get(pos)?);
+                }
+                if flags & 0x20 != 0 {
+                    pos += 2;
+                }
+            }
+            // DecoderConfigDescriptor: 13 bytes, then the specific info.
+            0x04 => pos += 13,
+            0x05 => return body.get(pos..pos + len).map(<[u8]>::to_vec),
+            _ => pos += len,
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+mod init_tests {
+    use super::*;
+
+    fn boxed(kind: &[u8; 4], body: &[u8]) -> Vec<u8> {
+        let mut out = ((body.len() + 8) as u32).to_be_bytes().to_vec();
+        out.extend_from_slice(kind);
+        out.extend_from_slice(body);
+        out
+    }
+
+    #[test]
+    fn tenc_reads_key_pattern_and_constant_iv() {
+        let mut body = vec![1, 0, 0, 0, 0, 0x19, 1, 0];
+        body.extend_from_slice(&[7; 16]);
+        body.push(16);
+        body.extend_from_slice(&[9; 16]);
+        let t = tenc(&boxed(b"tenc", &body)).unwrap();
+        assert_eq!(t.key_id, [7; 16]);
+        assert_eq!(t.pattern, (1, 9));
+        assert_eq!(t.constant_iv, Some(vec![9; 16]));
+    }
+
+    #[test]
+    fn esds_yields_the_audio_specific_config() {
+        // ES_Descriptor(id 1, no flags) > DecoderConfig(13 bytes) > specific info.
+        let mut body = vec![0, 0, 0, 0, 0x03, 22, 0, 1, 0, 0x04, 17];
+        body.extend_from_slice(&[0x40, 0x15, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        body.extend_from_slice(&[0x05, 2, 0x12, 0x10]);
+        let asc = audio_specific_config(&boxed(b"esds", &body)).unwrap();
+        assert_eq!(asc, vec![0x12, 0x10]);
+    }
+}

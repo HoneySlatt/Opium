@@ -9,10 +9,12 @@ mod cenc;
 mod convert;
 mod lyrics;
 mod playback;
+mod radio;
 pub mod signin;
 mod stream;
 mod types;
 
+pub use radio::LiveStream;
 pub use stream::AudioStream;
 
 use async_trait::async_trait;
@@ -28,6 +30,71 @@ const WEB_PLAYER: &str = "https://music.apple.com";
 const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
 /// The largest page the library and catalog endpoints accept.
 const PAGE: u32 = 100;
+/// The radio grouping's subscriber tab as shelves: the row of stations on air
+/// (element kind 316) first, then every titled shelf (kind 326) holding
+/// anything the app can play or open.
+fn radio_shelves(page: &serde_json::Value) -> Vec<Shelf> {
+    let contents = |element: &serde_json::Value| -> Vec<Collection> {
+        element["relationships"]["contents"]["data"]
+            .as_array()
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| serde_json::from_value(item.clone()).ok())
+                    .filter_map(convert::collection)
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let children = |element: &serde_json::Value| -> Vec<serde_json::Value> {
+        element["relationships"]["children"]["data"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+    };
+    let tabs = page["data"][0]["relationships"]["tabs"]["data"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let Some(tab) = tabs.first() else {
+        return Vec::new();
+    };
+    let mut shelves = Vec::new();
+    for element in children(tab) {
+        let kind = element["attributes"]["editorialElementKind"]
+            .as_str()
+            .unwrap_or("");
+        match kind {
+            "316" => {
+                let items: Vec<Collection> = children(&element).iter().flat_map(contents).collect();
+                if !items.is_empty() {
+                    shelves.push(Shelf {
+                        title: String::new(),
+                        hero: true,
+                        items,
+                    });
+                }
+            }
+            "326" => {
+                let items = contents(&element);
+                let title = element["attributes"]["name"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_owned();
+                if !items.is_empty() && !title.is_empty() {
+                    shelves.push(Shelf {
+                        title,
+                        hero: false,
+                        items,
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+    shelves
+}
+
 /// The catalog's name for a kind of item.
 fn catalog_type(kind: FavouriteKind) -> &'static str {
     match kind {
@@ -414,6 +481,70 @@ impl Provider for AppleMusic {
             .and_then(|r| r.data.into_iter().next())
             .and_then(|r| r.attributes)
             .and_then(|a| a.in_favorites))
+    }
+
+    /// Apple's radio page: the stations on air in a row of their own, then
+    /// its shelves of shows, episodes and stations, as the web player shows
+    /// them to a subscriber.
+    async fn radio(&self) -> Result<Vec<Shelf>> {
+        let path = format!(
+            "/v1/editorial/{}/groupings?platform=web&name=radio&l={NOTES_LANGUAGE}",
+            self.storefront
+        );
+        let Some(page) = self.fetch::<serde_json::Value>(&path).await? else {
+            return Ok(Vec::new());
+        };
+        Ok(radio_shelves(&page))
+    }
+
+    /// A station's next songs, about `count` of them. Apple hands out two a
+    /// call and its calls share a cursor, so they go four at a time and
+    /// repeats are dropped (Kopuz measured the trade-off).
+    async fn station_tracks(&self, station: &ItemId, count: usize) -> Result<Vec<Track>> {
+        let path = format!("/v1/me/stations/next-tracks/{}", station.id);
+        let call = || async {
+            let resp = self
+                .authorized(self.http.post(format!("{API}{path}")))
+                .header("Media-User-Token", &self.user_token)
+                .header("Content-Length", "0")
+                .send()
+                .await
+                .map_err(|e| Error::Network(format!("{path}: {e}")))?;
+            if !resp.status().is_success() {
+                return Err(Error::Protocol(format!("{path}: HTTP {}", resp.status())));
+            }
+            resp.json::<types::Response<types::Song>>()
+                .await
+                .map_err(|e| Error::Protocol(format!("{path}: {e}")))
+        };
+        let mut tracks: Vec<Track> = Vec::new();
+        let mut barren = 0;
+        for _ in 0..8 {
+            if tracks.len() >= count {
+                break;
+            }
+            let before = tracks.len();
+            let (a, b, c, d) = tokio::join!(call(), call(), call(), call());
+            for page in [a, b, c, d].into_iter().flatten() {
+                for song in page.data {
+                    let track = convert::track(song);
+                    if !tracks.iter().any(|t| t.id == track.id) {
+                        tracks.push(track);
+                    }
+                }
+            }
+            if tracks.len() == before {
+                barren += 1;
+                if barren == 2 {
+                    break;
+                }
+            }
+        }
+        if tracks.is_empty() {
+            return Err(Error::Playback("the station offered no songs".into()));
+        }
+        tracks.truncate(count);
+        Ok(tracks)
     }
 
     /// Apple's home: the shelves the web player shows, titled in English as

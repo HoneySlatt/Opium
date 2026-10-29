@@ -43,6 +43,22 @@ unsafe extern "C" {
         out: *mut *mut u8,
         out_len: *mut u32,
     ) -> c_int;
+    #[allow(clippy::too_many_arguments)]
+    fn wv_decrypt_scheme(
+        data: *const u8,
+        data_size: u32,
+        key_id: *const u8,
+        key_id_size: u32,
+        iv: *const u8,
+        iv_size: u32,
+        subs: *const u32,
+        num_subs: u32,
+        cbcs: c_int,
+        crypt_blocks: u32,
+        skip_blocks: u32,
+        out: *mut *mut u8,
+        out_len: *mut u32,
+    ) -> c_int;
     fn wv_free(p: *mut u8);
 }
 
@@ -204,6 +220,47 @@ impl Session {
                 iv.len() as u32,
                 subs.as_ptr(),
                 subsamples.len() as u32,
+                &mut out,
+                &mut len,
+            )
+        };
+        match rc {
+            0 => Ok(unsafe { take(out, len) }),
+            32 => Err(Error::NoKey),
+            n => Err(Error::Call("decrypt", n)),
+        }
+    }
+}
+
+impl Session {
+    /// Decrypt one CBCS (AES-CBC) sample, encrypting `crypt` blocks of every
+    /// `crypt + skip` (0 and 0: every whole block, as audio does).
+    /// `subsamples` are `(clear, encrypted)` byte runs, as for CENC.
+    pub fn decrypt_cbcs(
+        &self,
+        data: &[u8],
+        key_id: &[u8],
+        iv: &[u8],
+        pattern: (u32, u32),
+        subsamples: &[(u32, u32)],
+    ) -> Result<Vec<u8>> {
+        let subs: Vec<u32> = subsamples.iter().flat_map(|&(c, e)| [c, e]).collect();
+        let mut out = std::ptr::null_mut();
+        let mut len = 0u32;
+        let _guard = call_lock();
+        let rc = unsafe {
+            wv_decrypt_scheme(
+                data.as_ptr(),
+                data.len() as u32,
+                key_id.as_ptr(),
+                key_id.len() as u32,
+                iv.as_ptr(),
+                iv.len() as u32,
+                subs.as_ptr(),
+                subsamples.len() as u32,
+                1,
+                pattern.0,
+                pattern.1,
                 &mut out,
                 &mut len,
             )

@@ -2,8 +2,9 @@
 //! [MUSIC_SCREENSHOT_PLAY=row]` saves the window once it has had time to load,
 //! then quits, optionally playing a Songs row first. `MUSIC_SCREENSHOT_PAGE`
 //! opens a page first: `playlist:<index>`, `album:<id>`, `artist:<id>` or
-//! `search:<query>`, or `page:home|albums|artists|recent|settings|favourites`; `MUSIC_SCREENSHOT_DRAWER`
-//! opens the queue drawer. Only the app's own window is captured.
+//! `search:<query>`, or `page:home|radio|albums|artists|recent|settings|favourites`; `MUSIC_SCREENSHOT_DRAWER`
+//! opens the queue drawer; `MUSIC_SCREENSHOT_STATION=ra.…` tunes in to a station.
+//! Only the app's own window is captured.
 
 use std::path::PathBuf;
 
@@ -13,6 +14,8 @@ pub struct Screenshot {
     requested: bool,
     play: Option<usize>,
     page: Option<String>,
+    /// A station to tune in to: `MUSIC_SCREENSHOT_STATION=ra.…`.
+    station: Option<String>,
 }
 
 impl Screenshot {
@@ -31,12 +34,18 @@ impl Screenshot {
             requested: false,
             play,
             page: std::env::var("MUSIC_SCREENSHOT_PAGE").ok(),
+            station: std::env::var("MUSIC_SCREENSHOT_STATION").ok(),
         })
     }
 
     /// The Songs row to play, once, when the library has loaded.
     pub fn play_row(&mut self, loaded: bool) -> Option<usize> {
         if loaded { self.play.take() } else { None }
+    }
+
+    /// The station to tune in to, once, when connected.
+    pub fn station(&mut self, connected: bool) -> Option<String> {
+        if connected { self.station.take() } else { None }
     }
 
     /// The page to open, once, when the playlists have loaded.
@@ -59,6 +68,7 @@ impl Screenshot {
             "search" => Some(crate::app::Page::Search(value.to_owned())),
             "page" => match value {
                 "home" => Some(crate::app::Page::Home),
+                "radio" => Some(crate::app::Page::Radio),
                 "settings" => Some(crate::app::Page::Settings),
                 "favourites" => Some(crate::app::Page::Favourites),
                 "albums" => Some(crate::app::Page::Albums),
