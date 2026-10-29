@@ -21,7 +21,8 @@ const LICENSE: &str =
 /// The one catalog flavour Widevine can open; the `cbcp` ones use FairPlay.
 const CTR_FLAVOR: &str = "28:ctrp256";
 /// Each sample of that flavour is one AAC-LC frame: 1024 frames at 44.1 kHz.
-const AAC_FRAME: std::time::Duration = std::time::Duration::from_nanos(1024 * 1_000_000_000 / 44_100);
+const AAC_FRAME: std::time::Duration =
+    std::time::Duration::from_nanos(1024 * 1_000_000_000 / 44_100);
 
 fn playback_error(msg: impl Into<String>) -> Error {
     Error::Playback(msg.into())
@@ -140,13 +141,21 @@ impl AppleMusic {
         }
         cenc::patch_init(&mut data, &layout);
         let decrypt = Box::new(move |ciphertext: &[u8], sample: &cenc::EncryptedSample| {
-            let subsamples: Vec<(u32, u32)> =
-                sample.subs.iter().map(|&(c, e)| (u32::from(c), e)).collect();
+            let subsamples: Vec<(u32, u32)> = sample
+                .subs
+                .iter()
+                .map(|&(c, e)| (u32::from(c), e))
+                .collect();
             session
                 .decrypt(ciphertext, &key_id, &sample.iv, &subsamples)
                 .map_err(|e| e.to_string())
         });
-        Ok(AudioStream::decrypting(data, layout.samples, AAC_FRAME, decrypt))
+        Ok(AudioStream::decrypting(
+            data,
+            layout.samples,
+            AAC_FRAME,
+            decrypt,
+        ))
     }
 
     async fn web_playback(&self, adam_id: &str) -> Result<serde_json::Value> {
@@ -191,7 +200,9 @@ impl AppleMusic {
             .map_err(|e| Error::Network(format!("licence: {e}")))?;
         let json = json_body(resp, "licence").await?;
         if let Some(code) = json["errorCode"].as_i64().filter(|&c| c != 0) {
-            return Err(playback_error(format!("licence refused (errorCode {code})")));
+            return Err(playback_error(format!(
+                "licence refused (errorCode {code})"
+            )));
         }
         let license = json["license"]
             .as_str()
@@ -212,7 +223,10 @@ impl AppleMusic {
             .await
             .map_err(|e| Error::Network(format!("asset download: {e}")))?;
         if !resp.status().is_success() {
-            return Err(playback_error(format!("asset download: HTTP {}", resp.status())));
+            return Err(playback_error(format!(
+                "asset download: HTTP {}",
+                resp.status()
+            )));
         }
         resp.bytes()
             .await
@@ -243,7 +257,10 @@ mod tests {
         assert!(is_library_id("i.ABC123"));
         assert!(!is_library_id("1463409605"));
         assert!(!is_library_id("i."));
-        assert_eq!(web_playback_body("1463409605")["salableAdamId"], "1463409605");
+        assert_eq!(
+            web_playback_body("1463409605")["salableAdamId"],
+            "1463409605"
+        );
         assert_eq!(web_playback_body("i.ABC")["universalLibraryId"], "i.ABC");
     }
 
@@ -287,6 +304,9 @@ mod tests {
 
     #[test]
     fn a_plain_file_is_not_a_playlist() {
-        assert_eq!(read_media_playlist("https://x/a.m4a", b"\0\0\0\x20ftypM4A "), None);
+        assert_eq!(
+            read_media_playlist("https://x/a.m4a", b"\0\0\0\x20ftypM4A "),
+            None
+        );
     }
 }

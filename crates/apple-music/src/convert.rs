@@ -135,7 +135,9 @@ mod tests {
 
     #[test]
     fn a_catalog_song_keeps_its_own_id() {
-        let t = track(song(serde_json::json!({ "id": "1811922756", "attributes": { "name": "x" } })));
+        let t = track(song(
+            serde_json::json!({ "id": "1811922756", "attributes": { "name": "x" } }),
+        ));
         assert_eq!(t.id.id, "1811922756");
         assert!(t.quality.is_some());
     }

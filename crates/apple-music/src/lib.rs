@@ -119,7 +119,10 @@ impl AppleMusic {
         A: DeserializeOwned,
     {
         let path = cursor.map_or(first, |c| c.0.as_str());
-        let Some(resp) = self.fetch::<types::Response<types::Resource<A>>>(path).await? else {
+        let Some(resp) = self
+            .fetch::<types::Response<types::Resource<A>>>(path)
+            .await?
+        else {
             return Ok(Page {
                 items: vec![],
                 next: None,
@@ -127,7 +130,9 @@ impl AppleMusic {
         };
         Ok(Page {
             items: resp.data.into_iter().map(convert).collect(),
-            next: resp.next.map(|next| Cursor(carry_query_forward(&next, first))),
+            next: resp
+                .next
+                .map(|next| Cursor(carry_query_forward(&next, first))),
         })
     }
 }
@@ -223,7 +228,10 @@ impl Provider for AppleMusic {
         cursor: Option<&Cursor>,
     ) -> Result<Page<Track>> {
         let first = if playlist.id.starts_with("p.") {
-            format!("/v1/me/library/playlists/{}/tracks?limit={PAGE}", playlist.id)
+            format!(
+                "/v1/me/library/playlists/{}/tracks?limit={PAGE}",
+                playlist.id
+            )
         } else {
             format!(
                 "/v1/catalog/{}/playlists/{}/tracks?limit={PAGE}",
@@ -244,7 +252,10 @@ mod tests {
             "/v1/me/library/songs?offset=100",
             "/v1/me/library/songs?limit=100&include=albums",
         );
-        assert_eq!(next, "/v1/me/library/songs?offset=100&limit=100&include=albums");
+        assert_eq!(
+            next,
+            "/v1/me/library/songs?offset=100&limit=100&include=albums"
+        );
     }
 
     #[test]

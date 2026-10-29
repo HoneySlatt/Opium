@@ -199,9 +199,14 @@ fn run(
             let volume = f32::from_bits(feed.state.volume.load(Ordering::Relaxed));
             // At full volume the samples pass through untouched.
             let gain = (volume < 1.0).then_some(f64::from(volume));
-            fill(&mut feed.consumer, &feed.state, &mut feed.scratch, feed.channels, 0, |s| {
-                gain.map_or(s, |g| (f64::from(s) * g) as i32)
-            });
+            fill(
+                &mut feed.consumer,
+                &feed.state,
+                &mut feed.scratch,
+                feed.channels,
+                0,
+                |s| gain.map_or(s, |g| (f64::from(s) * g) as i32),
+            );
             for (dst, s) in bytes.as_chunks_mut::<4>().0.iter_mut().zip(&feed.scratch) {
                 dst.copy_from_slice(&s.to_le_bytes());
             }

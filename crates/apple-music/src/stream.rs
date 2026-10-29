@@ -238,7 +238,8 @@ impl Seek for AudioStream {
             SeekFrom::End(d) => self.len.checked_add_signed(d),
             SeekFrom::Current(d) => self.pos.checked_add_signed(d),
         };
-        self.pos = pos.ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "seek before start"))?;
+        self.pos =
+            pos.ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "seek before start"))?;
         Ok(self.pos)
     }
 }
@@ -325,11 +326,20 @@ mod tests {
             std::thread::park();
             Err("parked".into())
         });
-        let mut stream = AudioStream::decrypting(data.clone(), samples, Duration::from_secs(1), never);
+        let mut stream =
+            AudioStream::decrypting(data.clone(), samples, Duration::from_secs(1), never);
         // Sample 2 starts 2 s in; with the margin, everything before it is skippable.
         stream.seek_hint()(Duration::from_secs(4));
         let mut buf = [0u8; 250];
-        assert_eq!(stream.read(&mut buf).unwrap(), 200, "stops at sample 2, which must decrypt");
-        assert_eq!(&buf[..200], &data[..200], "earlier samples come through as they are");
+        assert_eq!(
+            stream.read(&mut buf).unwrap(),
+            200,
+            "stops at sample 2, which must decrypt"
+        );
+        assert_eq!(
+            &buf[..200],
+            &data[..200],
+            "earlier samples come through as they are"
+        );
     }
 }

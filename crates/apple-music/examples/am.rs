@@ -63,8 +63,8 @@ async fn signin() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn connect() -> Result<AppleMusic, Box<dyn std::error::Error>> {
-    let token = std::fs::read_to_string(token_path())
-        .map_err(|_| "no token yet: run `am signin` first")?;
+    let token =
+        std::fs::read_to_string(token_path()).map_err(|_| "no token yet: run `am signin` first")?;
     let am = AppleMusic::connect(token.trim()).await?;
     println!("storefront: {}", am.storefront());
     Ok(am)
@@ -72,9 +72,19 @@ async fn connect() -> Result<AppleMusic, Box<dyn std::error::Error>> {
 
 async fn library(am: &AppleMusic) -> Result<(), Box<dyn std::error::Error>> {
     let songs = am.library_tracks(None).await?;
-    println!("\nsongs (first page: {}, more: {})", songs.items.len(), songs.next.is_some());
+    println!(
+        "\nsongs (first page: {}, more: {})",
+        songs.items.len(),
+        songs.next.is_some()
+    );
     for t in songs.items.iter().take(5) {
-        println!("  {} — {} [{}] {:?}", t.title, t.artists.join(", "), t.id.id, t.quality);
+        println!(
+            "  {} — {} [{}] {:?}",
+            t.title,
+            t.artists.join(", "),
+            t.id.id,
+            t.quality
+        );
     }
     if let Some(next) = &songs.next {
         let page2 = am.library_tracks(Some(next)).await?;
@@ -113,10 +123,21 @@ async fn search(am: &AppleMusic, term: &str) -> Result<(), Box<dyn std::error::E
         r.playlists.len()
     );
     for t in r.tracks.iter().take(5) {
-        println!("  {} — {} [{}] {:?}", t.title, t.artists.join(", "), t.id.id, t.track_number);
+        println!(
+            "  {} — {} [{}] {:?}",
+            t.title,
+            t.artists.join(", "),
+            t.id.id,
+            t.track_number
+        );
     }
     for a in r.albums.iter().take(3) {
-        println!("  [album] {} — {} ({:?})", a.title, a.artists.join(", "), a.year);
+        println!(
+            "  [album] {} — {} ({:?})",
+            a.title,
+            a.artists.join(", "),
+            a.year
+        );
     }
     Ok(())
 }
@@ -164,7 +185,11 @@ async fn play(am: &AppleMusic, ids: &[String]) -> Result<(), Box<dyn std::error:
     loop {
         while let Ok(event) = player.events().try_recv() {
             match event {
-                player::Event::Started { token, source, output } => {
+                player::Event::Started {
+                    token,
+                    source,
+                    output,
+                } => {
                     println!(
                         "[{:>6.2?}] ▶ {} — {} {} Hz × {} → {} {} Hz × {} {}",
                         started.elapsed(),
@@ -181,7 +206,10 @@ async fn play(am: &AppleMusic, ids: &[String]) -> Result<(), Box<dyn std::error:
                     let following = token as usize + 1;
                     if following < ids.len() && queued < following {
                         queued = following;
-                        player.set_next(following as u64, make_source(open_track(am, &ids[following]).await?));
+                        player.set_next(
+                            following as u64,
+                            make_source(open_track(am, &ids[following]).await?),
+                        );
                     }
                 }
                 player::Event::Finished => {
@@ -197,7 +225,11 @@ async fn play(am: &AppleMusic, ids: &[String]) -> Result<(), Box<dyn std::error:
             match words.next() {
                 Some("p") => {
                     paused = !paused;
-                    if paused { player.pause() } else { player.resume() }
+                    if paused {
+                        player.pause()
+                    } else {
+                        player.resume()
+                    }
                 }
                 Some("s") => {
                     if let Some(secs) = words.next().and_then(|w| w.parse::<f64>().ok()) {
@@ -209,7 +241,10 @@ async fn play(am: &AppleMusic, ids: &[String]) -> Result<(), Box<dyn std::error:
                     let following = status.token.map_or(0, |t| t as usize + 1);
                     if following < ids.len() {
                         queued = following;
-                        player.play(following as u64, make_source(open_track(am, &ids[following]).await?));
+                        player.play(
+                            following as u64,
+                            make_source(open_track(am, &ids[following]).await?),
+                        );
                     }
                 }
                 Some("q") => return Ok(()),

@@ -111,8 +111,8 @@ where
                 return Ok(None);
             };
             let Message::Text(text) = msg else { continue };
-            let value: serde_json::Value = serde_json::from_str(&text)
-                .map_err(|e| SignInError::DevTools(e.to_string()))?;
+            let value: serde_json::Value =
+                serde_json::from_str(&text).map_err(|e| SignInError::DevTools(e.to_string()))?;
             // Events and stale replies share the socket; only ours matters.
             if value["id"] == request_id {
                 break value;

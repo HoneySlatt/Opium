@@ -65,7 +65,8 @@ impl Decoder {
             sample_rate,
             channels: params.channels.as_ref().map_or(2, |c| c.count() as u16),
             bits_per_sample: params.bits_per_sample,
-            duration: num_frames.map(|n| Duration::from_secs_f64(n as f64 / f64::from(sample_rate))),
+            duration: num_frames
+                .map(|n| Duration::from_secs_f64(n as f64 / f64::from(sample_rate))),
         };
         Ok(Self {
             format,

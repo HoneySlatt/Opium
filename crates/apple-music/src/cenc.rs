@@ -474,7 +474,6 @@ pub fn patch_init(buf: &mut [u8], layout: &Fmp4Layout) {
     }
 }
 
-
 fn parse_trun(
     data: &[u8],
     trun_bs: usize,

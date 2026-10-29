@@ -263,7 +263,12 @@ pub fn locate() -> Option<PathBuf> {
     // _platform_specific/linux_x64/`; Brave nests its user data one level down.
     let chromium = ["google-chrome", "chromium", "BraveSoftware/*", "vivaldi"]
         .iter()
-        .flat_map(|root| expand(&config, &format!("{root}/WidevineCdm/*/_platform_specific/linux_x64")));
+        .flat_map(|root| {
+            expand(
+                &config,
+                &format!("{root}/WidevineCdm/*/_platform_specific/linux_x64"),
+            )
+        });
     // Firefox: `<profile>/gmp-widevinecdm/<version>/`.
     let firefox = expand(&home, ".mozilla/firefox/*/gmp-widevinecdm/*");
 
@@ -308,7 +313,9 @@ mod tests {
     fn the_cenc_header_is_protobuf() {
         assert_eq!(
             cenc_header(&[0xAA; 4]),
-            [0x08, 0x01, 0x12, 0x04, 0xAA, 0xAA, 0xAA, 0xAA, 0x1a, 0x00, 0x32, 0x00]
+            [
+                0x08, 0x01, 0x12, 0x04, 0xAA, 0xAA, 0xAA, 0xAA, 0x1a, 0x00, 0x32, 0x00
+            ]
         );
     }
 
@@ -320,10 +327,16 @@ mod tests {
     #[test]
     fn the_pssh_box_is_well_formed() {
         let pssh = build_pssh(&[0x11; 16]);
-        assert_eq!(u32::from_be_bytes(pssh[..4].try_into().unwrap()) as usize, pssh.len());
+        assert_eq!(
+            u32::from_be_bytes(pssh[..4].try_into().unwrap()) as usize,
+            pssh.len()
+        );
         assert_eq!(&pssh[4..8], b"pssh");
         assert_eq!(&pssh[12..28], &SYSTEM_ID);
-        assert_eq!(u32::from_be_bytes(pssh[28..32].try_into().unwrap()) as usize, pssh.len() - 32);
+        assert_eq!(
+            u32::from_be_bytes(pssh[28..32].try_into().unwrap()) as usize,
+            pssh.len() - 32
+        );
     }
 
     #[test]

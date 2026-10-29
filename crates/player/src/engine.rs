@@ -320,7 +320,8 @@ impl Engine {
             });
         }
 
-        let drained = played * sink.channels >= self.written && self.pending_at >= self.pending.len();
+        let drained =
+            played * sink.channels >= self.written && self.pending_at >= self.pending.len();
         let last_done = self.segments.len() == 1 && self.segments[0].decoded_all;
         if !(drained && last_done) {
             return;
