@@ -64,7 +64,9 @@ async fn fetch(
     original: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let started = std::time::Instant::now();
-    let mut audio = sc.audio(&track_id(id), original).await?;
+    // The browser's CDM, for an encrypted track.
+    let cdm = widevine::locate().and_then(|path| widevine::Cdm::open(&path).ok());
+    let mut audio = sc.audio(&track_id(id), original, cdm.as_ref()).await?;
     let ready = started.elapsed();
     let mut bytes = Vec::new();
     std::io::Read::read_to_end(&mut audio.reader, &mut bytes)?;

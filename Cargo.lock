@@ -4260,6 +4260,7 @@ dependencies = [
  "async-trait",
  "base64 0.23.1",
  "browser-signin",
+ "cenc",
  "futures-util",
  "music-core",
  "regex",
@@ -4268,6 +4269,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "url",
+ "widevine",
 ]
 
 [[package]]

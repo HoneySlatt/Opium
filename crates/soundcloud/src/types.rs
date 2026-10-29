@@ -107,10 +107,13 @@ pub struct Like {
     pub playlist: Option<Playlist>,
 }
 
-/// Where a transcoding plays from.
+/// Where a transcoding plays from; an encrypted one's licence is asked
+/// for with the token.
 #[derive(Debug, Deserialize)]
 pub struct StreamUrl {
     pub url: String,
+    #[serde(rename = "licenseAuthToken")]
+    pub license_auth_token: Option<String>,
 }
 
 /// Where an original download is.

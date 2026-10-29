@@ -24,7 +24,7 @@ use serde::de::DeserializeOwned;
 pub use stream::{Audio, Growing, Reader};
 
 const API: &str = "https://api-v2.soundcloud.com";
-const WEB: &str = "https://soundcloud.com";
+pub(crate) const WEB: &str = "https://soundcloud.com";
 /// Where tokens are issued and renewed.
 const SECURE: &str = "https://secure.soundcloud.com";
 /// As the web player says it is: some of the API turns other clients away.

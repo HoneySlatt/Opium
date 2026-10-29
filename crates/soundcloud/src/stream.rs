@@ -1,10 +1,15 @@
 //! A track's audio at its best: the uploader's original file when they let it
-//! be downloaded and the app wants it, else the best unencrypted AAC stream
-//! (256 kbps with Go+, 160 without), its HLS segments fetched side by side
-//! and joined into the fragmented MP4 they cut.
+//! be downloaded and the app wants it, else the best AAC stream (256 kbps
+//! with Go+, 160 without), its HLS segments fetched side by side and joined
+//! into the fragmented MP4 they cut. A major label's tracks come only
+//! encrypted (CENC): the browser's Widevine CDM is licensed for them by
+//! SoundCloud, as in its web player, and decrypts them as they are read.
 
 use std::io::{Read, Seek, SeekFrom};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
+use std::time::Duration;
+
+use base64::Engine;
 
 use futures_util::StreamExt;
 use music_core::model::{AudioQuality, Codec, ItemId};
@@ -14,6 +19,12 @@ use crate::{SoundCloud, types};
 
 /// Segments fetched at once.
 const SEGMENTS_AT_ONCE: usize = 6;
+/// Where an encrypted track's Widevine licence comes from.
+const LICENSE: &str = "https://license.media-streaming.soundcloud.cloud/playback/widevine";
+/// Widevine's system id, as HLS names a key's format.
+const WIDEVINE: &str = "urn:uuid:edef8ba9-79d6-4ace-a3c8-27dcd51d21ed";
+/// How long an AAC frame plays, at the 44.1 kHz SoundCloud streams.
+const AAC_FRAME: Duration = Duration::from_nanos(1_000_000_000 * 1024 / 44_100);
 
 /// A track's audio: whole, or still coming in.
 pub struct Audio {
@@ -27,10 +38,23 @@ pub struct Audio {
     pub original: bool,
 }
 
-/// Where the audio is read from: memory, or a download still going on.
+/// Where the audio is read from: memory, a download still going on, or an
+/// encrypted track decrypting.
 pub enum Reader {
     Whole(std::io::Cursor<Vec<u8>>),
     Growing(Growing),
+    Decrypting(cenc::AudioStream),
+}
+
+impl Reader {
+    /// For a decrypting track, what to tell before a seek, so that it
+    /// decrypts from there.
+    pub fn seek_hint(&self) -> Option<impl FnMut(Duration) + Send + 'static> {
+        match self {
+            Self::Decrypting(r) => Some(r.seek_hint()),
+            _ => None,
+        }
+    }
 }
 
 impl Read for Reader {
@@ -38,6 +62,7 @@ impl Read for Reader {
         match self {
             Self::Whole(r) => r.read(buf),
             Self::Growing(r) => r.read(buf),
+            Self::Decrypting(r) => r.read(buf),
         }
     }
 }
@@ -47,6 +72,7 @@ impl Seek for Reader {
         match self {
             Self::Whole(r) => r.seek(to),
             Self::Growing(r) => r.seek(to),
+            Self::Decrypting(r) => r.seek(to),
         }
     }
 }
@@ -140,6 +166,16 @@ impl Seek for Growing {
 
 /// The best unencrypted AAC stream of the full track, if it has one.
 pub(crate) fn best_transcoding(track: &types::Track) -> Option<&types::Transcoding> {
+    best_of(track, "hls")
+}
+
+/// The best Widevine-encrypted (CENC) AAC stream of the full track.
+pub(crate) fn best_encrypted(track: &types::Track) -> Option<&types::Transcoding> {
+    best_of(track, "ctr-encrypted-hls")
+}
+
+/// The best full AAC stream of `protocol`.
+fn best_of<'a>(track: &'a types::Track, protocol: &str) -> Option<&'a types::Transcoding> {
     let rank = |t: &types::Transcoding| {
         let tier = match t.quality.as_str() {
             "hq" => 3,
@@ -160,7 +196,9 @@ pub(crate) fn best_transcoding(track: &types::Track) -> Option<&types::Transcodi
         .transcodings
         .iter()
         .filter(|t| {
-            t.format.protocol == "hls" && t.format.mime_type.starts_with("audio/mp4") && !t.snipped
+            t.format.protocol == protocol
+                && t.format.mime_type.starts_with("audio/mp4")
+                && !t.snipped
         })
         .max_by_key(|t| rank(t))
 }
@@ -176,7 +214,7 @@ fn unplayable(track: &types::Track) -> Error {
         .iter()
         .any(|t| t.format.protocol.contains("encrypted"))
     {
-        "this track is encrypted; it plays in a later version"
+        "this track is encrypted, and no Widevine module was found: install Brave, Chrome or Firefox"
     } else if transcodings.iter().any(|t| t.snipped) || track.policy.as_deref() == Some("SNIP") {
         "only a preview of this track plays without SoundCloud Go+"
     } else {
@@ -209,6 +247,17 @@ fn original_extension(content_type: Option<&str>, bytes: &[u8]) -> &'static str 
     })
 }
 
+/// The Widevine `pssh` box an encrypted playlist carries, in its key's data
+/// URI.
+fn widevine_pssh(playlist: &str) -> Option<Vec<u8>> {
+    let line = playlist
+        .lines()
+        .find(|l| l.starts_with("#EXT-X-KEY:") && l.contains(WIDEVINE))?;
+    let uri = line.split("URI=\"").nth(1)?.split('"').next()?;
+    let data = uri.rsplit_once("base64,")?.1;
+    base64::engine::general_purpose::STANDARD.decode(data).ok()
+}
+
 /// The init segment's and the segments' URLs, in order.
 fn segments(playlist: &str) -> Vec<String> {
     let mut urls = Vec::new();
@@ -226,8 +275,13 @@ fn segments(playlist: &str) -> Vec<String> {
 
 impl SoundCloud {
     /// `track`'s audio, the original file first when `original` and the
-    /// uploader allows it.
-    pub async fn audio(&self, track: &ItemId, original: bool) -> Result<Audio> {
+    /// uploader allows it; an encrypted track needs `cdm`.
+    pub async fn audio(
+        &self,
+        track: &ItemId,
+        original: bool,
+        cdm: Option<&widevine::Cdm>,
+    ) -> Result<Audio> {
         let found: types::Track = self.get(&format!("/tracks/{}", track.id)).await?;
         if original && found.downloadable && found.has_downloads_left {
             match self.original(&found).await {
@@ -237,14 +291,90 @@ impl SoundCloud {
                 Err(e) => return Err(e),
             }
         }
-        let best = best_transcoding(&found).ok_or_else(|| unplayable(&found))?;
+        let quality = |best: &types::Transcoding| AudioQuality {
+            codec: Codec::Aac,
+            sample_rate: Some(44_100),
+            bit_depth: None,
+            bitrate_kbps: Some(if best.quality == "hq" { 256 } else { 160 }),
+        };
+        if let Some(best) = best_transcoding(&found) {
+            let at: types::StreamUrl = self.resolve(&found, best).await?;
+            let playlist = self.public_text(&at.url).await?;
+            let bytes = self.joined(&playlist).await?;
+            return Ok(Audio {
+                len: bytes.len() as u64,
+                reader: Reader::Whole(std::io::Cursor::new(bytes)),
+                extension: "m4a",
+                quality: quality(best),
+                original: false,
+            });
+        }
+        let (Some(best), Some(cdm)) = (best_encrypted(&found), cdm) else {
+            return Err(unplayable(&found));
+        };
+        let at: types::StreamUrl = self.resolve(&found, best).await?;
+        let token = at.license_auth_token.clone().ok_or_else(|| {
+            Error::Playback("SoundCloud: an encrypted stream without a licence".into())
+        })?;
+        let playlist = self.public_text(&at.url).await?;
+        let pssh = widevine_pssh(&playlist)
+            .ok_or_else(|| Error::Playback("SoundCloud: no Widevine key in the stream".into()))?;
+        let (session, challenge) = cdm
+            .start_session(&pssh)
+            .map_err(|e| Error::Playback(e.to_string()))?;
+        let (mut data, license) =
+            tokio::try_join!(self.joined(&playlist), self.license(&token, challenge))?;
+        session
+            .update(&license)
+            .map_err(|e| Error::Playback(e.to_string()))?;
+        let key_id = cenc::tenc(&data)
+            .ok_or_else(|| Error::Playback("SoundCloud: no key id in the stream".into()))?
+            .key_id;
+        let layout = cenc::index_fmp4(&data).map_err(Error::Playback)?;
+        if layout.samples.is_empty() {
+            return Err(Error::Playback(
+                "SoundCloud: no encrypted samples in the stream".into(),
+            ));
+        }
+        cenc::patch_init(&mut data, &layout);
+        // The content key never leaves the CDM: it decrypts each sample.
+        let decrypt = Box::new(move |ciphertext: &[u8], sample: &cenc::EncryptedSample| {
+            let subsamples: Vec<(u32, u32)> = sample
+                .subs
+                .iter()
+                .map(|&(c, e)| (u32::from(c), e))
+                .collect();
+            session
+                .decrypt(ciphertext, &key_id, &sample.iv, &subsamples)
+                .map_err(|e| e.to_string())
+        });
+        let len = data.len() as u64;
+        let stream = cenc::AudioStream::decrypting(data, layout.samples, AAC_FRAME, decrypt);
+        Ok(Audio {
+            reader: Reader::Decrypting(stream),
+            len,
+            extension: "m4a",
+            quality: quality(best),
+            original: false,
+        })
+    }
+
+    /// Where a transcoding plays from, for this track.
+    async fn resolve(
+        &self,
+        track: &types::Track,
+        transcoding: &types::Transcoding,
+    ) -> Result<types::StreamUrl> {
         let mut query = Vec::new();
-        if let Some(auth) = &found.track_authorization {
+        if let Some(auth) = &track.track_authorization {
             query.push(("track_authorization", auth.as_str()));
         }
-        let at: types::StreamUrl = self.get_with(&best.url, &query).await?;
-        let playlist = self.public_text(&at.url).await?;
-        let urls = segments(&playlist);
+        self.get_with(&transcoding.url, &query).await
+    }
+
+    /// A playlist's segments, fetched side by side and joined in order.
+    async fn joined(&self, playlist: &str) -> Result<Vec<u8>> {
+        let urls = segments(playlist);
         if urls.is_empty() {
             return Err(Error::Protocol("SoundCloud: an empty stream".into()));
         }
@@ -258,18 +388,30 @@ impl SoundCloud {
         for part in parts {
             bytes.extend(part?);
         }
-        Ok(Audio {
-            len: bytes.len() as u64,
-            reader: Reader::Whole(std::io::Cursor::new(bytes)),
-            extension: "m4a",
-            quality: AudioQuality {
-                codec: Codec::Aac,
-                sample_rate: Some(44_100),
-                bit_depth: None,
-                bitrate_kbps: Some(if best.quality == "hq" { 256 } else { 160 }),
-            },
-            original: false,
-        })
+        Ok(bytes)
+    }
+
+    /// The licence for the CDM's `challenge`, as the web player asks for it.
+    async fn license(&self, token: &str, challenge: Vec<u8>) -> Result<Vec<u8>> {
+        let failed = |e: reqwest::Error| Error::Network(format!("SoundCloud licence: {e}"));
+        let resp = self
+            .http
+            .post(LICENSE)
+            .query(&[("license_token", token)])
+            .header("Content-Type", "application/octet-stream")
+            .header("Origin", crate::WEB)
+            .header("Referer", format!("{}/", crate::WEB))
+            .body(challenge)
+            .send()
+            .await
+            .map_err(failed)?;
+        if !resp.status().is_success() {
+            return Err(Error::Playback(format!(
+                "SoundCloud licence: HTTP {}",
+                resp.status()
+            )));
+        }
+        resp.bytes().await.map(|b| b.to_vec()).map_err(failed)
     }
 
     /// The file the uploader put up, as it is, read as it downloads: its
@@ -412,6 +554,13 @@ mod tests {
         assert!(unplayable(&drm).to_string().contains("encrypted"));
         let preview = track(vec![transcoding("mp3_0_1", "sq", "hls", true)]);
         assert!(unplayable(&preview).to_string().contains("Go+"));
+    }
+
+    #[test]
+    fn the_widevine_key_is_read_from_its_data_uri() {
+        let playlist = "#EXTM3U\n#EXT-X-KEY:METHOD=SAMPLE-AES,KEYFORMAT=\"urn:uuid:edef8ba9-79d6-4ace-a3c8-27dcd51d21ed\",KEYFORMATVERSIONS=\"1\",URI=\"data:text/plain;base64,cHNzaA==\"\n#EXT-X-KEY:METHOD=SAMPLE-AES-CTR,KEYFORMAT=\"com.microsoft.playready\",URI=\"data:text/plain;charset=UTF-16;base64,AAAA\"\n";
+        assert_eq!(widevine_pssh(playlist).as_deref(), Some(&b"pssh"[..]));
+        assert_eq!(widevine_pssh("#EXTM3U\n"), None);
     }
 
     #[test]

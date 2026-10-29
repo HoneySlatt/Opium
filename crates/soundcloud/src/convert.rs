@@ -24,7 +24,7 @@ fn artwork(url: Option<&str>) -> Option<Artwork> {
 
 /// The best the track offers, as [`crate::stream`] picks it: its original
 /// file when the uploader lets it be downloaded (of a format known only once
-/// it comes), else AAC at 256 (Go+) or 160 kbps.
+/// it comes), else AAC at 256 (Go+) or 160 kbps, encrypted or not.
 fn quality(track: &types::Track) -> Option<AudioQuality> {
     if track.downloadable && track.has_downloads_left {
         return Some(AudioQuality {
@@ -34,7 +34,8 @@ fn quality(track: &types::Track) -> Option<AudioQuality> {
             bitrate_kbps: None,
         });
     }
-    let best = crate::stream::best_transcoding(track)?;
+    let best =
+        crate::stream::best_transcoding(track).or_else(|| crate::stream::best_encrypted(track))?;
     Some(AudioQuality {
         codec: Codec::Aac,
         sample_rate: Some(44_100),

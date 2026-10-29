@@ -2112,7 +2112,13 @@ impl App {
             // A station's stream is ADTS, forward only.
             Playable::Live(stream) => player::Source::stream(stream, Some("aac")),
             Playable::SoundCloud(audio) => {
-                player::Source::new(audio.reader, audio.len, Some(audio.extension))
+                let hint = audio.reader.seek_hint();
+                let source = player::Source::new(audio.reader, audio.len, Some(audio.extension));
+                match hint {
+                    // An encrypted track decrypts from where a seek lands.
+                    Some(hint) => source.with_seek_hint(hint),
+                    None => source,
+                }
             }
         }
     }

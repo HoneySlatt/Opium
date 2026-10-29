@@ -126,7 +126,14 @@ fn steps(app: &App, track: &Track) -> Vec<Step> {
             icons::APPLE_MUSIC,
             "Widevine CENC, decrypted in-process",
         ),
-        ProviderKind::SoundCloud => ("SoundCloud", icons::CLOUD, "HLS, unencrypted"),
+        ProviderKind::SoundCloud => (
+            "SoundCloud",
+            icons::CLOUD,
+            match track.quality.as_ref().map(|q| &q.codec) {
+                Some(Codec::Other(o)) if o == "Original" => "the uploader's own file",
+                _ => "HLS; Widevine CENC for a label's tracks",
+            },
+        ),
         ProviderKind::Navidrome => (
             "Navidrome",
             icons::SERVER,

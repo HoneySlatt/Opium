@@ -560,7 +560,9 @@ async fn run(
         // What is SoundCloud's goes there.
         if target(&request) == Some(ProviderKind::SoundCloud) {
             match sc.clone() {
-                Some(sc) => soundcloud_request(sc, request, replies, &mut warming),
+                Some(sc) => {
+                    soundcloud_request(sc, request, replies, &mut warming, cdm.clone().ok());
+                }
                 None => {
                     if let Request::Fetch { token, .. } | Request::Warm { token, .. } = request {
                         replies.send(Reply::Fetched {
@@ -1066,6 +1068,7 @@ fn soundcloud_request(
     request: Request,
     replies: Replies,
     warming: &mut Option<tokio::task::JoinHandle<()>>,
+    cdm: Option<widevine::Cdm>,
 ) {
     let Some(request) = shared_request(sc.clone(), request, replies.clone()) else {
         return;
@@ -1115,7 +1118,7 @@ fn soundcloud_request(
             ..
         } => {
             tokio::spawn(async move {
-                let result = soundcloud_playable(&sc, &track, original).await;
+                let result = soundcloud_playable(&sc, &track, original, cdm.as_ref()).await;
                 replies.send(Reply::Fetched { token, result });
             });
         }
@@ -1129,7 +1132,7 @@ fn soundcloud_request(
                 last.abort();
             }
             *warming = Some(tokio::spawn(async move {
-                let result = soundcloud_playable(&sc, &track, original).await;
+                let result = soundcloud_playable(&sc, &track, original, cdm.as_ref()).await;
                 replies.send(Reply::Fetched { token, result });
             }));
         }
@@ -1146,12 +1149,14 @@ fn soundcloud_request(
     }
 }
 
+/// A SoundCloud track's audio; `cdm` decrypts a major label's.
 async fn soundcloud_playable(
     sc: &SoundCloud,
     track: &ItemId,
     original: bool,
+    cdm: Option<&widevine::Cdm>,
 ) -> Result<Playable, String> {
-    sc.audio(track, original)
+    sc.audio(track, original, cdm)
         .await
         .map(Playable::SoundCloud)
         .map_err(|e| e.to_string())
