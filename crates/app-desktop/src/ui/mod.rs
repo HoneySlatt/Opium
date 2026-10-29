@@ -80,13 +80,13 @@ fn backdrop(app: &mut App) -> Option<[Color32; 3]> {
 /// sides, under a veil of `base` that thickens towards the bottom.
 fn page_backdrop(ui: &Ui, theme: &Theme, rect: Rect, [c1, c2, c3]: [Color32; 3]) {
     let blobs = [
-        blob(0.08, 0.02, 0.55, 0.65, c1, 0.60),
-        blob(0.55, -0.05, 0.50, 0.55, c2, 0.42),
-        blob(1.00, 0.35, 0.45, 0.70, c3, 0.35),
-        blob(0.00, 0.95, 0.50, 0.60, c2, 0.22),
-        blob(0.75, 1.05, 0.55, 0.50, c1, 0.20),
+        blob(0.08, 0.02, 0.55, 0.65, c1, 0.45),
+        blob(0.55, -0.05, 0.50, 0.55, c2, 0.32),
+        blob(1.00, 0.35, 0.45, 0.70, c3, 0.26),
+        blob(0.00, 0.95, 0.50, 0.60, c2, 0.16),
+        blob(0.75, 1.05, 0.55, 0.50, c1, 0.15),
     ];
-    wash(ui, rect, theme.base, &blobs, Some((0.1, 0.55)));
+    wash(ui, rect, theme.base, &blobs, Some((0.15, 0.6)));
 }
 
 fn blob(x: f32, y: f32, rx: f32, ry: f32, color: Color32, alpha: f32) -> Blob {
