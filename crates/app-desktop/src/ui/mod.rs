@@ -37,12 +37,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         .resizable(false)
         .show_separator_line(false)
         .frame(egui::Frame::new().fill(theme.crust))
-        .show(ui, |ui| {
-            if let Some(colors) = colors {
-                sidebar_backdrop(ui, &theme, ui.max_rect(), colors);
-            }
-            sidebar::show(app, ui, collapsed)
-        });
+        .show(ui, |ui| sidebar::show(app, ui, collapsed));
 
     egui::CentralPanel::no_frame()
         .frame(egui::Frame::new().fill(theme.base))
@@ -79,29 +74,19 @@ fn backdrop(app: &mut App) -> Option<[Color32; 3]> {
         .map(|p| p.map(|c| crate::palette::fit(c, light)))
 }
 
-/// The cover's three colours across the page, discreetly: strongest behind the
+/// The cover's three colours across the page, discreetly (the sidebar stays
+/// plain): strongest behind the
 /// header (colour 1 top left, 2 top centre, 3 on the right), echoed low on both
 /// sides, under a veil of `base` that thickens towards the bottom.
 fn page_backdrop(ui: &Ui, theme: &Theme, rect: Rect, [c1, c2, c3]: [Color32; 3]) {
     let blobs = [
-        blob(0.08, 0.02, 0.55, 0.65, c1, 0.85),
-        blob(0.55, -0.05, 0.50, 0.55, c2, 0.60),
-        blob(1.00, 0.35, 0.45, 0.70, c3, 0.50),
-        blob(0.00, 0.95, 0.50, 0.60, c2, 0.35),
-        blob(0.75, 1.05, 0.55, 0.50, c1, 0.30),
+        blob(0.08, 0.02, 0.55, 0.65, c1, 0.60),
+        blob(0.55, -0.05, 0.50, 0.55, c2, 0.42),
+        blob(1.00, 0.35, 0.45, 0.70, c3, 0.35),
+        blob(0.00, 0.95, 0.50, 0.60, c2, 0.22),
+        blob(0.75, 1.05, 0.55, 0.50, c1, 0.20),
     ];
-    wash(ui, rect, theme.base, &blobs, Some((0.0, 0.45)));
-}
-
-/// The same colours, fainter, behind the sidebar: the sidebar keeps its own
-/// darker shade and stays readable.
-fn sidebar_backdrop(ui: &Ui, theme: &Theme, rect: Rect, [c1, c2, c3]: [Color32; 3]) {
-    let blobs = [
-        blob(0.30, 0.00, 1.30, 0.45, c1, 0.80),
-        blob(0.70, 0.55, 1.20, 0.40, c3, 0.40),
-        blob(0.20, 1.00, 1.30, 0.45, c2, 0.50),
-    ];
-    wash(ui, rect, theme.crust, &blobs, Some((0.35, 0.5)));
+    wash(ui, rect, theme.base, &blobs, Some((0.1, 0.55)));
 }
 
 fn blob(x: f32, y: f32, rx: f32, ry: f32, color: Color32, alpha: f32) -> Blob {
