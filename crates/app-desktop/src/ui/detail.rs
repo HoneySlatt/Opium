@@ -11,11 +11,10 @@ use crate::app::{App, Loaded, Page};
 use crate::color::mix;
 use crate::fonts::{Weight, font};
 use crate::icons::{self, Icon};
-use crate::palette;
 use crate::theme::Theme;
 
 use super::tracks::{self, Columns, RowAction, RowState};
-use super::{Blob, artwork, page_buttons, paint_icon, paint_text, quality_label, text, wash};
+use super::{artwork, page_buttons, paint_icon, paint_text, quality_label, text};
 
 /// What the header shows.
 struct Header {
@@ -24,8 +23,6 @@ struct Header {
     by: Option<String>,
     meta: Vec<(Option<Icon>, String)>,
     art: Option<String>,
-    /// A small copy of the cover, for its colours.
-    swatch: Option<String>,
 }
 
 /// How the list under it reads.
@@ -81,7 +78,6 @@ pub fn playlist(app: &mut App, ui: &mut Ui, pad: f32, index: usize) -> f32 {
         by: None,
         meta,
         art: playlist.artwork.as_ref().map(|a| a.url(600)),
-        swatch: playlist.artwork.as_ref().map(|a| a.url(96)),
     };
     let listing = Listing {
         with_album: true,
@@ -111,7 +107,6 @@ fn album_header(album: &Album, tracks: &[Track]) -> Header {
         by: Some(album.artists.join(", ")),
         meta,
         art: album.artwork.as_ref().map(|a| a.url(600)),
-        swatch: album.artwork.as_ref().map(|a| a.url(96)),
     }
 }
 
@@ -146,26 +141,12 @@ fn page(
     let rows = tracks.len();
     let foot = 18.0 + 16.0 + 18.0;
     let total = table_top + tracks::HEAD_SPACE + rows.max(1) as f32 * tracks::ROW + foot + 104.0;
-    let colors = header
-        .as_ref()
-        .and_then(|h| h.swatch.clone())
-        .and_then(|url| app.palette(&url))
-        .map(|p| p.map(|c| palette::fit(c, theme.light)));
-
     let output = egui::ScrollArea::vertical()
         .id_salt(listing.list)
         .auto_shrink(false)
         .show_viewport(ui, |ui, viewport| {
             let (content, _) =
                 ui.allocate_exact_size(vec2(ui.available_width(), total), Sense::hover());
-            if let Some(colors) = colors {
-                cover_wash(
-                    ui,
-                    &theme,
-                    Rect::from_min_size(content.min, vec2(content.width(), 620.0)),
-                    colors,
-                );
-            }
             let left = content.left() + pad;
             let width = content.width() - 2.0 * pad;
             let art = Rect::from_min_size(
@@ -278,36 +259,6 @@ fn page(
         app.play_list(tracks.to_vec(), position);
     }
     output.state.clamped_offset().y
-}
-
-/// Three radial blobs of the cover's colours behind the header, fading into
-/// `base`: colour 1 top left behind the artwork at 92 %, colour 2 top centre at
-/// 72 %, colour 3 on the right at 62 %.
-fn cover_wash(ui: &Ui, theme: &Theme, rect: Rect, [c1, c2, c3]: [Color32; 3]) {
-    let blobs = [
-        Blob {
-            center: vec2(0.10, 0.04),
-            radii: vec2(0.48, 0.78),
-            color: c1,
-            alpha: 0.92,
-            fade: 0.72,
-        },
-        Blob {
-            center: vec2(0.58, -0.06),
-            radii: vec2(0.46, 0.70),
-            color: c2,
-            alpha: 0.72,
-            fade: 0.74,
-        },
-        Blob {
-            center: vec2(1.0, 0.26),
-            radii: vec2(0.40, 0.70),
-            color: c3,
-            alpha: 0.62,
-            fade: 0.72,
-        },
-    ];
-    wash(ui, rect, theme.base, &blobs, true);
 }
 
 /// The text beside the artwork, bottom-aligned with it: kind, title, artist,
