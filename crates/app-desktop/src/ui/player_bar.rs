@@ -5,12 +5,15 @@
 use std::time::Duration;
 
 use egui::{Color32, Id, Rect, Sense, Stroke, Ui, pos2, vec2};
+use music_core::model::FavouriteKind;
 
 use crate::app::App;
 use crate::color::{alpha, mix};
 use crate::fonts::{Weight, font};
 use crate::icons;
 use crate::theme::Theme;
+
+use super::menu::{TrackFacts, track_menu};
 
 use super::{
     artwork, explicit_badge, format_time, icon_button, paint_text, quality_label, text, thumb_url,
@@ -259,8 +262,32 @@ fn now_playing(app: &mut App, ui: &mut Ui, theme: &Theme, lcd: Rect) {
         vec2(30.0, 30.0),
     );
     artwork(ui, thumb_url(&track), art, 3.0, theme);
+    // The track's menu, as in the lists, over the artwork and the words (a
+    // station has none). The artwork and the album link sense clicks of their
+    // own, so they carry the menu too.
+    let chip_right = lcd.right() - 4.0;
+    let words = Rect::from_min_max(lcd.min, pos2(chip_right - 80.0, lcd.max.y));
+    let area = ui.interact(words, Id::unique("player-track"), Sense::click());
+    let (has_album, favourite, in_library) = (
+        track.album_id.is_some(),
+        app.is_favourite(FavouriteKind::Song, &track.id),
+        app.track_in_library(&track),
+    );
+    let facts = || TrackFacts {
+        has_album,
+        favourite,
+        in_library,
+    };
+    let station = track.id.id.starts_with("ra.");
+    let mut choice = None;
+    if !station {
+        choice = choice.or(track_menu(&area, theme, facts()));
+    }
     // The artwork opens Now Playing, with an expand icon on hover.
     let open = ui.interact(art, Id::unique("player-art"), Sense::click());
+    if !station {
+        choice = choice.or(track_menu(&open, theme, facts()));
+    }
     if open.hovered() {
         ui.painter()
             .rect_filled(art, 3.0, Color32::from_black_alpha(115));
@@ -274,7 +301,6 @@ fn now_playing(app: &mut App, ui: &mut Ui, theme: &Theme, lcd: Rect) {
     }
 
     // The quality chip, right-aligned.
-    let chip_right = lcd.right() - 4.0;
     let chip_left = quality_chip(app, ui, theme, &track, chip_right, lcd.center().y);
 
     let left = art.right() + 10.0;
@@ -321,6 +347,9 @@ fn now_playing(app: &mut App, ui: &mut Ui, theme: &Theme, lcd: Rect) {
     let mut color = theme.muted();
     if let Some(album) = &track.album_id {
         let hit = ui.interact(link, Id::unique("player-album"), Sense::click());
+        if !station {
+            choice = choice.or(track_menu(&hit, theme, facts()));
+        }
         if hit.hovered() {
             color = theme.text;
             ui.painter()
@@ -336,6 +365,9 @@ fn now_playing(app: &mut App, ui: &mut Ui, theme: &Theme, lcd: Rect) {
     paint_text(ui, galley, left, y, egui::Align::Min, color);
 
     seek_hairline(app, ui, theme, lcd);
+    if let Some(choice) = choice {
+        app.track_choice(track, choice, ui.input(|i| i.time));
+    }
 }
 
 /// Returns its left edge.
