@@ -116,6 +116,33 @@ pub enum Enqueue {
     Last,
 }
 
+/// A playlist's songs that match a search, and where each is in the playlist.
+struct Searched {
+    query: String,
+    from: Arc<Vec<Track>>,
+    tracks: Arc<Vec<Track>>,
+    numbers: Arc<Vec<u32>>,
+}
+
+/// Lower case, with the accents French and its neighbours use taken off, so
+/// that `cafe` finds `Café`.
+fn fold(s: &str) -> String {
+    s.to_lowercase()
+        .chars()
+        .map(|c| match c {
+            'à' | 'á' | 'â' | 'ã' | 'ä' | 'å' => 'a',
+            'ç' => 'c',
+            'è' | 'é' | 'ê' | 'ë' => 'e',
+            'ì' | 'í' | 'î' | 'ï' => 'i',
+            'ñ' => 'n',
+            'ò' | 'ó' | 'ô' | 'õ' | 'ö' => 'o',
+            'ù' | 'ú' | 'û' | 'ü' => 'u',
+            'ý' | 'ÿ' => 'y',
+            c => c,
+        })
+        .collect()
+}
+
 /// A song fetched ahead because the pointer rests on it.
 struct Warm {
     token: Token,
@@ -337,6 +364,10 @@ pub struct App {
     lyrics: HashMap<ItemId, Loaded<Option<Arc<Lyrics>>>>,
     /// The selected row on an album or playlist page.
     pub detail_selected: Option<usize>,
+    /// What the playlist shown is searched for.
+    pub playlist_search: String,
+    /// The playlist's songs matching it, kept until either changes.
+    searched: Option<Searched>,
     pub drawer_open: bool,
     pub signal_open: Option<SignalAnchor>,
     pub now_playing: bool,
@@ -445,6 +476,8 @@ impl App {
             palettes: HashMap::new(),
             lyrics: HashMap::new(),
             detail_selected: None,
+            playlist_search: String::new(),
+            searched: None,
             drawer_tab: DrawerTab::default(),
             history: Vec::new(),
             queue: Queue::new(),
@@ -559,6 +592,7 @@ impl App {
     /// Fetch what the page shows, unless it already has been.
     fn arrived(&mut self) {
         self.detail_selected = None;
+        self.playlist_search.clear();
         // Favourite Songs is Apple's playlist of them, once the library says which.
         if self.page == Page::Favourites
             && let Some(id) = self.favourites()
@@ -1158,6 +1192,47 @@ impl App {
     }
 
     // ---- Playback ----
+
+    /// `tracks` that match `query` in their title, artists or album, every
+    /// word of it, with their numbers in `tracks`; or all of them.
+    pub fn search_in(
+        &mut self,
+        tracks: Arc<Vec<Track>>,
+        query: &str,
+    ) -> (Arc<Vec<Track>>, Option<Arc<Vec<u32>>>) {
+        let query = fold(query.trim());
+        if query.is_empty() {
+            return (tracks, None);
+        }
+        if let Some(s) = &self.searched
+            && s.query == query
+            && Arc::ptr_eq(&s.from, &tracks)
+        {
+            return (s.tracks.clone(), Some(s.numbers.clone()));
+        }
+        let words: Vec<&str> = query.split_whitespace().collect();
+        let (mut found, mut numbers) = (Vec::new(), Vec::new());
+        for (i, track) in tracks.iter().enumerate() {
+            let text = fold(&format!(
+                "{} {} {}",
+                track.title,
+                track.artists.join(" "),
+                track.album.as_deref().unwrap_or_default()
+            ));
+            if words.iter().all(|w| text.contains(w)) {
+                found.push(track.clone());
+                numbers.push(i as u32 + 1);
+            }
+        }
+        let (found, numbers) = (Arc::new(found), Arc::new(numbers));
+        self.searched = Some(Searched {
+            query,
+            from: tracks,
+            tracks: found.clone(),
+            numbers: numbers.clone(),
+        });
+        (found, Some(numbers))
+    }
 
     /// The track being fetched to play now, until it starts.
     pub fn loading(&self) -> Option<&Track> {

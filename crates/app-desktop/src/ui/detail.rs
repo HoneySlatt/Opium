@@ -71,7 +71,12 @@ struct Listing {
     error: Option<String>,
     /// The user's own playlist shown, whose songs can be taken out.
     playlist: Option<ItemId>,
+    /// A playlist: it can be searched.
+    searchable: bool,
 }
+
+/// The row above a playlist's songs that holds its search field.
+const SEARCH_ROW: f32 = 46.0;
 
 pub fn album(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
     let (header, tracks, loading, error) = match app.albums.get(id) {
@@ -105,6 +110,7 @@ pub fn album(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
         loading,
         error,
         playlist: None,
+        searchable: false,
     };
     page(app, ui, pad, header, tracks, listing)
 }
@@ -148,6 +154,7 @@ pub fn playlist(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
         loading: tracks.is_empty() && !done && error.is_none(),
         error,
         playlist: playlist.editable.then(|| playlist.id.clone()),
+        searchable: true,
     };
     page(app, ui, pad, Some(header), tracks, listing)
 }
@@ -217,7 +224,17 @@ fn page(
     listing: Listing,
 ) -> f32 {
     let theme = app.theme.clone();
-    let table_top = ART_TOP + art_size(pad) + 34.0;
+    // What the search finds, numbered as in the playlist: Play, Shuffle and
+    // the rows play what is shown.
+    let query = app.playlist_search.clone();
+    let searching = listing.searchable && !query.trim().is_empty();
+    let (tracks, numbers) = if listing.searchable {
+        app.search_in(tracks, &query)
+    } else {
+        (tracks, None)
+    };
+    let search_row = if listing.searchable { SEARCH_ROW } else { 0.0 };
+    let table_top = ART_TOP + art_size(pad) + 34.0 + search_row;
     // Albums have no column titles, as in Cider.
     let head = match listing.columns {
         Kind::Album { .. } => 0.0,
@@ -254,6 +271,9 @@ fn page(
                 Kind::Playlist => Columns::new(left, width, true),
             };
             let table = content.top() + table_top;
+            if listing.searchable {
+                search_field(app, ui, &theme, left + width, table - search_row + 4.0);
+            }
             if head > 0.0 {
                 tracks::head(ui, &theme, &columns, table, left, width, None);
             }
@@ -280,6 +300,24 @@ fn page(
                 tracks::skeleton(ui, &theme, rows_top, left, width, 6);
                 return;
             }
+            if searching && tracks.is_empty() {
+                let g = text(
+                    ui,
+                    &format!("No songs match “{}”.", query.trim()),
+                    font(13.0, Weight::Regular),
+                    theme.subtext0,
+                    width - 20.0,
+                );
+                paint_text(
+                    ui,
+                    g,
+                    left + 10.0,
+                    rows_top + 26.0,
+                    egui::Align::Min,
+                    theme.subtext0,
+                );
+                return;
+            }
             for position in tracks::visible(viewport, table_top + head, rows) {
                 let track = &tracks[position];
                 let rect = Rect::from_min_size(
@@ -289,6 +327,8 @@ fn page(
                 let now = app.is_current(track);
                 let number = if listing.track_numbers {
                     track.track_number
+                } else if let Some(numbers) = &numbers {
+                    numbers.get(position).copied()
                 } else {
                     Some(position as u32 + 1)
                 };
@@ -554,6 +594,70 @@ fn header_text(
         Some(PageButton::Shuffle) => Some(HeaderAction::Play { shuffle: true }),
         Some(PageButton::Add) => Some(HeaderAction::AddToLibrary),
         None => action,
+    }
+}
+
+/// The playlist's search field, ending at `right`: Ctrl+F reaches it, Escape
+/// empties it.
+fn search_field(app: &mut App, ui: &mut Ui, theme: &Theme, right: f32, top: f32) {
+    let field = Rect::from_min_size(pos2(right - 260.0, top), vec2(260.0, 32.0));
+    ui.painter().rect(
+        field,
+        9.0,
+        theme.text_a(0.04),
+        egui::Stroke::new(1.0, theme.line()),
+        egui::StrokeKind::Inside,
+    );
+    paint_icon(
+        ui,
+        icons::SEARCH,
+        pos2(field.left() + 15.0, field.center().y),
+        14.0,
+        theme.muted(),
+    );
+    let body = font(13.0, Weight::Regular);
+    let line = text(ui, "S", body.clone(), theme.text, 100.0).size().y;
+    let clear = !app.playlist_search.is_empty();
+    let edit = Rect::from_min_max(
+        pos2(field.left() + 32.0, field.center().y - line / 2.0),
+        pos2(
+            field.right() - if clear { 32.0 } else { 12.0 },
+            field.center().y + line / 2.0,
+        ),
+    );
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(edit));
+    let response = child.add(
+        egui::TextEdit::singleline(&mut app.playlist_search)
+            .id(egui::Id::unique("playlist-search"))
+            .hint_text(egui::RichText::new("Search in Playlist").color(theme.muted()))
+            .font(body)
+            .frame(egui::Frame::NONE)
+            .margin(egui::Margin::ZERO)
+            .desired_width(edit.width()),
+    );
+    if ui.input(|i| i.modifiers.command && i.key_pressed(egui::Key::F)) {
+        response.request_focus();
+    }
+    if response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+        app.playlist_search.clear();
+        response.surrender_focus();
+    }
+    if response.changed() {
+        app.detail_selected = None;
+    }
+    if clear {
+        let button = Rect::from_center_size(
+            pos2(field.right() - 16.0, field.center().y),
+            vec2(24.0, 24.0),
+        );
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(button));
+        if super::icon_button(&mut child, theme, icons::X, 24.0, 12.0, theme.muted(), true)
+            .on_hover_text("Clear")
+            .clicked()
+        {
+            app.playlist_search.clear();
+            app.detail_selected = None;
+        }
     }
 }
 
