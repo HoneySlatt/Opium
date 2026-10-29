@@ -366,6 +366,8 @@ pub struct App {
     pub detail_selected: Option<usize>,
     /// What the playlist shown is searched for.
     pub playlist_search: String,
+    /// Its search field is open, not just its magnifier.
+    pub playlist_search_open: bool,
     /// The playlist's songs matching it, kept until either changes.
     searched: Option<Searched>,
     pub drawer_open: bool,
@@ -477,6 +479,7 @@ impl App {
             lyrics: HashMap::new(),
             detail_selected: None,
             playlist_search: String::new(),
+            playlist_search_open: false,
             searched: None,
             drawer_tab: DrawerTab::default(),
             history: Vec::new(),
@@ -593,6 +596,7 @@ impl App {
     fn arrived(&mut self) {
         self.detail_selected = None;
         self.playlist_search.clear();
+        self.playlist_search_open = false;
         // Favourite Songs is Apple's playlist of them, once the library says which.
         if self.page == Page::Favourites
             && let Some(id) = self.favourites()
