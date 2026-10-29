@@ -38,6 +38,8 @@ pub struct Settings {
     pub shuffle: Option<bool>,
     /// Repeat as last left; off unless set.
     pub repeat: Option<Repeat>,
+    /// Where Search looked last: Apple Music unless set.
+    pub search_scope: Option<crate::app::SearchScope>,
     /// Covers move where Apple made them move (on unless turned off).
     pub animated_artwork: Option<bool>,
     /// How sharp the moving covers are; Automatic unless set.
@@ -126,3 +128,23 @@ impl Settings {
 
 /// What 100 % draws at: the design's sizes, 10 % larger (the user's call).
 pub const SCALE_UNIT: f32 = 1.1;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::SearchScope;
+
+    #[test]
+    fn what_is_kept_reads_back_the_same() {
+        let kept = Settings {
+            search_scope: Some(SearchScope::Library),
+            shuffle: Some(true),
+            repeat: Some(Repeat::One),
+            volume: Some(0.3),
+            ..Settings::default()
+        };
+        let text = toml::to_string(&kept).unwrap();
+        assert!(text.contains("search_scope = \"library\""), "{text}");
+        assert_eq!(toml::from_str::<Settings>(&text).unwrap(), kept);
+    }
+}

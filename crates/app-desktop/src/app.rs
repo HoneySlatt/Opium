@@ -98,7 +98,10 @@ pub enum Loaded<T> {
 }
 
 /// Where Search looks: everything on Apple Music, or the user's library.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize,
+)]
+#[serde(rename_all = "lowercase")]
 pub enum SearchScope {
     #[default]
     AppleMusic,
@@ -480,7 +483,7 @@ impl App {
             search_edited: None,
             focus_search: false,
             searches: HashMap::new(),
-            search_scope: SearchScope::default(),
+            search_scope: settings.search_scope.unwrap_or_default(),
             search_source: None,
             other_playlists: HashMap::new(),
             songs: Vec::new(),
@@ -1132,6 +1135,9 @@ impl App {
     pub fn set_search_scope(&mut self, scope: SearchScope) {
         if scope != self.search_scope {
             self.search_scope = scope;
+            // Search looks there again next time too.
+            self.settings.search_scope = Some(scope);
+            self.settings.save();
             self.arrived();
         }
     }
