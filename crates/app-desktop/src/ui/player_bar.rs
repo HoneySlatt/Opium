@@ -317,7 +317,7 @@ fn now_playing(app: &mut App, ui: &mut Ui, theme: &Theme, lcd: Rect) {
 
 /// Returns its left edge.
 fn quality_chip(
-    app: &App,
+    app: &mut App,
     ui: &mut Ui,
     theme: &Theme,
     track: &music_core::model::Track,
@@ -327,7 +327,8 @@ fn quality_chip(
     let Some((label, lossless)) = quality_label(track) else {
         return right;
     };
-    let (perfect, reason) = signal_path(app);
+    let assessment = super::signal::assess(app);
+    let perfect = assessment.perfect();
     let color = theme.muted();
     let galley = text(ui, &label, font(10.5, Weight::SemiBold), color, 200.0);
     let dot = if perfect { 0.0 } else { 7.0 + 5.0 };
@@ -336,7 +337,9 @@ fn quality_chip(
         pos2(right, y + 10.0),
     );
     let response = ui.interact(rect, Id::unique("quality-chip"), Sense::click());
-    let fill = if response.hovered() {
+    super::signal::remember_anchor(ui, crate::app::SignalAnchor::PlayerBar, rect);
+    let open = app.signal_open == Some(crate::app::SignalAnchor::PlayerBar);
+    let fill = if response.hovered() || open {
         theme.text_a(0.11)
     } else if lossless {
         alpha(theme.accent, 0.14)
@@ -366,35 +369,21 @@ fn quality_chip(
         music_core::model::ProviderKind::SoundCloud => "SoundCloud",
         music_core::model::ProviderKind::Navidrome => "Navidrome",
     };
-    response.on_hover_text(format!(
-        "{source} · {label}\n{}",
-        if perfect {
-            "Bit-perfect".to_owned()
+    let clicked = response
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text(format!(
+            "{source} · {label}\n{}",
+            super::signal::tooltip(&assessment)
+        ))
+        .clicked();
+    if clicked {
+        app.signal_open = if open {
+            None
         } else {
-            format!("Not bit-perfect: {reason}")
-        }
-    ));
+            Some(crate::app::SignalAnchor::PlayerBar)
+        };
+    }
     rect.left()
-}
-
-/// Whether the decoder's samples reach the card unchanged, and if not, why.
-fn signal_path(app: &App) -> (bool, String) {
-    let (Some(source), Some(output)) = (&app.status.source, &app.status.output) else {
-        return (true, String::new());
-    };
-    if output.sample_rate != source.sample_rate {
-        return (
-            false,
-            format!(
-                "PipeWire resamples {} → {} Hz",
-                source.sample_rate, output.sample_rate
-            ),
-        );
-    }
-    if app.muted || app.volume < 1.0 {
-        return (false, "volume below 100 %".into());
-    }
-    (true, String::new())
 }
 
 /// The position as a hairline along the LCD's bottom: 2 px, 4 px with a knob

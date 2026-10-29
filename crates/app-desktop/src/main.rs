@@ -20,9 +20,13 @@ fn main() -> eframe::Result {
             .with_min_inner_size([760.0, 520.0]),
         ..Default::default()
     };
-    eframe::run_native(
+    let result = eframe::run_native(
         "Music",
         options,
         Box::new(|cc| Ok(Box::new(app::App::new(cc)))),
-    )
+    );
+    // Decryption threads may still be finishing: keep them out of the CDM
+    // while it is torn down.
+    widevine::shutdown();
+    result
 }

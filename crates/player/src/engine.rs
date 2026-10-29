@@ -59,6 +59,15 @@ impl Sink {
         if graph_rate > 0 {
             info.sample_rate = graph_rate;
         }
+        info.mixing = self
+            .state
+            .mixing
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        if let Some(device) = &info.mixing.device {
+            info.device = device.clone();
+        }
         info
     }
 }

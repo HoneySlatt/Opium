@@ -80,6 +80,13 @@ fn call_lock() -> MutexGuard<'static, ()> {
     CALL_LOCK.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+/// Call before the process exits. The CDM's own destructors run at exit, and a
+/// thread still closing a session meanwhile crashes inside it; this takes the
+/// call lock for good, so such threads wait on it instead.
+pub fn shutdown() {
+    std::mem::forget(call_lock());
+}
+
 /// Take ownership of a buffer the shim allocated.
 unsafe fn take(out: *mut u8, len: u32) -> Vec<u8> {
     if out.is_null() {

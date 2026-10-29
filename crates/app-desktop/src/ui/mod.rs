@@ -4,6 +4,7 @@ mod detail;
 mod drawer;
 mod player_bar;
 mod sidebar;
+mod signal;
 mod songs;
 mod tracks;
 
@@ -16,7 +17,7 @@ use egui::{
     pos2, vec2,
 };
 
-use crate::app::{App, Page};
+use crate::app::{App, Page, SignalAnchor};
 use crate::color::alpha;
 use crate::fonts::{Weight, font};
 use crate::icons::{self, Icon};
@@ -49,6 +50,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
             top_bar(app, ui, main, scrolled);
             drawer::show(app, ui, main);
             player_bar::show(app, ui, main);
+            signal::show(app, ui, main);
             toast(app, ui, main);
         });
 
@@ -230,16 +232,28 @@ fn top_bar(app: &mut App, ui: &mut Ui, main: Rect, scrolled: f32) {
     {
         app.drawer_open = !app.drawer_open;
     }
-    icon_button(
+    let wave_color = if app.signal_open == Some(SignalAnchor::TopBar) {
+        theme.accent
+    } else {
+        theme.subtext0
+    };
+    let wave = icon_button(
         &mut right,
         &theme,
         icons::WAVE,
         32.0,
         17.0,
-        theme.subtext0,
+        wave_color,
         true,
     )
-    .on_hover_text("Audio output — comes in a later step");
+    .on_hover_text("Signal path");
+    signal::remember_anchor(&right, SignalAnchor::TopBar, wave.rect);
+    if wave.clicked() {
+        app.signal_open = match app.signal_open {
+            Some(SignalAnchor::TopBar) => None,
+            _ => app.now.is_some().then_some(SignalAnchor::TopBar),
+        };
+    }
 }
 
 fn toast(app: &mut App, ui: &mut Ui, main: Rect) {
@@ -288,8 +302,13 @@ fn shortcuts(app: &mut App, ui: &mut Ui) {
     if !typing && ui.input(|i| i.key_pressed(egui::Key::Space)) {
         app.toggle_play();
     }
+    // Escape closes the popover first, then the drawer.
     if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-        app.drawer_open = false;
+        if app.signal_open.is_some() {
+            app.signal_open = None;
+        } else {
+            app.drawer_open = false;
+        }
     }
 }
 

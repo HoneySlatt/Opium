@@ -6,15 +6,16 @@
 //! PipeWire's float mixer carries exactly up to 24 bits. Volume is applied here,
 //! and only below 100 %.
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
+use std::time::Duration;
 
 use pipewire as pw;
 use pw::spa;
 use rtrb::Consumer;
 
-use crate::{Error, OutputInfo, Result};
+use crate::{Error, Mixing, OutputInfo, Result};
 
 /// What the engine and the output thread share.
 #[derive(Default)]
@@ -28,12 +29,17 @@ pub(crate) struct OutputState {
     pub volume: AtomicU32,
     /// The rate the PipeWire graph actually runs at, once known.
     pub graph_rate: AtomicU32,
+    /// Our stream's node in the graph, once it has one.
+    node_id: AtomicU32,
+    /// The device and what else plays into it, refreshed twice a second.
+    pub mixing: Mutex<Mixing>,
 }
 
 impl OutputState {
     pub fn new(volume: f32) -> Self {
         Self {
             volume: AtomicU32::new(volume.to_bits()),
+            node_id: AtomicU32::new(spa::sys::SPA_ID_INVALID),
             ..Self::default()
         }
     }
@@ -113,6 +119,7 @@ impl Output {
             sample_rate,
             channels,
             sample_format: "S32_LE",
+            mixing: Mixing::default(),
         };
         Ok((
             Self {
@@ -169,6 +176,22 @@ fn run(
         },
     )?;
 
+    // Follow the rest of the graph, and summarise it for the engine.
+    let registry = core.get_registry_rc()?;
+    let (graph, _graph_listener) = crate::graph::watch(&registry);
+    let summary_state = state.clone();
+    let timer = mainloop.loop_().add_timer(move |_| {
+        let ours = summary_state.node_id.load(Ordering::Relaxed);
+        if ours != spa::sys::SPA_ID_INVALID {
+            let mixing = graph.borrow().summary(ours);
+            *summary_state.mixing.lock().unwrap_or_else(|e| e.into_inner()) = mixing;
+        }
+    });
+    timer.update_timer(
+        Some(Duration::from_millis(200)),
+        Some(Duration::from_millis(500)),
+    );
+
     let feed = Feed {
         consumer,
         state,
@@ -178,6 +201,7 @@ fn run(
     let _listener = stream
         .add_local_listener_with_user_data(feed)
         .process(|stream, feed| {
+            feed.state.node_id.store(stream.node_id(), Ordering::Relaxed);
             if let Ok(time) = stream.time() {
                 let denom = time.rate().denom;
                 if denom > 0 {

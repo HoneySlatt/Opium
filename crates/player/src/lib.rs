@@ -8,6 +8,7 @@
 
 mod decoder;
 mod engine;
+mod graph;
 mod output;
 
 use std::io::{Read, Seek};
@@ -102,15 +103,30 @@ pub struct SourceFormat {
     pub duration: Option<Duration>,
 }
 
+/// What shares the device with the music, from the PipeWire graph.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Mixing {
+    /// The device the stream plays into, as PipeWire describes it.
+    pub device: Option<String>,
+    /// Other programs playing into the same device right now: their sound is
+    /// mixed with the music.
+    pub others: Vec<String>,
+    /// The device's software volume as a linear gain, when it isn't unity.
+    pub device_volume: Option<f32>,
+    pub device_muted: bool,
+}
+
 /// The output as opened.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct OutputInfo {
+    /// The device's name, or "PipeWire" until the graph says.
     pub device: String,
     /// The rate the PipeWire graph runs at, as of the last [`Player::status`].
     /// When it differs from the source's, the music is being resampled.
     pub sample_rate: u32,
     pub channels: u16,
     pub sample_format: &'static str,
+    pub mixing: Mixing,
 }
 
 #[derive(Debug, Clone, PartialEq)]

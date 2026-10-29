@@ -44,6 +44,22 @@ pub enum DrawerTab {
     History,
 }
 
+/// What the signal path popover hangs from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SignalAnchor {
+    /// The quality chip in the player bar: the popover opens above it.
+    PlayerBar,
+    /// The waveform button in the top bar: the popover opens below it.
+    TopBar,
+}
+
+impl SignalAnchor {
+    /// Where the anchor's last drawn rect is kept.
+    pub fn id(self) -> egui::Id {
+        egui::Id::unique(("signal-anchor", self as u8))
+    }
+}
+
 /// How many played tracks the History tab keeps.
 const HISTORY: usize = 100;
 
@@ -116,6 +132,7 @@ pub struct App {
     /// The selected row on an album or playlist page.
     pub detail_selected: Option<usize>,
     pub drawer_open: bool,
+    pub signal_open: Option<SignalAnchor>,
     pub drawer_tab: DrawerTab,
     /// Tracks that were playing before, most recent last.
     pub history: Vec<Track>,
@@ -188,6 +205,8 @@ impl App {
             muted: false,
             toast: None,
             drawer_open: std::env::var_os("MUSIC_SCREENSHOT_DRAWER").is_some(),
+            signal_open: std::env::var_os("MUSIC_SCREENSHOT_SIGNAL")
+                .map(|_| SignalAnchor::PlayerBar),
             screenshot: crate::screenshot::Screenshot::from_env(),
             settings,
             theme_changed,
