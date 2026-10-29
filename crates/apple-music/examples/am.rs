@@ -5,6 +5,7 @@
 //!   cargo run -p apple-music --example am -- search "daft punk"
 //!   cargo run -p apple-music --example am -- fetch 1463409605 out.m4a
 //!   cargo run -p apple-music --example am -- play 1463409605 1463409610
+//!   cargo run -p apple-music --example am -- lyrics 1463409605
 //!
 //! The browser defaults to `brave-origin`; set `MUSIC_BROWSER` for another one.
 //! The token is stored under `$XDG_CONFIG_HOME/music/apple-music/` and never printed.
@@ -37,8 +38,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some("search") => search(&connect().await?, &args[1..].join(" ")).await,
         Some("fetch") if args.len() == 3 => fetch(&connect().await?, &args[1], &args[2]).await,
         Some("play") if args.len() >= 2 => play(&connect().await?, &args[1..]).await,
+        Some("lyrics") if args.len() == 2 => lyrics(&connect().await?, &args[1]).await,
         _ => {
-            eprintln!("usage: am signin | library | search <term> | fetch <id> <out> | play <id>…");
+            eprintln!(
+                "usage: am signin | library | search <term> | fetch <id> <out> | play <id>… | lyrics <id>"
+            );
             Ok(())
         }
     }
@@ -94,7 +98,13 @@ async fn library(am: &AppleMusic) -> Result<(), Box<dyn std::error::Error>> {
     let albums = am.library_albums(None).await?;
     println!("\nalbums (first page: {})", albums.items.len());
     for a in albums.items.iter().take(5) {
-        println!("  {} — {} ({:?}) [{}]", a.title, a.artists.join(", "), a.year, a.id.id);
+        println!(
+            "  {} — {} ({:?}) [{}]",
+            a.title,
+            a.artists.join(", "),
+            a.year,
+            a.id.id
+        );
     }
     if let Some(album) = albums.items.first() {
         let tracks = am.album_tracks(&album.id).await?;
@@ -109,6 +119,19 @@ async fn library(am: &AppleMusic) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(playlist) = playlists.items.first() {
         let tracks = am.playlist_tracks(&playlist.id, None).await?;
         println!("  tracks of « {} »: {}", playlist.name, tracks.items.len());
+    }
+    Ok(())
+}
+
+async fn lyrics(am: &AppleMusic, id: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let id = music_core::model::ItemId::new(music_core::model::ProviderKind::AppleMusic, id);
+    let Some(lyrics) = am.lyrics(&id).await? else {
+        println!("no lyrics");
+        return Ok(());
+    };
+    println!("{} lines, synced: {}", lyrics.lines.len(), lyrics.synced);
+    for line in &lyrics.lines {
+        println!("  {:>7.2}  {}", line.start.as_secs_f64(), line.text);
     }
     Ok(())
 }

@@ -132,3 +132,28 @@ pub struct Page<T> {
     pub items: Vec<T>,
     pub next: Option<Cursor>,
 }
+
+/// One line of lyrics. `text` is empty for an instrumental gap.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LyricLine {
+    pub start: std::time::Duration,
+    pub end: Option<std::time::Duration>,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Lyrics {
+    pub lines: Vec<LyricLine>,
+    /// Whether the lines carry times. Unsynced lyrics are shown as plain text.
+    pub synced: bool,
+}
+
+impl Lyrics {
+    /// The line playing at `position`: the last one started.
+    pub fn current(&self, position: std::time::Duration) -> Option<usize> {
+        if !self.synced {
+            return None;
+        }
+        self.lines.iter().rposition(|l| l.start <= position)
+    }
+}

@@ -107,3 +107,10 @@ pub struct SearchResults {
     pub artists: Option<Response<Artist>>,
     pub playlists: Option<Response<Playlist>>,
 }
+
+#[derive(Debug, Deserialize)]
+pub struct LyricsAttributes {
+    pub ttml: Option<String>,
+}
+
+pub type LyricsResponse = Response<Resource<LyricsAttributes>>;

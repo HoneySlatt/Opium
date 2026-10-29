@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::sync::mpsc;
 
 use apple_music::{AppleMusic, AudioStream};
-use music_core::model::{Album, Cursor, ItemId, Playlist, Track};
+use music_core::model::{Album, Cursor, ItemId, Lyrics, Playlist, Track};
 use music_core::{Error, Provider};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
@@ -21,6 +21,8 @@ pub enum Request {
     Playlist(ItemId),
     /// The three colours of the cover at this URL.
     Palette(String),
+    /// A track's lyrics.
+    Lyrics(ItemId),
 }
 
 pub enum Reply {
@@ -48,6 +50,10 @@ pub enum Reply {
     Palette {
         url: String,
         palette: Option<crate::palette::Palette>,
+    },
+    Lyrics {
+        id: ItemId,
+        result: Result<Option<Lyrics>, String>,
     },
 }
 
@@ -156,6 +162,12 @@ async fn run(mut requests: UnboundedReceiver<Request>, replies: Replies) {
                         Err(_) => None,
                     };
                     replies.send(Reply::Palette { url, palette });
+                });
+            }
+            Request::Lyrics(id) => {
+                tokio::spawn(async move {
+                    let result = am.lyrics(&id).await.map_err(|e| e.to_string());
+                    replies.send(Reply::Lyrics { id, result });
                 });
             }
             Request::Library => {

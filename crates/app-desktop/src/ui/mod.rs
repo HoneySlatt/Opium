@@ -2,6 +2,7 @@
 
 mod detail;
 mod drawer;
+mod lyrics;
 mod now_playing;
 mod player_bar;
 mod sidebar;

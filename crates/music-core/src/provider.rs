@@ -1,6 +1,8 @@
 use async_trait::async_trait;
 
-use crate::model::{Album, Cursor, ItemId, Page, Playlist, ProviderKind, SearchResults, Track};
+use crate::model::{
+    Album, Cursor, ItemId, Lyrics, Page, Playlist, ProviderKind, SearchResults, Track,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -40,4 +42,10 @@ pub trait Provider: Send + Sync {
         playlist: &ItemId,
         cursor: Option<&Cursor>,
     ) -> Result<Page<Track>>;
+
+    /// Synced lyrics when the service has them. Services without lyrics keep
+    /// this default.
+    async fn lyrics(&self, _track: &ItemId) -> Result<Option<Lyrics>> {
+        Ok(None)
+    }
 }

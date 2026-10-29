@@ -1,5 +1,5 @@
 //! Now Playing: the whole window, over the cover's colours. The artwork, title,
-//! position, transport and quality on the left; Playing Next and Lyrics on the
+//! position, transport and volume on the left; Playing Next and Lyrics on the
 //! right (hidden when the window is narrow).
 
 use std::time::Duration;
@@ -13,7 +13,7 @@ use crate::icons;
 use crate::theme::Theme;
 
 use super::{
-    Blob, NARROW, artwork, drawer, explicit_badge, format_time, icon_button, paint_icon,
+    Blob, NARROW, artwork, drawer, explicit_badge, format_time, icon_button, lyrics, paint_icon,
     paint_text, text, wash_with,
 };
 
@@ -47,9 +47,15 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     } else {
         Rect::from_min_max(full.min + vec2(64.0, 64.0), full.max - vec2(64.0, 48.0))
     };
-    let gap = 56.0;
+    // With lyrics the right column widens: 1.2 to the artwork's 1.
+    let lyrics = !narrow && app.np_tab == NpTab::Lyrics && lyrics::ready(app).is_some();
+    let gap = if lyrics { 72.0 } else { 56.0 };
     let right_width = if narrow {
         0.0
+    } else if lyrics {
+        ((inner.width() - gap) * 1.2 / 2.2)
+            .min(inner.width() - gap - 360.0)
+            .max(440.0)
     } else {
         440.0_f32.min((inner.width() - gap - 380.0).max(340.0))
     };
@@ -66,7 +72,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
             pos2(inner.right() - right_width, inner.top() + 12.0),
             inner.max,
         );
-        right_column(app, ui, &theme, right);
+        right_column(app, ui, &theme, right, full.height());
     }
 }
 
@@ -450,7 +456,7 @@ fn volume(app: &mut App, ui: &mut Ui, theme: &Theme, row: Rect) {
         .on_hover_text(format!("Volume {:.0} %", level * 100.0));
 }
 
-fn right_column(app: &mut App, ui: &mut Ui, theme: &Theme, column: Rect) {
+fn right_column(app: &mut App, ui: &mut Ui, theme: &Theme, column: Rect, window_height: f32) {
     let labels = [
         (NpTab::PlayingNext, "Playing Next"),
         (NpTab::Lyrics, "Lyrics"),
@@ -458,46 +464,21 @@ fn right_column(app: &mut App, ui: &mut Ui, theme: &Theme, column: Rect) {
     if let Some(tab) = drawer::tabs(ui, theme, column.min, &labels, app.np_tab) {
         app.np_tab = tab;
     }
-    let body = Rect::from_min_max(
-        pos2(column.left() - 8.0, column.top() + 32.0 + 10.0),
-        column.max,
-    );
-    let mut body_ui = ui.new_child(egui::UiBuilder::new().max_rect(body));
-    body_ui.set_clip_rect(body);
+    let top = column.top() + 32.0 + 10.0;
     match app.np_tab {
-        NpTab::PlayingNext => drawer::queue(app, &mut body_ui, theme, "np-queue"),
+        NpTab::PlayingNext => {
+            let body = Rect::from_min_max(pos2(column.left() - 8.0, top), column.max);
+            let mut body_ui = ui.new_child(egui::UiBuilder::new().max_rect(body));
+            body_ui.set_clip_rect(body);
+            drawer::queue(app, &mut body_ui, theme, "np-queue");
+        }
         NpTab::Lyrics => {
-            let center = body.center();
-            let g = text(
-                ui,
-                "Lyrics are on their way",
-                font(18.0, Weight::SemiBold),
-                theme.text,
-                body.width(),
+            // The lines' padding hangs outside, so their text lines up with the tabs.
+            let body = Rect::from_min_max(
+                pos2(column.left() - 12.0, top),
+                pos2(column.right() + 12.0, column.bottom()),
             );
-            paint_text(
-                ui,
-                g,
-                center.x,
-                center.y - 12.0,
-                egui::Align::Center,
-                theme.text,
-            );
-            let g = text(
-                ui,
-                "Synced lyrics from Apple Music come in the next step.",
-                font(13.0, Weight::Regular),
-                theme.subtext0,
-                body.width(),
-            );
-            paint_text(
-                ui,
-                g,
-                center.x,
-                center.y + 14.0,
-                egui::Align::Center,
-                theme.subtext0,
-            );
+            lyrics::show(app, ui, theme, body, window_height);
         }
     }
 }

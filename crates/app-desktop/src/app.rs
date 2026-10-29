@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use music_core::model::{Album, ItemId, Playlist, ProviderKind, Track};
+use music_core::model::{Album, ItemId, Lyrics, Playlist, ProviderKind, Track};
 use music_core::{Queue, Repeat};
 use player::{Event, Player, Status, Token};
 
@@ -137,6 +137,7 @@ pub struct App {
     pub albums: HashMap<ItemId, Loaded<AlbumPage>>,
     pub playlist_tracks: HashMap<ItemId, PlaylistTracks>,
     palettes: HashMap<String, PaletteState>,
+    lyrics: HashMap<ItemId, Loaded<Option<Arc<Lyrics>>>>,
     /// The selected row on an album or playlist page.
     pub detail_selected: Option<usize>,
     pub drawer_open: bool,
@@ -201,6 +202,7 @@ impl App {
             albums: HashMap::new(),
             playlist_tracks: HashMap::new(),
             palettes: HashMap::new(),
+            lyrics: HashMap::new(),
             detail_selected: None,
             drawer_tab: DrawerTab::default(),
             history: Vec::new(),
@@ -218,7 +220,10 @@ impl App {
             signal_open: std::env::var_os("MUSIC_SCREENSHOT_SIGNAL")
                 .map(|_| SignalAnchor::PlayerBar),
             now_playing: std::env::var_os("MUSIC_SCREENSHOT_NP").is_some(),
-            np_tab: NpTab::default(),
+            np_tab: match std::env::var("MUSIC_SCREENSHOT_NP").as_deref() {
+                Ok("lyrics") => NpTab::Lyrics,
+                _ => NpTab::default(),
+            },
             screenshot: crate::screenshot::Screenshot::from_env(),
             settings,
             theme_changed,
@@ -268,6 +273,14 @@ impl App {
                 None
             }
         }
+    }
+
+    /// A track's lyrics, fetched on first ask.
+    pub fn lyrics(&mut self, id: &ItemId) -> &Loaded<Option<Arc<Lyrics>>> {
+        if !self.lyrics.contains_key(id) {
+            self.backend.send(Request::Lyrics(id.clone()));
+        }
+        self.lyrics.entry(id.clone()).or_insert(Loaded::Loading)
     }
 
     pub fn can_go_back(&self) -> bool {
@@ -406,6 +419,14 @@ impl App {
         self.player.seek(to);
     }
 
+    /// Jump to `to` and play from there.
+    pub fn play_from(&mut self, to: Duration) {
+        self.player.seek(to);
+        if self.status.paused {
+            self.player.resume();
+        }
+    }
+
     pub fn set_volume(&mut self, volume: f32) {
         self.volume = volume.clamp(0.0, 1.0);
         self.muted = false;
@@ -502,6 +523,13 @@ impl App {
                 Reply::Palette { url, palette } => {
                     let state = palette.map_or(PaletteState::Failed, PaletteState::Ready);
                     self.palettes.insert(url, state);
+                }
+                Reply::Lyrics { id, result } => {
+                    let loaded = match result {
+                        Ok(lyrics) => Loaded::Ready(lyrics.map(Arc::new)),
+                        Err(e) => Loaded::Failed(e),
+                    };
+                    self.lyrics.insert(id, loaded);
                 }
                 Reply::Fetched { token, result } => match result {
                     Ok(stream) if self.pending_play == Some(token) => {

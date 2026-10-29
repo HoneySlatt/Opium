@@ -7,6 +7,7 @@
 pub mod auth;
 mod cenc;
 mod convert;
+mod lyrics;
 mod playback;
 pub mod signin;
 mod stream;
@@ -16,7 +17,7 @@ pub use stream::AudioStream;
 
 use async_trait::async_trait;
 use music_core::model::{
-    Album, Cursor, ItemId, Page, Playlist, ProviderKind, SearchResults, Track,
+    Album, Cursor, ItemId, Lyrics, Page, Playlist, ProviderKind, SearchResults, Track,
 };
 use music_core::{Error, Provider, Result};
 use serde::de::DeserializeOwned;
@@ -256,6 +257,25 @@ impl Provider for AppleMusic {
             )
         };
         self.page(&first, cursor, convert::track).await
+    }
+
+    /// Line-timed lyrics, else the word-timed ones read line by line. Uploads
+    /// (`i.` ids) are not in the catalog and have none.
+    async fn lyrics(&self, track: &ItemId) -> Result<Option<Lyrics>> {
+        if track.id.starts_with("i.") {
+            return Ok(None);
+        }
+        for kind in ["lyrics", "syllable-lyrics"] {
+            let path = format!("/v1/catalog/{}/songs/{}/{kind}", self.storefront, track.id);
+            let Some(resp) = self.fetch::<types::LyricsResponse>(&path).await? else {
+                continue;
+            };
+            let ttml = resp.data.into_iter().find_map(|r| r.attributes?.ttml);
+            if let Some(lyrics) = ttml.as_deref().and_then(lyrics::parse_ttml) {
+                return Ok(Some(lyrics));
+            }
+        }
+        Ok(None)
     }
 }
 
