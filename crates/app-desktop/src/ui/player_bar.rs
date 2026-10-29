@@ -173,7 +173,23 @@ fn transport(app: &mut App, ui: &mut Ui, theme: &Theme, inner: Rect) -> f32 {
         theme.muted(),
         200.0,
     );
-    let (rect, _) = row.allocate_exact_size(vec2(galley.size().x, 20.0), Sense::hover());
+    // As wide as the time with every digit a 0: the font's digits differ in
+    // width, and what follows the time would shift each second.
+    let steady: String = time
+        .chars()
+        .map(|c| if c.is_ascii_digit() { '0' } else { c })
+        .collect();
+    let room = text(
+        &row,
+        &steady,
+        font(12.0, Weight::Regular),
+        theme.muted(),
+        200.0,
+    )
+    .size()
+    .x
+    .max(galley.size().x);
+    let (rect, _) = row.allocate_exact_size(vec2(room, 20.0), Sense::hover());
     paint_text(
         &row,
         galley,
