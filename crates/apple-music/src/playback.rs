@@ -18,8 +18,10 @@ use cenc::AudioStream;
 const WEB_PLAYBACK: &str = "https://play.music.apple.com/WebObjects/MZPlay.woa/wa/webPlayback";
 const LICENSE: &str =
     "https://play.itunes.apple.com/WebObjects/MZPlay.woa/wa/acquireWebPlaybackLicense";
-/// The one catalog flavour Widevine can open; the `cbcp` ones use FairPlay.
-const CTR_FLAVOR: &str = "28:ctrp256";
+/// The catalog flavours Widevine can open are `ctrp` ones (the `cbcp` use
+/// FairPlay): `28:ctrp256` as a rule, `32:ctrp64` for some songs only kept
+/// in a user's library.
+const CTR: &str = ":ctrp";
 /// Each sample of that flavour is one AAC-LC frame: 1024 frames at 44.1 kHz.
 const AAC_FRAME: std::time::Duration =
     std::time::Duration::from_nanos(1024 * 1_000_000_000 / 44_100);
@@ -60,8 +62,9 @@ fn web_playback_body(id: &str) -> serde_json::Value {
 /// The asset to play out of a `songList` entry.
 #[derive(Debug, PartialEq)]
 enum Asset {
-    /// A catalog encode: a media playlist whose KEY carries the key id.
-    Catalog(String),
+    /// A catalog encode: a media playlist whose KEY carries the key id, and
+    /// its bit rate.
+    Catalog { url: String, kbps: u32 },
     /// The user's upload: a single flavourless asset, possibly not encrypted.
     Upload(String),
 }
@@ -78,12 +81,29 @@ fn select_asset(song: &serde_json::Value) -> Result<Asset> {
         return Ok(Asset::Upload(url.to_owned()));
     }
 
+    // The best Widevine flavour there is.
     assets
         .iter()
-        .find(|a| a["flavor"].as_str() == Some(CTR_FLAVOR))
-        .and_then(|a| a["URL"].as_str())
-        .map(|url| Asset::Catalog(url.to_owned()))
-        .ok_or_else(|| playback_error(format!("no {CTR_FLAVOR} asset")))
+        .filter_map(|a| {
+            let kbps = a["flavor"].as_str()?.split_once(CTR)?.1.parse().ok()?;
+            let url = a["URL"].as_str().filter(|u| !u.is_empty())?;
+            Some(Asset::Catalog {
+                url: url.to_owned(),
+                kbps,
+            })
+        })
+        .max_by_key(|a| match a {
+            Asset::Catalog { kbps, .. } => *kbps,
+            Asset::Upload(_) => 0,
+        })
+        .ok_or_else(|| playback_error("no Widevine asset (only FairPlay's)"))
+}
+
+/// The audio's bit rate, from its samples: each one AAC frame.
+fn audio_kbps(samples: &[cenc::EncryptedSample]) -> Option<u32> {
+    let seconds = samples.len() as f64 * AAC_FRAME.as_secs_f64();
+    let bytes: usize = samples.iter().map(|s| s.len).sum();
+    (seconds > 0.0).then(|| (bytes as f64 * 8.0 / seconds / 1000.0).round() as u32)
 }
 
 /// An encrypted track as its media playlist describes it.
@@ -119,22 +139,31 @@ fn read_media_playlist(playlist_url: &str, body: &[u8]) -> Option<EncryptedFile>
 
 impl AppleMusic {
     /// Download `track` and license it. The result reads as a plain MP4 any AAC
-    /// decoder accepts, decrypting in the background as it goes.
-    pub async fn fetch_track(&self, cdm: &Cdm, track: &ItemId) -> Result<AudioStream> {
+    /// decoder accepts, decrypting in the background as it goes; with the
+    /// audio's bit rate, about 256 kbps but for a few songs only kept in a
+    /// library.
+    pub async fn fetch_track(
+        &self,
+        cdm: &Cdm,
+        track: &ItemId,
+    ) -> Result<(AudioStream, Option<u32>)> {
         let adam_id = track.id.as_str();
         let song = self.web_playback(adam_id).await?;
         // A library song Apple matched to the catalog is licensed by the
         // catalog's id, said here, though asked for as the library's.
         let licensed_as = song_id(&song).unwrap_or_else(|| adam_id.to_owned());
         let asset = select_asset(&song)?;
-        let (Asset::Catalog(url) | Asset::Upload(url)) = &asset;
+        let (Asset::Catalog { url, .. } | Asset::Upload(url)) = &asset;
+
         let fetched = self.download(url).await?;
 
         let Some(file) = read_media_playlist(url, &fetched) else {
             return match asset {
                 // An upload that isn't a playlist is the user's file itself.
-                Asset::Upload(_) => Ok(AudioStream::plain(fetched)),
-                Asset::Catalog(_) => Err(playback_error("catalog asset without a Widevine key")),
+                Asset::Upload(_) => Ok((AudioStream::plain(fetched), None)),
+                Asset::Catalog { .. } => {
+                    Err(playback_error("catalog asset without a Widevine key"))
+                }
             };
         };
 
@@ -160,6 +189,8 @@ impl AppleMusic {
             return Err(playback_error("no encrypted samples found in the track"));
         }
         cenc::patch_init(&mut data, &layout);
+        // What the encode really is: a flavour's name may say less.
+        let kbps = audio_kbps(&layout.samples);
         let decrypt = Box::new(move |ciphertext: &[u8], sample: &cenc::EncryptedSample| {
             let subsamples: Vec<(u32, u32)> = sample
                 .subs
@@ -170,11 +201,9 @@ impl AppleMusic {
                 .decrypt(ciphertext, &key_id, &sample.iv, &subsamples)
                 .map_err(|e| e.to_string())
         });
-        Ok(AudioStream::decrypting(
-            data,
-            layout.samples,
-            AAC_FRAME,
-            decrypt,
+        Ok((
+            AudioStream::decrypting(data, layout.samples, AAC_FRAME, decrypt),
+            kbps,
         ))
     }
 
@@ -297,15 +326,47 @@ mod tests {
     }
 
     #[test]
-    fn a_catalog_song_plays_the_ctr_flavour() {
+    fn a_catalog_song_plays_its_best_ctr_flavour() {
         let song = serde_json::json!({ "assets": [
-            { "flavor": "32:cbcp64", "URL": "https://example.com/cbcp.m3u8" },
-            { "flavor": CTR_FLAVOR, "URL": "https://example.com/ctr.m3u8" },
+            { "flavor": "34:cbcp64", "URL": "https://example.com/cbcp.m3u8" },
+            { "flavor": "32:ctrp64", "URL": "https://example.com/ctr64.m3u8" },
+            { "flavor": "28:ctrp256", "URL": "https://example.com/ctr.m3u8" },
         ]});
         assert_eq!(
             select_asset(&song).unwrap(),
-            Asset::Catalog("https://example.com/ctr.m3u8".into())
+            Asset::Catalog {
+                url: "https://example.com/ctr.m3u8".into(),
+                kbps: 256
+            }
         );
+        // A song only kept in a library may have no better than 64 kbps.
+        let kept = serde_json::json!({ "assets": [
+            { "flavor": "38:ibhp64", "URL": "https://example.com/he.m3u8" },
+            { "flavor": "34:cbcp64", "URL": "https://example.com/cbcp.m3u8" },
+            { "flavor": "32:ctrp64", "URL": "https://example.com/ctr64.m3u8" },
+        ]});
+        assert_eq!(
+            select_asset(&kept).unwrap(),
+            Asset::Catalog {
+                url: "https://example.com/ctr64.m3u8".into(),
+                kbps: 64
+            }
+        );
+    }
+
+    #[test]
+    fn the_bit_rate_is_read_from_the_samples() {
+        let sample = |len| cenc::EncryptedSample {
+            fragment: 0,
+            start: 0,
+            len,
+            iv: [0; 16],
+            subs: Vec::new(),
+        };
+        // 744 bytes a frame of 1024 at 44.1 kHz: 256 kbps.
+        let samples: Vec<_> = (0..430).map(|_| sample(744)).collect();
+        assert_eq!(audio_kbps(&samples), Some(256));
+        assert_eq!(audio_kbps(&[]), None);
     }
 
     #[test]

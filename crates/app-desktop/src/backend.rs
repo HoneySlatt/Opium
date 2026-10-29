@@ -294,7 +294,11 @@ pub enum Reply {
 /// What a fetch hands the player: a track, a station's stream, or a whole
 /// file in memory.
 pub enum Playable {
-    Track(AudioStream),
+    /// An Apple Music track, and the bit rate of its encode when known.
+    Track {
+        stream: AudioStream,
+        kbps: Option<u32>,
+    },
     /// A SoundCloud track, in memory or still downloading.
     SoundCloud(soundcloud::Audio),
     /// A Navidrome file, as it is on the server, still downloading.
@@ -1002,7 +1006,7 @@ async fn playable_as(
         Ok(cdm) => am
             .fetch_track(&cdm, track)
             .await
-            .map(Playable::Track)
+            .map(|(stream, kbps)| Playable::Track { stream, kbps })
             .map_err(|e| e.to_string()),
         Err(e) => Err(e),
     }

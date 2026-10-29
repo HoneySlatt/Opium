@@ -2143,7 +2143,7 @@ impl App {
 
     fn source(playable: Playable) -> player::Source {
         match playable {
-            Playable::Track(stream) => {
+            Playable::Track { stream, .. } => {
                 let len = stream.len();
                 let hint = stream.seek_hint();
                 let extension = stream.extension();
@@ -2611,54 +2611,79 @@ impl App {
                     };
                     self.searches.insert((scope, query), loaded);
                 }
-                Reply::Fetched { token, result } => match result {
-                    Ok(stream) if self.pending_play == Some(token) => {
-                        self.pending_play = None;
-                        self.player.play(token, Self::source(stream));
-                    }
-                    Ok(stream) if self.queued_next == Some(token) => {
-                        self.player.set_next(token, Self::source(stream));
-                        self.next_ready = true;
-                    }
-                    Ok(stream) if self.warm.as_ref().is_some_and(|w| w.token == token) => {
-                        if let Some(warm) = &mut self.warm {
-                            warm.ready = Some(stream);
+                Reply::Fetched { token, result } => {
+                    // An encode below Apple's usual 256 kbps shows as it is,
+                    // and is told of when it is to play.
+                    if let Ok(Playable::Track {
+                        kbps: Some(kbps), ..
+                    }) = &result
+                        && *kbps < 240
+                        && let Some(track) = self.tracks.get_mut(&token)
+                    {
+                        if let Some(q) = &mut track.quality {
+                            q.bitrate_kbps = Some(*kbps);
+                        }
+                        if self.pending_play == Some(token) || self.queued_next == Some(token) {
+                            let title = track.title.clone();
+                            self.notify(
+                                format!(
+                                    "“{title}” plays at {kbps} kbps: Apple has no better of it here"
+                                ),
+                                now,
+                            );
                         }
                     }
-                    // Superseded while it was fetching.
-                    Ok(_) => {}
-                    // Fetched ahead and not played: nothing to say.
-                    Err(_) if self.warm.as_ref().is_some_and(|w| w.token == token) => {
-                        self.warm = None;
-                    }
-                    Err(e) => {
-                        let title = self
-                            .tracks
-                            .get(&token)
-                            .map(|t| t.title.clone())
-                            .unwrap_or_default();
-                        // A track Apple has no stream for (gone from the catalog,
-                        // or not in this country) is skipped, as Apple Music
-                        // does; a run of failures stops, in case nothing plays.
-                        if self.pending_play == Some(token) {
+                    match result {
+                        Ok(stream) if self.pending_play == Some(token) => {
                             self.pending_play = None;
-                            self.failed_in_row += 1;
-                            if self.failed_in_row <= MAX_SKIPS && self.queue.skip_next().is_some() {
-                                self.notify(format!("Skipped “{title}”: {e}"), now);
-                                self.start_current();
-                            } else {
-                                self.notify(format!("Couldn't play “{title}”: {e}"), now);
+                            self.player.play(token, Self::source(stream));
+                        }
+                        Ok(stream) if self.queued_next == Some(token) => {
+                            self.player.set_next(token, Self::source(stream));
+                            self.next_ready = true;
+                        }
+                        Ok(stream) if self.warm.as_ref().is_some_and(|w| w.token == token) => {
+                            if let Some(warm) = &mut self.warm {
+                                warm.ready = Some(stream);
                             }
-                        } else if self.queued_next == Some(token) {
-                            // The next track can't follow: take it out and line up
-                            // the one after.
-                            self.queued_next = None;
-                            self.queue.remove_upcoming(0);
-                            self.prefetch_next();
-                            self.notify(format!("Left out “{title}”: {e}"), now);
+                        }
+                        // Superseded while it was fetching.
+                        Ok(_) => {}
+                        // Fetched ahead and not played: nothing to say.
+                        Err(_) if self.warm.as_ref().is_some_and(|w| w.token == token) => {
+                            self.warm = None;
+                        }
+                        Err(e) => {
+                            let title = self
+                                .tracks
+                                .get(&token)
+                                .map(|t| t.title.clone())
+                                .unwrap_or_default();
+                            // A track Apple has no stream for (gone from the catalog,
+                            // or not in this country) is skipped, as Apple Music
+                            // does; a run of failures stops, in case nothing plays.
+                            if self.pending_play == Some(token) {
+                                self.pending_play = None;
+                                self.failed_in_row += 1;
+                                if self.failed_in_row <= MAX_SKIPS
+                                    && self.queue.skip_next().is_some()
+                                {
+                                    self.notify(format!("Skipped “{title}”: {e}"), now);
+                                    self.start_current();
+                                } else {
+                                    self.notify(format!("Couldn't play “{title}”: {e}"), now);
+                                }
+                            } else if self.queued_next == Some(token) {
+                                // The next track can't follow: take it out and line up
+                                // the one after.
+                                self.queued_next = None;
+                                self.queue.remove_upcoming(0);
+                                self.prefetch_next();
+                                self.notify(format!("Left out “{title}”: {e}"), now);
+                            }
                         }
                     }
-                },
+                }
             }
         }
 
