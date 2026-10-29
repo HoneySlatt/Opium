@@ -6,12 +6,12 @@
 //! SoundCloud, as in its web player, and decrypts them as they are read.
 
 use std::io::{Read, Seek, SeekFrom};
-use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::Duration;
 
 use base64::Engine;
 
 use futures_util::StreamExt;
+use music_core::growing::{Growing, growing};
 use music_core::model::{AudioQuality, Codec, ItemId};
 use music_core::{Error, Result};
 
@@ -74,93 +74,6 @@ impl Seek for Reader {
             Self::Growing(r) => r.seek(to),
             Self::Decrypting(r) => r.seek(to),
         }
-    }
-}
-
-/// A file downloading in the background, read as it comes: a read past what
-/// has come waits for it. Dropping the reader stops the download.
-pub struct Growing {
-    shared: Arc<Shared>,
-    pos: u64,
-    len: u64,
-}
-
-struct Shared {
-    state: Mutex<State>,
-    more: Condvar,
-}
-
-#[derive(Default)]
-struct State {
-    data: Vec<u8>,
-    done: bool,
-    error: Option<String>,
-}
-
-impl Shared {
-    fn lock(&self) -> MutexGuard<'_, State> {
-        self.state.lock().unwrap_or_else(|e| e.into_inner())
-    }
-
-    fn push(&self, bytes: &[u8]) {
-        self.lock().data.extend_from_slice(bytes);
-        self.more.notify_all();
-    }
-
-    fn end(&self, error: Option<String>) {
-        let mut state = self.lock();
-        state.done = true;
-        state.error = error;
-        drop(state);
-        self.more.notify_all();
-    }
-}
-
-impl Read for Growing {
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        if self.pos >= self.len || buf.is_empty() {
-            return Ok(0);
-        }
-        let mut state = self.shared.lock();
-        loop {
-            let have = state.data.len() as u64;
-            if have > self.pos {
-                let start = self.pos as usize;
-                let n = buf.len().min(state.data.len() - start);
-                buf[..n].copy_from_slice(&state.data[start..start + n]);
-                self.pos += n as u64;
-                return Ok(n);
-            }
-            if state.done {
-                return match &state.error {
-                    Some(e) => Err(std::io::Error::other(e.clone())),
-                    None => Ok(0),
-                };
-            }
-            state = self
-                .shared
-                .more
-                .wait(state)
-                .unwrap_or_else(|e| e.into_inner());
-        }
-    }
-}
-
-impl Seek for Growing {
-    fn seek(&mut self, to: SeekFrom) -> std::io::Result<u64> {
-        let pos = match to {
-            SeekFrom::Start(p) => p as i64,
-            SeekFrom::Current(d) => self.pos as i64 + d,
-            SeekFrom::End(d) => self.len as i64 + d,
-        };
-        if pos < 0 {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "seek before the start",
-            ));
-        }
-        self.pos = pos as u64;
-        Ok(self.pos)
     }
 }
 
@@ -441,29 +354,19 @@ impl SoundCloud {
         let extension = original_extension(content_type.as_deref(), &first);
         let (reader, len) = match len {
             Some(len) => {
-                let shared = Arc::new(Shared {
-                    state: Mutex::new(State::default()),
-                    more: Condvar::new(),
-                });
-                shared.push(&first);
-                let weak = Arc::downgrade(&shared);
+                let (growing, feed) = growing(len);
+                feed.push(&first);
                 tokio::spawn(async move {
                     loop {
-                        let chunk = resp.chunk().await;
-                        // The reader is gone: so is the need.
-                        let Some(shared) = weak.upgrade() else { return };
-                        match chunk {
-                            Ok(Some(bytes)) => shared.push(&bytes),
-                            Ok(None) => return shared.end(None),
-                            Err(e) => return shared.end(Some(e.to_string())),
+                        match resp.chunk().await {
+                            // The reader is gone: so is the need.
+                            Ok(Some(bytes)) if !feed.push(&bytes) => return,
+                            Ok(Some(_)) => {}
+                            Ok(None) => return feed.end(None),
+                            Err(e) => return feed.end(Some(e.to_string())),
                         }
                     }
                 });
-                let growing = Growing {
-                    shared,
-                    pos: 0,
-                    len,
-                };
                 (Reader::Growing(growing), len)
             }
             // Of no told length: whole, then.
@@ -574,33 +477,6 @@ mod tests {
                 "https://x/data001.m4s?s=1"
             ]
         );
-    }
-
-    #[test]
-    fn a_growing_file_reads_what_has_come_and_waits_for_the_rest() {
-        let shared = Arc::new(Shared {
-            state: Mutex::new(State::default()),
-            more: Condvar::new(),
-        });
-        shared.push(b"abc");
-        let mut reader = Growing {
-            shared: shared.clone(),
-            pos: 0,
-            len: 6,
-        };
-        let later = std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_millis(50));
-            shared.push(b"def");
-            shared.end(None);
-        });
-        let mut all = Vec::new();
-        reader.read_to_end(&mut all).unwrap();
-        later.join().unwrap();
-        assert_eq!(all, b"abcdef");
-        reader.seek(SeekFrom::End(-2)).unwrap();
-        let mut tail = Vec::new();
-        reader.read_to_end(&mut tail).unwrap();
-        assert_eq!(tail, b"ef");
     }
 
     #[test]

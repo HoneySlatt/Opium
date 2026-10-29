@@ -1,3 +1,4 @@
+pub mod growing;
 pub mod model;
 pub mod provider;
 pub mod queue;
