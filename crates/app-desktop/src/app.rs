@@ -437,6 +437,8 @@ pub struct App {
     waiting: Option<(Waiting, Enqueue)>,
     /// Tracks that failed to start one after the other, skipped.
     failed_in_row: usize,
+    /// The page the queue was played from, to go back to.
+    playing_from: Option<Page>,
     /// The track that is audible, or was last.
     pub now: Option<Track>,
     pub status: Status,
@@ -545,6 +547,7 @@ impl App {
             resting: None,
             waiting: None,
             failed_in_row: 0,
+            playing_from: None,
             now: None,
             status: Status::default(),
             volume: settings.volume.unwrap_or(1.0).clamp(0.0, 1.0),
@@ -1569,6 +1572,34 @@ impl App {
         self.station = None;
         self.queue.replace(tracks, start);
         self.start_current();
+        // Played from a list of songs; elsewhere the song's album will do.
+        self.playing_from = match &self.page {
+            Page::Playlist(_)
+            | Page::Album(_)
+            | Page::Artist(_)
+            | Page::LibraryArtist(_)
+            | Page::Songs
+            | Page::Favourites => Some(self.page.clone()),
+            _ => None,
+        };
+    }
+
+    /// Open the page the queue was played from, else the album of the song
+    /// playing.
+    pub fn go_to_playing(&mut self) {
+        let Some(track) = &self.now else {
+            return;
+        };
+        let page = self
+            .playing_from
+            .clone()
+            .or_else(|| track.album_id.clone().map(Page::Album));
+        if let Some(page) = page {
+            self.now_playing = false;
+            if page != self.page {
+                self.go(page);
+            }
+        }
     }
 
     fn issue(&mut self, track: Track) -> Token {
@@ -1860,7 +1891,7 @@ impl App {
     pub fn enqueue_album(&mut self, id: ItemId, how: Enqueue, now: f64) {
         if let Some(Loaded::Ready((_, tracks))) = self.albums.get(&id) {
             let tracks = tracks.to_vec();
-            self.enqueue(tracks, how, now);
+            self.enqueue_from(tracks, how, now, Page::Album(id));
             return;
         }
         if !matches!(self.albums.get(&id), Some(Loaded::Loading)) {
@@ -1880,7 +1911,7 @@ impl App {
             && entry.done
         {
             let tracks = entry.tracks.to_vec();
-            self.enqueue(tracks, how, now);
+            self.enqueue_from(tracks, how, now, Page::Playlist(id));
             return;
         }
         if !self.playlist_tracks.contains_key(&id) {
@@ -1907,9 +1938,23 @@ impl App {
             None => None,
         };
         if let Some(tracks) = tracks
-            && let Some((_, how)) = self.waiting.take()
+            && let Some((waiting, how)) = self.waiting.take()
         {
-            self.enqueue(tracks, how, now);
+            let from = match waiting {
+                Waiting::Album(id) => Page::Album(id),
+                Waiting::Playlist(id) => Page::Playlist(id),
+            };
+            self.enqueue_from(tracks, how, now, from);
+        }
+    }
+
+    /// [`enqueue`](Self::enqueue) an album's or a playlist's songs: when they
+    /// play now, they play from its page.
+    fn enqueue_from(&mut self, tracks: Vec<Track>, how: Enqueue, now: f64, from: Page) {
+        let plays = !tracks.is_empty() && (how == Enqueue::Now || self.queue.current().is_none());
+        self.enqueue(tracks, how, now);
+        if plays {
+            self.playing_from = Some(from);
         }
     }
 

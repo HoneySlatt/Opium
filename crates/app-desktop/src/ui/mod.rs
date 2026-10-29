@@ -428,9 +428,8 @@ fn player_shortcuts(app: &mut App, ui: &mut Ui) {
     if lyrics {
         app.toggle_drawer(true);
     }
-    if current && let Some(album) = app.now.as_ref().and_then(|t| t.album_id.clone()) {
-        app.now_playing = false;
-        app.go(Page::Album(album));
+    if current {
+        app.go_to_playing();
     }
     // A live stream has no length, and doesn't move.
     if (ahead || back)
