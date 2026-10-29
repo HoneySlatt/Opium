@@ -191,9 +191,9 @@ fn play_buttons(ui: &mut Ui, theme: &Theme, center: egui::Pos2) -> Option<bool> 
         let response = ui.interact(rect, Id::unique(("artist-play", label)), Sense::click());
         let fill = theme.text_a(if response.hovered() { 0.16 } else { 0.10 });
         ui.painter().circle_filled(c, radius, fill);
-        // The play triangle sits a little right of centre to look centred.
-        let nudge = if shuffle { 0.0 } else { 2.0 };
-        paint_icon(ui, icon, c + vec2(nudge, 0.0), size, theme.text);
+        // The triangle is drawn off-centre in its icon already, so that it
+        // looks centred.
+        paint_icon(ui, icon, c, size, theme.text);
         if response
             .on_hover_text(label)
             .on_hover_cursor(egui::CursorIcon::PointingHand)
