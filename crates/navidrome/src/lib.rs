@@ -33,7 +33,7 @@ const STATION: &str = "similar:";
 /// token in place of the password.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Credentials {
-    /// `http://localhost:4533`, without the trailing slash.
+    /// `http://0.0.0.0:4533`, without the trailing slash.
     pub url: String,
     pub user: String,
     pub salt: String,
@@ -48,8 +48,15 @@ impl Credentials {
         getrandom::fill(&mut bytes).map_err(|e| Error::Protocol(format!("random salt: {e}")))?;
         let salt = hex(&bytes);
         let token = hex(&Md5::digest(format!("{password}{salt}").as_bytes()));
+        let url = url.trim().trim_end_matches('/');
+        // An address alone is reached over HTTP, as a server at home is.
+        let url = if url.contains("://") {
+            url.to_owned()
+        } else {
+            format!("http://{url}")
+        };
         Ok(Self {
-            url: url.trim().trim_end_matches('/').to_owned(),
+            url,
             user: user.trim().to_owned(),
             salt,
             token,
@@ -709,6 +716,8 @@ mod tests {
             (c.url.as_str(), c.user.as_str()),
             ("http://localhost:4533", "me")
         );
+        let bare = Credentials::new("0.0.0.0:4533", "me", "x").unwrap();
+        assert_eq!(bare.url, "http://0.0.0.0:4533");
         assert_eq!(c.salt.len(), 16);
         assert_eq!(
             c.token,

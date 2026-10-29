@@ -460,14 +460,7 @@ fn navidrome_form(app: &mut App, ui: &mut Ui, theme: &Theme, x: f32, right: f32,
     let user_left = pass_left - gap - user_w;
     let url_left = user_left - gap - url_w;
     let form = &mut app.navidrome_form;
-    field(
-        ui,
-        url_left,
-        url_w,
-        &mut form.url,
-        "http://localhost:4533",
-        false,
-    );
+    field(ui, url_left, url_w, &mut form.url, "0.0.0.0:4533", false);
     field(ui, user_left, user_w, &mut form.user, "User", false);
     let password = field(ui, pass_left, pass_w, &mut form.password, "Password", true);
     if password.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) && filled {
