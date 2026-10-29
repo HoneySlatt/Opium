@@ -324,7 +324,8 @@ fn account(app: &mut App, ui: &mut Ui, theme: &Theme, full: Rect, collapsed: boo
         return;
     }
     let services = usize::from(app.connection == Connection::Connected)
-        + usize::from(matches!(app.soundcloud, SoundCloudState::Connected(_)));
+        + usize::from(matches!(app.soundcloud, SoundCloudState::Connected(_)))
+        + usize::from(matches!(app.navidrome, SoundCloudState::Connected(_)));
     let left = rect.left() + 8.0 + 30.0 + 10.0;
     let width = rect.right() - left - 8.0;
     let galley = text(ui, &name, font(13.0, Weight::Medium), theme.text, width);

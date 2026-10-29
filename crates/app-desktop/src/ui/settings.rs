@@ -363,17 +363,22 @@ fn services(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect) {
                 (detail, button, connected)
             }
             _ => {
-                ui.painter().rect_filled(tile, 10.0, theme.text_a(0.08));
-                paint_icon(ui, icon, tile.center(), 20.0, theme.muted());
-                labels(
-                    ui,
-                    theme,
-                    pos2(x, y),
-                    name,
-                    "Your own server, original files up to 24-bit. Comes in a later version.",
-                    right - x - 20.0,
-                );
-                continue;
+                let connected = matches!(app.navidrome, SoundCloudState::Connected(_));
+                if !connected || app.navidrome_editing {
+                    ui.painter().rect_filled(tile, 10.0, theme.text_a(0.08));
+                    paint_icon(ui, icon, tile.center(), 20.0, theme.muted());
+                    navidrome_form(app, ui, theme, x, right, y);
+                    continue;
+                }
+                let user = match &app.navidrome {
+                    SoundCloudState::Connected(user) => user.clone(),
+                    _ => String::new(),
+                };
+                (
+                    format!("{user} · the server's own files, played as they are"),
+                    ("Sign in again", true),
+                    true,
+                )
             }
         };
         if i == 0 {
@@ -400,10 +405,10 @@ fn services(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect) {
         let g = text(ui, label, font(12.5, Weight::Medium), theme.text, 300.0);
         let button_left = right - g.size().x - 28.0;
         if button(ui, theme, right, y, label, enabled) {
-            if i == 0 {
-                app.sign_in();
-            } else {
-                app.sign_in_soundcloud();
+            match i {
+                0 => app.sign_in(),
+                1 => app.sign_in_soundcloud(),
+                _ => app.navidrome_editing = true,
             }
         }
         let mut state_right = button_left - 14.0;
@@ -422,6 +427,67 @@ fn services(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect) {
             state_right -= w + 20.0;
         }
         labels(ui, theme, pos2(x, y), name, &detail, state_right - x - 12.0);
+    }
+}
+
+/// The server's sign-in, on its row: where it is, the user and the
+/// password, which goes once to make the token kept.
+fn navidrome_form(app: &mut App, ui: &mut Ui, theme: &Theme, x: f32, right: f32, y: f32) {
+    let signing = app.navidrome_signing_in;
+    let label = if signing { "Signing in…" } else { "Sign in" };
+    let g = text(ui, label, font(12.5, Weight::Medium), theme.text, 300.0);
+    let button_left = right - g.size().x - 28.0;
+    let filled = !app.navidrome_form.url.trim().is_empty()
+        && !app.navidrome_form.user.trim().is_empty()
+        && !app.navidrome_form.password.is_empty();
+    let mut submit = button(ui, theme, right, y, label, filled && !signing);
+    let field =
+        |ui: &mut Ui, left: f32, width: f32, value: &mut String, hint: &str, secret: bool| {
+            let rect = Rect::from_min_size(pos2(left, y - 14.0), vec2(width, 28.0));
+            ui.put(
+                rect,
+                egui::TextEdit::singleline(value)
+                    .hint_text(hint)
+                    .password(secret)
+                    .font(font(12.5, Weight::Regular))
+                    .margin(egui::Margin::symmetric(8, 6))
+                    .desired_width(width),
+            )
+        };
+    let gap = 8.0;
+    let (url_w, user_w, pass_w) = (170.0, 100.0, 100.0);
+    let pass_left = button_left - gap - pass_w;
+    let user_left = pass_left - gap - user_w;
+    let url_left = user_left - gap - url_w;
+    let form = &mut app.navidrome_form;
+    field(
+        ui,
+        url_left,
+        url_w,
+        &mut form.url,
+        "http://localhost:4533",
+        false,
+    );
+    field(ui, user_left, user_w, &mut form.user, "User", false);
+    let password = field(ui, pass_left, pass_w, &mut form.password, "Password", true);
+    if password.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) && filled {
+        submit = true;
+    }
+    let detail = match &app.navidrome {
+        SoundCloudState::Failed(e) => e.clone(),
+        SoundCloudState::Connecting => "Connecting…".to_owned(),
+        _ => "Your own server: its files play as they are, up to 24-bit.".to_owned(),
+    };
+    labels(
+        ui,
+        theme,
+        pos2(x, y),
+        "Navidrome",
+        &detail,
+        url_left - x - 12.0,
+    );
+    if submit && !signing {
+        app.sign_in_navidrome();
     }
 }
 

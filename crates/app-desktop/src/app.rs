@@ -81,10 +81,11 @@ impl<T> Streamed<T> {
         self.version = VERSIONS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
-    /// A page, or with `whole` the whole list, replacing what is there.
-    fn arrived(&mut self, items: Vec<T>, done: bool, whole: bool) {
+    /// A service's page, or with `whole` its whole list, replacing its
+    /// items only: those `of_it` says are.
+    fn arrived_from(&mut self, items: Vec<T>, done: bool, whole: bool, of_it: impl Fn(&T) -> bool) {
         if whole {
-            self.items.clear();
+            self.items.retain(|item| !of_it(item));
         }
         self.extend(items, done);
     }
@@ -273,6 +274,15 @@ pub enum Connection {
     Failed(String),
 }
 
+/// A server's sign-in, as typed in Settings: the password is handed to the
+/// backend once, to make the token kept, and emptied here.
+#[derive(Debug, Clone, Default)]
+pub struct NavidromeForm {
+    pub url: String,
+    pub user: String,
+    pub password: String,
+}
+
 /// SoundCloud's connection: as Apple Music's, and the user's name once in.
 #[derive(Debug, Clone, PartialEq)]
 pub enum SoundCloudState {
@@ -331,6 +341,13 @@ pub struct App {
     pub soundcloud: SoundCloudState,
     /// SoundCloud's browser sign-in is open.
     pub soundcloud_signing_in: bool,
+    /// Navidrome's connection, as SoundCloud's.
+    pub navidrome: SoundCloudState,
+    pub navidrome_form: NavidromeForm,
+    /// The server is being signed in to.
+    pub navidrome_signing_in: bool,
+    /// Its sign-in shows again, though connected.
+    pub navidrome_editing: bool,
     /// The services whose songs are still coming.
     songs_coming: std::collections::HashSet<ProviderKind>,
     pub page: Page,
@@ -489,6 +506,13 @@ impl App {
             signing_in: false,
             soundcloud: SoundCloudState::Connecting,
             soundcloud_signing_in: false,
+            navidrome: SoundCloudState::Connecting,
+            navidrome_form: NavidromeForm {
+                url: "http://localhost:4533".into(),
+                ..NavidromeForm::default()
+            },
+            navidrome_signing_in: false,
+            navidrome_editing: false,
             songs_coming: Default::default(),
             page: Page::Home,
             back: Vec::new(),
@@ -754,6 +778,22 @@ impl App {
             self.soundcloud_signing_in = true;
             self.backend.send(Request::SignInSoundCloud);
         }
+    }
+
+    /// Sign in to the server with what the form holds; its password is
+    /// emptied at once.
+    pub fn sign_in_navidrome(&mut self) {
+        if self.navidrome_signing_in {
+            return;
+        }
+        let form = &mut self.navidrome_form;
+        let password = std::mem::take(&mut form.password);
+        self.navidrome_signing_in = true;
+        self.backend.send(Request::SignInNavidrome {
+            url: form.url.clone(),
+            user: form.user.clone(),
+            password,
+        });
     }
 
     pub fn soundcloud_originals(&self) -> bool {
@@ -2111,6 +2151,9 @@ impl App {
             }
             // A station's stream is ADTS, forward only.
             Playable::Live(stream) => player::Source::stream(stream, Some("aac")),
+            Playable::Navidrome(audio) => {
+                player::Source::new(audio.reader, audio.len, Some(audio.extension))
+            }
             Playable::SoundCloud(audio) => {
                 let hint = audio.reader.seek_hint();
                 let source = player::Source::new(audio.reader, audio.len, Some(audio.extension));
@@ -2185,6 +2228,28 @@ impl App {
                         Err(e) => SoundCloudState::Failed(e),
                     };
                 }
+                Reply::Navidrome(result) => {
+                    self.navidrome = match result {
+                        Ok(Some(name)) => SoundCloudState::Connected(name),
+                        Ok(None) => SoundCloudState::NotSignedIn,
+                        Err(e) => SoundCloudState::Failed(e),
+                    };
+                }
+                Reply::SignedInNavidrome(result) => {
+                    self.navidrome_signing_in = false;
+                    match result {
+                        Ok(()) => {
+                            self.navidrome_editing = false;
+                            self.notify("Signed in to Navidrome", now);
+                        }
+                        Err(e) => self.notify(format!("Navidrome: {e}"), now),
+                    }
+                }
+                Reply::Starred(ids) => {
+                    for id in ids {
+                        self.favourites_known.entry(id).or_insert(true);
+                    }
+                }
                 Reply::SignedInSoundCloud(result) => {
                     self.soundcloud_signing_in = false;
                     match result {
@@ -2239,15 +2304,21 @@ impl App {
                     }
                 }
                 Reply::LibraryAlbums {
+                    provider,
                     albums,
                     done,
                     whole,
-                } => self.library_albums.arrived(albums, done, whole),
+                } => self
+                    .library_albums
+                    .arrived_from(albums, done, whole, |a| a.id.provider == provider),
                 Reply::LibraryArtists {
+                    provider,
                     artists,
                     done,
                     whole,
-                } => self.library_artists.arrived(artists, done, whole),
+                } => self
+                    .library_artists
+                    .arrived_from(artists, done, whole, |a| a.id.provider == provider),
                 Reply::AlbumExtras { id, result } => {
                     let loaded = match result {
                         Ok(extras) => Loaded::Ready(extras),
@@ -2302,7 +2373,20 @@ impl App {
                         Err(e) => Loaded::Failed(e),
                     });
                 }
-                Reply::RecentlyAdded { items, done } => self.recently_added.extend(items, done),
+                Reply::RecentlyAdded {
+                    provider,
+                    items,
+                    done,
+                } => {
+                    // Apple Music's come page by page; the server's whole.
+                    let whole = provider != ProviderKind::AppleMusic;
+                    self.recently_added
+                        .arrived_from(items, done, whole, |c| match c {
+                            Collection::Album(a) => a.id.provider == provider,
+                            Collection::Playlist(p) => p.id.provider == provider,
+                            Collection::Station(s) => s.id.provider == provider,
+                        });
+                }
                 Reply::Album { id, result } => {
                     let loaded = match result.map(|b| *b) {
                         Ok((album, tracks)) => {

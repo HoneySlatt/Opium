@@ -12,6 +12,7 @@ path = "src/main.rs"
 music-core = { path = "../music-core" }
 apple-music = { path = "../apple-music" }
 soundcloud = { path = "../soundcloud" }
+navidrome = { path = "../navidrome" }
 player = { path = "../player" }
 widevine = { path = "../widevine" }
 eframe = "0.37.0"
