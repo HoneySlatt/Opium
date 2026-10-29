@@ -177,6 +177,9 @@ struct Listing {
 /// Under an album's tracks: whether Apple mastered it, its date, count and
 /// copyright, then the artist's other releases.
 struct AlbumFoot {
+    /// A library album with only some of its songs there: its catalog
+    /// version, which Show Full Album opens.
+    full_album: Option<ItemId>,
     mastered: bool,
     lines: Vec<String>,
     /// The artist, and what else they put out, newest first.
@@ -185,12 +188,21 @@ struct AlbumFoot {
 
 /// How tall the album's foot is.
 fn foot_height(foot: &AlbumFoot) -> f32 {
-    let mut h = 24.0 + if foot.mastered { 30.0 } else { 0.0 } + foot.lines.len() as f32 * 18.0;
+    let mut h =
+        24.0 + if foot.full_album.is_some() {
+            FULL_ALBUM
+        } else {
+            0.0
+        } + if foot.mastered { 30.0 } else { 0.0 }
+            + foot.lines.len() as f32 * 18.0;
     if foot.more_by.is_some() {
         h += 40.0 + SHELF_HEAD + MORE_BY_CARD + CARD_TEXT;
     }
     h
 }
+
+/// The row of Show Full Album.
+const FULL_ALBUM: f32 = 40.0;
 
 /// The covers of the artist's other releases.
 const MORE_BY_CARD: f32 = 190.0;
@@ -278,7 +290,13 @@ fn album_foot(app: &mut App, id: &ItemId) -> Option<AlbumFoot> {
         others.truncate(20);
         (!others.is_empty()).then(|| (detail.artist.name.clone(), artist, others))
     });
+    let full_album = album
+        .catalog_id
+        .clone()
+        .filter(|_| album.id.id.starts_with("l."))
+        .filter(|_| album.track_count.is_some_and(|n| n as usize > tracks.len()));
     Some(AlbumFoot {
+        full_album,
         mastered: album.mastered,
         lines,
         more_by,
@@ -865,6 +883,37 @@ fn album_foot_ui(
 ) {
     let muted = theme.muted();
     let mut y = top + 24.0;
+    // Right under the last track, in the accent, as Apple Music's app has it.
+    if let Some(catalog) = &foot.full_album {
+        let g = text(
+            ui,
+            "Show Full Album",
+            font(13.5, Weight::SemiBold),
+            theme.accent,
+            width,
+        );
+        let link = Rect::from_min_size(pos2(left, y - g.size().y / 2.0), g.size());
+        let hit = ui.interact(
+            link,
+            egui::Id::unique(("full-album", &catalog.id)),
+            Sense::click(),
+        );
+        if hit.hovered() {
+            ui.painter().hline(
+                link.x_range(),
+                link.bottom(),
+                egui::Stroke::new(1.0, theme.accent),
+            );
+        }
+        paint_text(ui, g, left, y, egui::Align::Min, theme.accent);
+        if hit
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .clicked()
+        {
+            app.go(Page::Album(catalog.clone()));
+        }
+        y += FULL_ALBUM;
+    }
     if foot.mastered {
         let g = text(
             ui,
