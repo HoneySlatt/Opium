@@ -2,7 +2,7 @@
 
 use egui::{Id, Rect, Sense, Stroke, Ui, pos2, vec2};
 
-use crate::app::{App, Connection, Page};
+use crate::app::{App, Connection, Page, PlaylistChoice};
 use crate::color::{alpha, mix};
 use crate::fonts::{Weight, font};
 use crate::icons::{self, Icon};
@@ -23,6 +23,7 @@ pub fn show(app: &mut App, ui: &mut Ui, collapsed: bool) {
     );
     let mut list = ui.new_child(egui::UiBuilder::new().max_rect(nav));
     let mut new_playlist = false;
+    let mut chosen: Option<(music_core::model::ItemId, PlaylistChoice)> = None;
     egui::ScrollArea::vertical()
         .id_salt("sidebar-scroll")
         .auto_shrink(false)
@@ -80,7 +81,8 @@ pub fn show(app: &mut App, ui: &mut Ui, collapsed: bool) {
                 let id = playlist.id.clone();
                 let active = app.page == Page::Playlist(id.clone());
                 let name = playlist.name.clone();
-                if nav_item(
+                let editable = playlist.editable;
+                let response = nav_item(
                     ui,
                     &theme,
                     None,
@@ -89,9 +91,12 @@ pub fn show(app: &mut App, ui: &mut Ui, collapsed: bool) {
                     active,
                     collapsed,
                     &PLAYLIST,
-                )
-                .clicked()
+                );
+                if let Some(choice) = super::menu::playlist_menu(&response, &theme, editable, true)
                 {
+                    chosen = Some((id.clone(), choice));
+                }
+                if response.clicked() {
                     app.go(Page::Playlist(id));
                 }
             }
@@ -100,6 +105,9 @@ pub fn show(app: &mut App, ui: &mut Ui, collapsed: bool) {
 
     if new_playlist {
         app.open_new_playlist(Vec::new());
+    }
+    if let Some((id, choice)) = chosen {
+        app.playlist_choice(&id, choice, ui.input(|i| i.time));
     }
     account(app, ui, &theme, full, collapsed);
 }

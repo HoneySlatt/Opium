@@ -80,6 +80,20 @@ pub trait Provider: Send + Sync {
         ))
     }
 
+    /// Give one of the user's playlists a new name.
+    async fn rename_playlist(&self, _playlist: &ItemId, _name: &str) -> Result<()> {
+        Err(Error::Protocol(
+            "this service's playlists can't be renamed".into(),
+        ))
+    }
+
+    /// Take a playlist out of the user's library, for good.
+    async fn delete_playlist(&self, _playlist: &ItemId) -> Result<()> {
+        Err(Error::Protocol(
+            "this service's playlists can't be deleted".into(),
+        ))
+    }
+
     /// Add songs to one of the user's playlists, at its end.
     async fn add_to_playlist(&self, _playlist: &ItemId, _tracks: &[ItemId]) -> Result<()> {
         Err(Error::Protocol(

@@ -98,10 +98,20 @@ pub enum Enqueue {
     Last,
 }
 
+/// What a playlist's menu asked for.
+#[derive(Clone, Copy)]
+pub enum PlaylistChoice {
+    Enqueue(Enqueue),
+    Rename,
+    Delete,
+}
+
 /// The New Playlist window: its name so far, and the songs it starts with.
 pub struct NewPlaylist {
     pub name: String,
     pub tracks: Vec<Track>,
+    /// The playlist being renamed, when the window renames one instead.
+    pub renaming: Option<ItemId>,
 }
 
 /// The Add to Playlists window: the songs, the playlists ticked, the search.
@@ -255,6 +265,8 @@ pub struct App {
     radio_from: Option<Track>,
     /// The New Playlist window, when open.
     pub new_playlist: Option<NewPlaylist>,
+    /// The playlist the Delete window asks about, when open.
+    pub deleting: Option<Playlist>,
     /// A playlist being made from the sidebar, to open once it exists.
     open_created: bool,
     /// The Add to Playlists window, when open.
@@ -361,6 +373,7 @@ impl App {
             library_songs: Default::default(),
             radio_from: None,
             new_playlist: None,
+            deleting: None,
             open_created: false,
             playlist_dialog: None,
             favourites_known: HashMap::new(),
@@ -714,7 +727,34 @@ impl App {
         self.new_playlist = Some(NewPlaylist {
             name: String::new(),
             tracks,
+            renaming: None,
         });
+    }
+
+    /// What a playlist's menu in the sidebar asked for.
+    pub fn playlist_choice(&mut self, id: &ItemId, choice: PlaylistChoice, now: f64) {
+        let Some(playlist) = self.playlist(id).cloned() else {
+            return;
+        };
+        match choice {
+            PlaylistChoice::Enqueue(how) => self.enqueue_playlist(&playlist, how, now),
+            PlaylistChoice::Rename => {
+                self.playlist_dialog = None;
+                self.new_playlist = Some(NewPlaylist {
+                    name: playlist.name,
+                    tracks: Vec::new(),
+                    renaming: Some(playlist.id),
+                });
+            }
+            PlaylistChoice::Delete => self.deleting = Some(playlist),
+        }
+    }
+
+    /// Delete the playlist the Delete window asked about, and close it.
+    pub fn delete_playlist(&mut self) {
+        if let Some(playlist) = self.deleting.take() {
+            self.backend.send(Request::DeletePlaylist(playlist.id));
+        }
     }
 
     /// Make the playlist the New Playlist window names, and close it. Made
@@ -725,6 +765,12 @@ impl App {
         };
         let name = new.name.trim().to_owned();
         if name.is_empty() {
+            return;
+        }
+        if let Some(id) = new.renaming {
+            if self.playlist(&id).is_some_and(|p| p.name != name) {
+                self.backend.send(Request::RenamePlaylist { id, name });
+            }
             return;
         }
         self.open_created = new.tracks.is_empty();
@@ -1451,6 +1497,33 @@ impl App {
                         if std::mem::take(&mut self.open_created) {
                             self.go(Page::Playlist(id));
                         }
+                    }
+                    Err(e) => self.notify(e, now),
+                },
+                Reply::PlaylistRenamed { id, name, result } => match result {
+                    Ok(()) => {
+                        if let Some(p) = self.playlists.iter_mut().find(|p| p.id == id) {
+                            p.name.clone_from(&name);
+                        }
+                        self.notify(format!("Renamed to “{name}”"), now);
+                    }
+                    Err(e) => self.notify(e, now),
+                },
+                Reply::PlaylistDeleted { id, result } => match result {
+                    Ok(()) => {
+                        let name = self.playlist(&id).map(|p| p.name.clone());
+                        self.playlists.retain(|p| p.id != id);
+                        self.playlist_tracks.remove(&id);
+                        self.settings.recent_playlists.retain(|r| *r != id.id);
+                        self.settings.save();
+                        if self.page == Page::Playlist(id) {
+                            self.go(Page::Home);
+                        }
+                        let message = match name {
+                            Some(name) => format!("Deleted “{name}”"),
+                            None => "Deleted the playlist".to_owned(),
+                        };
+                        self.notify(message, now);
                     }
                     Err(e) => self.notify(e, now),
                 },

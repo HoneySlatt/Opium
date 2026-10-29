@@ -559,6 +559,21 @@ impl Provider for AppleMusic {
         self.send_change(req, &path).await
     }
 
+    /// As the web player renames them.
+    async fn rename_playlist(&self, playlist: &ItemId, name: &str) -> Result<()> {
+        let path = format!("/v1/me/library/playlists/{}", playlist.id);
+        let body = serde_json::json!({ "attributes": { "name": name } });
+        let req = self.http.patch(format!("{API}{path}")).json(&body);
+        self.send_change(req, &path).await
+    }
+
+    /// As the web player deletes them.
+    async fn delete_playlist(&self, playlist: &ItemId) -> Result<()> {
+        let path = format!("/v1/me/library/playlists/{}", playlist.id);
+        let req = self.http.delete(format!("{API}{path}"));
+        self.send_change(req, &path).await
+    }
+
     /// As Kopuz makes them: the name, and the songs as the playlist's tracks.
     async fn create_playlist(&self, name: &str, tracks: &[ItemId]) -> Result<Playlist> {
         let path = "/v1/me/library/playlists";

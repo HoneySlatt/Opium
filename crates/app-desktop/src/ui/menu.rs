@@ -3,7 +3,7 @@
 
 use egui::{Frame, Response, Sense, Stroke, Ui, pos2, vec2};
 
-use crate::app::{Enqueue, TrackChoice};
+use crate::app::{Enqueue, PlaylistChoice, TrackChoice};
 use crate::fonts::{Weight, font};
 use crate::icons::{self, Icon};
 use crate::theme::Theme;
@@ -187,6 +187,48 @@ fn track_entries(facts: TrackFacts) -> Vec<Entry<TrackChoice>> {
         ));
     }
     entries
+}
+
+/// A library playlist's menu in the sidebar: playing it, then renaming it if
+/// it is the user's own, and deleting it unless it is Apple's favourites.
+pub(super) fn playlist_menu(
+    response: &Response,
+    theme: &Theme,
+    editable: bool,
+    deletable: bool,
+) -> Option<PlaylistChoice> {
+    let mut entries = vec![
+        Entry::Item(
+            icons::PLAY_FILL,
+            "Play",
+            PlaylistChoice::Enqueue(Enqueue::Now),
+        ),
+        Entry::Line,
+        Entry::Item(
+            icons::NEXT,
+            "Play Next",
+            PlaylistChoice::Enqueue(Enqueue::Next),
+        ),
+        Entry::Item(
+            icons::LATER,
+            "Add to Queue",
+            PlaylistChoice::Enqueue(Enqueue::Last),
+        ),
+    ];
+    if editable || deletable {
+        entries.push(Entry::Line);
+    }
+    if editable {
+        entries.push(Entry::Item(icons::EDIT, "Rename…", PlaylistChoice::Rename));
+    }
+    if deletable {
+        entries.push(Entry::Item(
+            icons::TRASH,
+            "Delete from Library…",
+            PlaylistChoice::Delete,
+        ));
+    }
+    context_menu(response, theme, &entries)
 }
 
 /// What an album's or a playlist's menu offers.

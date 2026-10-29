@@ -50,20 +50,37 @@ pub enum Request {
         quiet: bool,
     },
     /// Where a song leads, to go there: its artist's page or its station.
-    SongLinks { song: ItemId, radio: bool },
+    SongLinks {
+        song: ItemId,
+        radio: bool,
+    },
     /// Take a song out of the library, by its library id.
     RemoveFromLibrary(ItemId),
     /// Make a playlist with these songs.
-    CreatePlaylist { name: String, tracks: Vec<ItemId> },
+    CreatePlaylist {
+        name: String,
+        tracks: Vec<ItemId>,
+    },
+    RenamePlaylist {
+        id: ItemId,
+        name: String,
+    },
+    DeletePlaylist(ItemId),
     /// Add songs to playlists.
     AddToPlaylists {
         playlists: Vec<ItemId>,
         tracks: Vec<ItemId>,
     },
     /// Whether something is a favourite.
-    Favourite { kind: FavouriteKind, id: ItemId },
+    Favourite {
+        kind: FavouriteKind,
+        id: ItemId,
+    },
     /// A track's audio, ready to hand to the player.
-    Fetch { token: player::Token, track: ItemId },
+    Fetch {
+        token: player::Token,
+        track: ItemId,
+    },
     /// An album and its tracks.
     Album(ItemId),
     /// An artist's top songs and releases.
@@ -93,6 +110,15 @@ pub enum Reply {
     },
     /// A playlist was made, or why not.
     PlaylistCreated(Result<Playlist, String>),
+    PlaylistRenamed {
+        id: ItemId,
+        name: String,
+        result: Result<(), String>,
+    },
+    PlaylistDeleted {
+        id: ItemId,
+        result: Result<(), String>,
+    },
     /// A change to the library went through (the message to show), or why not.
     Changed(Result<String, String>),
     /// A favourite was set (`set: Some(on)`) or looked up; the state or why not.
@@ -423,6 +449,24 @@ async fn run(
                         .await
                         .map_err(|e| format!("Couldn't make the playlist: {e}"));
                     replies.send(Reply::PlaylistCreated(result));
+                });
+            }
+            Request::RenamePlaylist { id, name } => {
+                tokio::spawn(async move {
+                    let result = am
+                        .rename_playlist(&id, &name)
+                        .await
+                        .map_err(|e| format!("Couldn't rename the playlist: {e}"));
+                    replies.send(Reply::PlaylistRenamed { id, name, result });
+                });
+            }
+            Request::DeletePlaylist(id) => {
+                tokio::spawn(async move {
+                    let result = am
+                        .delete_playlist(&id)
+                        .await
+                        .map_err(|e| format!("Couldn't delete the playlist: {e}"));
+                    replies.send(Reply::PlaylistDeleted { id, result });
                 });
             }
             Request::AddToPlaylists { playlists, tracks } => {

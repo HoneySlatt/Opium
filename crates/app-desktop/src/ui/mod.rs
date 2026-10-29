@@ -45,6 +45,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         });
         playlist_dialog::show(app, ui.ctx());
         playlist_dialog::show_new(app, ui.ctx());
+        playlist_dialog::show_delete(app, ui.ctx());
         shortcuts(app, ui);
         return;
     }
@@ -76,6 +77,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
 
     playlist_dialog::show(app, ui.ctx());
     playlist_dialog::show_new(app, ui.ctx());
+    playlist_dialog::show_delete(app, ui.ctx());
     shortcuts(app, ui);
 }
 

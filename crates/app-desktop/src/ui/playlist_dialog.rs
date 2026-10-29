@@ -243,6 +243,12 @@ pub fn show_new(app: &mut App, ctx: &egui::Context) {
     };
     let theme = app.theme.clone();
     let count = new.tracks.len();
+    let renaming = new.renaming.is_some();
+    let (title, action) = if renaming {
+        ("Rename Playlist", "Rename")
+    } else {
+        ("New Playlist", "Create")
+    };
     let frame = Frame::new()
         .fill(theme.mantle)
         .stroke(Stroke::new(1.0, theme.line()))
@@ -266,7 +272,7 @@ pub fn show_new(app: &mut App, ctx: &egui::Context) {
             let (head, _) = ui.allocate_exact_size(vec2(width, 72.0), Sense::hover());
             let g = text(
                 ui,
-                "New Playlist",
+                title,
                 font(18.0, Weight::Bold),
                 theme.text,
                 width - 48.0,
@@ -351,7 +357,7 @@ pub fn show_new(app: &mut App, ctx: &egui::Context) {
             if pill(ui, &theme, cancel_rect, "Cancel", false, true) {
                 cancel = true;
             }
-            if pill(ui, &theme, create_rect, "Create", true, named) {
+            if pill(ui, &theme, create_rect, action, true, named) {
                 create = true;
             }
             if named && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
@@ -363,6 +369,120 @@ pub fn show_new(app: &mut App, ctx: &egui::Context) {
     } else if cancel || response.should_close() {
         app.new_playlist = None;
     }
+}
+
+/// Whether to delete a playlist, asked once: Cancel, or Delete in red.
+pub fn show_delete(app: &mut App, ctx: &egui::Context) {
+    let Some(playlist) = &app.deleting else {
+        return;
+    };
+    let theme = app.theme.clone();
+    let name = playlist.name.clone();
+    let frame = Frame::new()
+        .fill(theme.mantle)
+        .stroke(Stroke::new(1.0, theme.line()))
+        .corner_radius(16)
+        .inner_margin(0);
+    let backdrop = if theme.light {
+        Color32::from_black_alpha(72)
+    } else {
+        Color32::from_black_alpha(140)
+    };
+    let width = 400.0;
+    let mut delete = false;
+    let mut cancel = false;
+    let response = egui::Modal::new(Id::unique("delete-playlist"))
+        .frame(frame)
+        .backdrop_color(backdrop)
+        .show(ctx, |ui| {
+            ui.set_width(width);
+            ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
+
+            let (head, _) = ui.allocate_exact_size(vec2(width, 96.0), Sense::hover());
+            let g = text(
+                ui,
+                &format!("Delete “{name}”?"),
+                font(18.0, Weight::Bold),
+                theme.text,
+                width - 48.0,
+            );
+            paint_text(
+                ui,
+                g,
+                head.left() + 24.0,
+                head.center().y - 11.0,
+                egui::Align::Min,
+                theme.text,
+            );
+            let g = text(
+                ui,
+                "It goes from your library on every device.",
+                font(13.0, Weight::Regular),
+                theme.subtext0,
+                width - 48.0,
+            );
+            paint_text(
+                ui,
+                g,
+                head.left() + 24.0,
+                head.center().y + 13.0,
+                egui::Align::Min,
+                theme.subtext0,
+            );
+
+            let (foot, _) = ui.allocate_exact_size(vec2(width, 72.0), Sense::hover());
+            ui.painter()
+                .hline(foot.x_range(), foot.top(), Stroke::new(1.0, theme.line()));
+            let y = foot.center().y;
+            let cancel_rect =
+                Rect::from_center_size(pos2(foot.center().x - 70.0, y), vec2(124.0, 40.0));
+            let delete_rect =
+                Rect::from_center_size(pos2(foot.center().x + 70.0, y), vec2(124.0, 40.0));
+            if pill(ui, &theme, cancel_rect, "Cancel", false, true) {
+                cancel = true;
+            }
+            if danger_pill(ui, &theme, delete_rect, "Delete") {
+                delete = true;
+            }
+        });
+    if delete {
+        app.delete_playlist();
+    } else if cancel || response.should_close() {
+        app.deleting = None;
+    }
+}
+
+/// A 40 px rounded button in red, for what can't be undone.
+fn danger_pill(ui: &mut Ui, theme: &Theme, rect: Rect, label: &str) -> bool {
+    let response = ui.interact(
+        rect,
+        Id::unique(("playlist-dialog-danger", label)),
+        Sense::click(),
+    );
+    let fill = if response.hovered() {
+        crate::color::mix(theme.red, theme.text, 0.85)
+    } else {
+        theme.red
+    };
+    ui.painter().rect_filled(rect, 20.0, fill);
+    let g = text(
+        ui,
+        label,
+        font(14.0, Weight::Medium),
+        Color32::WHITE,
+        rect.width(),
+    );
+    paint_text(
+        ui,
+        g,
+        rect.center().x,
+        rect.center().y,
+        egui::Align::Center,
+        Color32::WHITE,
+    );
+    response
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .clicked()
 }
 
 /// "New Playlist…", at the top of the list.
