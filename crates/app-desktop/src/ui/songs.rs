@@ -355,7 +355,7 @@ fn row(app: &mut App, ui: &mut Ui, theme: &Theme, columns: &Columns, rect: Rect,
 
     let fill = if selected {
         Some(alpha(theme.accent, 0.16))
-    } else if response.hovered() {
+    } else if response.contains_pointer() {
         Some(theme.hover())
     } else if position % 2 == 1 {
         Some(theme.text_a(0.025))
@@ -371,7 +371,9 @@ fn row(app: &mut App, ui: &mut Ui, theme: &Theme, columns: &Columns, rect: Rect,
     let (n0, n1) = columns.number;
     let n_center = pos2((n0 + n1) / 2.0, y);
     let mut play_clicked = false;
-    if response.hovered() {
+    // `contains_pointer`, not `hovered`: over the play button the row is no
+    // longer the hovered widget, and the button must not vanish under the click.
+    if response.contains_pointer() {
         let button = Rect::from_center_size(n_center, vec2(28.0, 28.0));
         let hit = ui.interact(button, Id::unique(("song-play", index)), Sense::click());
         if hit.hovered() {

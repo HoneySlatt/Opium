@@ -30,7 +30,8 @@ pub fn show(app: &mut App, ui: &mut Ui, collapsed: bool) {
             ui.add_space(0.0);
             let mut row = |ui: &mut Ui, page: Page, icon: Icon, label: &str| {
                 let active = app.page == page;
-                if nav_item(ui, &theme, Some(icon), None, label, active, collapsed).clicked() {
+                if nav_item(ui, &theme, Some(icon), None, label, active, collapsed, &NAV).clicked()
+                {
                     app.go(page);
                 }
             };
@@ -49,7 +50,18 @@ pub fn show(app: &mut App, ui: &mut Ui, collapsed: bool) {
                 let art = playlist.artwork.as_ref().map(|a| a.url(120));
                 let active = app.page == Page::Playlist(i);
                 let name = playlist.name.clone();
-                if nav_item(ui, &theme, None, Some(art), &name, active, collapsed).clicked() {
+                if nav_item(
+                    ui,
+                    &theme,
+                    None,
+                    Some(art),
+                    &name,
+                    active,
+                    collapsed,
+                    &PLAYLIST,
+                )
+                .clicked()
+                {
                     app.go(Page::Playlist(i));
                 }
             }
@@ -80,21 +92,25 @@ fn search(app: &mut App, ui: &mut Ui, theme: &Theme, full: Rect, collapsed: bool
         14.0,
         theme.muted(),
     );
+    // The text edit is exactly one line tall, centred in the field: egui's own
+    // layouts put its text at the top.
+    let body = font(13.0, Weight::Regular);
+    let line = text(ui, "Search", body.clone(), theme.text, f32::INFINITY)
+        .size()
+        .y;
     let field = Rect::from_min_max(
-        rect.min + vec2(10.0, 0.0),
-        pos2(rect.right() - 30.0, rect.bottom()),
+        pos2(rect.left() + 10.0, rect.center().y - line / 2.0),
+        pos2(rect.right() - 30.0, rect.center().y + line / 2.0),
     );
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(field));
-    child.centered_and_justified(|ui| {
-        ui.add(
-            egui::TextEdit::singleline(&mut app.search)
-                .hint_text(egui::RichText::new("Search").color(theme.muted()))
-                .font(font(13.0, Weight::Regular))
-                .frame(egui::Frame::NONE)
-                .margin(egui::Margin::symmetric(0, 7))
-                .desired_width(field.width()),
-        );
-    });
+    child.add(
+        egui::TextEdit::singleline(&mut app.search)
+            .hint_text(egui::RichText::new("Search").color(theme.muted()))
+            .font(body)
+            .frame(egui::Frame::NONE)
+            .margin(egui::Margin::ZERO)
+            .desired_width(field.width()),
+    );
 }
 
 fn section(ui: &mut Ui, theme: &Theme, label: &str, icon: Icon, collapsed: bool) {
@@ -130,7 +146,30 @@ fn section(ui: &mut Ui, theme: &Theme, label: &str, icon: Icon, collapsed: bool)
     icon_button(&mut child, theme, icon, 22.0, 14.0, theme.muted(), true);
 }
 
-/// A 30 px navigation row: an icon or a 20 px artwork, then the label.
+/// The sizes of a sidebar row.
+struct RowSize {
+    height: f32,
+    /// The icon or artwork slot.
+    lead: f32,
+    font: f32,
+}
+
+/// Navigation rows, as designed.
+const NAV: RowSize = RowSize {
+    height: 30.0,
+    lead: 20.0,
+    font: 13.0,
+};
+
+/// Playlist rows: larger than the design's, so their artwork reads (the user's call).
+const PLAYLIST: RowSize = RowSize {
+    height: 40.0,
+    lead: 30.0,
+    font: 14.0,
+};
+
+/// A navigation row: an icon or an artwork, then the label.
+#[allow(clippy::too_many_arguments)]
 fn nav_item(
     ui: &mut Ui,
     theme: &Theme,
@@ -139,9 +178,10 @@ fn nav_item(
     label: &str,
     active: bool,
     collapsed: bool,
+    size: &RowSize,
 ) -> egui::Response {
     let (outer, response) =
-        ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::click());
+        ui.allocate_exact_size(vec2(ui.available_width(), size.height), Sense::click());
     let rect = outer.shrink2(vec2(8.0, 0.0));
     let fill = if active {
         Some(alpha(theme.text, 0.11))
@@ -158,7 +198,7 @@ fn nav_item(
     let lead = if collapsed {
         rect.center()
     } else {
-        pos2(rect.left() + 9.0 + 10.0, rect.center().y)
+        pos2(rect.left() + 9.0 + size.lead / 2.0, rect.center().y)
     };
     if let Some(icon) = icon {
         let color = if active { theme.accent } else { theme.subtext0 };
@@ -167,17 +207,17 @@ fn nav_item(
         artwork(
             ui,
             url,
-            Rect::from_center_size(lead, vec2(20.0, 20.0)),
-            4.0,
+            Rect::from_center_size(lead, vec2(size.lead, size.lead)),
+            size.lead / 5.0,
             theme,
         );
     }
     if !collapsed {
-        let left = rect.left() + 9.0 + 20.0 + 10.0 + if icon.is_none() { 4.0 } else { 0.0 };
+        let left = rect.left() + 9.0 + size.lead + 10.0 + if icon.is_none() { 4.0 } else { 0.0 };
         let galley = text(
             ui,
             label,
-            font(13.0, Weight::Regular),
+            font(size.font, Weight::Regular),
             theme.text,
             rect.right() - left - 9.0,
         );
