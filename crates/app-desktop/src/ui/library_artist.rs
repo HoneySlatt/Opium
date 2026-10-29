@@ -91,42 +91,30 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
                 width - (x - left),
             );
             let mid = photo.center().y;
-            paint_text(ui, g, x, mid - 46.0, egui::Align::Min, theme.text);
-            if let Some(button) =
-                page_buttons(ui, &theme, pos2(x, mid - 10.0), "library-artist", false)
-            {
-                play = Some(button == PageButton::Shuffle);
-            }
-            // The artist's whole page on Apple Music, from the catalog.
-            let g = text(
-                ui,
-                "Apple Music profile",
-                font(12.5, Weight::Medium),
-                theme.subtext0,
-                300.0,
-            );
-            let link = Rect::from_min_size(pos2(x, mid + 44.0), vec2(g.size().x + 20.0, 20.0));
+            // The name leads to the artist's whole page on Apple Music.
+            let size = g.size();
+            let link = Rect::from_min_size(pos2(x, mid - 46.0 - size.y / 2.0), size);
             let hit = ui.interact(link, Id::unique(("artist-profile", &id.id)), Sense::click());
-            let color = if hit.hovered() {
-                theme.text
-            } else {
-                theme.subtext0
-            };
-            paint_text(ui, g, x, link.center().y, egui::Align::Min, color);
-            paint_icon(
-                ui,
-                icons::RIGHT,
-                pos2(link.right() - 6.0, link.center().y),
-                13.0,
-                color,
-            );
+            if hit.hovered() {
+                ui.painter().hline(
+                    link.x_range(),
+                    link.bottom() - 4.0,
+                    egui::Stroke::new(2.0, theme.text),
+                );
+            }
+            paint_text(ui, g, x, mid - 46.0, egui::Align::Min, theme.text);
             if hit
+                .on_hover_text("Apple Music profile")
                 .on_hover_cursor(egui::CursorIcon::PointingHand)
                 .clicked()
             {
                 profile = true;
             }
-
+            if let Some(button) =
+                page_buttons(ui, &theme, pos2(x, mid - 10.0), "library-artist", false)
+            {
+                play = Some(button == PageButton::Shuffle);
+            }
             let mut y = content.top() + BODY_TOP;
             if let Some(e) = &error {
                 message(ui, &theme, left, y, width, "Couldn't load this artist", e);
