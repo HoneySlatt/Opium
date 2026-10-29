@@ -273,16 +273,19 @@ pub(super) fn card(item: &Collection) -> ShelfCard {
             title: a.title.clone(),
             sub: a.artists.join(", "),
             url: a.artwork.as_ref().map(|art| art.url(400)),
+            explicit: a.explicit,
         },
         Collection::Playlist(p) => ShelfCard {
             title: p.name.clone(),
             sub: p.curator.clone().unwrap_or_else(|| "Playlist".into()),
             url: p.artwork.as_ref().map(|art| art.url(400)),
+            explicit: false,
         },
         Collection::Station(s) => ShelfCard {
             title: s.name.clone(),
             sub: s.description.clone().unwrap_or_else(|| "Station".into()),
             url: s.artwork.as_ref().map(|art| art.url(400)),
+            explicit: false,
         },
     }
 }

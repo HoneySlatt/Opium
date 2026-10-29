@@ -137,6 +137,7 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
                         title: a.title.clone(),
                         sub: date_line(a),
                         url: a.artwork.as_ref().map(|art| art.url(400)),
+                        explicit: a.explicit,
                     })
                     .collect();
                 let shelf_id = Id::unique(("artist-shelf", *title, &artist.artist.id.id));

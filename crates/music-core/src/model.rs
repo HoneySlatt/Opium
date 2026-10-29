@@ -122,6 +122,8 @@ pub struct Album {
     pub year: Option<u16>,
     pub artwork: Option<Artwork>,
     pub track_count: Option<u32>,
+    /// Rated explicit.
+    pub explicit: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]

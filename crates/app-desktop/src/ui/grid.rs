@@ -46,6 +46,8 @@ pub(super) struct CoverCard<'a> {
     pub sub: &'a str,
     /// An artist: round, with the name centred.
     pub round: bool,
+    /// An E after the title.
+    pub explicit: bool,
 }
 
 /// What a click on a cover asked for.
@@ -89,14 +91,20 @@ pub(super) fn cover_card(
         (art.left(), egui::Align::Min)
     };
     let width = art.width();
+    let explicit = card.explicit && !card.round;
+    let badge = if explicit { 18.0 } else { 0.0 };
     let g = text(
         ui,
         card.title,
         font(13.5, Weight::Regular),
         theme.text,
-        width,
+        width - badge,
     );
+    let title_end = x + g.size().x;
     paint_text(ui, g, x, art.bottom() + 22.0, align, theme.text);
+    if explicit {
+        explicit_badge(ui, theme, pos2(title_end + 4.0 + 6.0, art.bottom() + 22.0));
+    }
     let muted = theme.muted();
     let g = text(ui, card.sub, font(12.0, Weight::Regular), muted, width);
     paint_text(ui, g, x, art.bottom() + 39.0, align, muted);
@@ -222,6 +230,7 @@ pub(super) struct ShelfCard {
     pub title: String,
     pub sub: String,
     pub url: Option<String>,
+    pub explicit: bool,
 }
 
 /// A titled row of `size` px covers that scrolls sideways. Returns the cover
@@ -267,6 +276,7 @@ pub(super) fn cover_shelf(
             title: &card.title,
             sub: &card.sub,
             round: false,
+            explicit: card.explicit,
         };
         if let Some(click) = cover_card(&row_ui, theme, art, &cover, id.with(i)) {
             clicked = Some((i, click));
@@ -348,6 +358,7 @@ pub fn shelf(app: &mut App, ui: &mut Ui, pad: f32, which: Shelves, title: &str) 
                     title: &card.title,
                     sub: &card.sub,
                     round: false,
+                    explicit: card.explicit,
                 };
                 let id = Id::unique(("shelf-card", title, position));
                 let art = grid.cell(position, left, top);
@@ -505,11 +516,14 @@ fn page(app: &mut App, ui: &mut Ui, pad: f32, kind: Kind) -> f32 {
                 let art = grid.cell(position, left, top);
                 let id = Id::unique(("grid-card", title, position));
                 let (card_title, sub, url, open) = card(app, kind, shown[position]);
+                let explicit =
+                    matches!(&open, Open::Album(_)) && explicit_album(app, kind, shown[position]);
                 let cover = CoverCard {
                     url,
                     title: &card_title,
                     sub: &sub,
                     round: kind == Kind::Artists,
+                    explicit,
                 };
                 if let Some(click) = cover_card(ui, &theme, art, &cover, id) {
                     clicked = Some((open, click));
@@ -564,6 +578,15 @@ fn item_id(item: &Collection) -> &ItemId {
 }
 
 /// Title, muted line, cover and target of item `i` of a grid.
+/// Whether item `i` of a library page is an album rated explicit.
+fn explicit_album(app: &App, kind: Kind, i: usize) -> bool {
+    match kind {
+        Kind::Albums => app.library_albums.items[i].explicit,
+        Kind::Recent => matches!(&app.recently_added.items[i], Collection::Album(a) if a.explicit),
+        Kind::Artists => false,
+    }
+}
+
 fn card(app: &App, kind: Kind, i: usize) -> (String, String, Option<String>, Open) {
     let album = |a: &music_core::model::Album| {
         let artists = a.artists.join(", ");

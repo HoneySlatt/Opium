@@ -43,6 +43,7 @@ struct Card {
     sub: String,
     art: Option<Artwork>,
     open: Open,
+    explicit: bool,
 }
 
 #[derive(Clone)]
@@ -294,6 +295,7 @@ fn album_cards(r: &SearchResults) -> Vec<Card> {
                 None => a.artists.join(", "),
             },
             art: a.artwork.clone(),
+            explicit: a.explicit,
             open: Open::Album(a.id.clone()),
         })
         .collect()
@@ -308,6 +310,7 @@ fn playlist_cards(r: &SearchResults) -> Vec<Card> {
             sub: "Apple Music".into(),
             art: p.artwork.clone(),
             open: Open::Playlist(i),
+            explicit: false,
         })
         .collect()
 }
@@ -481,6 +484,7 @@ fn shelf(
             title: c.title.clone(),
             sub: c.sub.clone(),
             url: c.art.as_ref().map(|a| a.url(376)),
+            explicit: c.explicit,
         })
         .collect();
     let id = Id::unique(("search-shelf", title, query));

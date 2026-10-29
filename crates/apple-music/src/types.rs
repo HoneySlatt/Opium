@@ -47,6 +47,9 @@ pub struct RelatedRef {
 #[serde(default)]
 pub struct RelatedAttributes {
     pub artwork: Option<Artwork>,
+    /// A library album's catalog rating: the library's own has none.
+    #[serde(rename = "contentRating")]
+    pub content_rating: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -92,6 +95,8 @@ pub struct AlbumAttributes {
     pub editorial_notes: Option<EditorialNotes>,
     /// With `extend=inFavorites`.
     pub in_favorites: Option<bool>,
+    /// `explicit` or `clean`, when rated.
+    pub content_rating: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]

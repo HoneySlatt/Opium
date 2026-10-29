@@ -352,7 +352,10 @@ impl Provider for AppleMusic {
     }
 
     async fn library_albums(&self, cursor: Option<&Cursor>) -> Result<Page<Album>> {
-        let first = format!("/v1/me/library/albums?limit={PAGE}");
+        // With the catalog's rating, for the E under explicit covers.
+        let first = format!(
+            "/v1/me/library/albums?limit={PAGE}&include=catalog&fields%5Balbums%5D=contentRating"
+        );
         self.page(&first, cursor, convert::album).await
     }
 
@@ -370,7 +373,9 @@ impl Provider for AppleMusic {
     }
 
     async fn recently_added(&self, cursor: Option<&Cursor>) -> Result<Page<Collection>> {
-        let first = format!("/v1/me/library/recently-added?limit={RECENT_PAGE}");
+        let first = format!(
+            "/v1/me/library/recently-added?limit={RECENT_PAGE}&include=catalog&fields%5Balbums%5D=contentRating"
+        );
         let page = self.page(&first, cursor, convert::collection).await?;
         Ok(Page {
             items: page.items.into_iter().flatten().collect(),
