@@ -116,6 +116,7 @@ fn page(app: &mut App, ui: &mut Ui, narrow: bool) -> f32 {
         Page::Albums => grid::albums(app, ui, pad),
         Page::Artists => grid::artists(app, ui, pad),
         Page::RecentlyAdded => grid::recently_added(app, ui, pad),
+        Page::Shelf(which, title) => grid::shelf(app, ui, pad, which, &title),
         _ => placeholder(app, ui, pad),
     }
 }

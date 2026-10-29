@@ -6,7 +6,7 @@ use music_core::model::{
     Collection, FavouriteKind, ItemId, Playlist, ProviderKind, Station, Track,
 };
 
-use crate::app::{App, Enqueue, Page};
+use crate::app::{App, Enqueue, Loaded, Page, Shelves};
 use crate::fonts::{Weight, font};
 use crate::icons;
 use crate::theme::Theme;
@@ -275,9 +275,96 @@ pub(super) fn cover_shelf(
     clicked
 }
 
+/// One shelf of Home, New or Radio in full: every cover, in a grid.
+pub fn shelf(app: &mut App, ui: &mut Ui, pad: f32, which: Shelves, title: &str) -> f32 {
+    let theme = app.theme.clone();
+    let shelf = match app.shelves(which) {
+        Some(Loaded::Ready(shelves)) => Ok(shelves.iter().find(|s| s.title == title).cloned()),
+        Some(Loaded::Failed(e)) => Err(e.clone()),
+        _ => Ok(None),
+    };
+    let loading =
+        matches!(shelf, Ok(None)) && !matches!(app.shelves(which), Some(Loaded::Ready(_)));
+    let items = match &shelf {
+        Ok(Some(shelf)) => shelf.items.clone(),
+        _ => Vec::new(),
+    };
+    let width = ui.available_width() - 2.0 * pad;
+    let grid = Grid::new(width);
+    let grid_height = if loading {
+        grid.height(grid.columns * 2)
+    } else {
+        grid.height(items.len()).max(60.0)
+    };
+    let total = GRID_TOP + grid_height + 104.0;
+
+    let mut clicked = None;
+    let output = egui::ScrollArea::vertical()
+        .id_salt(("shelf-page", title))
+        .auto_shrink(false)
+        .show_viewport(ui, |ui, viewport| {
+            let (content, _) =
+                ui.allocate_exact_size(vec2(ui.available_width(), total), Sense::hover());
+            glow(
+                ui,
+                &theme,
+                Rect::from_min_size(content.min, vec2(content.width(), 460.0)),
+            );
+            let left = content.left() + pad;
+            let g = text(ui, title, font(22.0, Weight::Bold), theme.text, width);
+            paint_text(
+                ui,
+                g,
+                left,
+                content.top() + TITLE_Y,
+                egui::Align::Min,
+                theme.text,
+            );
+            let top = content.top() + GRID_TOP;
+            match &shelf {
+                Err(e) => {
+                    super::search::message(ui, &theme, left, top, width, "Couldn't load it", e);
+                    return;
+                }
+                Ok(None) if loading => {
+                    for i in 0..grid.columns * 2 {
+                        ui.painter()
+                            .rect_filled(grid.cell(i, left, top), 8.0, theme.hover());
+                    }
+                    return;
+                }
+                Ok(None) => {
+                    let detail =
+                        "Apple Music took this shelf away. It may be back after a refresh.";
+                    super::search::message(ui, &theme, left, top, width, "Gone", detail);
+                    return;
+                }
+                Ok(Some(_)) => {}
+            }
+            for position in grid.visible(viewport, GRID_TOP, items.len()) {
+                let card = super::home::card(&items[position]);
+                let cover = CoverCard {
+                    url: card.url,
+                    title: &card.title,
+                    sub: &card.sub,
+                    round: false,
+                };
+                let id = Id::unique(("shelf-card", title, position));
+                let art = grid.cell(position, left, top);
+                if let Some(click) = cover_card(ui, &theme, art, &cover, id) {
+                    clicked = Some((position, click));
+                }
+            }
+        });
+    if let Some((i, click)) = clicked {
+        super::home::act(app, &items[i], click, ui.input(|i| i.time));
+    }
+    output.state.clamped_offset().y
+}
+
 /// A shelf's title row, and the gap between its covers.
 pub(super) const SHELF_HEAD: f32 = 34.0;
-const SHELF_GAP: f32 = 20.0;
+pub(super) const SHELF_GAP: f32 = 20.0;
 
 #[derive(Clone, Copy, PartialEq)]
 enum Kind {

@@ -6,7 +6,7 @@
 use egui::{Color32, Id, Rect, Sense, Ui, pos2, vec2};
 use music_core::model::{Collection, Shelf};
 
-use crate::app::{App, Loaded, Page};
+use crate::app::{App, Loaded, Page, Shelves as Which};
 use crate::fonts::{Weight, font};
 use crate::icons;
 use crate::theme::Theme;
@@ -38,14 +38,6 @@ const PICK_GAP: f32 = 20.0;
 /// The best new songs: four to a column, as in Cider.
 const NEW_SONG_ROWS: usize = 4;
 
-/// Which page of shelves.
-#[derive(Clone, Copy, PartialEq)]
-enum Which {
-    Home,
-    New,
-    Radio,
-}
-
 pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
     page(app, ui, pad, Which::Home)
 }
@@ -70,6 +62,7 @@ fn page(app: &mut App, ui: &mut Ui, pad: f32, which: Which) -> f32 {
         Which::New => ("New", "new"),
         Which::Radio => ("Radio", "radio"),
     };
+    let mut see_all = None;
     let shelves = match loaded {
         Some(Loaded::Ready(shelves)) => Ok(Some(shelves.clone())),
         Some(Loaded::Failed(e)) => Err(e.clone()),
@@ -195,9 +188,15 @@ fn page(app: &mut App, ui: &mut Ui, pad: f32, which: Which) -> f32 {
                         (true, Which::Home) => hero_shelf(ui, &theme, at, width, shelf, id),
                         (true, Which::New) => picks_shelf(ui, &theme, at, width, shelf, id),
                         (true, Which::Radio) => {
+                            if more(ui, &theme, at, width, shelf, LIVE, id) {
+                                see_all = Some(shelf.title.clone());
+                            }
                             cover_shelf(ui, &theme, at, width, &shelf.title, &cards(), LIVE, id)
                         }
                         (false, _) => {
+                            if more(ui, &theme, at, width, shelf, COVER, id) {
+                                see_all = Some(shelf.title.clone());
+                            }
                             cover_shelf(ui, &theme, at, width, &shelf.title, &cards(), COVER, id)
                         }
                     };
@@ -209,13 +208,50 @@ fn page(app: &mut App, ui: &mut Ui, pad: f32, which: Which) -> f32 {
             }
         });
     if refresh {
-        match which {
-            Which::Home => app.refresh_home(),
-            Which::New => app.refresh_new_music(),
-            Which::Radio => app.refresh_radio(),
-        }
+        app.refresh(which);
+    }
+    if let Some(title) = see_all {
+        app.go(Page::Shelf(which, title));
     }
     output.state.clamped_offset().y
+}
+
+/// A chevron after a shelf's title when its covers run past the width, as
+/// Apple Music shows it; the title and the chevron lead to the whole shelf.
+fn more(
+    ui: &mut Ui,
+    theme: &Theme,
+    at: egui::Pos2,
+    width: f32,
+    shelf: &Shelf,
+    size: f32,
+    id: Id,
+) -> bool {
+    let fits = ((width + super::grid::SHELF_GAP) / (size + super::grid::SHELF_GAP)).floor();
+    if shelf.title.is_empty() || shelf.items.len() as f32 <= fits {
+        return false;
+    }
+    let title = text(
+        ui,
+        &shelf.title,
+        font(18.0, Weight::SemiBold),
+        theme.text,
+        400.0,
+    );
+    let y = at.y + 11.0;
+    let chevron = pos2(at.x + title.size().x + 4.0 + 8.0, y + 1.0);
+    let rect = Rect::from_min_max(pos2(at.x, y - 14.0), pos2(chevron.x + 10.0, y + 14.0));
+    let response = ui.interact(rect, id.with("see-all"), Sense::click());
+    let color = if response.hovered() {
+        theme.text
+    } else {
+        theme.muted()
+    };
+    super::paint_icon(ui, icons::RIGHT, chevron, 16.0, color);
+    response
+        .on_hover_text("See All")
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .clicked()
 }
 
 /// Do what a click on a shelf's cover asked: open it, queue it, or tune in.

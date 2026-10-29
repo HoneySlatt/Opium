@@ -2,7 +2,7 @@
 //! [MUSIC_SCREENSHOT_PLAY=row]` saves the window once it has had time to load,
 //! then quits, optionally playing a Songs row first. `MUSIC_SCREENSHOT_PAGE`
 //! opens a page first: `playlist:<index>`, `album:<id>`, `artist:<id>` or
-//! `search:<query>`, or `page:home|new|radio|albums|artists|recent|settings|favourites`; `MUSIC_SCREENSHOT_DRAWER`
+//! `search:<query>`, `shelf:home|new|radio:<title>`, or `page:home|new|radio|albums|artists|recent|settings|favourites`; `MUSIC_SCREENSHOT_DRAWER`
 //! opens the queue drawer; `MUSIC_SCREENSHOT_STATION=ra.…` tunes in to a station.
 //! Only the app's own window is captured.
 
@@ -77,6 +77,17 @@ impl Screenshot {
                 "recent" => Some(crate::app::Page::RecentlyAdded),
                 _ => None,
             },
+            // `shelf:home|new|radio:<title>`
+            "shelf" => {
+                let (which, title) = value.split_once(':')?;
+                let which = match which {
+                    "home" => crate::app::Shelves::Home,
+                    "new" => crate::app::Shelves::New,
+                    "radio" => crate::app::Shelves::Radio,
+                    _ => return None,
+                };
+                Some(crate::app::Page::Shelf(which, title.to_owned()))
+            }
             "artist" => Some(crate::app::Page::Artist(music_core::model::ItemId::new(
                 music_core::model::ProviderKind::AppleMusic,
                 value,

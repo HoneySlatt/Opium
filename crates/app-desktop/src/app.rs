@@ -32,6 +32,16 @@ pub enum Page {
     Artist(ItemId),
     Search(String),
     Settings,
+    /// One shelf of Home, New or Radio in full, named by its title.
+    Shelf(Shelves, String),
+}
+
+/// A page of shelves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Shelves {
+    Home,
+    New,
+    Radio,
 }
 
 /// A list that arrives page by page, fetched on first visit.
@@ -450,6 +460,7 @@ impl App {
                 self.backend.send(Request::Album(id.clone()));
             }
             Page::Home if self.home.is_none() => self.refresh_home(),
+            Page::Shelf(which, _) if self.shelves(*which).is_none() => self.refresh(*which),
             Page::Radio if self.radio.is_none() => self.refresh_radio(),
             Page::New if self.new_music.is_none() => self.refresh_new_music(),
             Page::Albums if self.library_albums.first_ask() => {
@@ -594,6 +605,24 @@ impl App {
                 self.backend
                     .send(Request::StationTracks(station.id.clone()));
             }
+        }
+    }
+
+    /// Home's, New's or Radio's shelves, as far as they have come.
+    pub fn shelves(&self, which: Shelves) -> Option<&Loaded<Arc<Vec<Shelf>>>> {
+        match which {
+            Shelves::Home => self.home.as_ref(),
+            Shelves::New => self.new_music.as_ref(),
+            Shelves::Radio => self.radio.as_ref(),
+        }
+    }
+
+    /// Ask for Home's, New's or Radio's shelves again.
+    pub fn refresh(&mut self, which: Shelves) {
+        match which {
+            Shelves::Home => self.refresh_home(),
+            Shelves::New => self.refresh_new_music(),
+            Shelves::Radio => self.refresh_radio(),
         }
     }
 
@@ -1006,6 +1035,7 @@ impl App {
             },
             Page::Search(_) => "Search".into(),
             Page::Settings => "Settings".into(),
+            Page::Shelf(_, title) => title.clone(),
         }
     }
 
