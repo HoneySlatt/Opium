@@ -388,6 +388,8 @@ pub struct App {
     lyrics: HashMap<ItemId, Loaded<Option<Arc<Lyrics>>>>,
     /// The selected row on an album or playlist page.
     pub detail_selected: Option<usize>,
+    /// An album's notes shown whole, and its title.
+    pub notes: Option<(String, String)>,
     /// What the page shown (a playlist, Songs, Albums, Artists) is searched
     /// for; emptied on leaving it.
     pub page_search: String,
@@ -514,6 +516,7 @@ impl App {
             lyrics: HashMap::new(),
             detail_selected: None,
             page_search: String::new(),
+            notes: None,
             page_search_open: false,
             searched: None,
             drawer_tab: DrawerTab::default(),

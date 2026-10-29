@@ -49,9 +49,94 @@ enum HeaderAction {
     Favourite(FavouriteKind, ItemId),
     /// The header's `add`.
     AddToLibrary,
+    /// The notes, cut to three lines, in full.
+    ShowNotes,
 }
 
 const ART_TOP: f32 = 60.0;
+
+/// An album's notes in full, in a window, once MORE was clicked.
+pub fn notes_window(app: &mut App, ctx: &egui::Context) {
+    let Some((title, notes)) = app.notes.clone() else {
+        return;
+    };
+    let theme = app.theme.clone();
+    let frame = egui::Frame::new()
+        .fill(theme.mantle)
+        .stroke(egui::Stroke::new(1.0, theme.line()))
+        .corner_radius(16)
+        .inner_margin(24);
+    let backdrop = if theme.light {
+        Color32::from_black_alpha(72)
+    } else {
+        Color32::from_black_alpha(140)
+    };
+    let width = 520.0;
+    let response = egui::Modal::new(egui::Id::unique("notes-window"))
+        .frame(frame)
+        .backdrop_color(backdrop)
+        .show(ctx, |ui| {
+            ui.set_width(width);
+            ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
+            let g = text(
+                ui,
+                &title,
+                font(18.0, Weight::Bold),
+                theme.text,
+                width - 40.0,
+            );
+            let (head, _) = ui.allocate_exact_size(vec2(width, 32.0), Sense::hover());
+            paint_text(
+                ui,
+                g,
+                head.left(),
+                head.center().y,
+                egui::Align::Min,
+                theme.text,
+            );
+            let close = Rect::from_center_size(
+                pos2(head.right() - 12.0, head.center().y),
+                vec2(28.0, 28.0),
+            );
+            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(close));
+            if super::icon_button(
+                &mut child,
+                &theme,
+                icons::X,
+                28.0,
+                14.0,
+                theme.muted(),
+                true,
+            )
+            .on_hover_text("Close")
+            .clicked()
+            {
+                app.notes = None;
+            }
+            ui.add_space(12.0);
+            egui::ScrollArea::vertical()
+                .id_salt("notes-window-text")
+                .max_height(ctx.content_rect().height() * 0.6)
+                .show(ui, |ui| {
+                    let mut job = egui::text::LayoutJob::single_section(
+                        notes,
+                        egui::TextFormat {
+                            font_id: font(13.5, Weight::Regular),
+                            color: theme.subtext0,
+                            line_height: Some(21.0),
+                            ..Default::default()
+                        },
+                    );
+                    job.wrap.max_width = width;
+                    let galley = ui.painter().layout_job(job);
+                    let (rect, _) = ui.allocate_exact_size(galley.size(), Sense::hover());
+                    ui.painter().galley(rect.min, galley, theme.subtext0);
+                });
+        });
+    if response.should_close() {
+        app.notes = None;
+    }
+}
 
 /// Where the header's cover goes.
 fn art_rect(content: Rect, pad: f32) -> Rect {
@@ -278,6 +363,13 @@ fn page(
                 }
                 Some(HeaderAction::OpenArtist(id)) => app.go(Page::Artist(id)),
                 Some(HeaderAction::Favourite(kind, id)) => app.toggle_favourite(kind, id),
+                Some(HeaderAction::ShowNotes) => {
+                    if let Some(h) = &header
+                        && let Some(notes) = &h.description
+                    {
+                        app.notes = Some((h.title.clone(), notes.clone()));
+                    }
+                }
                 Some(HeaderAction::AddToLibrary) => {
                     if let Some(item) = header.as_ref().and_then(|h| h.add.as_ref()) {
                         app.add_collection_to_library(item, ui.input(|i| i.time));
@@ -612,7 +704,36 @@ fn header_text(
 
     if let Some(d) = description {
         let h = d.size().y;
+        let area = Rect::from_min_size(pos2(x, y), d.size());
+        // Cut short, they end in MORE, and open whole on a click.
+        let more = d.elided.then(|| {
+            let end = d.rows.last().map_or(0.0, |r| r.rect().right());
+            pos2(x + end + 6.0, y + h - 9.0)
+        });
         ui.painter().galley(pos2(x, y), d, theme.subtext0);
+        if let Some(at) = more {
+            let response = ui.interact(
+                area.union(Rect::from_min_size(
+                    at - vec2(0.0, 9.0),
+                    vec2(MORE_WIDTH, 18.0),
+                )),
+                egui::Id::unique("header-notes"),
+                Sense::click(),
+            );
+            let color = if response.hovered() {
+                theme.text
+            } else {
+                theme.subtext0
+            };
+            let g = text(ui, "MORE", font(11.5, Weight::Bold), color, MORE_WIDTH);
+            paint_text(ui, g, at.x, at.y, egui::Align::Min, color);
+            if response
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .clicked()
+            {
+                action = Some(HeaderAction::ShowNotes);
+            }
+        }
         y += h + gap;
     }
     y += 6.0;
@@ -625,8 +746,21 @@ fn header_text(
     }
 }
 
-/// The editorial notes: three lines at most, then an ellipsis.
+/// The room MORE takes after notes cut short.
+const MORE_WIDTH: f32 = 40.0;
+
+/// The editorial notes: three lines at most, then an ellipsis; cut short,
+/// narrower by MORE, which follows them.
 fn notes(ui: &Ui, s: &str, theme: &Theme, width: f32) -> std::sync::Arc<egui::Galley> {
+    let full = notes_at(ui, s, theme, width);
+    if full.elided {
+        notes_at(ui, s, theme, width - MORE_WIDTH - 6.0)
+    } else {
+        full
+    }
+}
+
+fn notes_at(ui: &Ui, s: &str, theme: &Theme, width: f32) -> std::sync::Arc<egui::Galley> {
     let mut job = egui::text::LayoutJob::single_section(
         s.to_owned(),
         egui::TextFormat {
