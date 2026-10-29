@@ -279,6 +279,7 @@ fn now_playing(app: &mut App, ui: &mut Ui, theme: &Theme, lcd: Rect) {
         favourite,
         in_library,
         removable,
+        in_playlist: false,
     };
     let station = track.id.id.starts_with("ra.");
     let mut choice = None;

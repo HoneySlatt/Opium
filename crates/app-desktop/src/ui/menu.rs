@@ -115,6 +115,8 @@ pub(super) struct TrackFacts {
     pub in_library: bool,
     /// Its library id is known, so it can be taken out of the library.
     pub removable: bool,
+    /// It is shown in a playlist of the user's, which it can leave.
+    pub in_playlist: bool,
 }
 
 /// The track menu; Add to Library only when the song isn't there yet, Go to
@@ -178,8 +180,17 @@ fn track_entries(facts: TrackFacts) -> Vec<Entry<TrackChoice>> {
             TrackChoice::GoToAlbum,
         ));
     }
-    if facts.removable {
+    if facts.in_playlist || facts.removable {
         entries.push(Entry::Line);
+    }
+    if facts.in_playlist {
+        entries.push(Entry::Item(
+            icons::MINUS,
+            "Remove from Playlist",
+            TrackChoice::RemoveFromPlaylist,
+        ));
+    }
+    if facts.removable {
         entries.push(Entry::Item(
             icons::TRASH,
             "Remove from Library",

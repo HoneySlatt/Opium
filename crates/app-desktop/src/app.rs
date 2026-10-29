@@ -136,6 +136,8 @@ pub enum TrackChoice {
     StartRadio,
     GoToArtist,
     GoToAlbum,
+    /// Take it out of the playlist shown; the page does it, knowing which.
+    RemoveFromPlaylist,
     RemoveFromLibrary,
 }
 
@@ -1171,6 +1173,7 @@ impl App {
                     self.go(Page::Album(album));
                 }
             }
+            TrackChoice::RemoveFromPlaylist => {}
             TrackChoice::GoToArtist => self.backend.send(Request::SongLinks {
                 song: track.id,
                 radio: false,
@@ -1207,6 +1210,21 @@ impl App {
                 }
             }
         }
+    }
+
+    /// Take `track` out of one of the user's playlists: off its page at once,
+    /// every row of it, as Apple does.
+    pub fn remove_from_playlist(&mut self, playlist: &ItemId, track: &Track) {
+        let Some(entry) = track.library_id.clone() else {
+            return;
+        };
+        if let Some(loaded) = self.playlist_tracks.get_mut(playlist) {
+            Arc::make_mut(&mut loaded.tracks).retain(|t| t.library_id.as_ref() != Some(&entry));
+        }
+        self.backend.send(Request::RemoveFromPlaylist {
+            playlist: playlist.clone(),
+            entry,
+        });
     }
 
     /// Queue an album, fetching its tracks first if need be.
@@ -1528,6 +1546,17 @@ impl App {
                         self.notify(format!("Saved “{name}”"), now);
                     }
                     Err(e) => self.notify(e, now),
+                },
+                Reply::RemovedFromPlaylist { playlist, result } => match result {
+                    Ok(()) => self.notify("Removed from the playlist", now),
+                    Err(e) => {
+                        // The page dropped it already: read the playlist again.
+                        self.playlist_tracks.remove(&playlist);
+                        if self.page == Page::Playlist(playlist) {
+                            self.arrived();
+                        }
+                        self.notify(e, now);
+                    }
                 },
                 Reply::PlaylistDeleted { id, result } => match result {
                     Ok(()) => {

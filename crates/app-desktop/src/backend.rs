@@ -69,6 +69,11 @@ pub enum Request {
         description: String,
     },
     DeletePlaylist(ItemId),
+    /// Take a song out of a playlist, by its row's id there.
+    RemoveFromPlaylist {
+        playlist: ItemId,
+        entry: ItemId,
+    },
     /// Add songs to playlists.
     AddToPlaylists {
         playlists: Vec<ItemId>,
@@ -117,6 +122,10 @@ pub enum Reply {
         id: ItemId,
         name: String,
         description: String,
+        result: Result<(), String>,
+    },
+    RemovedFromPlaylist {
+        playlist: ItemId,
         result: Result<(), String>,
     },
     PlaylistDeleted {
@@ -475,6 +484,15 @@ async fn run(
                         description,
                         result,
                     });
+                });
+            }
+            Request::RemoveFromPlaylist { playlist, entry } => {
+                tokio::spawn(async move {
+                    let result = am
+                        .remove_from_playlist(&playlist, &entry)
+                        .await
+                        .map_err(|e| format!("Couldn't take it out of the playlist: {e}"));
+                    replies.send(Reply::RemovedFromPlaylist { playlist, result });
                 });
             }
             Request::DeletePlaylist(id) => {

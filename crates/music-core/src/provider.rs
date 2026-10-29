@@ -105,6 +105,13 @@ pub trait Provider: Send + Sync {
         ))
     }
 
+    /// Take a song out of one of the user's playlists, by its row's id.
+    async fn remove_from_playlist(&self, _playlist: &ItemId, _entry: &ItemId) -> Result<()> {
+        Err(Error::Protocol(
+            "this service's playlists can't be changed".into(),
+        ))
+    }
+
     /// Add songs to one of the user's playlists, at its end.
     async fn add_to_playlist(&self, _playlist: &ItemId, _tracks: &[ItemId]) -> Result<()> {
         Err(Error::Protocol(

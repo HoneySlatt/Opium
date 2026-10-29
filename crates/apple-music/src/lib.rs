@@ -569,6 +569,16 @@ impl Provider for AppleMusic {
         self.send_change(req, &path).await
     }
 
+    /// As the web player does it: every row of that song goes.
+    async fn remove_from_playlist(&self, playlist: &ItemId, entry: &ItemId) -> Result<()> {
+        let path = format!(
+            "/v1/me/library/playlists/{}/tracks?ids%5Blibrary-songs%5D={}&mode=all",
+            playlist.id, entry.id
+        );
+        let req = self.http.delete(format!("{API}{path}"));
+        self.send_change(req, &path).await
+    }
+
     /// As the web player deletes them.
     async fn delete_playlist(&self, playlist: &ItemId) -> Result<()> {
         let path = format!("/v1/me/library/playlists/{}", playlist.id);

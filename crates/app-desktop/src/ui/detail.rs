@@ -8,7 +8,7 @@ use std::time::Duration;
 use egui::{Color32, Rect, Sense, Ui, pos2, vec2};
 use music_core::model::{Album, FavouriteKind, ItemId, Track};
 
-use crate::app::{App, Loaded, Page};
+use crate::app::{App, Loaded, Page, TrackChoice};
 use crate::color::mix;
 use crate::fonts::{Weight, font};
 use crate::icons::{self, Icon};
@@ -61,6 +61,8 @@ struct Listing {
     list: &'static str,
     loading: bool,
     error: Option<String>,
+    /// The user's own playlist shown, whose songs can be taken out.
+    playlist: Option<ItemId>,
 }
 
 pub fn album(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
@@ -89,6 +91,7 @@ pub fn album(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
         list: "album",
         loading,
         error,
+        playlist: None,
     };
     page(app, ui, pad, header, tracks, listing)
 }
@@ -130,6 +133,7 @@ pub fn playlist(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
         list: "playlist",
         loading: tracks.is_empty() && !done && error.is_none(),
         error,
+        playlist: playlist.editable.then(|| playlist.id.clone()),
     };
     page(app, ui, pad, Some(header), tracks, listing)
 }
@@ -275,6 +279,7 @@ fn page(
                     playing: now && app.is_playing(),
                     favourite: app.is_favourite(FavouriteKind::Song, &track.id),
                     in_library: app.track_in_library(track),
+                    in_playlist: listing.playlist.is_some(),
                     list: listing.list,
                     position,
                 };
@@ -286,6 +291,11 @@ fn page(
                         app.play_list(tracks.to_vec(), position);
                     }
                     RowAction::OpenAlbum(id) => app.go(Page::Album(id)),
+                    RowAction::Menu(TrackChoice::RemoveFromPlaylist) => {
+                        if let Some(playlist) = &listing.playlist {
+                            app.remove_from_playlist(playlist, track);
+                        }
+                    }
                     RowAction::Menu(choice) => {
                         let track = track.clone();
                         app.track_choice(track, choice, ui.input(|i| i.time));

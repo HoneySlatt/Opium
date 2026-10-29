@@ -206,6 +206,8 @@ pub struct RowState {
     pub favourite: bool,
     /// It is in the library already.
     pub in_library: bool,
+    /// The list is a playlist of the user's, which the song can leave.
+    pub in_playlist: bool,
     /// Rows are told apart by this and their position.
     pub list: &'static str,
     pub position: usize,
@@ -376,6 +378,7 @@ pub fn row(
         favourite: state.favourite,
         in_library: state.in_library,
         removable: track.library_id.is_some(),
+        in_playlist: state.in_playlist && track.library_id.is_some(),
     };
     if let Some(choice) = super::menu::track_menu(&response, theme, facts) {
         action = RowAction::Menu(choice);
