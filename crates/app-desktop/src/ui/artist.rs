@@ -162,15 +162,24 @@ fn date_line(album: &Album) -> String {
         .unwrap_or_default()
 }
 
-/// The big round Play, centred on `center`, and Shuffle beside it. Returns
-/// `Some(shuffle)` when one was clicked.
+/// The big round Play and Shuffle beside it, the pair centred on `center`.
+/// Returns `Some(shuffle)` when one was clicked.
 fn play_buttons(ui: &mut Ui, theme: &Theme, center: egui::Pos2) -> Option<bool> {
     let mut clicked = None;
+    let (play, shuffle, gap) = (28.0, 20.0, 16.0);
+    let left = center.x - (2.0 * play + gap + 2.0 * shuffle) / 2.0;
     let buttons = [
-        (center, 28.0, icons::PLAY_FILL, 22.0, false, "Play"),
         (
-            center + vec2(28.0 + 16.0 + 20.0, 0.0),
-            20.0,
+            pos2(left + play, center.y),
+            play,
+            icons::PLAY_FILL,
+            22.0,
+            false,
+            "Play",
+        ),
+        (
+            pos2(left + 2.0 * play + gap + shuffle, center.y),
+            shuffle,
             icons::SHUFFLE,
             17.0,
             true,

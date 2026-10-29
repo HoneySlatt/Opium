@@ -327,7 +327,7 @@ impl Provider for AppleMusic {
             artist.id.clone()
         };
         let path = format!(
-            "/v1/catalog/{}/artists/{catalog_id}?views=top-songs,latest-release,full-albums,singles",
+            "/v1/catalog/{}/artists/{catalog_id}?views=top-songs,latest-release,full-albums,singles&limit[view.top-songs]=30&limit[view.full-albums]=50&limit[view.singles]=50",
             self.storefront
         );
         let resp: types::Response<types::ArtistWithViews> = self.get(&path).await?;

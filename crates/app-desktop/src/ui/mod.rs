@@ -618,58 +618,61 @@ pub fn glow(ui: &Ui, theme: &Theme, rect: Rect) {
 /// The Play and Shuffle buttons of a page, from `at`. Returns `Some(shuffle)`
 /// when one was clicked.
 pub fn page_buttons(ui: &mut Ui, theme: &Theme, at: Pos2, salt: &str) -> Option<bool> {
-    let play = Rect::from_min_size(at, vec2(112.0, 36.0));
-    let shuffle = Rect::from_min_size(pos2(play.right() + 10.0, at.y), vec2(120.0, 36.0));
-    if page_button(ui, theme, play, icons::PLAY_FILL, "Play", salt) {
-        return Some(false);
+    let play = page_button(ui, theme, at, icons::PLAY_FILL, "Play", salt);
+    let shuffle_at = pos2(play.rect.right() + 10.0, at.y);
+    let shuffle = page_button(ui, theme, shuffle_at, icons::SHUFFLE, "Shuffle", salt);
+    if play.clicked() {
+        Some(false)
+    } else if shuffle.clicked() {
+        Some(true)
+    } else {
+        None
     }
-    if page_button(ui, theme, shuffle, icons::SHUFFLE, "Shuffle", salt) {
-        return Some(true);
-    }
-    None
 }
 
-/// A 36 px button on a faint fill, as Cider draws Play and Shuffle.
+/// A 36 px button on a faint fill, as Cider draws Play and Shuffle: as wide as
+/// its icon and label, with both centred in it.
 fn page_button(
     ui: &mut Ui,
     theme: &Theme,
-    rect: Rect,
+    at: Pos2,
     icon: Icon,
     label: &str,
     salt: &str,
-) -> bool {
+) -> egui::Response {
+    let (icon_size, gap, padding) = (14.0, 8.0, 24.0);
+    let galley = text(ui, label, font(13.0, Weight::Medium), theme.text, 300.0);
+    let content = icon_size + gap + galley.size().x;
+    let rect = Rect::from_min_size(at, vec2(content + 2.0 * padding, 36.0));
     let response = ui.interact(
         rect,
         egui::Id::unique(("page-button", salt, label)),
         Sense::click(),
     );
     let fill = theme.text_a(if response.hovered() { 0.14 } else { 0.09 });
-    let fg = theme.text;
-    let rect = if response.is_pointer_button_down_on() {
+    let shown = if response.is_pointer_button_down_on() {
         rect.shrink(0.4)
     } else {
         rect
     };
-    ui.painter().rect_filled(rect, 9.0, fill);
+    ui.painter().rect_filled(shown, 9.0, fill);
+    let x = rect.center().x - content / 2.0;
     paint_icon(
         ui,
         icon,
-        pos2(rect.left() + 20.0 + 7.0, rect.center().y),
-        14.0,
-        fg,
+        pos2(x + icon_size / 2.0, rect.center().y),
+        icon_size,
+        theme.text,
     );
-    let galley = text(ui, label, font(13.0, Weight::Medium), fg, rect.width());
     paint_text(
         ui,
         galley,
-        rect.left() + 20.0 + 14.0 + 8.0,
+        x + icon_size + gap,
         rect.center().y,
         egui::Align::Min,
-        fg,
+        theme.text,
     );
-    response
-        .on_hover_cursor(egui::CursorIcon::PointingHand)
-        .clicked()
+    response.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
 /// `top` composited over `bottom`, both premultiplied.
