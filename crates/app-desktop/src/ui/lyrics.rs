@@ -73,7 +73,9 @@ pub fn show(
     let list = body;
 
     // Lay the lines out, each with its padding, the gaps as a row of dots.
-    let wrap = list.width() - 2.0 * PAD.x;
+    // A wide list keeps room on the right for the time of the line hovered.
+    let gutter = if list.width() > 600.0 { 72.0 } else { 0.0 };
+    let wrap = list.width() - 2.0 * PAD.x - gutter;
     let galleys: Vec<_> = lyrics
         .lines
         .iter()
@@ -144,6 +146,9 @@ pub fn show(
             if response.hovered() {
                 painter.rect_filled(rect, 10.0, theme.hover());
                 opacity = opacity.max(0.62);
+                if gutter > 0.0 {
+                    time_chip(ui, &painter, theme, rect, line.start);
+                }
             }
             if response
                 .on_hover_cursor(egui::CursorIcon::PointingHand)
@@ -172,6 +177,30 @@ pub fn show(
             None => dots(&painter, rect, on, time, opacity, theme),
         }
     }
+}
+
+/// Where a click on the line hovered goes, at the right of the list.
+fn time_chip(ui: &Ui, painter: &egui::Painter, theme: &Theme, line: Rect, at: std::time::Duration) {
+    let g = text(
+        ui,
+        &super::format_time(at),
+        font(12.5, Weight::SemiBold),
+        theme.text_a(0.6),
+        60.0,
+    );
+    let chip = Rect::from_center_size(
+        pos2(line.right() - 36.0, line.center().y),
+        g.size() + vec2(18.0, 10.0),
+    );
+    painter.rect(
+        chip,
+        chip.height() / 2.0,
+        crate::color::alpha(theme.crust, 0.5),
+        egui::Stroke::new(1.0, theme.text_a(0.08)),
+        egui::StrokeKind::Inside,
+    );
+    let size = g.size();
+    painter.galley(chip.center() - size / 2.0, g, theme.text_a(0.6));
 }
 
 fn layout(ui: &Ui, s: &str, size: f32, wrap: f32, scale: f32, theme: &Theme) -> Arc<egui::Galley> {
