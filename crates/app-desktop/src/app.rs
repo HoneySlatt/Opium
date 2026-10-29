@@ -508,7 +508,7 @@ impl App {
             soundcloud_signing_in: false,
             navidrome: SoundCloudState::Connecting,
             navidrome_form: NavidromeForm {
-                url: "http://localhost:4533".into(),
+                url: "0.0.0.0:4533".into(),
                 ..NavidromeForm::default()
             },
             navidrome_signing_in: false,
