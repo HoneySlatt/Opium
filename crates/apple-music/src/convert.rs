@@ -216,12 +216,14 @@ pub fn library_artist(artist: types::Artist) -> Artist {
             .and_then(|c| c.attributes.as_ref())
             .and_then(|a| a.artwork.as_ref()),
     );
+    let library_id = Some(id(artist.id.clone()));
     let id = id(catalog.map_or_else(|| artist.id.clone(), |c| c.id.clone()));
     Artist {
         id,
         artwork,
         name: artist.attributes.unwrap_or_default().name,
         in_favourites: None,
+        library_id,
     }
 }
 
@@ -295,6 +297,7 @@ pub fn shelf(recommendation: types::Recommendation) -> Option<Shelf> {
 pub fn artist(artist: types::Artist) -> Artist {
     let attrs = artist.attributes.unwrap_or_default();
     Artist {
+        library_id: None,
         id: id(artist.id),
         artwork: artwork(attrs.artwork.as_ref()),
         name: attrs.name,

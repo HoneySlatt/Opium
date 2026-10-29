@@ -381,6 +381,21 @@ impl AppleMusic {
         .await
     }
 
+    /// A library artist's albums in the library, with the catalog's rating
+    /// for the E under explicit ones.
+    pub async fn library_artist_albums(&self, artist: &ItemId) -> Result<Vec<Album>> {
+        let first = format!(
+            "/v1/me/library/artists/{}/albums?limit={PAGE}&include=catalog&fields%5Balbums%5D=contentRating",
+            artist.id
+        );
+        let mut albums = Vec::new();
+        self.each_page(&first, convert::album, usize::MAX, |page, _| {
+            albums.extend(page)
+        })
+        .await?;
+        Ok(albums)
+    }
+
     pub async fn each_library_playlist(&self, each: impl FnMut(Vec<Playlist>, bool)) -> Result<()> {
         self.each_page(
             &library_playlists_path(),

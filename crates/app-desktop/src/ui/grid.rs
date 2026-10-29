@@ -139,6 +139,11 @@ impl Grid {
         self.card + CARD_TEXT + ROW_GAP
     }
 
+    /// How many covers a row holds.
+    pub fn columns(&self) -> usize {
+        self.columns
+    }
+
     pub fn height(&self, count: usize) -> f32 {
         let rows = count.div_ceil(self.columns);
         rows as f32 * self.row_height() - if rows > 0 { ROW_GAP } else { 0.0 }
@@ -629,7 +634,8 @@ fn page(app: &mut App, ui: &mut Ui, pad: f32, kind: Kind) -> f32 {
     let now = ui.input(|i| i.time);
     match clicked {
         Some((Open::Album(id), CardClick::Open)) => app.go(Page::Album(id)),
-        Some((Open::Artist(id), CardClick::Open)) => app.go(Page::Artist(id)),
+        // An artist from the library opens as the library has them.
+        Some((Open::Artist(id), CardClick::Open)) => app.go(Page::LibraryArtist(id)),
         Some((Open::Playlist(playlist), CardClick::Open)) => app.open_playlist(&playlist),
         Some((Open::Station(station), _)) => app.play_station(&station),
         Some((Open::Album(id), CardClick::Enqueue(how))) => app.enqueue_album(id, how, now),
@@ -691,7 +697,8 @@ fn card(app: &App, kind: Kind, i: usize) -> (String, String, Option<String>, Ope
                 a.name.clone(),
                 String::new(),
                 a.artwork.as_ref().map(|art| art.url(376)),
-                Open::Artist(a.id.clone()),
+                // The library's own id, which its page asks by.
+                Open::Artist(a.library_id.clone().unwrap_or_else(|| a.id.clone())),
             )
         }
         Kind::Recent => match &app.recently_added.items[i] {

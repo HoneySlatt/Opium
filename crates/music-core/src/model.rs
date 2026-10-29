@@ -145,6 +145,9 @@ pub struct Artist {
     pub artwork: Option<Artwork>,
     /// Whether the user has them in their favourites, when the service said.
     pub in_favourites: Option<bool>,
+    /// The artist's id in the library, for one read from it: `id` is then
+    /// the catalog's, when the library knows it.
+    pub library_id: Option<ItemId>,
 }
 
 /// What can be a favourite.

@@ -30,6 +30,8 @@ pub enum Page {
     Playlist(ItemId),
     Album(ItemId),
     Artist(ItemId),
+    /// An artist as the library has them: their albums and singles there.
+    LibraryArtist(ItemId),
     Search(String),
     Settings,
     /// One shelf of Home, New or Radio in full, named by its title.
@@ -351,6 +353,8 @@ pub struct App {
     in_library_wanted: std::cell::RefCell<Vec<(FavouriteKind, ItemId)>>,
     in_library_asked: std::collections::HashSet<ItemId>,
     pub library_artists: Streamed<Artist>,
+    /// Library artists' albums in the library, by artist.
+    pub artist_albums: HashMap<ItemId, Loaded<Arc<Vec<Album>>>>,
     pub recently_added: Streamed<Collection>,
     /// The songs in the library, by catalog id.
     library_songs: std::collections::HashSet<ItemId>,
@@ -494,6 +498,7 @@ impl App {
             in_library_wanted: Default::default(),
             in_library_asked: std::collections::HashSet::new(),
             library_artists: Streamed::default(),
+            artist_albums: HashMap::new(),
             recently_added: Streamed::default(),
             favourite_songs: Default::default(),
             library_songs: Default::default(),
@@ -672,6 +677,10 @@ impl App {
             Page::Artist(id) if !self.artists.contains_key(id) => {
                 self.artists.insert(id.clone(), Loaded::Loading);
                 self.backend.send(Request::Artist(id.clone()));
+            }
+            Page::LibraryArtist(id) if !self.artist_albums.contains_key(id) => {
+                self.artist_albums.insert(id.clone(), Loaded::Loading);
+                self.backend.send(Request::LibraryArtistAlbums(id.clone()));
             }
             Page::Search(query) => {
                 let key = (self.search_scope, query.clone());
@@ -1233,6 +1242,10 @@ impl App {
                 Some(Loaded::Ready(artist)) => artist.artist.name.clone(),
                 _ => String::new(),
             },
+            Page::LibraryArtist(id) => self
+                .library_artist(id)
+                .map(|a| a.name.clone())
+                .unwrap_or_default(),
             Page::Search(_) => "Search".into(),
             Page::Settings => "Settings".into(),
             Page::Shelf(_, title) => title.clone(),
@@ -1307,6 +1320,29 @@ impl App {
     pub fn set_motion_quality(&mut self, quality: crate::settings::MotionQuality) {
         self.settings.motion_quality = Some(quality);
         self.settings.save();
+    }
+
+    /// A library artist by their library id, once the library's artists are
+    /// read.
+    pub fn library_artist(&self, id: &ItemId) -> Option<&Artist> {
+        self.library_artists
+            .items
+            .iter()
+            .find(|a| a.library_id.as_ref() == Some(id))
+    }
+
+    /// The library's songs from `albums`, album by album in that order, each
+    /// in its discs' and tracks' order.
+    pub fn songs_of(&self, albums: &[Album]) -> Vec<Track> {
+        let place: HashMap<&ItemId, usize> =
+            albums.iter().enumerate().map(|(i, a)| (&a.id, i)).collect();
+        let mut songs: Vec<(usize, &Track)> = self
+            .songs
+            .iter()
+            .filter_map(|t| Some((*place.get(t.album_id.as_ref()?)?, t)))
+            .collect();
+        songs.sort_by_key(|(album, t)| (*album, t.disc_number, t.track_number));
+        songs.into_iter().map(|(_, t)| t.clone()).collect()
     }
 
     /// An artist's page as far as it has come; asks for it the first time.
@@ -2007,6 +2043,13 @@ impl App {
                     done,
                     whole,
                 } => self.library_artists.arrived(artists, done, whole),
+                Reply::LibraryArtistAlbums { id, result } => {
+                    let loaded = match result {
+                        Ok(albums) => Loaded::Ready(Arc::new(albums)),
+                        Err(e) => Loaded::Failed(e),
+                    };
+                    self.artist_albums.insert(id, loaded);
+                }
                 Reply::NewMusic(result) => {
                     self.new_music = Some(match result {
                         Ok(shelves) => Loaded::Ready(Arc::new(shelves)),

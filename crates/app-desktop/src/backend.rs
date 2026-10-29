@@ -32,6 +32,8 @@ pub enum Request {
     LibraryAlbums,
     /// The library artists, page by page.
     LibraryArtists,
+    /// A library artist's albums in the library.
+    LibraryArtistAlbums(ItemId),
     /// What was added to the library lately.
     RecentlyAdded,
     /// The home page's shelves.
@@ -196,6 +198,10 @@ pub enum Reply {
         artists: Vec<Artist>,
         done: bool,
         whole: bool,
+    },
+    LibraryArtistAlbums {
+        id: ItemId,
+        result: Result<Vec<Album>, String>,
     },
     RecentlyAdded {
         items: Vec<Collection>,
@@ -623,6 +629,15 @@ async fn run(
                         .each_library_album(|albums, done| list.page(albums, done, &show))
                         .await;
                     list.failed(&replies, result, &show);
+                });
+            }
+            Request::LibraryArtistAlbums(id) => {
+                tokio::spawn(async move {
+                    let result = am
+                        .library_artist_albums(&id)
+                        .await
+                        .map_err(|e| e.to_string());
+                    replies.send(Reply::LibraryArtistAlbums { id, result });
                 });
             }
             Request::LibraryArtists => {
