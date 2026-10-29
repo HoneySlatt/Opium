@@ -274,7 +274,7 @@ fn page(
                     now,
                     playing: now && app.is_playing(),
                     favourite: app.is_favourite(FavouriteKind::Song, &track.id),
-                    in_library: app.in_library(&track.id),
+                    in_library: app.track_in_library(track),
                     list: listing.list,
                     position,
                 };

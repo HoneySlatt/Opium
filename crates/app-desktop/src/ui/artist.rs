@@ -433,7 +433,7 @@ fn songs_section(
             TrackFacts {
                 has_album: track.album_id.is_some(),
                 favourite,
-                in_library: app.in_library(&track.id),
+                in_library: app.track_in_library(track),
             },
         ) {
             chosen = Some((i, choice));

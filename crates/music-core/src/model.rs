@@ -88,6 +88,8 @@ pub struct Track {
     pub artwork: Option<Artwork>,
     pub explicit: bool,
     pub quality: Option<AudioQuality>,
+    /// It came from the user's library, so it is there.
+    pub in_library: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]

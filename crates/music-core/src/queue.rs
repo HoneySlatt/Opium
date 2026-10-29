@@ -193,6 +193,7 @@ mod tests {
             artwork: None,
             explicit: false,
             quality: None,
+            in_library: false,
         }
     }
 

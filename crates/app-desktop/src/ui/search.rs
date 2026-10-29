@@ -442,7 +442,7 @@ fn song_list(app: &mut App, ui: &mut Ui, theme: &Theme, area: Rect, top: f32, so
             now,
             playing: now && app.is_playing(),
             favourite: app.is_favourite(FavouriteKind::Song, &track.id),
-            in_library: app.in_library(&track.id),
+            in_library: app.track_in_library(track),
             list: "search",
             position,
         };

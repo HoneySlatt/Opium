@@ -60,7 +60,7 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
                     now,
                     playing: now && app.is_playing(),
                     favourite: app.is_favourite(FavouriteKind::Song, &track.id),
-                    in_library: app.in_library(&track.id),
+                    in_library: app.track_in_library(track),
                     list: "songs",
                     position,
                 };

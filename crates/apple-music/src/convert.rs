@@ -48,6 +48,8 @@ pub fn track(song: types::Song) -> Track {
         .and_then(|p| p.catalog_id.clone())
         .filter(|c| !c.is_empty());
     let in_catalog = catalog_id.is_some() || !song.id.starts_with("i.");
+    // Songs read from the library (its songs, playlists, albums) are in it.
+    let in_library = song.kind == "library-songs" || song.id.starts_with("i.");
     let album_id = song
         .relationships
         .as_ref()
@@ -69,6 +71,7 @@ pub fn track(song: types::Song) -> Track {
         disc_number: attrs.disc_number,
         explicit: attrs.content_rating.as_deref() == Some("explicit"),
         quality: in_catalog.then(web_quality),
+        in_library,
     }
 }
 

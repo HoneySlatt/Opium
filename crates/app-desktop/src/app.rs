@@ -536,6 +536,7 @@ impl App {
                     artwork: station.artwork.clone(),
                     explicit: false,
                     quality: None,
+                    in_library: false,
                 };
                 self.play_list(vec![track], 0);
             }
@@ -595,6 +596,11 @@ impl App {
     /// Whether a song is in the library, as far as the app has loaded it.
     pub fn in_library(&self, id: &ItemId) -> bool {
         self.library_songs.contains(id)
+    }
+
+    /// Whether a track is in the library: read from it, or found in it.
+    pub fn track_in_library(&self, track: &Track) -> bool {
+        track.in_library || self.in_library(&track.id)
     }
 
     pub fn favourites_to_library(&self) -> bool {
@@ -1264,6 +1270,11 @@ impl App {
                     {
                         self.favourite_songs
                             .extend(tracks.iter().map(|t| t.id.clone()));
+                    }
+                    // Songs read from the library's playlists are in the library.
+                    if let Ok(tracks) = &result {
+                        self.library_songs
+                            .extend(tracks.iter().filter(|t| t.in_library).map(|t| t.id.clone()));
                     }
                     let entry = self.playlist_tracks.entry(id).or_default();
                     match result {
