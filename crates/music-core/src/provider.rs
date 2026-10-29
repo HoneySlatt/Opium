@@ -73,6 +73,13 @@ pub trait Provider: Send + Sync {
         ))
     }
 
+    /// Make a playlist in the user's library, with `tracks` in it.
+    async fn create_playlist(&self, _name: &str, _tracks: &[ItemId]) -> Result<Playlist> {
+        Err(Error::Protocol(
+            "this service's playlists can't be made".into(),
+        ))
+    }
+
     /// Add songs to one of the user's playlists, at its end.
     async fn add_to_playlist(&self, _playlist: &ItemId, _tracks: &[ItemId]) -> Result<()> {
         Err(Error::Protocol(

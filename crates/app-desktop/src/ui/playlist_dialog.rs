@@ -35,6 +35,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
     };
     let mut add = false;
     let mut cancel = false;
+    let mut new = false;
     let response = egui::Modal::new(Id::unique("playlist-dialog"))
         .frame(frame)
         .backdrop_color(backdrop)
@@ -173,6 +174,9 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                         );
                     }
                     heading(ui, &theme, "PLAYLISTS");
+                    if new_row(ui, &theme) {
+                        new = true;
+                    }
                     if all.is_empty() {
                         let (r, _) = ui.allocate_exact_size(vec2(WIDTH, 40.0), Sense::hover());
                         let muted = theme.muted();
@@ -223,11 +227,182 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 add = true;
             }
         });
-    if add {
+    if new {
+        app.open_new_playlist(tracks);
+    } else if add {
         app.add_to_chosen_playlists();
     } else if cancel || response.should_close() {
         app.playlist_dialog = None;
     }
+}
+
+/// The New Playlist window: a name, then Cancel and Create; Enter creates.
+pub fn show_new(app: &mut App, ctx: &egui::Context) {
+    let Some(new) = &app.new_playlist else {
+        return;
+    };
+    let theme = app.theme.clone();
+    let count = new.tracks.len();
+    let frame = Frame::new()
+        .fill(theme.mantle)
+        .stroke(Stroke::new(1.0, theme.line()))
+        .corner_radius(16)
+        .inner_margin(0);
+    let backdrop = if theme.light {
+        Color32::from_black_alpha(72)
+    } else {
+        Color32::from_black_alpha(140)
+    };
+    let width = 400.0;
+    let mut create = false;
+    let mut cancel = false;
+    let response = egui::Modal::new(Id::unique("new-playlist"))
+        .frame(frame)
+        .backdrop_color(backdrop)
+        .show(ctx, |ui| {
+            ui.set_width(width);
+            ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
+
+            let (head, _) = ui.allocate_exact_size(vec2(width, 72.0), Sense::hover());
+            let g = text(
+                ui,
+                "New Playlist",
+                font(18.0, Weight::Bold),
+                theme.text,
+                width - 48.0,
+            );
+            paint_text(
+                ui,
+                g,
+                head.left() + 24.0,
+                head.center().y - if count > 0 { 9.0 } else { 0.0 },
+                egui::Align::Min,
+                theme.text,
+            );
+            if count > 0 {
+                let sub = match count {
+                    1 => "With 1 song".to_owned(),
+                    n => format!("With {n} songs"),
+                };
+                let g = text(
+                    ui,
+                    &sub,
+                    font(13.0, Weight::Regular),
+                    theme.subtext0,
+                    width - 48.0,
+                );
+                paint_text(
+                    ui,
+                    g,
+                    head.left() + 24.0,
+                    head.center().y + 12.0,
+                    egui::Align::Min,
+                    theme.subtext0,
+                );
+            }
+
+            // The name.
+            let (row, _) = ui.allocate_exact_size(vec2(width, 40.0), Sense::hover());
+            let field = Rect::from_min_max(
+                pos2(row.left() + 24.0, row.top()),
+                pos2(row.right() - 24.0, row.bottom()),
+            );
+            ui.painter().rect(
+                field,
+                9.0,
+                theme.text_a(0.04),
+                Stroke::new(1.0, theme.accent),
+                egui::StrokeKind::Inside,
+            );
+            let body = font(14.0, Weight::Regular);
+            let line = text(ui, "S", body.clone(), theme.text, 100.0).size().y;
+            let edit = Rect::from_min_max(
+                pos2(field.left() + 14.0, field.center().y - line / 2.0),
+                pos2(field.right() - 14.0, field.center().y + line / 2.0),
+            );
+            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(edit));
+            if let Some(new) = &mut app.new_playlist {
+                let response = child.add(
+                    egui::TextEdit::singleline(&mut new.name)
+                        .hint_text(egui::RichText::new("Playlist Name").color(theme.muted()))
+                        .font(body)
+                        .frame(Frame::NONE)
+                        .margin(egui::Margin::ZERO)
+                        .desired_width(edit.width()),
+                );
+                if !response.has_focus() && !response.lost_focus() {
+                    response.request_focus();
+                }
+            }
+            let named = app
+                .new_playlist
+                .as_ref()
+                .is_some_and(|n| !n.name.trim().is_empty());
+
+            ui.add_space(20.0);
+            let (foot, _) = ui.allocate_exact_size(vec2(width, 72.0), Sense::hover());
+            ui.painter()
+                .hline(foot.x_range(), foot.top(), Stroke::new(1.0, theme.line()));
+            let y = foot.center().y;
+            let cancel_rect =
+                Rect::from_center_size(pos2(foot.center().x - 70.0, y), vec2(124.0, 40.0));
+            let create_rect =
+                Rect::from_center_size(pos2(foot.center().x + 70.0, y), vec2(124.0, 40.0));
+            if pill(ui, &theme, cancel_rect, "Cancel", false, true) {
+                cancel = true;
+            }
+            if pill(ui, &theme, create_rect, "Create", true, named) {
+                create = true;
+            }
+            if named && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                create = true;
+            }
+        });
+    if create {
+        app.create_playlist();
+    } else if cancel || response.should_close() {
+        app.new_playlist = None;
+    }
+}
+
+/// "New Playlist…", at the top of the list.
+fn new_row(ui: &mut Ui, theme: &Theme) -> bool {
+    let (outer, _) = ui.allocate_exact_size(vec2(WIDTH, ROW + ROW_GAP), Sense::hover());
+    let rect = Rect::from_min_max(
+        pos2(outer.left() + 24.0, outer.top()),
+        pos2(outer.right() - 24.0, outer.top() + ROW),
+    );
+    let response = ui.interact(rect, Id::unique("playlist-dialog-new"), Sense::click());
+    let fill = if response.hovered() {
+        theme.text_a(0.08)
+    } else {
+        theme.text_a(0.04)
+    };
+    ui.painter().rect(
+        rect,
+        10.0,
+        fill,
+        Stroke::new(1.0, theme.line()),
+        egui::StrokeKind::Inside,
+    );
+    let art = Rect::from_center_size(
+        pos2(rect.left() + 24.0 + 9.0 + 14.0 + 20.0, rect.center().y),
+        vec2(40.0, 40.0),
+    );
+    ui.painter().rect_filled(art, 6.0, theme.text_a(0.08));
+    paint_icon(ui, icons::PLUS, art.center(), 18.0, theme.accent);
+    let x = art.right() + 14.0;
+    let g = text(
+        ui,
+        "New Playlist…",
+        font(14.0, Weight::SemiBold),
+        theme.text,
+        rect.right() - 16.0 - x,
+    );
+    paint_text(ui, g, x, rect.center().y, egui::Align::Min, theme.text);
+    response
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .clicked()
 }
 
 fn heading(ui: &mut Ui, theme: &Theme, label: &str) {

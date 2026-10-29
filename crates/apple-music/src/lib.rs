@@ -559,6 +559,47 @@ impl Provider for AppleMusic {
         self.send_change(req, &path).await
     }
 
+    /// As Kopuz makes them: the name, and the songs as the playlist's tracks.
+    async fn create_playlist(&self, name: &str, tracks: &[ItemId]) -> Result<Playlist> {
+        let path = "/v1/me/library/playlists";
+        let data: Vec<serde_json::Value> = tracks
+            .iter()
+            .map(|t| serde_json::json!({ "id": t.id, "type": "songs" }))
+            .collect();
+        let body = serde_json::json!({
+            "attributes": { "name": name },
+            "relationships": { "tracks": { "data": data } },
+        });
+        let resp = self
+            .authorized(self.http.post(format!("{API}{path}")))
+            .header("Media-User-Token", &self.user_token)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| Error::Network(format!("{path}: {e}")))?;
+        let status = resp.status();
+        if status.as_u16() == 401 || status.as_u16() == 403 {
+            return Err(Error::NotSignedIn);
+        }
+        if !status.is_success() {
+            return Err(Error::Protocol(format!("{path}: HTTP {status}")));
+        }
+        let created: types::Response<types::Playlist> = resp
+            .json()
+            .await
+            .map_err(|e| Error::Protocol(format!("{path}: {e}")))?;
+        let playlist = created
+            .data
+            .into_iter()
+            .next()
+            .ok_or_else(|| Error::Protocol(format!("{path}: no playlist made")))?;
+        // The user's own, whatever the answer says.
+        Ok(Playlist {
+            editable: true,
+            ..convert::playlist(playlist)
+        })
+    }
+
     /// Songs go by catalog id with their type, or Apple accepts them and
     /// drops them silently (as Kopuz found).
     async fn add_to_playlist(&self, playlist: &ItemId, tracks: &[ItemId]) -> Result<()> {

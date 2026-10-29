@@ -22,6 +22,7 @@ pub fn show(app: &mut App, ui: &mut Ui, collapsed: bool) {
         pos2(full.right(), full.bottom() - account_height),
     );
     let mut list = ui.new_child(egui::UiBuilder::new().max_rect(nav));
+    let mut new_playlist = false;
     egui::ScrollArea::vertical()
         .id_salt("sidebar-scroll")
         .auto_shrink(false)
@@ -43,7 +44,9 @@ pub fn show(app: &mut App, ui: &mut Ui, collapsed: bool) {
             row(ui, Page::Songs, icons::NOTE, "Songs");
             row(ui, Page::Albums, icons::DISC, "Albums");
             row(ui, Page::Artists, icons::MIC, "Artists");
-            section(ui, &theme, "Playlists", icons::PLUS, collapsed);
+            if section(ui, &theme, "Playlists", icons::PLUS, collapsed) {
+                new_playlist = true;
+            }
             // Apple's own playlist of favourites, once the library says which,
             // drawn like the other playlists with Apple's cover for it.
             let (favourites, art) = match app.playlists.iter().find(|p| p.favourites) {
@@ -95,6 +98,9 @@ pub fn show(app: &mut App, ui: &mut Ui, collapsed: bool) {
             ui.add_space(12.0);
         });
 
+    if new_playlist {
+        app.open_new_playlist(Vec::new());
+    }
     account(app, ui, &theme, full, collapsed);
 }
 
@@ -159,7 +165,9 @@ fn search(app: &mut App, ui: &mut Ui, theme: &Theme, full: Rect, collapsed: bool
     }
 }
 
-fn section(ui: &mut Ui, theme: &Theme, label: &str, icon: Icon, collapsed: bool) {
+/// A section's title, with its button on the right; returns whether the
+/// button was clicked.
+fn section(ui: &mut Ui, theme: &Theme, label: &str, icon: Icon, collapsed: bool) -> bool {
     ui.add_space(12.0);
     let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 28.0), Sense::hover());
     let rect = rect.shrink2(vec2(8.0, 0.0));
@@ -169,7 +177,7 @@ fn section(ui: &mut Ui, theme: &Theme, label: &str, icon: Icon, collapsed: bool)
             rect.center().y,
             Stroke::new(1.0, theme.line()),
         );
-        return;
+        return false;
     }
     let galley = text(
         ui,
@@ -189,7 +197,7 @@ fn section(ui: &mut Ui, theme: &Theme, label: &str, icon: Icon, collapsed: bool)
     let button =
         Rect::from_center_size(pos2(rect.right() - 20.0, rect.center().y), vec2(22.0, 22.0));
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(button));
-    icon_button(&mut child, theme, icon, 22.0, 14.0, theme.muted(), true);
+    icon_button(&mut child, theme, icon, 22.0, 14.0, theme.muted(), true).clicked()
 }
 
 /// The sizes of a sidebar row.

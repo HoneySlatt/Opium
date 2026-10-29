@@ -53,6 +53,8 @@ pub enum Request {
     SongLinks { song: ItemId, radio: bool },
     /// Take a song out of the library, by its library id.
     RemoveFromLibrary(ItemId),
+    /// Make a playlist with these songs.
+    CreatePlaylist { name: String, tracks: Vec<ItemId> },
     /// Add songs to playlists.
     AddToPlaylists {
         playlists: Vec<ItemId>,
@@ -89,6 +91,8 @@ pub enum Reply {
         radio: bool,
         result: Result<music_core::model::SongLinks, String>,
     },
+    /// A playlist was made, or why not.
+    PlaylistCreated(Result<Playlist, String>),
     /// A change to the library went through (the message to show), or why not.
     Changed(Result<String, String>),
     /// A favourite was set (`set: Some(on)`) or looked up; the state or why not.
@@ -410,6 +414,15 @@ async fn run(
                         .map(|()| "Removed from the library".to_owned())
                         .map_err(|e| format!("Couldn't remove it from the library: {e}"));
                     replies.send(Reply::Changed(result));
+                });
+            }
+            Request::CreatePlaylist { name, tracks } => {
+                tokio::spawn(async move {
+                    let result = am
+                        .create_playlist(&name, &tracks)
+                        .await
+                        .map_err(|e| format!("Couldn't make the playlist: {e}"));
+                    replies.send(Reply::PlaylistCreated(result));
                 });
             }
             Request::AddToPlaylists { playlists, tracks } => {

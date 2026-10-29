@@ -98,6 +98,12 @@ pub enum Enqueue {
     Last,
 }
 
+/// The New Playlist window: its name so far, and the songs it starts with.
+pub struct NewPlaylist {
+    pub name: String,
+    pub tracks: Vec<Track>,
+}
+
 /// The Add to Playlists window: the songs, the playlists ticked, the search.
 pub struct PlaylistDialog {
     pub tracks: Vec<Track>,
@@ -247,6 +253,10 @@ pub struct App {
     library_songs: std::collections::HashSet<ItemId>,
     /// The song whose station is being looked up, to play it.
     radio_from: Option<Track>,
+    /// The New Playlist window, when open.
+    pub new_playlist: Option<NewPlaylist>,
+    /// A playlist being made from the sidebar, to open once it exists.
+    open_created: bool,
     /// The Add to Playlists window, when open.
     pub playlist_dialog: Option<PlaylistDialog>,
     /// The songs in Apple's playlist of favourites.
@@ -350,6 +360,8 @@ impl App {
             favourite_songs: Default::default(),
             library_songs: Default::default(),
             radio_from: None,
+            new_playlist: None,
+            open_created: false,
             playlist_dialog: None,
             favourites_known: HashMap::new(),
             new_music: None,
@@ -694,6 +706,44 @@ impl App {
             .iter()
             .all(|t| entry.tracks.iter().any(|p| p.id == t.id));
         (has || entry.done).then_some(has)
+    }
+
+    /// Open the New Playlist window, the playlist to start with `tracks`.
+    pub fn open_new_playlist(&mut self, tracks: Vec<Track>) {
+        self.playlist_dialog = None;
+        self.new_playlist = Some(NewPlaylist {
+            name: String::new(),
+            tracks,
+        });
+    }
+
+    /// Make the playlist the New Playlist window names, and close it. Made
+    /// empty (from the sidebar), it opens once it exists.
+    pub fn create_playlist(&mut self) {
+        let Some(new) = self.new_playlist.take() else {
+            return;
+        };
+        let name = new.name.trim().to_owned();
+        if name.is_empty() {
+            return;
+        }
+        self.open_created = new.tracks.is_empty();
+        if self.playlist_songs_to_library() {
+            for track in &new.tracks {
+                if !self.track_in_library(track) {
+                    self.library_songs.insert(track.id.clone());
+                    self.backend.send(Request::AddToLibrary {
+                        kind: FavouriteKind::Song,
+                        id: track.id.clone(),
+                        quiet: true,
+                    });
+                }
+            }
+        }
+        self.backend.send(Request::CreatePlaylist {
+            name,
+            tracks: new.tracks.into_iter().map(|t| t.id).collect(),
+        });
     }
 
     /// Add the window's songs to the playlists ticked in it, and close it.
@@ -1384,6 +1434,25 @@ impl App {
                         _ => self.notify("This song has no station", now),
                     },
                     (_, Err(e)) => self.notify(e, now),
+                },
+                Reply::PlaylistCreated(result) => match result {
+                    Ok(playlist) => {
+                        self.notify(format!("Made “{}”", playlist.name), now);
+                        self.settings
+                            .recent_playlists
+                            .retain(|r| *r != playlist.id.id);
+                        self.settings
+                            .recent_playlists
+                            .insert(0, playlist.id.id.clone());
+                        self.settings.recent_playlists.truncate(3);
+                        self.settings.save();
+                        let id = playlist.id.clone();
+                        self.playlists.push(playlist);
+                        if std::mem::take(&mut self.open_created) {
+                            self.go(Page::Playlist(id));
+                        }
+                    }
+                    Err(e) => self.notify(e, now),
                 },
                 Reply::Changed(result) => match result {
                     Ok(message) | Err(message) => self.notify(message, now),
