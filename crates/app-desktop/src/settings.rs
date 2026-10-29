@@ -25,6 +25,9 @@ pub struct Settings {
     /// A song favourited joins the library if it isn't there (on unless
     /// turned off).
     pub favourites_to_library: Option<bool>,
+    /// A song added to a playlist joins the library if it isn't there (on
+    /// unless turned off), as Apple Music's own option does.
+    pub playlist_songs_to_library: Option<bool>,
     /// The playlists songs were last added to, most recent first.
     pub recent_playlists: Vec<String>,
 }

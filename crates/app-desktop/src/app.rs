@@ -588,6 +588,7 @@ impl App {
             self.backend.send(Request::AddToLibrary {
                 kind,
                 id: id.clone(),
+                quiet: true,
             });
         }
         self.backend.send(Request::SetFavourite { kind, id, on });
@@ -612,11 +613,21 @@ impl App {
         self.settings.save();
     }
 
+    pub fn playlist_songs_to_library(&self) -> bool {
+        self.settings.playlist_songs_to_library.unwrap_or(true)
+    }
+
+    pub fn set_playlist_songs_to_library(&mut self, on: bool) {
+        self.settings.playlist_songs_to_library = Some(on);
+        self.settings.save();
+    }
+
     pub fn add_to_library(&mut self, track: &Track, now: f64) {
         self.library_songs.insert(track.id.clone());
         self.backend.send(Request::AddToLibrary {
             kind: FavouriteKind::Song,
             id: track.id.clone(),
+            quiet: false,
         });
         self.notify(format!("Adding “{}” to the library…", track.title), now);
     }
@@ -685,6 +696,19 @@ impl App {
         }
         self.settings.recent_playlists.truncate(3);
         self.settings.save();
+        // Songs added to a playlist join the library, unless the user said not to.
+        if self.playlist_songs_to_library() {
+            for track in &dialog.tracks {
+                if !self.track_in_library(track) {
+                    self.library_songs.insert(track.id.clone());
+                    self.backend.send(Request::AddToLibrary {
+                        kind: FavouriteKind::Song,
+                        id: track.id.clone(),
+                        quiet: true,
+                    });
+                }
+            }
+        }
         self.backend.send(Request::AddToPlaylists {
             playlists: dialog.chosen,
             tracks: dialog.tracks.into_iter().map(|t| t.id).collect(),

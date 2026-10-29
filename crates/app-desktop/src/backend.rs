@@ -41,7 +41,12 @@ pub enum Request {
         on: bool,
     },
     /// Add a song, an album or a playlist to the library.
-    AddToLibrary { kind: FavouriteKind, id: ItemId },
+    /// `quiet`: say nothing unless it fails (it goes with another change).
+    AddToLibrary {
+        kind: FavouriteKind,
+        id: ItemId,
+        quiet: bool,
+    },
     /// Add songs to playlists.
     AddToPlaylists {
         playlists: Vec<ItemId>,
@@ -367,14 +372,16 @@ async fn run(
                     });
                 });
             }
-            Request::AddToLibrary { kind, id } => {
+            Request::AddToLibrary { kind, id, quiet } => {
                 tokio::spawn(async move {
                     let result = am
                         .add_to_library(kind, &id)
                         .await
                         .map(|()| "Added to the library".to_owned())
                         .map_err(|e| format!("Couldn't add to the library: {e}"));
-                    replies.send(Reply::Changed(result));
+                    if !(quiet && result.is_ok()) {
+                        replies.send(Reply::Changed(result));
+                    }
                 });
             }
             Request::AddToPlaylists { playlists, tracks } => {

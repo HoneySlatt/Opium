@@ -25,7 +25,7 @@ const THEMES: f32 = 14.0 + 10.0 + 74.0 + 10.0 + 18.0 + 18.0 + 4.0 + 14.0 + 12.0 
 pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
     let theme = app.theme.clone();
     let width = (ui.available_width() - 2.0 * pad).min(MAX_WIDTH);
-    let total = BODY_TOP + 5.0 * (GROUP_HEAD + GROUP_GAP) + 3.0 * ROW + THEMES + 3.0 * ROW + 104.0;
+    let total = BODY_TOP + 5.0 * (GROUP_HEAD + GROUP_GAP) + 3.0 * ROW + THEMES + 4.0 * ROW + 104.0;
     let output = egui::ScrollArea::vertical()
         .id_salt("settings")
         .auto_shrink(false)
@@ -72,13 +72,13 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
                 "Library",
                 "What joins your Apple Music library.",
             );
-            let card = Rect::from_min_size(pos2(left, y), vec2(width, ROW));
-            panel(ui, &theme, card, 1);
+            let card = Rect::from_min_size(pos2(left, y), vec2(width, 2.0 * ROW));
+            panel(ui, &theme, card, 2);
             let on = app.favourites_to_library();
             if switch(
                 ui,
                 &theme,
-                pos2(card.right() - 16.0, card.center().y),
+                pos2(card.right() - 16.0, card.top() + ROW / 2.0),
                 on,
                 "favourites-to-library",
             ) {
@@ -87,9 +87,27 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
             labels(
                 ui,
                 &theme,
-                pos2(card.left() + 16.0, card.center().y),
+                pos2(card.left() + 16.0, card.top() + ROW / 2.0),
                 "Add favourites to the library",
                 "A song you favourite joins your library if it isn't there yet.",
+                width - 32.0 - 60.0,
+            );
+            let on = app.playlist_songs_to_library();
+            if switch(
+                ui,
+                &theme,
+                pos2(card.right() - 16.0, card.top() + 1.5 * ROW),
+                on,
+                "playlist-songs-to-library",
+            ) {
+                app.set_playlist_songs_to_library(!on);
+            }
+            labels(
+                ui,
+                &theme,
+                pos2(card.left() + 16.0, card.top() + 1.5 * ROW),
+                "Add playlist songs to the library",
+                "A song you add to a playlist joins your library if it isn't there yet.",
                 width - 32.0 - 60.0,
             );
             y = card.bottom() + GROUP_GAP;
