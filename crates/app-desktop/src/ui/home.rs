@@ -10,7 +10,7 @@ use crate::fonts::{Weight, font};
 use crate::icons;
 use crate::theme::Theme;
 
-use super::grid::{CARD_TEXT, SHELF_HEAD, ShelfCard, cover_shelf, shelf_scroll};
+use super::grid::{CARD_TEXT, CardClick, SHELF_HEAD, ShelfCard, cover_shelf, shelf_scroll};
 use super::search::{message, section_head};
 use super::{artwork, glow, icon_button, paint_text, text};
 
@@ -128,8 +128,18 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
                         let cards: Vec<ShelfCard> = shelf.items.iter().map(card).collect();
                         cover_shelf(ui, &theme, at, width, &shelf.title, &cards, COVER, id)
                     };
-                    if let Some(i) = clicked {
-                        open(app, &shelf.items[i]);
+                    if let Some((i, click)) = clicked {
+                        let item = &shelf.items[i];
+                        let now = ui.input(|i| i.time);
+                        match (click, item) {
+                            (CardClick::Open, _) => open(app, item),
+                            (CardClick::Enqueue(how), Collection::Album(a)) => {
+                                app.enqueue_album(a.id.clone(), how, now);
+                            }
+                            (CardClick::Enqueue(how), Collection::Playlist(p)) => {
+                                app.enqueue_playlist(p, how, now);
+                            }
+                        }
                     }
                 }
                 y += h;
@@ -172,7 +182,7 @@ fn hero_shelf(
     width: f32,
     shelf: &Shelf,
     id: Id,
-) -> Option<usize> {
+) -> Option<(usize, CardClick)> {
     section_head(ui, theme, at.x, at.y, &shelf.title);
     let row = Rect::from_min_size(pos2(at.x, at.y + SHELF_HEAD), vec2(width, HERO + HERO_FOOT));
     let stride = HERO + HERO_GAP;
@@ -254,11 +264,13 @@ fn hero_shelf(
                 soft,
             );
         }
-        if response
+        if let Some(how) = super::menu::collection_menu(&response, theme) {
+            clicked = Some((i, CardClick::Enqueue(how)));
+        } else if response
             .on_hover_cursor(egui::CursorIcon::PointingHand)
             .clicked()
         {
-            clicked = Some(i);
+            clicked = Some((i, CardClick::Open));
         }
     }
     clicked

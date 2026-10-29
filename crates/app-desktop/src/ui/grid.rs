@@ -4,7 +4,7 @@
 use egui::{Id, Rect, Sense, Stroke, Ui, pos2, vec2};
 use music_core::model::{Collection, ItemId, Playlist, ProviderKind};
 
-use crate::app::{App, Page};
+use crate::app::{App, Enqueue, Page};
 use crate::fonts::{Weight, font};
 use crate::icons;
 use crate::theme::Theme;
@@ -32,9 +32,23 @@ pub(super) struct CoverCard<'a> {
     pub round: bool,
 }
 
+/// What a click on a cover asked for.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(super) enum CardClick {
+    Open,
+    /// From the right-click menu of an album or a playlist.
+    Enqueue(Enqueue),
+}
+
 /// A cover with its title and a muted line under it; `art` is the cover's
-/// square. Returns whether it was clicked.
-pub(super) fn cover_card(ui: &Ui, theme: &Theme, art: Rect, card: &CoverCard, id: Id) -> bool {
+/// square. Albums and playlists (square covers) have a right-click menu.
+pub(super) fn cover_card(
+    ui: &Ui,
+    theme: &Theme,
+    art: Rect,
+    card: &CoverCard,
+    id: Id,
+) -> Option<CardClick> {
     let response = ui.interact(art, id, Sense::click());
     let radius = if card.round { art.width() / 2.0 } else { 8.0 };
     let missing = card.url.is_none();
@@ -70,9 +84,15 @@ pub(super) fn cover_card(ui: &Ui, theme: &Theme, art: Rect, card: &CoverCard, id
     let muted = theme.muted();
     let g = text(ui, card.sub, font(12.0, Weight::Regular), muted, width);
     paint_text(ui, g, x, art.bottom() + 39.0, align, muted);
+    if !card.round
+        && let Some(how) = super::menu::collection_menu(&response, theme)
+    {
+        return Some(CardClick::Enqueue(how));
+    }
     response
         .on_hover_cursor(egui::CursorIcon::PointingHand)
         .clicked()
+        .then_some(CardClick::Open)
 }
 
 /// Covers in as many columns as fit, sharing the width.
@@ -189,7 +209,7 @@ pub(super) struct ShelfCard {
 }
 
 /// A titled row of `size` px covers that scrolls sideways. Returns the cover
-/// clicked.
+/// clicked, and how.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn cover_shelf(
     ui: &mut Ui,
@@ -200,7 +220,7 @@ pub(super) fn cover_shelf(
     cards: &[ShelfCard],
     size: f32,
     id: Id,
-) -> Option<usize> {
+) -> Option<(usize, CardClick)> {
     super::search::section_head(ui, theme, at.x, at.y, title);
     let row = Rect::from_min_size(pos2(at.x, at.y + SHELF_HEAD), vec2(width, size + CARD_TEXT));
     let stride = size + SHELF_GAP;
@@ -232,8 +252,8 @@ pub(super) fn cover_shelf(
             sub: &card.sub,
             round: false,
         };
-        if cover_card(&row_ui, theme, art, &cover, id.with(i)) {
-            clicked = Some(i);
+        if let Some(click) = cover_card(&row_ui, theme, art, &cover, id.with(i)) {
+            clicked = Some((i, click));
         }
     }
     clicked
@@ -387,8 +407,8 @@ fn page(app: &mut App, ui: &mut Ui, pad: f32, kind: Kind) -> f32 {
                     sub: &sub,
                     round: kind == Kind::Artists,
                 };
-                if cover_card(ui, &theme, art, &cover, id) {
-                    clicked = Some(open);
+                if let Some(click) = cover_card(ui, &theme, art, &cover, id) {
+                    clicked = Some((open, click));
                 }
             }
 
@@ -409,11 +429,14 @@ fn page(app: &mut App, ui: &mut Ui, pad: f32, kind: Kind) -> f32 {
                 muted,
             );
         });
+    let now = ui.input(|i| i.time);
     match clicked {
-        Some(Open::Album(id)) => app.go(Page::Album(id)),
-        Some(Open::Artist(id)) => app.go(Page::Artist(id)),
-        Some(Open::Playlist(playlist)) => app.open_playlist(&playlist),
-        None => {}
+        Some((Open::Album(id), CardClick::Open)) => app.go(Page::Album(id)),
+        Some((Open::Artist(id), CardClick::Open)) => app.go(Page::Artist(id)),
+        Some((Open::Playlist(playlist), CardClick::Open)) => app.open_playlist(&playlist),
+        Some((Open::Album(id), CardClick::Enqueue(how))) => app.enqueue_album(id, how, now),
+        Some((Open::Playlist(p), CardClick::Enqueue(how))) => app.enqueue_playlist(&p, how, now),
+        Some((Open::Artist(_), CardClick::Enqueue(_))) | None => {}
     }
     output.state.clamped_offset().y
 }

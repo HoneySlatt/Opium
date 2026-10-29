@@ -6,6 +6,7 @@ mod drawer;
 mod grid;
 mod home;
 mod lyrics;
+mod menu;
 mod now_playing;
 mod player_bar;
 mod search;

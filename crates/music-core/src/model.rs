@@ -141,6 +141,8 @@ pub struct Playlist {
     pub description: Option<String>,
     /// Who made it: `Apple Music Hip-Hop`, a user.
     pub curator: Option<String>,
+    /// The service's own list of the user's favourite songs.
+    pub favourites: bool,
     pub artwork: Option<Artwork>,
     pub track_count: Option<u32>,
 }

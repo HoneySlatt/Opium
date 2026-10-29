@@ -1,0 +1,136 @@
+//! Context menus, as the design draws them: a `mantle` card with a hairline,
+//! 32 px items with an icon, the hovered one filled with the accent.
+
+use egui::{Frame, Response, Sense, Stroke, Ui, pos2, vec2};
+
+use crate::app::Enqueue;
+use crate::fonts::{Weight, font};
+use crate::icons::{self, Icon};
+use crate::theme::Theme;
+
+use super::{paint_icon, paint_text, text};
+
+/// A menu line: an item with its icon, label and what it means, or a hairline.
+pub(super) enum Entry<T> {
+    Item(Icon, &'static str, T),
+    Line,
+}
+
+/// Open a menu on a secondary click of `response`; returns the item chosen.
+pub(super) fn context_menu<T: Clone>(
+    response: &Response,
+    theme: &Theme,
+    entries: &[Entry<T>],
+) -> Option<T> {
+    let mut chosen = None;
+    let frame = Frame::new()
+        .fill(theme.mantle)
+        .stroke(Stroke::new(1.0, theme.line()))
+        .corner_radius(14)
+        .inner_margin(5)
+        .shadow(egui::Shadow {
+            offset: [0, 10],
+            blur: 30,
+            spread: 0,
+            color: egui::Color32::from_black_alpha(110),
+        });
+    egui::Popup::context_menu(response)
+        .frame(frame)
+        .width(220.0)
+        .show(|ui| {
+            ui.spacing_mut().item_spacing.y = 0.0;
+            for entry in entries {
+                match entry {
+                    Entry::Line => {
+                        let (rect, _) =
+                            ui.allocate_exact_size(vec2(ui.available_width(), 9.0), Sense::hover());
+                        ui.painter().hline(
+                            (rect.left() + 6.0)..=(rect.right() - 6.0),
+                            rect.center().y,
+                            Stroke::new(1.0, theme.line()),
+                        );
+                    }
+                    Entry::Item(icon, label, value) => {
+                        if item(ui, theme, *icon, label) {
+                            chosen = Some(value.clone());
+                            ui.close();
+                        }
+                    }
+                }
+            }
+        });
+    chosen
+}
+
+fn item(ui: &mut Ui, theme: &Theme, icon: Icon, label: &str) -> bool {
+    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), 32.0), Sense::click());
+    let (fg, glyph) = if response.hovered() {
+        ui.painter().rect_filled(rect, 7.0, theme.accent);
+        (theme.on_accent(), theme.on_accent())
+    } else {
+        (theme.text, theme.subtext0)
+    };
+    paint_icon(
+        ui,
+        icon,
+        pos2(rect.left() + 10.0 + 8.0, rect.center().y),
+        16.0,
+        glyph,
+    );
+    let g = text(
+        ui,
+        label,
+        font(13.0, Weight::Regular),
+        fg,
+        rect.width() - 46.0,
+    );
+    paint_text(
+        ui,
+        g,
+        rect.left() + 10.0 + 16.0 + 10.0,
+        rect.center().y,
+        egui::Align::Min,
+        fg,
+    );
+    response.clicked()
+}
+
+/// What a track's menu offers.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum TrackChoice {
+    PlayNext,
+    AddToQueue,
+    GoToAlbum,
+}
+
+/// The track menu; Go to Album only when the album is known.
+pub(super) fn track_menu(
+    response: &Response,
+    theme: &Theme,
+    has_album: bool,
+) -> Option<TrackChoice> {
+    let mut entries = vec![
+        Entry::Item(icons::NEXT, "Play Next", TrackChoice::PlayNext),
+        Entry::Item(icons::LATER, "Add to Queue", TrackChoice::AddToQueue),
+    ];
+    if has_album {
+        entries.push(Entry::Line);
+        entries.push(Entry::Item(
+            icons::DISC,
+            "Go to Album",
+            TrackChoice::GoToAlbum,
+        ));
+    }
+    context_menu(response, theme, &entries)
+}
+
+/// What an album's or a playlist's menu offers.
+pub(super) fn collection_menu(response: &Response, theme: &Theme) -> Option<Enqueue> {
+    let entries = [
+        Entry::Item(icons::PLAY_FILL, "Play", Enqueue::Now),
+        Entry::Line,
+        Entry::Item(icons::NEXT, "Play Next", Enqueue::Next),
+        Entry::Item(icons::LATER, "Add to Queue", Enqueue::Last),
+    ];
+    context_menu(response, theme, &entries)
+}

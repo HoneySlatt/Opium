@@ -28,6 +28,8 @@ pub fn show(app: &mut App, ui: &mut Ui, collapsed: bool) {
         .show(&mut list, |ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
             ui.add_space(0.0);
+            // Apple's own playlist of favourites, once the library says which.
+            let favourites = app.favourites().map_or(Page::Favourites, Page::Playlist);
             let mut row = |ui: &mut Ui, page: Page, icon: Icon, label: &str| {
                 let active = app.page == page;
                 if nav_item(ui, &theme, Some(icon), None, label, active, collapsed, &NAV).clicked()
@@ -44,9 +46,12 @@ pub fn show(app: &mut App, ui: &mut Ui, collapsed: bool) {
             row(ui, Page::Albums, icons::DISC, "Albums");
             row(ui, Page::Artists, icons::MIC, "Artists");
             section(ui, &theme, "Playlists", icons::PLUS, collapsed);
-            row(ui, Page::Favourites, icons::STAR, "Favourite Songs");
+            row(ui, favourites, icons::STAR, "Favourite Songs");
             for i in 0..app.playlists.len() {
                 let playlist = &app.playlists[i];
+                if playlist.favourites {
+                    continue;
+                }
                 let art = playlist.artwork.as_ref().map(|a| a.url(120));
                 let id = playlist.id.clone();
                 let active = app.page == Page::Playlist(id.clone());

@@ -70,6 +70,10 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
                         app.play_list(shown_tracks(app), position);
                     }
                     RowAction::OpenAlbum(id) => app.go(Page::Album(id)),
+                    RowAction::Enqueue(how) => {
+                        let track = track.clone();
+                        app.enqueue(vec![track], how, ui.input(|i| i.time));
+                    }
                 }
             }
             let foot_text = if app.songs_done {

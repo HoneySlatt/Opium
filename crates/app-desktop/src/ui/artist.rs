@@ -5,13 +5,14 @@
 use egui::{Id, Rect, Sense, Ui, pos2, vec2};
 use music_core::model::{Album, ArtistDetail, ItemId};
 
-use crate::app::{App, Loaded, Page};
+use crate::app::{App, Enqueue, Loaded, Page};
 use crate::fonts::{Weight, font};
 use crate::icons;
 use crate::theme::Theme;
 
 use super::detail::cover_wash;
-use super::grid::{CARD_TEXT, SHELF_HEAD, ShelfCard, cover_shelf, shelf_scroll};
+use super::grid::{CARD_TEXT, CardClick, SHELF_HEAD, ShelfCard, cover_shelf, shelf_scroll};
+use super::menu::{TrackChoice, track_menu};
 use super::search::{message, section_head};
 use super::{artwork, explicit_badge, format_date, paint_icon, paint_text, text, thumb_url};
 
@@ -134,7 +135,7 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
                     })
                     .collect();
                 let shelf_id = Id::unique(("artist-shelf", *title, &artist.artist.id.id));
-                if let Some(i) = cover_shelf(
+                if let Some((i, click)) = cover_shelf(
                     ui,
                     &theme,
                     pos2(left, y),
@@ -144,7 +145,13 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
                     SHELF_CARD,
                     shelf_id,
                 ) {
-                    app.go(Page::Album(albums[i].id.clone()));
+                    let id = albums[i].id.clone();
+                    match click {
+                        CardClick::Open => app.go(Page::Album(id)),
+                        CardClick::Enqueue(how) => {
+                            app.enqueue_album(id, how, ui.input(|i| i.time));
+                        }
+                    }
                 }
                 y += shelf_height;
             }
@@ -296,6 +303,7 @@ fn songs_section(
     let mut row_ui = ui.new_child(egui::UiBuilder::new().max_rect(row));
     row_ui.set_clip_rect(row.intersect(ui.clip_rect()));
     let mut play = None;
+    let mut chosen = None;
     for (i, track) in artist.top_songs.iter().enumerate() {
         let (column, line) = (i / SONG_ROWS, i % SONG_ROWS);
         let cell = Rect::from_min_size(
@@ -371,7 +379,9 @@ fn songs_section(
             egui::Align::Min,
             muted,
         );
-        if response
+        if let Some(choice) = track_menu(&response, theme, track.album_id.is_some()) {
+            chosen = Some((i, choice));
+        } else if response
             .on_hover_cursor(egui::CursorIcon::PointingHand)
             .clicked()
         {
@@ -380,5 +390,18 @@ fn songs_section(
     }
     if let Some(i) = play {
         app.play_list(artist.top_songs.clone(), i);
+    }
+    if let Some((i, choice)) = chosen {
+        let track = artist.top_songs[i].clone();
+        let now = ui.input(|i| i.time);
+        match choice {
+            TrackChoice::PlayNext => app.enqueue(vec![track], Enqueue::Next, now),
+            TrackChoice::AddToQueue => app.enqueue(vec![track], Enqueue::Last, now),
+            TrackChoice::GoToAlbum => {
+                if let Some(album) = track.album_id {
+                    app.go(Page::Album(album));
+                }
+            }
+        }
     }
 }

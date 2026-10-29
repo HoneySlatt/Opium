@@ -87,6 +87,23 @@ pub enum DrawerTab {
     Lyrics,
 }
 
+/// Where tracks go in the queue.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Enqueue {
+    /// Replace the queue and play them now.
+    Now,
+    /// Right after the current track.
+    Next,
+    /// At the end.
+    Last,
+}
+
+/// An album or playlist waiting for its tracks before going into the queue.
+enum Waiting {
+    Album(ItemId),
+    Playlist(ItemId),
+}
+
 /// Now Playing's tabs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum NpTab {
@@ -221,6 +238,8 @@ pub struct App {
     pending_play: Option<Token>,
     /// Fetching or fetched, to follow the current track.
     queued_next: Option<Token>,
+    /// An album or playlist to queue once its tracks are in.
+    waiting: Option<(Waiting, Enqueue)>,
     /// The track that is audible, or was last.
     pub now: Option<Track>,
     pub status: Status,
@@ -292,6 +311,7 @@ impl App {
             next_token: 0,
             pending_play: None,
             queued_next: None,
+            waiting: None,
             now: None,
             status: Status::default(),
             volume: 1.0,
@@ -421,6 +441,14 @@ impl App {
     pub fn refresh_home(&mut self) {
         self.home = Some(Loaded::Loading);
         self.backend.send(Request::Home);
+    }
+
+    /// The library's playlist of favourite songs, when there is one.
+    pub fn favourites(&self) -> Option<ItemId> {
+        self.playlists
+            .iter()
+            .find(|p| p.favourites)
+            .map(|p| p.id.clone())
     }
 
     pub fn playlist(&self, id: &ItemId) -> Option<&Playlist> {
@@ -674,6 +702,100 @@ impl App {
             .set_volume(if self.muted { 0.0 } else { self.volume });
     }
 
+    /// Put `tracks` in the queue: instead of it, after the current track, or
+    /// at the end. With nothing in the queue, they play now.
+    pub fn enqueue(&mut self, tracks: Vec<Track>, how: Enqueue, now: f64) {
+        let Some(first) = tracks.first().map(|t| t.title.clone()) else {
+            return;
+        };
+        let count = tracks.len();
+        if how == Enqueue::Now || self.queue.current().is_none() {
+            self.play_list(tracks, 0);
+            return;
+        }
+        let was_last = self.queue.upcoming_len() == 0;
+        match how {
+            Enqueue::Next => {
+                // Each goes in right after the current track, so the last first.
+                for track in tracks.into_iter().rev() {
+                    self.queue.add_next(track);
+                }
+            }
+            _ => {
+                for track in tracks {
+                    self.queue.add_last(track);
+                }
+            }
+        }
+        if how == Enqueue::Next || was_last {
+            self.prefetch_next();
+        }
+        let message = match (how, count) {
+            (Enqueue::Next, 1) => format!("“{first}” plays next"),
+            (Enqueue::Next, n) => format!("{n} songs play next"),
+            (_, 1) => format!("“{first}” added to the queue"),
+            (_, n) => format!("{n} songs added to the queue"),
+        };
+        self.notify(message, now);
+    }
+
+    /// Queue an album, fetching its tracks first if need be.
+    pub fn enqueue_album(&mut self, id: ItemId, how: Enqueue, now: f64) {
+        if let Some(Loaded::Ready((_, tracks))) = self.albums.get(&id) {
+            let tracks = tracks.to_vec();
+            self.enqueue(tracks, how, now);
+            return;
+        }
+        if !matches!(self.albums.get(&id), Some(Loaded::Loading)) {
+            self.albums.insert(id.clone(), Loaded::Loading);
+            self.backend.send(Request::Album(id.clone()));
+        }
+        self.waiting = Some((Waiting::Album(id), how));
+    }
+
+    /// Queue a playlist, fetching its tracks first if need be.
+    pub fn enqueue_playlist(&mut self, playlist: &Playlist, how: Enqueue, now: f64) {
+        self.other_playlists
+            .entry(playlist.id.clone())
+            .or_insert_with(|| playlist.clone());
+        let id = playlist.id.clone();
+        if let Some(entry) = self.playlist_tracks.get(&id)
+            && entry.done
+        {
+            let tracks = entry.tracks.to_vec();
+            self.enqueue(tracks, how, now);
+            return;
+        }
+        if !self.playlist_tracks.contains_key(&id) {
+            self.playlist_tracks
+                .insert(id.clone(), PlaylistTracks::default());
+            self.backend.send(Request::Playlist(id.clone()));
+        }
+        self.waiting = Some((Waiting::Playlist(id), how));
+    }
+
+    /// Queue the album or playlist that was waiting, once its tracks are in.
+    fn queue_waiting(&mut self, now: f64) {
+        let tracks = match &self.waiting {
+            Some((Waiting::Album(id), _)) => match self.albums.get(id) {
+                Some(Loaded::Ready((_, tracks))) => Some(tracks.to_vec()),
+                Some(Loaded::Failed(_)) => Some(Vec::new()),
+                _ => None,
+            },
+            Some((Waiting::Playlist(id), _)) => self
+                .playlist_tracks
+                .get(id)
+                .filter(|p| p.done)
+                .map(|p| p.tracks.to_vec()),
+            None => None,
+        };
+        if let Some(tracks) = tracks
+            && let Some((_, how)) = self.waiting.take()
+        {
+            self.enqueue(tracks, how, now);
+        }
+    }
+
     /// Play the `k`-th upcoming track now.
     pub fn jump_to(&mut self, k: usize) {
         if k < self.queue.upcoming_len() {
@@ -755,7 +877,17 @@ impl App {
                     self.songs.extend(tracks);
                     self.songs_done = done;
                 }
-                Reply::Playlists(playlists) => self.playlists = playlists,
+                Reply::Playlists(playlists) => {
+                    self.playlists = playlists;
+                    // Favourite Songs was opened before the library said which
+                    // playlist it is.
+                    if self.page == Page::Favourites
+                        && let Some(id) = self.favourites()
+                    {
+                        self.page = Page::Playlist(id);
+                        self.arrived();
+                    }
+                }
                 Reply::LibraryAlbums { albums, done } => self.library_albums.extend(albums, done),
                 Reply::LibraryArtists { artists, done } => {
                     self.library_artists.extend(artists, done)
@@ -863,6 +995,9 @@ impl App {
             }
         }
         self.status = self.player.status();
+        if self.waiting.is_some() {
+            self.queue_waiting(now);
+        }
     }
 }
 

@@ -145,12 +145,23 @@ fn strip_tags(s: &str) -> String {
     out.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+/// A library playlist the user can neither edit nor delete is the one Apple
+/// keeps of their favourite songs; it is named in the storefront's language
+/// ("Morceaux préférés"), so the app names it in its own.
 pub fn playlist(playlist: types::Playlist) -> Playlist {
     let attrs = playlist.attributes.unwrap_or_default();
+    let favourites = playlist.id.starts_with("p.")
+        && attrs.can_edit == Some(false)
+        && attrs.can_delete == Some(false);
     Playlist {
         id: id(playlist.id),
         artwork: artwork(attrs.artwork.as_ref()),
-        name: attrs.name,
+        name: if favourites {
+            "Favourite Songs".into()
+        } else {
+            attrs.name
+        },
+        favourites,
         description: attrs.description.and_then(|d| d.standard),
         curator: attrs.curator_name,
         track_count: None,

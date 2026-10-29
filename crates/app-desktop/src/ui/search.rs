@@ -11,7 +11,7 @@ use crate::app::{App, Loaded, Page, SearchScope};
 use crate::fonts::{Weight, font};
 use crate::theme::Theme;
 
-use super::grid::{ShelfCard, cover_shelf};
+use super::grid::{CardClick, ShelfCard, cover_shelf};
 use super::songs::source_chips;
 use super::tracks::{self, Columns, RowAction, RowState};
 use super::{artwork, glow, paint_text, text};
@@ -452,6 +452,10 @@ fn song_list(app: &mut App, ui: &mut Ui, theme: &Theme, area: Rect, top: f32, so
                 app.play_list(songs.to_vec(), position);
             }
             RowAction::OpenAlbum(id) => app.go(Page::Album(id)),
+            RowAction::Enqueue(how) => {
+                let track = track.clone();
+                app.enqueue(vec![track], how, ui.input(|i| i.time));
+            }
         }
     }
 }
@@ -477,7 +481,25 @@ fn shelf(
         })
         .collect();
     let id = Id::unique(("search-shelf", title, query));
-    if let Some(i) = cover_shelf(ui, theme, at, width, title, &items, CARD, id) {
-        open(app, cards[i].open.clone(), query);
+    let Some((i, click)) = cover_shelf(ui, theme, at, width, title, &items, CARD, id) else {
+        return;
+    };
+    let how = match click {
+        CardClick::Open => return open(app, cards[i].open.clone(), query),
+        CardClick::Enqueue(how) => how,
+    };
+    let now = ui.input(|i| i.time);
+    match &cards[i].open {
+        Open::Album(id) => app.enqueue_album(id.clone(), how, now),
+        Open::Playlist(k) => {
+            let playlist = match app.search_results(query) {
+                Some(Loaded::Ready(r)) => filtered(r, app.search_source).playlists.get(*k).cloned(),
+                _ => None,
+            };
+            if let Some(playlist) = playlist {
+                app.enqueue_playlist(&playlist, how, now);
+            }
+        }
+        Open::Artist(_) => {}
     }
 }

@@ -111,6 +111,9 @@ pub struct PlaylistAttributes {
     pub description: Option<Description>,
     pub artwork: Option<Artwork>,
     pub curator_name: Option<String>,
+    /// Library playlists: false for those Apple keeps itself.
+    pub can_edit: Option<bool>,
+    pub can_delete: Option<bool>,
 }
 
 #[derive(Debug, Default, Deserialize)]

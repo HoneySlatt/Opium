@@ -266,6 +266,10 @@ fn page(
                         app.play_list(tracks.to_vec(), position);
                     }
                     RowAction::OpenAlbum(id) => app.go(Page::Album(id)),
+                    RowAction::Enqueue(how) => {
+                        let track = track.clone();
+                        app.enqueue(vec![track], how, ui.input(|i| i.time));
+                    }
                 }
             }
             if let Some(length) = total_length(&tracks) {

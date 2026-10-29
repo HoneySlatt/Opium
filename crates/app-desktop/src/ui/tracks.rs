@@ -4,12 +4,13 @@
 use egui::{Id, Rect, Sense, Stroke, Ui, pos2, vec2};
 use music_core::model::{ItemId, ProviderKind, Track};
 
-use crate::app::SortKey;
+use crate::app::{Enqueue, SortKey};
 use crate::color::alpha;
 use crate::fonts::{Weight, font};
 use crate::icons;
 use crate::theme::Theme;
 
+use super::menu::TrackChoice;
 use super::{
     artwork, explicit_badge, format_time, paint_icon, paint_text, quality_label, quality_tag, text,
     thumb_url,
@@ -188,6 +189,8 @@ pub enum RowAction {
     Select,
     Play,
     OpenAlbum(ItemId),
+    /// From the right-click menu: play next, or add to the queue.
+    Enqueue(Enqueue),
 }
 
 /// How a row shows.
@@ -358,6 +361,16 @@ pub fn row(
         paint_text(ui, g, d1, y, egui::Align::Max, theme.muted());
     }
 
+    match super::menu::track_menu(&response, theme, track.album_id.is_some()) {
+        Some(TrackChoice::PlayNext) => action = RowAction::Enqueue(Enqueue::Next),
+        Some(TrackChoice::AddToQueue) => action = RowAction::Enqueue(Enqueue::Last),
+        Some(TrackChoice::GoToAlbum) => {
+            if let Some(album) = &track.album_id {
+                action = RowAction::OpenAlbum(album.clone());
+            }
+        }
+        None => {}
+    }
     if matches!(action, RowAction::None) {
         if response.double_clicked() {
             action = RowAction::Play;
