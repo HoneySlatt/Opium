@@ -1077,6 +1077,22 @@ impl App {
                     self.library_songs.remove(&track.id);
                     // The Songs list rebuilds its order when its count changes.
                     self.songs.retain(|t| t.id != track.id);
+                    // Out of the library is out of its playlists and albums too:
+                    // the pages already loaded drop it at once.
+                    let gone = |t: &Track| t.library_id.as_ref() == Some(&library_id);
+                    for entry in self.playlist_tracks.values_mut() {
+                        if entry.tracks.iter().any(gone) {
+                            Arc::make_mut(&mut entry.tracks).retain(|t| !gone(t));
+                        }
+                    }
+                    for album in self.albums.values_mut() {
+                        if let Loaded::Ready((_, tracks)) = album
+                            && tracks.iter().any(gone)
+                        {
+                            Arc::make_mut(tracks).retain(|t| !gone(t));
+                        }
+                    }
+                    self.favourite_songs.remove(&track.id);
                     self.backend.send(Request::RemoveFromLibrary(library_id));
                 }
             }
