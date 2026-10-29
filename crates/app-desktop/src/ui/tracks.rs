@@ -225,8 +225,6 @@ pub fn row(
         Some(alpha(theme.accent, 0.16))
     } else if hovered {
         Some(theme.hover())
-    } else if state.position % 2 == 1 {
-        Some(theme.text_a(0.025))
     } else {
         None
     };

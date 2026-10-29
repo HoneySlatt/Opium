@@ -28,8 +28,6 @@ pub fn show(app: &mut App, ui: &mut Ui, collapsed: bool) {
         .show(&mut list, |ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
             ui.add_space(0.0);
-            // Apple's own playlist of favourites, once the library says which.
-            let favourites = app.favourites().map_or(Page::Favourites, Page::Playlist);
             let mut row = |ui: &mut Ui, page: Page, icon: Icon, label: &str| {
                 let active = app.page == page;
                 if nav_item(ui, &theme, Some(icon), None, label, active, collapsed, &NAV).clicked()
@@ -46,7 +44,30 @@ pub fn show(app: &mut App, ui: &mut Ui, collapsed: bool) {
             row(ui, Page::Albums, icons::DISC, "Albums");
             row(ui, Page::Artists, icons::MIC, "Artists");
             section(ui, &theme, "Playlists", icons::PLUS, collapsed);
-            row(ui, favourites, icons::STAR, "Favourite Songs");
+            // Apple's own playlist of favourites, once the library says which,
+            // drawn like the other playlists with Apple's cover for it.
+            let (favourites, art) = match app.playlists.iter().find(|p| p.favourites) {
+                Some(p) => (
+                    Page::Playlist(p.id.clone()),
+                    p.artwork.as_ref().map(|a| a.url(120)),
+                ),
+                None => (Page::Favourites, None),
+            };
+            let active = app.page == favourites;
+            if nav_item(
+                ui,
+                &theme,
+                None,
+                Some(art),
+                "Favourite Songs",
+                active,
+                collapsed,
+                &PLAYLIST,
+            )
+            .clicked()
+            {
+                app.go(favourites);
+            }
             for i in 0..app.playlists.len() {
                 let playlist = &app.playlists[i];
                 if playlist.favourites {
