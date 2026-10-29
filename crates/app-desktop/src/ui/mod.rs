@@ -1,6 +1,7 @@
 //! The window: sidebar, page, top bar and player bar, after `design/…/DESIGN.md`.
 
 mod detail;
+mod drawer;
 mod player_bar;
 mod sidebar;
 mod songs;
@@ -46,6 +47,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 .vline(main.left(), main.y_range(), Stroke::new(1.0, theme.line()));
             let scrolled = page(app, ui, narrow);
             top_bar(app, ui, main, scrolled);
+            drawer::show(app, ui, main);
             player_bar::show(app, ui, main);
             toast(app, ui, main);
         });
@@ -199,14 +201,45 @@ fn top_bar(app: &mut App, ui: &mut Ui, main: Rect, scrolled: f32) {
             .layout(egui::Layout::left_to_right(egui::Align::Center)),
     );
     right.spacing_mut().item_spacing.x = 4.0;
-    for (icon, tip) in [
-        (icons::LYRICS, "Lyrics"),
-        (icons::QUEUE, "Playing next"),
-        (icons::WAVE, "Audio output"),
-    ] {
-        icon_button(&mut right, &theme, icon, 32.0, 17.0, theme.subtext0, true)
-            .on_hover_text(format!("{tip} — comes in a later step"));
+    icon_button(
+        &mut right,
+        &theme,
+        icons::LYRICS,
+        32.0,
+        17.0,
+        theme.subtext0,
+        true,
+    )
+    .on_hover_text("Lyrics — comes in a later step");
+    let queue_color = if app.drawer_open {
+        theme.accent
+    } else {
+        theme.subtext0
+    };
+    if icon_button(
+        &mut right,
+        &theme,
+        icons::QUEUE,
+        32.0,
+        17.0,
+        queue_color,
+        true,
+    )
+    .on_hover_text("Playing next")
+    .clicked()
+    {
+        app.drawer_open = !app.drawer_open;
     }
+    icon_button(
+        &mut right,
+        &theme,
+        icons::WAVE,
+        32.0,
+        17.0,
+        theme.subtext0,
+        true,
+    )
+    .on_hover_text("Audio output — comes in a later step");
 }
 
 fn toast(app: &mut App, ui: &mut Ui, main: Rect) {
@@ -254,6 +287,9 @@ fn shortcuts(app: &mut App, ui: &mut Ui) {
     let typing = ui.ctx().egui_wants_keyboard_input();
     if !typing && ui.input(|i| i.key_pressed(egui::Key::Space)) {
         app.toggle_play();
+    }
+    if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+        app.drawer_open = false;
     }
 }
 

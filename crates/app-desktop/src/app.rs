@@ -36,6 +36,17 @@ pub enum Loaded<T> {
     Failed(String),
 }
 
+/// The queue drawer's tabs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DrawerTab {
+    #[default]
+    PlayingNext,
+    History,
+}
+
+/// How many played tracks the History tab keeps.
+const HISTORY: usize = 100;
+
 /// An album and its tracks.
 pub type AlbumPage = (Album, Arc<Vec<Track>>);
 
@@ -104,6 +115,10 @@ pub struct App {
     palettes: HashMap<String, PaletteState>,
     /// The selected row on an album or playlist page.
     pub detail_selected: Option<usize>,
+    pub drawer_open: bool,
+    pub drawer_tab: DrawerTab,
+    /// Tracks that were playing before, most recent last.
+    pub history: Vec<Track>,
     pub queue: Queue,
     tracks: HashMap<Token, Track>,
     next_token: Token,
@@ -160,6 +175,8 @@ impl App {
             playlist_tracks: HashMap::new(),
             palettes: HashMap::new(),
             detail_selected: None,
+            drawer_tab: DrawerTab::default(),
+            history: Vec::new(),
             queue: Queue::new(),
             tracks: HashMap::new(),
             next_token: 0,
@@ -170,6 +187,7 @@ impl App {
             volume: 1.0,
             muted: false,
             toast: None,
+            drawer_open: std::env::var_os("MUSIC_SCREENSHOT_DRAWER").is_some(),
             screenshot: crate::screenshot::Screenshot::from_env(),
             settings,
             theme_changed,
@@ -369,6 +387,26 @@ impl App {
             .set_volume(if self.muted { 0.0 } else { self.volume });
     }
 
+    /// Play the `k`-th upcoming track now.
+    pub fn jump_to(&mut self, k: usize) {
+        if k < self.queue.upcoming_len() {
+            self.queue.jump(k);
+            self.start_current();
+        }
+    }
+
+    pub fn remove_upcoming(&mut self, k: usize) {
+        self.queue.remove_upcoming(k);
+        if k == 0 {
+            self.prefetch_next();
+        }
+    }
+
+    pub fn clear_upcoming(&mut self) {
+        self.queue.clear_upcoming();
+        self.prefetch_next();
+    }
+
     pub fn toggle_shuffle(&mut self) {
         self.queue.set_shuffle(!self.queue.shuffle());
         self.prefetch_next();
@@ -466,7 +504,16 @@ impl App {
                         self.queue.track_finished();
                         self.queued_next = None;
                     }
-                    self.now = self.tracks.get(&token).cloned();
+                    let started = self.tracks.get(&token).cloned();
+                    if let Some(previous) = self.now.take()
+                        && started.as_ref().is_none_or(|s| s.id != previous.id)
+                    {
+                        self.history.push(previous);
+                        if self.history.len() > HISTORY {
+                            self.history.remove(0);
+                        }
+                    }
+                    self.now = started;
                     let (pending, queued) = (self.pending_play, self.queued_next);
                     self.tracks
                         .retain(|t, _| *t == token || Some(*t) == pending || Some(*t) == queued);
@@ -530,11 +577,6 @@ impl eframe::App for App {
         let now = ui.input(|i| i.time);
         self.pump(now);
         ui::show(self, ui);
-        let row = self
-            .screenshot
-            .as_mut()
-            .and_then(|s| s.play_row(!self.songs.is_empty()))
-            .filter(|&row| row < self.songs_view.order.len());
         if let Some(page) = self
             .screenshot
             .as_mut()
@@ -542,14 +584,28 @@ impl eframe::App for App {
         {
             self.go(page);
         }
-        if let Some(row) = row {
-            let tracks = self
+        // Play a row of the open playlist, or of Songs, once it has loaded.
+        let shown: Vec<Track> = match &self.page {
+            Page::Playlist(id) => self
+                .playlist_tracks
+                .get(id)
+                .filter(|p| p.done)
+                .map(|p| p.tracks.to_vec())
+                .unwrap_or_default(),
+            _ => self
                 .songs_view
                 .order
                 .iter()
                 .map(|&i| self.songs[i].clone())
-                .collect();
-            self.play_list(tracks, row);
+                .collect(),
+        };
+        if let Some(row) = self
+            .screenshot
+            .as_mut()
+            .and_then(|s| s.play_row(!shown.is_empty()))
+            .filter(|&row| row < shown.len())
+        {
+            self.play_list(shown, row);
         }
         if let Some(screenshot) = &mut self.screenshot {
             screenshot.update(ui.ctx());

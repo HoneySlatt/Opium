@@ -99,6 +99,45 @@ impl Queue {
         self.tracks.push(track);
     }
 
+    /// How many tracks follow the current one.
+    pub fn upcoming_len(&self) -> usize {
+        self.order.len().saturating_sub(self.pos + 1)
+    }
+
+    /// Make the `k`-th upcoming track current; the ones before it are skipped.
+    pub fn jump(&mut self, k: usize) -> Option<&Track> {
+        if k < self.upcoming_len() {
+            self.pos += 1 + k;
+        }
+        self.current()
+    }
+
+    /// Take the `k`-th upcoming track out of the queue.
+    pub fn remove_upcoming(&mut self, k: usize) {
+        if k < self.upcoming_len() {
+            let index = self.order.remove(self.pos + 1 + k);
+            self.forget(index);
+        }
+    }
+
+    /// Take every upcoming track out, keeping what has played.
+    pub fn clear_upcoming(&mut self) {
+        while self.upcoming_len() > 0 {
+            self.remove_upcoming(self.upcoming_len() - 1);
+        }
+    }
+
+    /// Drop `tracks[index]`, which `order` no longer refers to, and shift the
+    /// indices after it, so turning shuffle off can't bring it back.
+    fn forget(&mut self, index: usize) {
+        self.tracks.remove(index);
+        for i in &mut self.order {
+            if *i > index {
+                *i -= 1;
+            }
+        }
+    }
+
     pub fn shuffle(&self) -> bool {
         self.shuffle
     }
@@ -202,6 +241,36 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn jumping_skips_to_an_upcoming_track() {
+        let mut q = queue_of(5, 1);
+        assert_eq!(number(q.jump(2)), Some(4));
+        assert_eq!(q.upcoming_len(), 0);
+        assert_eq!(number(q.jump(5)), Some(4), "out of range: stays");
+    }
+
+    #[test]
+    fn removed_tracks_stay_gone_even_after_unshuffling() {
+        let mut q = queue_of(5, 0);
+        q.remove_upcoming(1);
+        let upcoming: Vec<u32> = q.upcoming().filter_map(|t| t.track_number).collect();
+        assert_eq!(upcoming, vec![1, 3, 4]);
+        q.set_shuffle(true);
+        q.set_shuffle(false);
+        let upcoming: Vec<u32> = q.upcoming().filter_map(|t| t.track_number).collect();
+        assert_eq!(upcoming, vec![1, 3, 4]);
+        assert_eq!(number(q.current()), Some(0));
+    }
+
+    #[test]
+    fn clearing_keeps_the_current_track() {
+        let mut q = queue_of(4, 1);
+        q.clear_upcoming();
+        assert_eq!(q.upcoming_len(), 0);
+        assert_eq!(number(q.current()), Some(1));
+        assert_eq!(number(q.skip_previous()), Some(0));
     }
 
     #[test]
