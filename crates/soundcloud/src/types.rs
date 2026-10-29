@@ -119,3 +119,10 @@ pub struct Download {
     #[serde(rename = "redirectUri")]
     pub redirect_uri: String,
 }
+
+/// Tokens OAuth issues.
+#[derive(Debug, Deserialize)]
+pub struct Grant {
+    pub access_token: String,
+    pub refresh_token: Option<String>,
+}

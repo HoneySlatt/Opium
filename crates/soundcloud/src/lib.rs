@@ -25,6 +25,8 @@ pub use stream::Audio;
 
 const API: &str = "https://api-v2.soundcloud.com";
 const WEB: &str = "https://soundcloud.com";
+/// Where tokens are issued and renewed.
+const SECURE: &str = "https://secure.soundcloud.com";
 /// As the web player says it is: some of the API turns other clients away.
 const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
 /// Items a page of a list asks for.
@@ -155,8 +157,10 @@ impl SoundCloud {
         }
     }
 
-    /// Renew the token with the refresh token, as the web player does: its
-    /// server hands both back as cookies. A refresh token serves once.
+    /// Renew the token with the refresh token, as the web player's server
+    /// does: OAuth's `refresh_token` grant, for the app the token was issued
+    /// to (its `client_id` claim). A refresh token serves once; both come
+    /// back new.
     async fn renew(&self) -> Result<()> {
         let tokens = self
             .tokens
@@ -166,42 +170,31 @@ impl SoundCloud {
         let Some(refresh) = &tokens.refresh else {
             return Err(Error::NotSignedIn);
         };
+        let client = jwt_client_id(&tokens.oauth).unwrap_or_else(|| self.client_id());
         let resp = self
             .http
-            .post(format!("{WEB}/api/refresh-token"))
-            .header(
-                "Cookie",
-                format!(
-                    "oauth_token={}; oauth_refresh_token={refresh}",
-                    tokens.oauth
-                ),
-            )
+            .post(format!("{SECURE}/oauth/token"))
+            .form(&[
+                ("client_id", client.as_str()),
+                ("grant_type", "refresh_token"),
+                ("refresh_token", refresh.as_str()),
+            ])
             .header("Origin", WEB)
             .header("Referer", format!("{WEB}/"))
             .send()
             .await
             .map_err(|e| Error::Network(format!("SoundCloud sign-in: {e}")))?;
-        let mut renewed = tokens.clone();
-        for cookie in resp.headers().get_all("set-cookie") {
-            let Some((name, value)) = cookie
-                .to_str()
-                .ok()
-                .and_then(|c| c.split(';').next())
-                .and_then(|c| c.split_once('='))
-            else {
-                continue;
-            };
-            match name.trim() {
-                "oauth_token" if !value.is_empty() => renewed.oauth = value.to_owned(),
-                "oauth_refresh_token" if !value.is_empty() => {
-                    renewed.refresh = Some(value.to_owned());
-                }
-                _ => {}
-            }
-        }
-        if renewed.oauth == tokens.oauth {
+        if !resp.status().is_success() {
             return Err(Error::NotSignedIn);
         }
+        let grant: types::Grant = resp
+            .json()
+            .await
+            .map_err(|e| Error::Protocol(format!("SoundCloud sign-in: {e}")))?;
+        let renewed = Tokens {
+            oauth: grant.access_token,
+            refresh: grant.refresh_token.or(tokens.refresh),
+        };
         (self.on_tokens)(&renewed);
         *self.tokens.lock().unwrap_or_else(|e| e.into_inner()) = renewed;
         Ok(())
@@ -290,6 +283,17 @@ impl SoundCloud {
         playlist.tracks.retain(|t| t.title.is_some());
         Ok(playlist)
     }
+}
+
+/// The app a JWT token was issued to: its `client_id` claim.
+fn jwt_client_id(token: &str) -> Option<String> {
+    use base64::Engine;
+    let payload = token.split('.').nth(1)?;
+    let json = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(payload.trim_end_matches('='))
+        .ok()?;
+    let claims: serde_json::Value = serde_json::from_slice(&json).ok()?;
+    claims["client_id"].as_str().map(str::to_owned)
 }
 
 /// Where a list of playlists goes on: the user's own first, then the ones
@@ -467,5 +471,22 @@ impl Provider for SoundCloud {
             items: playlist.tracks.into_iter().map(convert::track).collect(),
             next: None,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_token_names_the_app_it_was_issued_to() {
+        use base64::Engine;
+        let claims = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .encode(br#"{"client_id":"web-app","sub":"1"}"#);
+        assert_eq!(
+            jwt_client_id(&format!("eyJhbGciOiJIUzI1NiJ9.{claims}.sig")).as_deref(),
+            Some("web-app")
+        );
+        assert_eq!(jwt_client_id("2-12345-old-style"), None);
     }
 }
