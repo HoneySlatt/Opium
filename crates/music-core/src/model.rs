@@ -160,6 +160,10 @@ pub struct Playlist {
     pub favourites: bool,
     pub artwork: Option<Artwork>,
     pub track_count: Option<u32>,
+    /// A library playlist's catalog id, which favourites name.
+    pub catalog_id: Option<ItemId>,
+    /// Whether the user has it in their favourites, when the service said.
+    pub in_favourites: Option<bool>,
 }
 
 /// A row of the home page.

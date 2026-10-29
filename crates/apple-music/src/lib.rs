@@ -228,8 +228,9 @@ impl Provider for AppleMusic {
 
     async fn library_playlists(&self, cursor: Option<&Cursor>) -> Result<Page<Playlist>> {
         // With the tags, which mark Apple's playlist of favourite songs.
-        let first =
-            format!("/v1/me/library/playlists?limit={PAGE}&extend%5Blibrary-playlists%5D=tags");
+        let first = format!(
+            "/v1/me/library/playlists?limit={PAGE}&extend%5Blibrary-playlists%5D=tags,inFavorites"
+        );
         self.page(&first, cursor, convert::playlist).await
     }
 

@@ -507,6 +507,18 @@ impl App {
         album.catalog_id.clone().unwrap_or_else(|| album.id.clone())
     }
 
+    /// The id favourites know a playlist by: a catalog one (`pl.…`). The
+    /// user's own playlists have one too; Apple's Favourite Songs has none.
+    pub fn playlist_favourite_id(playlist: &Playlist) -> Option<ItemId> {
+        playlist.catalog_id.clone().or_else(|| {
+            playlist
+                .id
+                .id
+                .starts_with("pl.")
+                .then(|| playlist.id.clone())
+        })
+    }
+
     /// The library's playlist of favourite songs, when there is one.
     pub fn favourites(&self) -> Option<ItemId> {
         self.playlists
@@ -942,6 +954,14 @@ impl App {
                     self.songs_done = done;
                 }
                 Reply::Playlists(playlists) => {
+                    for playlist in &playlists {
+                        if let (Some(id), Some(on)) = (
+                            Self::playlist_favourite_id(playlist),
+                            playlist.in_favourites,
+                        ) {
+                            self.favourites_known.entry(id).or_insert(on);
+                        }
+                    }
                     self.playlists = playlists;
                     // Which songs are favourites: those in Apple's playlist of them.
                     if let Some(id) = self.favourites()

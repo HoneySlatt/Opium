@@ -118,10 +118,10 @@ pub fn playlist(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
         meta,
         description: playlist.description.clone(),
         art: playlist.artwork.as_ref().map(|a| a.url(600)),
-        // Catalog playlists can be favourites; the user's own are theirs already.
-        favourite: playlist.id.id.starts_with("pl.").then(|| {
-            let on = app.is_favourite(FavouriteKind::Playlist, &playlist.id);
-            (FavouriteKind::Playlist, playlist.id.clone(), on)
+        // Any playlist with a catalog id can be a favourite, the user's own too.
+        favourite: App::playlist_favourite_id(&playlist).map(|id| {
+            let on = app.is_favourite(FavouriteKind::Playlist, &id);
+            (FavouriteKind::Playlist, id, on)
         }),
     };
     let listing = Listing {

@@ -116,6 +116,16 @@ pub struct PlaylistAttributes {
     /// With `extend[library-playlists]=tags`: `favorited` marks the playlist
     /// Apple keeps of the user's favourite songs, and nothing else.
     pub tags: Option<Vec<String>>,
+    /// With `extend=inFavorites`.
+    pub in_favorites: Option<bool>,
+    pub play_params: Option<PlaylistPlayParams>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct PlaylistPlayParams {
+    /// A library playlist's catalog id (`pl.u-…`); Apple's own playlists have none.
+    pub global_id: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]

@@ -168,6 +168,8 @@ pub fn playlist(playlist: types::Playlist) -> Playlist {
         description: attrs.description.and_then(|d| d.standard),
         curator: attrs.curator_name,
         track_count: None,
+        catalog_id: attrs.play_params.and_then(|p| p.global_id).map(id),
+        in_favourites: attrs.in_favorites,
     }
 }
 
