@@ -1,0 +1,59 @@
+//! A development aid: `MUSIC_SCREENSHOT=out.png [MUSIC_SCREENSHOT_AFTER=seconds]
+//! [MUSIC_SCREENSHOT_PLAY=row]` saves the window once it has had time to load,
+//! then quits, optionally playing a Songs row first. Only the app's own window is
+//! captured.
+
+use std::path::PathBuf;
+
+pub struct Screenshot {
+    path: PathBuf,
+    after: f64,
+    requested: bool,
+    play: Option<usize>,
+}
+
+impl Screenshot {
+    pub fn from_env() -> Option<Self> {
+        let path = std::env::var_os("MUSIC_SCREENSHOT")?.into();
+        let after = std::env::var("MUSIC_SCREENSHOT_AFTER")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(8.0);
+        let play = std::env::var("MUSIC_SCREENSHOT_PLAY")
+            .ok()
+            .and_then(|s| s.parse().ok());
+        Some(Self {
+            path,
+            after,
+            requested: false,
+            play,
+        })
+    }
+
+    /// The Songs row to play, once, when the library has loaded.
+    pub fn play_row(&mut self, loaded: bool) -> Option<usize> {
+        if loaded { self.play.take() } else { None }
+    }
+
+    pub fn update(&mut self, ctx: &egui::Context) {
+        if self.requested {
+            return;
+        }
+        if ctx.input(|i| i.time) < self.after {
+            ctx.request_repaint_after(std::time::Duration::from_millis(200));
+            return;
+        }
+        self.requested = true;
+        let (path, closer) = (self.path.clone(), ctx.clone());
+        ctx.request_screenshot(move |image| {
+            let [w, h] = image.size;
+            let pixels: Vec<u8> = image.pixels.iter().flat_map(|p| p.to_array()).collect();
+            match image::save_buffer(&path, &pixels, w as u32, h as u32, image::ColorType::Rgba8) {
+                Ok(()) => eprintln!("screenshot saved to {}", path.display()),
+                Err(e) => eprintln!("screenshot failed: {e}"),
+            }
+            closer.send_viewport_cmd(egui::ViewportCommand::Close);
+            closer.request_repaint();
+        });
+    }
+}

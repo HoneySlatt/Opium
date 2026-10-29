@@ -13,6 +13,13 @@
         system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
+          # Loaded at run time by winit and wgpu.
+          runtimeLibs = with pkgs; [
+            wayland
+            libxkbcommon
+            vulkan-loader
+            libGL
+          ];
         in
         {
           default = pkgs.mkShell {
@@ -25,6 +32,7 @@
               pipewire
               rustPlatform.bindgenHook
             ];
+            LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath runtimeLibs;
           };
         }
       );

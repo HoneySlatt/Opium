@@ -75,6 +75,18 @@ impl Queue {
         self.skip_next()
     }
 
+    /// What [`track_finished`](Self::track_finished) would move to, without
+    /// moving: the track to have ready before the current one ends.
+    pub fn peek_finished(&self) -> Option<&Track> {
+        let next = match self.repeat {
+            Repeat::One => self.pos,
+            _ if self.pos + 1 < self.order.len() => self.pos + 1,
+            Repeat::All => 0,
+            Repeat::Off => return None,
+        };
+        self.order.get(next).map(|&i| &self.tracks[i])
+    }
+
     /// Play `track` right after the current one.
     pub fn add_next(&mut self, track: Track) {
         let at = (self.pos + 1).min(self.order.len());
@@ -174,6 +186,22 @@ mod tests {
         q.set_repeat(Repeat::One);
         assert_eq!(number(q.track_finished()), Some(0));
         assert_eq!(number(q.skip_next()), Some(1));
+    }
+
+    #[test]
+    fn peeking_agrees_with_what_track_finished_does() {
+        for repeat in [Repeat::Off, Repeat::All, Repeat::One] {
+            for start in 0..3 {
+                let mut q = queue_of(3, start);
+                q.set_repeat(repeat);
+                let peeked = number(q.peek_finished());
+                assert_eq!(
+                    peeked,
+                    number(q.track_finished()),
+                    "{repeat:?} from {start}"
+                );
+            }
+        }
     }
 
     #[test]

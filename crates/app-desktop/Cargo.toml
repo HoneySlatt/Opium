@@ -1,0 +1,22 @@
+[package]
+name = "app-desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "music"
+path = "src/main.rs"
+
+[dependencies]
+music-core = { path = "../music-core" }
+apple-music = { path = "../apple-music" }
+player = { path = "../player" }
+widevine = { path = "../widevine" }
+eframe = "0.37.0"
+egui_extras = { version = "0.37.0", features = ["svg", "image", "http"] }
+image = { version = "0.25.10", default-features = false, features = ["jpeg", "png"] }
+tokio = { version = "1.54.1", features = ["rt-multi-thread"] }
+serde = { version = "1.0.229", features = ["derive"] }
+toml = "1.1.8"
+egui = "0.37"
