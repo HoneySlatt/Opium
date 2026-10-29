@@ -95,6 +95,13 @@ pub struct Album {
     pub artists: Vec<String>,
     /// The main artist, when the service says which.
     pub artist_id: Option<ItemId>,
+    /// The main artist's photo, when it came along.
+    pub artist_artwork: Option<Artwork>,
+    /// The release date, `YYYY-MM-DD`.
+    pub released: Option<String>,
+    pub genre: Option<String>,
+    /// The service's words about the album.
+    pub description: Option<String>,
     pub year: Option<u16>,
     pub artwork: Option<Artwork>,
     pub track_count: Option<u32>,
@@ -119,6 +126,8 @@ pub enum LibraryItem {
 pub struct ArtistDetail {
     pub artist: Artist,
     pub top_songs: Vec<Track>,
+    /// The newest release, when it is recent.
+    pub latest: Option<Album>,
     pub albums: Vec<Album>,
     pub singles: Vec<Album>,
 }

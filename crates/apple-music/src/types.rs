@@ -83,6 +83,15 @@ pub struct AlbumAttributes {
     pub artwork: Option<Artwork>,
     pub release_date: Option<String>,
     pub track_count: Option<u32>,
+    pub genre_names: Vec<String>,
+    pub editorial_notes: Option<EditorialNotes>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct EditorialNotes {
+    pub short: Option<String>,
+    pub standard: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -127,6 +136,8 @@ pub struct ArtistViews {
     pub top_songs: Option<Response<Song>>,
     #[serde(rename = "full-albums")]
     pub full_albums: Option<Response<Album>>,
+    #[serde(rename = "latest-release")]
+    pub latest_release: Option<Response<Album>>,
     pub singles: Option<Response<Album>>,
 }
 

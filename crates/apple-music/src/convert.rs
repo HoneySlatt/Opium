@@ -74,15 +74,39 @@ fn album_in_url(url: &str) -> Option<String> {
 
 pub fn album(album: types::Album) -> Album {
     let attrs = album.attributes.unwrap_or_default();
-    let artist_id = album
+    let artist = album
         .relationships
         .as_ref()
         .and_then(|r| r.artists.as_ref())
-        .and_then(|a| a.data.first())
-        .map(|a| id(a.id.clone()));
+        .and_then(|a| a.data.first());
+    // "Music" is Apple's catch-all genre, listed beside the real one.
+    let genre = attrs
+        .genre_names
+        .iter()
+        .find(|g| !matches!(g.as_str(), "Music" | "Musique"))
+        .cloned();
+    let description = attrs
+        .editorial_notes
+        .as_ref()
+        // The longer notes, as Cider shows them, cut to three lines by the app.
+        .and_then(|n| {
+            n.standard
+                .as_deref()
+                .map(strip_tags)
+                .or_else(|| n.short.clone())
+        })
+        .filter(|d| !d.trim().is_empty());
     Album {
         id: id(album.id),
-        artist_id,
+        artist_id: artist.map(|a| id(a.id.clone())),
+        artist_artwork: artwork(
+            artist
+                .and_then(|a| a.attributes.as_ref())
+                .and_then(|a| a.artwork.as_ref()),
+        ),
+        released: attrs.release_date.clone(),
+        genre,
+        description,
         artwork: artwork(attrs.artwork.as_ref()),
         title: attrs.name,
         artists: vec![attrs.artist_name],
@@ -93,6 +117,24 @@ pub fn album(album: types::Album) -> Album {
             .and_then(|y| y.parse().ok()),
         track_count: attrs.track_count,
     }
+}
+
+/// Apple's longer notes carry a little HTML (`<i>`, `<b>`, `<br />`).
+fn strip_tags(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut in_tag = false;
+    for c in s.chars() {
+        match c {
+            '<' => in_tag = true,
+            '>' => {
+                in_tag = false;
+                out.push(' ');
+            }
+            _ if !in_tag => out.push(c),
+            _ => {}
+        }
+    }
+    out.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 pub fn playlist(playlist: types::Playlist) -> Playlist {
@@ -158,6 +200,11 @@ pub fn artist(artist: types::Artist) -> Artist {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn notes_lose_their_tags() {
+        assert_eq!(strip_tags("A <i>great</i><br />record"), "A great record");
+    }
 
     #[test]
     fn a_song_page_names_its_album() {

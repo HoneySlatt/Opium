@@ -9,13 +9,12 @@ use music_core::model::{Artwork, ItemId, ProviderKind, SearchResults, Track};
 
 use crate::app::{App, Loaded, Page, SearchScope};
 use crate::fonts::{Weight, font};
-use crate::icons;
 use crate::theme::Theme;
 
-use super::grid::{CoverCard, cover_card};
+use super::grid::{ShelfCard, cover_shelf};
 use super::songs::source_chips;
 use super::tracks::{self, Columns, RowAction, RowState};
-use super::{artwork, glow, icon_button, paint_text, text};
+use super::{artwork, glow, paint_text, text};
 
 /// Where the sections start, under the title and the scope switch.
 const BODY_TOP: f32 = 172.0;
@@ -29,8 +28,7 @@ const COLUMN_GAP: f32 = 28.0;
 const SONGS_MIN: f32 = 650.0;
 const SONGS_SHOWN: usize = 6;
 const CARD: f32 = 188.0;
-const CARD_GAP: f32 = 18.0;
-const CARD_HEIGHT: f32 = CARD + 8.0 + 18.0 + 16.0;
+const CARD_HEIGHT: f32 = CARD + super::grid::CARD_TEXT;
 
 /// The best match, shown large.
 enum Top {
@@ -458,15 +456,7 @@ fn song_list(app: &mut App, ui: &mut Ui, theme: &Theme, area: Rect, top: f32, so
     }
 }
 
-/// Where a shelf is scrolled to, and where it is heading.
-#[derive(Clone, Copy, Default)]
-struct ShelfScroll {
-    offset: f32,
-    target: f32,
-}
-
-/// A row of covers that scrolls sideways: with the arrows by its title, or
-/// sideways scrolling over it.
+/// A shelf of covers; a click opens the result.
 #[allow(clippy::too_many_arguments)]
 fn shelf(
     app: &mut App,
@@ -478,61 +468,16 @@ fn shelf(
     cards: &[Card],
     query: &str,
 ) {
-    section_head(ui, theme, at.x, at.y, title);
-    let row = Rect::from_min_size(pos2(at.x, at.y + SECTION_HEAD), vec2(width, CARD_HEIGHT));
-    let content = cards.len() as f32 * (CARD + CARD_GAP) - CARD_GAP;
-    let max = (content - width).max(0.0);
+    let items: Vec<ShelfCard> = cards
+        .iter()
+        .map(|c| ShelfCard {
+            title: c.title.clone(),
+            sub: c.sub.clone(),
+            url: c.art.as_ref().map(|a| a.url(376)),
+        })
+        .collect();
     let id = Id::unique(("search-shelf", title, query));
-    let mut scroll: ShelfScroll = ui.ctx().data(|d| d.get_temp(id)).unwrap_or_default();
-
-    if max > 0.0 {
-        // A page is as many whole covers as fit.
-        let page = ((width + CARD_GAP) / (CARD + CARD_GAP)).floor().max(1.0) * (CARD + CARD_GAP);
-        let arrows = [
-            (icons::LEFT, -page, scroll.target > 0.0),
-            (icons::RIGHT, page, scroll.target < max),
-        ];
-        for (i, (icon, step, enabled)) in arrows.into_iter().enumerate() {
-            let rect = Rect::from_center_size(
-                pos2(at.x + width - 14.0 - (1 - i) as f32 * 30.0, at.y + 11.0),
-                vec2(28.0, 28.0),
-            );
-            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
-            if icon_button(&mut child, theme, icon, 28.0, 16.0, theme.subtext0, enabled).clicked() {
-                scroll.target += step;
-            }
-        }
-        if ui.rect_contains_pointer(row) {
-            scroll.target -= ui.input(|i| i.smooth_scroll_delta.x);
-        }
-    }
-    scroll.target = scroll.target.clamp(0.0, max);
-    let dt = ui.input(|i| i.stable_dt).min(0.1);
-    let step = scroll.target - scroll.offset;
-    scroll.offset += step * (1.0 - (-dt * 12.0).exp());
-    if step.abs() < 0.5 {
-        scroll.offset = scroll.target;
-    } else {
-        ui.ctx().request_repaint();
-    }
-    ui.ctx().data_mut(|d| d.insert_temp(id, scroll));
-
-    let mut row_ui = ui.new_child(egui::UiBuilder::new().max_rect(row));
-    row_ui.set_clip_rect(row.intersect(ui.clip_rect()));
-    for (i, card) in cards.iter().enumerate() {
-        let x = row.left() + i as f32 * (CARD + CARD_GAP) - scroll.offset;
-        if x + CARD < row.left() || x > row.right() {
-            continue;
-        }
-        let art = Rect::from_min_size(pos2(x, row.top()), vec2(CARD, CARD));
-        let cover = CoverCard {
-            url: card.art.as_ref().map(|a| a.url(376)),
-            title: &card.title,
-            sub: &card.sub,
-            round: false,
-        };
-        if cover_card(&row_ui, theme, art, &cover, id.with(i)) {
-            open(app, card.open.clone(), query);
-        }
+    if let Some(i) = cover_shelf(ui, theme, at, width, title, &items, CARD, id) {
+        open(app, cards[i].open.clone(), query);
     }
 }

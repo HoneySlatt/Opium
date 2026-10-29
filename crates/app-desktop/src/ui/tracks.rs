@@ -26,10 +26,12 @@ pub const HEAD_SPACE: f32 = HEAD + 5.0;
 pub struct Columns {
     number: (f32, f32),
     title: (f32, f32),
-    artist: (f32, f32),
+    artist: Option<(f32, f32)>,
     album: Option<(f32, f32)>,
-    source: (f32, f32),
+    source: Option<(f32, f32)>,
     duration: (f32, f32),
+    /// Small artwork before the title; album pages leave it out, as Cider does.
+    thumbs: bool,
 }
 
 impl Columns {
@@ -51,10 +53,37 @@ impl Columns {
         Self {
             number,
             title,
-            artist,
+            artist: Some(artist),
             album,
-            source: take(116.0),
+            source: Some(take(116.0)),
             duration: take(52.0),
+            thumbs: true,
+        }
+    }
+
+    /// An album's tracks, as Cider lists them: number, title, length; the
+    /// artist only when it changes from track to track.
+    pub fn album(left: f32, width: f32, with_artist: bool) -> Self {
+        let gap = 14.0;
+        let fixed = 36.0 + 52.0 + 36.0 + gap * if with_artist { 3.0 } else { 2.0 } + 20.0;
+        let fr = ((width - fixed) / if with_artist { 6.0 } else { 4.0 }).max(0.0);
+        let mut x = left + 10.0;
+        let mut take = |w: f32| {
+            let range = (x, x + w);
+            x += w + gap;
+            range
+        };
+        let number = take(36.0);
+        let title = take((4.0 * fr).max(200.0));
+        let artist = with_artist.then(|| take((2.0 * fr).max(120.0)));
+        Self {
+            number,
+            title,
+            artist,
+            album: None,
+            source: None,
+            duration: take(52.0),
+            thumbs: false,
         }
     }
 }
@@ -72,14 +101,16 @@ pub fn head(
 ) -> Option<SortKey> {
     let y = top + HEAD / 2.0;
     let f = font(11.5, Weight::Medium);
-    let mut heads = vec![
-        (columns.title, "Title", Some(SortKey::Title)),
-        (columns.artist, "Artist", Some(SortKey::Artist)),
-    ];
+    let mut heads = vec![(columns.title, "Title", Some(SortKey::Title))];
+    if let Some(artist) = columns.artist {
+        heads.push((artist, "Artist", Some(SortKey::Artist)));
+    }
     if let Some(album) = columns.album {
         heads.push((album, "Album", Some(SortKey::Album)));
     }
-    heads.push((columns.source, "Source", None));
+    if let Some(source) = columns.source {
+        heads.push((source, "Source", None));
+    }
     let mut clicked = None;
     for ((x0, x1), label, key) in heads {
         let galley = text(ui, label, f.clone(), theme.muted(), x1 - x0);
@@ -236,9 +267,13 @@ pub fn row(
 
     // Artwork, title and the E badge.
     let (t0, t1) = columns.title;
-    let art = Rect::from_min_size(pos2(t0, y - 18.0), vec2(36.0, 36.0));
-    artwork(ui, thumb_url(track), art, 5.0, theme);
-    let tx = art.right() + 12.0;
+    let tx = if columns.thumbs {
+        let art = Rect::from_min_size(pos2(t0, y - 18.0), vec2(36.0, 36.0));
+        artwork(ui, thumb_url(track), art, 5.0, theme);
+        art.right() + 12.0
+    } else {
+        t0
+    };
     let title_color = if state.now { theme.accent } else { theme.text };
     let max = t1 - tx - if track.explicit { 18.0 } else { 0.0 };
     let title = text(
@@ -255,15 +290,16 @@ pub fn row(
     }
 
     // Artist, and the album as a link to its page.
-    let (a0, a1) = columns.artist;
-    let g = text(
-        ui,
-        &track.artists.join(", "),
-        font(13.0, Weight::Regular),
-        theme.subtext0,
-        a1 - a0,
-    );
-    paint_text(ui, g, a0, y, egui::Align::Min, theme.subtext0);
+    if let Some((a0, a1)) = columns.artist {
+        let g = text(
+            ui,
+            &track.artists.join(", "),
+            font(13.0, Weight::Regular),
+            theme.subtext0,
+            a1 - a0,
+        );
+        paint_text(ui, g, a0, y, egui::Align::Min, theme.subtext0);
+    }
     if let Some((c0, c1)) = columns.album {
         let name = track.album.clone().unwrap_or_default();
         let g = text(
@@ -297,15 +333,16 @@ pub fn row(
     }
 
     // Source icon and quality tag.
-    let (s0, _) = columns.source;
-    let icon = match track.id.provider {
-        ProviderKind::AppleMusic => icons::AM,
-        ProviderKind::SoundCloud => icons::CLOUD,
-        ProviderKind::Navidrome => icons::SERVER,
-    };
-    paint_icon(ui, icon, pos2(s0 + 6.5, y), 13.0, theme.muted());
-    if let Some((label, lossless)) = quality_label(track) {
-        quality_tag(ui, theme, &label, lossless, pos2(s0 + 13.0 + 6.0, y));
+    if let Some((s0, _)) = columns.source {
+        let icon = match track.id.provider {
+            ProviderKind::AppleMusic => icons::AM,
+            ProviderKind::SoundCloud => icons::CLOUD,
+            ProviderKind::Navidrome => icons::SERVER,
+        };
+        paint_icon(ui, icon, pos2(s0 + 6.5, y), 13.0, theme.muted());
+        if let Some((label, lossless)) = quality_label(track) {
+            quality_tag(ui, theme, &label, lossless, pos2(s0 + 13.0 + 6.0, y));
+        }
     }
 
     // Duration.

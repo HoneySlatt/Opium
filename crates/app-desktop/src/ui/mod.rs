@@ -503,6 +503,21 @@ pub fn format_time(d: Duration) -> String {
     format!("{}:{:02}", s / 60, s % 60)
 }
 
+/// `2026-03-27` → `MAR 27, 2026`, as Cider dates releases.
+pub fn format_date(iso: &str) -> Option<String> {
+    const MONTHS: [&str; 12] = [
+        "JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC",
+    ];
+    let mut parts = iso.splitn(3, '-');
+    let year = parts.next()?;
+    let month: usize = parts.next()?.parse().ok()?;
+    let day: u32 = parts.next()?.get(..2)?.parse().ok()?;
+    Some(format!(
+        "{} {day}, {year}",
+        MONTHS.get(month.checked_sub(1)?)?
+    ))
+}
+
 /// Artwork from a URL template, as large as needed on this screen.
 pub fn artwork(ui: &Ui, url: Option<String>, rect: Rect, radius: f32, theme: &Theme) {
     ui.painter().rect_filled(rect, radius, theme.surface0);
@@ -603,25 +618,24 @@ pub fn glow(ui: &Ui, theme: &Theme, rect: Rect) {
 /// The Play and Shuffle buttons of a page, from `at`. Returns `Some(shuffle)`
 /// when one was clicked.
 pub fn page_buttons(ui: &mut Ui, theme: &Theme, at: Pos2, salt: &str) -> Option<bool> {
-    let play = Rect::from_min_size(at, vec2(88.0, 36.0));
-    let shuffle = Rect::from_min_size(pos2(play.right() + 10.0, at.y), vec2(107.0, 36.0));
-    if page_button(ui, theme, play, icons::PLAY_FILL, "Play", true, salt) {
+    let play = Rect::from_min_size(at, vec2(112.0, 36.0));
+    let shuffle = Rect::from_min_size(pos2(play.right() + 10.0, at.y), vec2(120.0, 36.0));
+    if page_button(ui, theme, play, icons::PLAY_FILL, "Play", salt) {
         return Some(false);
     }
-    if page_button(ui, theme, shuffle, icons::SHUFFLE, "Shuffle", false, salt) {
+    if page_button(ui, theme, shuffle, icons::SHUFFLE, "Shuffle", salt) {
         return Some(true);
     }
     None
 }
 
-/// A 36 px button: accent-filled for the primary action, else a faint fill.
+/// A 36 px button on a faint fill, as Cider draws Play and Shuffle.
 fn page_button(
     ui: &mut Ui,
     theme: &Theme,
     rect: Rect,
     icon: Icon,
     label: &str,
-    primary: bool,
     salt: &str,
 ) -> bool {
     let response = ui.interact(
@@ -629,17 +643,8 @@ fn page_button(
         egui::Id::unique(("page-button", salt, label)),
         Sense::click(),
     );
-    let (fill, fg) = if primary {
-        let fill = if response.hovered() {
-            crate::color::mix(theme.accent, theme.text, 0.88)
-        } else {
-            theme.accent
-        };
-        (fill, theme.on_accent())
-    } else {
-        let fill = theme.text_a(if response.hovered() { 0.14 } else { 0.09 });
-        (fill, theme.text)
-    };
+    let fill = theme.text_a(if response.hovered() { 0.14 } else { 0.09 });
+    let fg = theme.text;
     let rect = if response.is_pointer_button_down_on() {
         rect.shrink(0.4)
     } else {

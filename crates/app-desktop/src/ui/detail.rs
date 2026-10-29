@@ -1,5 +1,6 @@
-//! Album and playlist pages: a header over a gradient taken from the cover, then
-//! the tracks. The artist page shares the header.
+//! Album and playlist pages, laid out as Cider does: a large cover with the
+//! title, artist, details and notes beside it over the cover's colours, then
+//! the tracks.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -17,33 +18,41 @@ use super::tracks::{self, Columns, RowAction, RowState};
 use super::{Blob, artwork, page_buttons, paint_icon, paint_text, quality_label, text, wash};
 
 /// What the header shows.
-pub(super) struct Header {
-    pub kind: &'static str,
-    pub title: String,
-    pub by: Option<String>,
+struct Header {
+    /// Tells the pages' buttons apart.
+    kind: &'static str,
+    title: String,
+    by: Option<String>,
     /// Where the `by` line leads.
-    pub by_link: Option<ItemId>,
-    pub meta: Vec<(Option<Icon>, String)>,
-    pub art: Option<String>,
-    /// Round artwork, for an artist.
-    pub round: bool,
+    by_link: Option<ItemId>,
+    /// The artist's photo, round before their name.
+    by_art: Option<String>,
+    meta: Vec<(Option<Icon>, String)>,
+    description: Option<String>,
+    art: Option<String>,
 }
 
 /// What a click in the header asked for.
-pub(super) enum HeaderAction {
+enum HeaderAction {
     Play { shuffle: bool },
     OpenArtist(ItemId),
 }
 
-pub(super) const ART_TOP: f32 = 64.0;
+const ART_TOP: f32 = 60.0;
 
-pub(super) fn art_size(pad: f32) -> f32 {
-    if pad < 40.0 { 200.0 } else { 260.0 }
+fn art_size(pad: f32) -> f32 {
+    if pad < 40.0 { 220.0 } else { 320.0 }
+}
+
+/// Which columns the list has.
+enum Kind {
+    Album { with_artist: bool },
+    Playlist,
 }
 
 /// How the list under it reads.
 struct Listing {
-    with_album: bool,
+    columns: Kind,
     /// Album tracks show their track numbers; playlists count positions.
     track_numbers: bool,
     list: &'static str,
@@ -62,8 +71,13 @@ pub fn album(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
         Some(Loaded::Failed(e)) => (None, Arc::default(), false, Some(e.clone())),
         _ => (None, Arc::default(), true, None),
     };
+    // A compilation names each track's artist; an album by one artist need not.
+    let with_artist = match app.albums.get(id) {
+        Some(Loaded::Ready((album, tracks))) => tracks.iter().any(|t| t.artists != album.artists),
+        _ => false,
+    };
     let listing = Listing {
-        with_album: false,
+        columns: Kind::Album { with_artist },
         track_numbers: true,
         list: "album",
         loading,
@@ -93,12 +107,13 @@ pub fn playlist(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
         title: playlist.name.clone(),
         by: None,
         by_link: None,
+        by_art: None,
         meta,
+        description: playlist.description.clone(),
         art: playlist.artwork.as_ref().map(|a| a.url(600)),
-        round: false,
     };
     let listing = Listing {
-        with_album: true,
+        columns: Kind::Playlist,
         track_numbers: false,
         list: "playlist",
         loading: tracks.is_empty() && !done && error.is_none(),
@@ -107,26 +122,38 @@ pub fn playlist(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
     page(app, ui, pad, Some(header), tracks, listing)
 }
 
+/// Cider's details: genre, year, track count; then the quality, which is this
+/// app's business.
 fn album_header(album: &Album, tracks: &[Track]) -> Header {
     let mut meta = Vec::new();
+    if let Some(genre) = &album.genre {
+        meta.push((Some(icons::MIC), genre.to_uppercase()));
+    }
     if let Some(year) = album.year {
-        meta.push((None, year.to_string()));
+        meta.push((Some(icons::CLOCK), year.to_string()));
     }
+    // What the list holds: a library album lists only the tracks in the library.
+    let count = if tracks.is_empty() {
+        album.track_count.unwrap_or(0)
+    } else {
+        tracks.len() as u32
+    };
+    meta.push((
+        Some(icons::NOTE),
+        format!("{count} TRACK{}", if count == 1 { "" } else { "S" }),
+    ));
     if let Some((label, _)) = tracks.iter().find_map(quality_label) {
-        meta.push((None, label));
+        meta.push((Some(icons::AM), label));
     }
-    if let Some(total) = total_length(tracks) {
-        meta.push((Some(icons::CLOCK), length_label(total)));
-    }
-    meta.push((Some(icons::AM), "APPLE MUSIC".into()));
     Header {
         kind: "Album",
         title: album.title.clone(),
         by: Some(album.artists.join(", ")),
         by_link: album.artist_id.clone(),
+        by_art: album.artist_artwork.as_ref().map(|a| a.url(64)),
         meta,
-        art: album.artwork.as_ref().map(|a| a.url(600)),
-        round: false,
+        description: album.description.clone(),
+        art: album.artwork.as_ref().map(|a| a.url(640)),
     }
 }
 
@@ -154,10 +181,15 @@ fn page(
     listing: Listing,
 ) -> f32 {
     let theme = app.theme.clone();
-    let table_top = ART_TOP + art_size(pad) + 26.0;
+    let table_top = ART_TOP + art_size(pad) + 34.0;
+    // Albums have no column titles, as in Cider.
+    let head = match listing.columns {
+        Kind::Album { .. } => 0.0,
+        Kind::Playlist => tracks::HEAD_SPACE,
+    };
     let rows = tracks.len();
     let foot = 18.0 + 16.0 + 18.0;
-    let total = table_top + tracks::HEAD_SPACE + rows.max(1) as f32 * tracks::ROW + foot + 104.0;
+    let total = table_top + head + rows.max(1) as f32 * tracks::ROW + foot + 104.0;
     let colors = super::backdrop(app);
     let output = egui::ScrollArea::vertical()
         .id_salt(listing.list)
@@ -175,10 +207,15 @@ fn page(
                 None => {}
             }
 
-            let columns = Columns::new(left, width, listing.with_album);
+            let columns = match listing.columns {
+                Kind::Album { with_artist } => Columns::album(left, width, with_artist),
+                Kind::Playlist => Columns::new(left, width, true),
+            };
             let table = content.top() + table_top;
-            tracks::head(ui, &theme, &columns, table, left, width, None);
-            let rows_top = table + tracks::HEAD_SPACE;
+            if head > 0.0 {
+                tracks::head(ui, &theme, &columns, table, left, width, None);
+            }
+            let rows_top = table + head;
             if let Some(error) = &listing.error {
                 let g = text(
                     ui,
@@ -201,7 +238,7 @@ fn page(
                 tracks::skeleton(ui, &theme, rows_top, left, width, 6);
                 return;
             }
-            for position in tracks::visible(viewport, table_top + tracks::HEAD_SPACE, rows) {
+            for position in tracks::visible(viewport, table_top + head, rows) {
                 let track = &tracks[position];
                 let rect = Rect::from_min_size(
                     pos2(left, rows_top + position as f32 * tracks::ROW),
@@ -262,7 +299,7 @@ fn page(
 }
 
 /// The cover's colours behind, the artwork, and the text beside it.
-pub(super) fn hero(
+fn hero(
     ui: &mut Ui,
     theme: &Theme,
     content: Rect,
@@ -274,15 +311,13 @@ pub(super) fn hero(
         cover_wash(
             ui,
             theme,
-            Rect::from_min_size(content.min, vec2(content.width(), 620.0)),
+            Rect::from_min_size(content.min, vec2(content.width(), 680.0)),
             colors,
         );
     }
     let size = art_size(pad);
     let left = content.left() + pad;
     let art = Rect::from_min_size(pos2(left, content.top() + ART_TOP), vec2(size, size));
-    let round = header.is_some_and(|h| h.round);
-    let radius = if round { size / 2.0 } else { 12.0 };
     ui.painter().add(
         egui::Shadow {
             offset: [0, 18],
@@ -290,16 +325,16 @@ pub(super) fn hero(
             spread: 0,
             color: Color32::from_black_alpha(110),
         }
-        .as_shape(art.shrink(6.0), radius),
+        .as_shape(art.shrink(6.0), 10.0),
     );
-    artwork(ui, header.and_then(|h| h.art.clone()), art, radius, theme);
+    artwork(ui, header.and_then(|h| h.art.clone()), art, 10.0, theme);
     header_text(ui, theme, header?, art, content.right() - pad)
 }
 
 /// Three radial blobs of the cover's colours behind the header, fading into
 /// `base`: colour 1 top left behind the artwork at 92 %, colour 2 top centre at
 /// 72 %, colour 3 on the right at 62 %.
-fn cover_wash(ui: &Ui, theme: &Theme, rect: Rect, [c1, c2, c3]: [Color32; 3]) {
+pub(super) fn cover_wash(ui: &Ui, theme: &Theme, rect: Rect, [c1, c2, c3]: [Color32; 3]) {
     let blobs = [
         Blob {
             center: vec2(0.10, 0.04),
@@ -326,8 +361,8 @@ fn cover_wash(ui: &Ui, theme: &Theme, rect: Rect, [c1, c2, c3]: [Color32; 3]) {
     wash(ui, rect, theme.base, &blobs, true);
 }
 
-/// The text beside the artwork, bottom-aligned with it: kind, title, artist,
-/// details, Play and Shuffle.
+/// The text beside the artwork, centred on it: title, the artist with their
+/// photo, details, notes, Play and Shuffle.
 fn header_text(
     ui: &mut Ui,
     theme: &Theme,
@@ -335,53 +370,67 @@ fn header_text(
     art: Rect,
     right: f32,
 ) -> Option<HeaderAction> {
-    let x = art.right() + 30.0;
+    let x = art.right() + 32.0;
     let width = (right - x).max(0.0);
-    let eyebrow = text(
-        ui,
-        &header.kind.to_uppercase(),
-        font(11.0, Weight::SemiBold),
-        theme.muted(),
-        width,
-    );
     let title = text(
         ui,
         &header.title,
-        font(44.0, Weight::Bold),
+        font(40.0, Weight::Bold),
         theme.text,
         width,
     );
-    let by_color = mix(theme.accent, theme.text, 0.75);
-    let by = header
-        .by
+    let by = header.by.as_ref().map(|by| {
+        text(
+            ui,
+            by,
+            font(16.0, Weight::Regular),
+            theme.text,
+            width - 34.0,
+        )
+    });
+    let description = header
+        .description
         .as_ref()
-        .map(|by| text(ui, by, font(18.0, Weight::Medium), by_color, width));
-    let meta_font = font(12.0, Weight::Medium);
-    let meta_height = 17.0;
+        .map(|d| notes(ui, d, theme, width.min(460.0)));
+    let (meta_height, by_height, button_height) = (18.0, 28.0, 36.0);
 
-    let mut height = eyebrow.size().y + 4.0 + title.size().y + 8.0 + meta_height + 18.0 + 36.0;
-    if let Some(by) = &by {
-        height += by.size().y + 8.0;
+    let gap = 12.0;
+    let mut height = title.size().y + gap + meta_height + 18.0 + button_height;
+    if by.is_some() {
+        height += by_height + gap;
     }
-    let mut y = art.bottom() - height;
+    if let Some(d) = &description {
+        height += d.size().y + gap;
+    }
+    let mut y = art.center().y - height / 2.0;
 
-    let h = eyebrow.size().y;
-    paint_text(ui, eyebrow, x, y + h / 2.0, egui::Align::Min, theme.muted());
-    y += h + 4.0;
     let h = title.size().y;
     paint_text(ui, title, x, y + h / 2.0, egui::Align::Min, theme.text);
-    y += h + 8.0;
+    y += h + gap;
     let mut action = None;
     if let Some(by) = by {
+        let cy = y + by_height / 2.0;
+        let mut tx = x;
+        if header.by_art.is_some() {
+            let avatar = Rect::from_center_size(pos2(x + 13.0, cy), vec2(26.0, 26.0));
+            artwork(ui, header.by_art.clone(), avatar, 13.0, theme);
+            tx = avatar.right() + 9.0;
+        }
         let size = by.size();
-        let mut color = by_color;
+        let mut color = theme.text;
         if let Some(id) = &header.by_link {
-            let link = Rect::from_min_size(pos2(x, y), size);
+            let link = Rect::from_min_max(
+                pos2(x, cy - by_height / 2.0),
+                pos2(tx + size.x, cy + by_height / 2.0),
+            );
             let hit = ui.interact(link, egui::Id::unique("header-by"), Sense::click());
             if hit.hovered() {
-                color = theme.text;
-                ui.painter()
-                    .hline(link.x_range(), link.bottom(), egui::Stroke::new(1.0, color));
+                color = mix(theme.text, theme.accent, 0.35);
+                ui.painter().hline(
+                    tx..=tx + size.x,
+                    cy + size.y / 2.0,
+                    egui::Stroke::new(1.0, color),
+                );
             }
             if hit
                 .on_hover_cursor(egui::CursorIcon::PointingHand)
@@ -390,16 +439,18 @@ fn header_text(
                 action = Some(HeaderAction::OpenArtist(id.clone()));
             }
         }
-        paint_text(ui, by, x, y + size.y / 2.0, egui::Align::Min, color);
-        y += size.y + 8.0;
+        paint_text(ui, by, tx, cy, egui::Align::Min, color);
+        y += by_height + gap;
     }
 
+    // The details, each with its icon.
+    let meta_font = font(11.5, Weight::SemiBold);
     let mut mx = x;
     let my = y + meta_height / 2.0;
     for (icon, label) in &header.meta {
         if let Some(icon) = icon {
             paint_icon(ui, *icon, pos2(mx + 6.0, my), 12.0, theme.subtext0);
-            mx += 12.0 + 5.0;
+            mx += 12.0 + 6.0;
         }
         let g = text(
             ui,
@@ -410,11 +461,38 @@ fn header_text(
         );
         let w = g.size().x;
         paint_text(ui, g, mx, my, egui::Align::Min, theme.subtext0);
-        mx += w + 14.0;
+        mx += w + 16.0;
     }
-    y += meta_height + 18.0;
+    y += meta_height + gap;
+
+    if let Some(d) = description {
+        let h = d.size().y;
+        ui.painter().galley(pos2(x, y), d, theme.subtext0);
+        y += h + gap;
+    }
+    y += 6.0;
 
     page_buttons(ui, theme, pos2(x, y), header.kind)
         .map(|shuffle| HeaderAction::Play { shuffle })
         .or(action)
+}
+
+/// The editorial notes: three lines at most, then an ellipsis.
+fn notes(ui: &Ui, s: &str, theme: &Theme, width: f32) -> std::sync::Arc<egui::Galley> {
+    let mut job = egui::text::LayoutJob::single_section(
+        s.to_owned(),
+        egui::TextFormat {
+            font_id: font(12.5, Weight::Regular),
+            color: theme.subtext0,
+            line_height: Some(18.0),
+            ..Default::default()
+        },
+    );
+    job.wrap = egui::text::TextWrapping {
+        max_width: width,
+        max_rows: 3,
+        break_anywhere: false,
+        overflow_character: Some('…'),
+    };
+    ui.painter().layout_job(job)
 }

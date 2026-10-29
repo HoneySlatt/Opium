@@ -10,16 +10,18 @@ use crate::icons;
 use crate::theme::Theme;
 
 use super::songs::source_chips;
-use super::{artwork, glow, paint_icon, paint_text, text};
+use super::{artwork, glow, icon_button, paint_icon, paint_text, text};
 
-/// Grid covers are at least this wide, 20 apart, rows 26 apart.
-const CARD_MIN: f32 = 158.0;
-const CARD_GAP: f32 = 20.0;
-const ROW_GAP: f32 = 26.0;
+/// Grid covers are at least this wide, 26 apart, rows 40 apart, as in Cider.
+const CARD_MIN: f32 = 190.0;
+const CARD_GAP: f32 = 26.0;
+const ROW_GAP: f32 = 40.0;
 /// The title and the line under a cover.
-const CARD_TEXT: f32 = 42.0;
+pub(super) const CARD_TEXT: f32 = 50.0;
 /// Where the grid starts, under the title.
-const GRID_TOP: f32 = 132.0;
+const GRID_TOP: f32 = 100.0;
+/// The title's centre line, just under the top bar.
+const TITLE_Y: f32 = 66.0;
 
 /// What a cover card shows.
 pub(super) struct CoverCard<'a> {
@@ -60,14 +62,14 @@ pub(super) fn cover_card(ui: &Ui, theme: &Theme, art: Rect, card: &CoverCard, id
     let g = text(
         ui,
         card.title,
-        font(13.0, Weight::Medium),
+        font(13.5, Weight::Regular),
         theme.text,
         width,
     );
-    paint_text(ui, g, x, art.bottom() + 17.0, align, theme.text);
+    paint_text(ui, g, x, art.bottom() + 22.0, align, theme.text);
     let muted = theme.muted();
     let g = text(ui, card.sub, font(12.0, Weight::Regular), muted, width);
-    paint_text(ui, g, x, art.bottom() + 34.0, align, muted);
+    paint_text(ui, g, x, art.bottom() + 39.0, align, muted);
     response
         .on_hover_cursor(egui::CursorIcon::PointingHand)
         .clicked()
@@ -116,6 +118,130 @@ impl Grid {
         first.min(last)..last
     }
 }
+
+/// Where a shelf is scrolled to, and where it is heading.
+#[derive(Clone, Copy, Default)]
+struct ShelfScroll {
+    offset: f32,
+    target: f32,
+}
+
+/// Sideways scrolling for a shelf: arrows ending at `arrows` (the right end of
+/// its title row), sideways scrolling over `row`, eased. `content` is the
+/// shelf's full width, `page` how far an arrow moves. Returns the offset.
+pub(super) fn shelf_scroll(
+    ui: &mut Ui,
+    theme: &Theme,
+    id: Id,
+    arrows: egui::Pos2,
+    row: Rect,
+    content: f32,
+    page: f32,
+) -> f32 {
+    let max = (content - row.width()).max(0.0);
+    let mut scroll: ShelfScroll = ui.ctx().data(|d| d.get_temp(id)).unwrap_or_default();
+    if max > 0.0 {
+        let buttons = [
+            (icons::LEFT, -page, scroll.target > 0.0),
+            (icons::RIGHT, page, scroll.target < max),
+        ];
+        for (i, (icon, step, enabled)) in buttons.into_iter().enumerate() {
+            let rect = Rect::from_center_size(
+                pos2(arrows.x - 14.0 - (1 - i) as f32 * 32.0, arrows.y),
+                vec2(28.0, 28.0),
+            );
+            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
+            if round_arrow(&mut child, theme, icon, enabled) {
+                scroll.target += step;
+            }
+        }
+        if ui.rect_contains_pointer(row) {
+            scroll.target -= ui.input(|i| i.smooth_scroll_delta.x);
+        }
+    }
+    scroll.target = scroll.target.clamp(0.0, max);
+    let dt = ui.input(|i| i.stable_dt).min(0.1);
+    let step = scroll.target - scroll.offset;
+    scroll.offset += step * (1.0 - (-dt * 12.0).exp());
+    if step.abs() < 0.5 {
+        scroll.offset = scroll.target;
+    } else {
+        ui.ctx().request_repaint();
+    }
+    ui.ctx().data_mut(|d| d.insert_temp(id, scroll));
+    scroll.offset
+}
+
+/// Cider's shelf arrows: round, on a faint fill.
+fn round_arrow(ui: &mut Ui, theme: &Theme, icon: icons::Icon, enabled: bool) -> bool {
+    let rect = ui.max_rect();
+    let fill = theme.text_a(if enabled { 0.08 } else { 0.04 });
+    ui.painter()
+        .circle_filled(rect.center(), rect.width() / 2.0, fill);
+    icon_button(ui, theme, icon, 28.0, 15.0, theme.subtext0, enabled).clicked()
+}
+
+/// A cover in a shelf.
+pub(super) struct ShelfCard {
+    pub title: String,
+    pub sub: String,
+    pub url: Option<String>,
+}
+
+/// A titled row of `size` px covers that scrolls sideways. Returns the cover
+/// clicked.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn cover_shelf(
+    ui: &mut Ui,
+    theme: &Theme,
+    at: egui::Pos2,
+    width: f32,
+    title: &str,
+    cards: &[ShelfCard],
+    size: f32,
+    id: Id,
+) -> Option<usize> {
+    super::search::section_head(ui, theme, at.x, at.y, title);
+    let row = Rect::from_min_size(pos2(at.x, at.y + SHELF_HEAD), vec2(width, size + CARD_TEXT));
+    let stride = size + SHELF_GAP;
+    let content = cards.len() as f32 * stride - SHELF_GAP;
+    // A page is as many whole covers as fit.
+    let page = ((width + SHELF_GAP) / stride).floor().max(1.0) * stride;
+    let offset = shelf_scroll(
+        ui,
+        theme,
+        id,
+        pos2(at.x + width, at.y + 11.0),
+        row,
+        content,
+        page,
+    );
+
+    let mut row_ui = ui.new_child(egui::UiBuilder::new().max_rect(row));
+    row_ui.set_clip_rect(row.intersect(ui.clip_rect()));
+    let mut clicked = None;
+    for (i, card) in cards.iter().enumerate() {
+        let x = row.left() + i as f32 * stride - offset;
+        if x + size < row.left() || x > row.right() {
+            continue;
+        }
+        let art = Rect::from_min_size(pos2(x, row.top()), vec2(size, size));
+        let cover = CoverCard {
+            url: card.url.clone(),
+            title: &card.title,
+            sub: &card.sub,
+            round: false,
+        };
+        if cover_card(&row_ui, theme, art, &cover, id.with(i)) {
+            clicked = Some(i);
+        }
+    }
+    clicked
+}
+
+/// A shelf's title row, and the gap between its covers.
+pub(super) const SHELF_HEAD: f32 = 34.0;
+const SHELF_GAP: f32 = 20.0;
 
 #[derive(Clone, Copy, PartialEq)]
 enum Kind {
@@ -192,12 +318,12 @@ fn page(app: &mut App, ui: &mut Ui, pad: f32, kind: Kind) -> f32 {
                 Rect::from_min_size(content.min, vec2(content.width(), 460.0)),
             );
             let left = content.left() + pad;
-            let g = text(ui, title, font(30.0, Weight::Bold), theme.text, width);
+            let g = text(ui, title, font(22.0, Weight::Bold), theme.text, width);
             paint_text(
                 ui,
                 g,
                 left,
-                content.top() + 70.0 + 16.5,
+                content.top() + TITLE_Y,
                 egui::Align::Min,
                 theme.text,
             );
@@ -206,7 +332,7 @@ fn page(app: &mut App, ui: &mut Ui, pad: f32, kind: Kind) -> f32 {
                     ui,
                     &theme,
                     left + width,
-                    content.top() + 73.0,
+                    content.top() + TITLE_Y - 14.0,
                     app.grid_source,
                 )
             {

@@ -28,6 +28,9 @@ const WEB_PLAYER: &str = "https://music.apple.com";
 const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
 /// The largest page the library and catalog endpoints accept.
 const PAGE: u32 = 100;
+/// Album details in English, as the app's text is: Apple writes most editorial
+/// notes in English only, and names genres in the storefront's language otherwise.
+const NOTES_LANGUAGE: &str = "en-US";
 /// Recently Added answers at most 25 at a time.
 const RECENT_PAGE: u32 = 25;
 /// Search caps each result type at 25.
@@ -233,10 +236,30 @@ impl Provider for AppleMusic {
     }
 
     async fn album(&self, album: &ItemId) -> Result<Album> {
+        // A library album lacks the genre, the notes and the artist; its catalog
+        // counterpart has them, so the header reads that one when there is one.
         let path = if album.id.starts_with("l.") {
+            let catalog = format!(
+                "/v1/me/library/albums/{}/catalog?include=artists&l={NOTES_LANGUAGE}",
+                album.id
+            );
+            if let Some(resp) = self
+                .fetch::<types::Response<types::Album>>(&catalog)
+                .await?
+                && let Some(found) = resp.data.into_iter().next()
+            {
+                return Ok(Album {
+                    id: album.clone(),
+                    ..convert::album(found)
+                });
+            }
             format!("/v1/me/library/albums/{}", album.id)
         } else {
-            format!("/v1/catalog/{}/albums/{}", self.storefront, album.id)
+            // With the artists, for the header's photo of them.
+            format!(
+                "/v1/catalog/{}/albums/{}?include=artists&l={NOTES_LANGUAGE}",
+                self.storefront, album.id
+            )
         };
         let resp: types::Response<types::Album> = self.get(&path).await?;
         resp.data
@@ -304,7 +327,7 @@ impl Provider for AppleMusic {
             artist.id.clone()
         };
         let path = format!(
-            "/v1/catalog/{}/artists/{catalog_id}?views=top-songs,full-albums,singles",
+            "/v1/catalog/{}/artists/{catalog_id}?views=top-songs,latest-release,full-albums,singles",
             self.storefront
         );
         let resp: types::Response<types::ArtistWithViews> = self.get(&path).await?;
@@ -326,6 +349,10 @@ impl Provider for AppleMusic {
                 relationships: None,
             }),
             top_songs: all(views.top_songs, convert::track),
+            latest: views
+                .latest_release
+                .and_then(|l| l.data.into_iter().next())
+                .map(convert::album),
             albums: all(views.full_albums, convert::album),
             singles: all(views.singles, convert::album),
         })
