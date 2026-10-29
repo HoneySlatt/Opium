@@ -700,7 +700,7 @@ impl Provider for AppleMusic {
             artist.id.clone()
         };
         let path = format!(
-            "/v1/catalog/{}/artists/{catalog_id}?views=top-songs,latest-release,full-albums,singles&extend=inFavorites&limit[view.top-songs]=30&limit[view.full-albums]=50&limit[view.singles]=50",
+            "/v1/catalog/{}/artists/{catalog_id}?views=top-songs,latest-release,full-albums,singles,compilation-albums,appears-on-albums,similar-artists&extend=inFavorites&limit[view.top-songs]=30&limit[view.full-albums]=50&limit[view.singles]=50&limit[view.appears-on-albums]=30&limit[view.similar-artists]=20",
             self.storefront
         );
         let resp: types::Response<types::ArtistWithViews> = self.get(&path).await?;
@@ -728,6 +728,9 @@ impl Provider for AppleMusic {
                 .map(convert::album),
             albums: all(views.full_albums, convert::album),
             singles: all(views.singles, convert::album),
+            compilations: all(views.compilation_albums, convert::album),
+            appears_on: all(views.appears_on_albums, convert::album),
+            similar: all(views.similar_artists, convert::artist),
         })
     }
 

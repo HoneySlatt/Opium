@@ -2101,7 +2101,7 @@ impl App {
                 }
                 Reply::RecentlyAdded { items, done } => self.recently_added.extend(items, done),
                 Reply::Album { id, result } => {
-                    let loaded = match result {
+                    let loaded = match result.map(|b| *b) {
                         Ok((album, tracks)) => {
                             if let Some(on) = album.in_favourites {
                                 self.favourites_known
@@ -2122,7 +2122,7 @@ impl App {
                                     .entry(artist.artist.id.clone())
                                     .or_insert(on);
                             }
-                            Loaded::Ready(Arc::new(artist))
+                            Loaded::Ready(artist)
                         }
                         Err(e) => Loaded::Failed(e),
                     };

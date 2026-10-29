@@ -255,6 +255,40 @@ pub(super) fn cover_shelf(
     size: f32,
     id: Id,
 ) -> Option<(usize, CardClick)> {
+    shelf_of(ui, theme, at, width, title, cards, size, id, false)
+}
+
+/// A titled row of round photos, as of artists, that scrolls sideways;
+/// returns the one clicked.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn round_shelf(
+    ui: &mut Ui,
+    theme: &Theme,
+    at: egui::Pos2,
+    width: f32,
+    title: &str,
+    cards: &[ShelfCard],
+    size: f32,
+    id: Id,
+) -> Option<usize> {
+    match shelf_of(ui, theme, at, width, title, cards, size, id, true) {
+        Some((i, CardClick::Open)) => Some(i),
+        _ => None,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn shelf_of(
+    ui: &mut Ui,
+    theme: &Theme,
+    at: egui::Pos2,
+    width: f32,
+    title: &str,
+    cards: &[ShelfCard],
+    size: f32,
+    id: Id,
+    round: bool,
+) -> Option<(usize, CardClick)> {
     super::search::section_head(ui, theme, at.x, at.y, title);
     let row = Rect::from_min_size(pos2(at.x, at.y + SHELF_HEAD), vec2(width, size + CARD_TEXT));
     let stride = size + SHELF_GAP;
@@ -284,7 +318,7 @@ pub(super) fn cover_shelf(
             url: card.url.clone(),
             title: &card.title,
             sub: &card.sub,
-            round: false,
+            round,
             explicit: card.explicit,
             addable: card.addable,
         };

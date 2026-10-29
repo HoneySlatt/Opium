@@ -12,7 +12,8 @@ use crate::theme::Theme;
 
 use super::detail::cover_wash;
 use super::grid::{
-    CARD_TEXT, CardClick, SHELF_HEAD, SONG_COLUMNS_HEIGHT, ShelfCard, cover_shelf, song_columns,
+    CARD_TEXT, CardClick, SHELF_HEAD, SONG_COLUMNS_HEIGHT, ShelfCard, cover_shelf, round_shelf,
+    song_columns,
 };
 use super::search::{message, section_head};
 use super::{artwork, format_date, paint_icon, paint_text, text};
@@ -44,6 +45,8 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
             vec![
                 ("Albums", a.albums.as_slice()),
                 ("Singles & EPs", a.singles.as_slice()),
+                ("Compilations", a.compilations.as_slice()),
+                ("Appears On", a.appears_on.as_slice()),
             ]
         })
         .unwrap_or_default();
@@ -53,6 +56,9 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
         total += SHELF_HEAD + SONG_COLUMNS_HEIGHT + SECTION_GAP;
     }
     total += shelves.iter().filter(|(_, a)| !a.is_empty()).count() as f32 * shelf_height;
+    if artist.as_ref().is_some_and(|a| !a.similar.is_empty()) {
+        total += shelf_height;
+    }
     total += 104.0;
 
     let colors = super::backdrop(app);
@@ -165,6 +171,33 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
                     }
                 }
                 y += shelf_height;
+            }
+            // Artists like them, in round photos, each leading to their page.
+            if !artist.similar.is_empty() {
+                let cards: Vec<ShelfCard> = artist
+                    .similar
+                    .iter()
+                    .map(|a| ShelfCard {
+                        title: a.name.clone(),
+                        sub: String::new(),
+                        url: a.artwork.as_ref().map(|art| art.url(400)),
+                        explicit: false,
+                        addable: false,
+                    })
+                    .collect();
+                let shelf_id = Id::unique(("artist-similar", &artist.artist.id.id));
+                if let Some(i) = round_shelf(
+                    ui,
+                    &theme,
+                    pos2(left, y),
+                    width,
+                    "Similar Artists",
+                    &cards,
+                    SHELF_CARD,
+                    shelf_id,
+                ) {
+                    app.go(Page::Artist(artist.similar[i].id.clone()));
+                }
             }
         });
     output.state.clamped_offset().y

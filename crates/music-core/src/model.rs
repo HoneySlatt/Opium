@@ -198,6 +198,10 @@ pub struct ArtistDetail {
     pub latest: Option<Album>,
     pub albums: Vec<Album>,
     pub singles: Vec<Album>,
+    pub compilations: Vec<Album>,
+    /// Others' releases they are on.
+    pub appears_on: Vec<Album>,
+    pub similar: Vec<Artist>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

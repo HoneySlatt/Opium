@@ -223,11 +223,11 @@ pub enum Reply {
     NewMusic(Result<Vec<Shelf>, String>),
     Album {
         id: ItemId,
-        result: Result<(Album, Vec<Track>), String>,
+        result: Result<Box<(Album, Vec<Track>)>, String>,
     },
     Artist {
         id: ItemId,
-        result: Result<ArtistDetail, String>,
+        result: Result<Arc<ArtistDetail>, String>,
     },
     PlaylistTracks {
         id: ItemId,
@@ -417,13 +417,18 @@ async fn run(
             Request::Album(id) => {
                 tokio::spawn(async move {
                     let result = tokio::try_join!(am.album(&id), am.album_tracks(&id))
+                        .map(Box::new)
                         .map_err(|e| e.to_string());
                     replies.send(Reply::Album { id, result });
                 });
             }
             Request::Artist(id) => {
                 tokio::spawn(async move {
-                    let result = am.artist(&id).await.map_err(|e| e.to_string());
+                    let result = am
+                        .artist(&id)
+                        .await
+                        .map(Arc::new)
+                        .map_err(|e| e.to_string());
                     replies.send(Reply::Artist { id, result });
                 });
             }

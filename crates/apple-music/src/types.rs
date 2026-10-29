@@ -210,6 +210,12 @@ pub struct ArtistViews {
     #[serde(rename = "latest-release")]
     pub latest_release: Option<Response<Album>>,
     pub singles: Option<Response<Album>>,
+    #[serde(rename = "compilation-albums")]
+    pub compilation_albums: Option<Response<Album>>,
+    #[serde(rename = "appears-on-albums")]
+    pub appears_on_albums: Option<Response<Album>>,
+    #[serde(rename = "similar-artists")]
+    pub similar_artists: Option<Response<Artist>>,
 }
 
 #[derive(Debug, Deserialize)]
