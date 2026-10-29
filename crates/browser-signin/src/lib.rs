@@ -44,6 +44,8 @@ pub enum SignInError {
     TimedOut(Duration),
     #[error("DevTools connection failed: {0}")]
     DevTools(String),
+    #[error("the browser was closed without signing in")]
+    NotSignedIn,
 }
 
 /// Open `browser` on the site's sign-in page and wait for the user to finish;
@@ -98,6 +100,101 @@ pub async fn sign_in(
             if unreachable_after_exit > GIVE_UP_AFTER {
                 return Err(SignInError::BrowserClosed);
             }
+        }
+        tokio::time::sleep(POLL).await;
+    }
+}
+
+/// The same, for sites that may turn a browser away when its DevTools are
+/// open (SoundCloud's bot guard has): the browser opens as any other, and once
+/// the user has signed in and closed it, it is started again unseen, on no
+/// page, only to hand the cookies over.
+///
+/// The process we spawn is not a reliable signal (see [`sign_in`]): the
+/// browser counts as closed once our process is gone and nothing holds the
+/// profile's lock any more.
+pub async fn sign_in_unwatched(
+    browser: &Path,
+    profile: &Path,
+    site: Site<'_>,
+    timeout: Duration,
+) -> Result<HashMap<String, String>, SignInError> {
+    let mut child = Command::new(browser)
+        .arg(format!("--user-data-dir={}", profile.display()))
+        .args(["--no-first-run", "--no-default-browser-check"])
+        .arg(format!("--app={}", site.url))
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|e| SignInError::Launch(browser.to_owned(), e))?;
+    let deadline = Instant::now() + timeout;
+    let lock = profile.join("SingletonLock");
+    loop {
+        tokio::time::sleep(POLL).await;
+        let exited = matches!(child.try_wait(), Ok(Some(_)));
+        if exited && tokio::fs::symlink_metadata(&lock).await.is_err() {
+            break;
+        }
+        if Instant::now() > deadline {
+            return Err(SignInError::TimedOut(timeout));
+        }
+    }
+    let cookies = read_cookies(browser, profile, site).await?;
+    if cookies.contains_key(site.token) {
+        Ok(cookies)
+    } else {
+        Err(SignInError::NotSignedIn)
+    }
+}
+
+/// The site's cookies in `profile`, from the browser started headless on no
+/// page.
+async fn read_cookies(
+    browser: &Path,
+    profile: &Path,
+    site: Site<'_>,
+) -> Result<HashMap<String, String>, SignInError> {
+    let port_file = profile.join("DevToolsActivePort");
+    // One left from an earlier run would name a port nothing answers on.
+    let _ = tokio::fs::remove_file(&port_file).await;
+    let _child = Command::new(browser)
+        .arg(format!("--user-data-dir={}", profile.display()))
+        .args([
+            "--headless=new",
+            "--no-first-run",
+            "--remote-debugging-port=0",
+            "about:blank",
+        ])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|e| SignInError::Launch(browser.to_owned(), e))?;
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        if let Some(endpoint) = read_port_file(&port_file).await
+            && let Ok((mut ws, _)) = tokio_tungstenite::connect_async(endpoint.as_str()).await
+        {
+            let request = serde_json::json!({ "id": 1, "method": "Storage.getCookies" });
+            ws.send(Message::text(request.to_string()))
+                .await
+                .map_err(|e| SignInError::DevTools(e.to_string()))?;
+            while let Some(Ok(msg)) = ws.next().await {
+                let Message::Text(text) = msg else { continue };
+                let value: serde_json::Value = serde_json::from_str(&text)
+                    .map_err(|e| SignInError::DevTools(e.to_string()))?;
+                if value["id"] == 1 {
+                    let close = serde_json::json!({ "id": 2, "method": "Browser.close" });
+                    let _ = ws.send(Message::text(close.to_string())).await;
+                    return Ok(find_cookies(&value, site));
+                }
+            }
+        }
+        if Instant::now() > deadline {
+            return Err(SignInError::DevTools(
+                "the browser didn't open its DevTools".into(),
+            ));
         }
         tokio::time::sleep(POLL).await;
     }
