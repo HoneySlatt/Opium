@@ -1682,6 +1682,17 @@ impl App {
 
     /// Fetch the song the pointer has rested on a moment, in case it is
     /// played: one at a time, the last called off.
+    /// A SoundCloud track that would play from its uploader's file: fetching
+    /// it is a download SoundCloud counts, so it waits to be played.
+    fn downloads_original(&self, track: &Track) -> bool {
+        track.id.provider == ProviderKind::SoundCloud
+            && self.soundcloud_originals()
+            && track
+                .quality
+                .as_ref()
+                .is_some_and(|q| q.codec == music_core::model::Codec::Other("Original".into()))
+    }
+
     fn rest_on(&mut self, track: Option<Track>, now: f64, ctx: &egui::Context) {
         let Some(track) = track else {
             self.resting = None;
@@ -1710,6 +1721,7 @@ impl App {
             || lined_up
             || fetched
             || track.id.id.starts_with("ra.")
+            || self.downloads_original(&track)
         {
             return;
         }
@@ -2062,9 +2074,8 @@ impl App {
             }
             // A station's stream is ADTS, forward only.
             Playable::Live(stream) => player::Source::stream(stream, Some("aac")),
-            Playable::File { bytes, extension } => {
-                let len = bytes.len() as u64;
-                player::Source::new(std::io::Cursor::new(bytes), len, Some(extension))
+            Playable::SoundCloud(audio) => {
+                player::Source::new(audio.reader, audio.len, Some(audio.extension))
             }
         }
     }

@@ -21,7 +21,7 @@ use music_core::model::{
 use music_core::{Error, Provider, Result};
 use serde::de::DeserializeOwned;
 
-pub use stream::Audio;
+pub use stream::{Audio, Growing, Reader};
 
 const API: &str = "https://api-v2.soundcloud.com";
 const WEB: &str = "https://soundcloud.com";

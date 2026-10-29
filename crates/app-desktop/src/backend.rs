@@ -277,11 +277,8 @@ pub enum Reply {
 /// file in memory.
 pub enum Playable {
     Track(AudioStream),
-    File {
-        bytes: Vec<u8>,
-        /// A hint for the decoder: `m4a`, `flac`, `wav`…
-        extension: &'static str,
-    },
+    /// A SoundCloud track, in memory or still downloading.
+    SoundCloud(soundcloud::Audio),
     Live(LiveStream),
 }
 
@@ -1140,10 +1137,7 @@ async fn soundcloud_playable(
 ) -> Result<Playable, String> {
     sc.audio(track, original)
         .await
-        .map(|audio| Playable::File {
-            bytes: audio.bytes,
-            extension: audio.extension,
-        })
+        .map(Playable::SoundCloud)
         .map_err(|e| e.to_string())
 }
 

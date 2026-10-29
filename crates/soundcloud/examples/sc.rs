@@ -63,11 +63,14 @@ async fn fetch(
     original: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let started = std::time::Instant::now();
-    let audio = sc.audio(&track_id(id), original).await?;
-    std::fs::write(out, &audio.bytes)?;
+    let mut audio = sc.audio(&track_id(id), original).await?;
+    let ready = started.elapsed();
+    let mut bytes = Vec::new();
+    std::io::Read::read_to_end(&mut audio.reader, &mut bytes)?;
+    std::fs::write(out, &bytes)?;
     println!(
-        "{} bytes in {:?}: {:?} ({}{})",
-        audio.bytes.len(),
+        "{} bytes, playable after {ready:?}, all in {:?}: {:?} ({}{})",
+        bytes.len(),
         started.elapsed(),
         audio.quality,
         audio.extension,

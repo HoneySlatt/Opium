@@ -3,6 +3,9 @@
 //! (256 kbps with Go+, 160 without), its HLS segments fetched side by side
 //! and joined into the fragmented MP4 they cut.
 
+use std::io::{Read, Seek, SeekFrom};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
+
 use futures_util::StreamExt;
 use music_core::model::{AudioQuality, Codec, ItemId};
 use music_core::{Error, Result};
@@ -12,14 +15,127 @@ use crate::{SoundCloud, types};
 /// Segments fetched at once.
 const SEGMENTS_AT_ONCE: usize = 6;
 
-/// A track's audio, whole.
+/// A track's audio: whole, or still coming in.
 pub struct Audio {
-    pub bytes: Vec<u8>,
+    pub reader: Reader,
+    /// Its length in bytes, all of it.
+    pub len: u64,
     /// `m4a`, `flac`, `wav`, `aiff`, `mp3`, `ogg`: a hint for the decoder.
     pub extension: &'static str,
     pub quality: AudioQuality,
     /// The uploader's own file, not SoundCloud's transcoding.
     pub original: bool,
+}
+
+/// Where the audio is read from: memory, or a download still going on.
+pub enum Reader {
+    Whole(std::io::Cursor<Vec<u8>>),
+    Growing(Growing),
+}
+
+impl Read for Reader {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        match self {
+            Self::Whole(r) => r.read(buf),
+            Self::Growing(r) => r.read(buf),
+        }
+    }
+}
+
+impl Seek for Reader {
+    fn seek(&mut self, to: SeekFrom) -> std::io::Result<u64> {
+        match self {
+            Self::Whole(r) => r.seek(to),
+            Self::Growing(r) => r.seek(to),
+        }
+    }
+}
+
+/// A file downloading in the background, read as it comes: a read past what
+/// has come waits for it. Dropping the reader stops the download.
+pub struct Growing {
+    shared: Arc<Shared>,
+    pos: u64,
+    len: u64,
+}
+
+struct Shared {
+    state: Mutex<State>,
+    more: Condvar,
+}
+
+#[derive(Default)]
+struct State {
+    data: Vec<u8>,
+    done: bool,
+    error: Option<String>,
+}
+
+impl Shared {
+    fn lock(&self) -> MutexGuard<'_, State> {
+        self.state.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn push(&self, bytes: &[u8]) {
+        self.lock().data.extend_from_slice(bytes);
+        self.more.notify_all();
+    }
+
+    fn end(&self, error: Option<String>) {
+        let mut state = self.lock();
+        state.done = true;
+        state.error = error;
+        drop(state);
+        self.more.notify_all();
+    }
+}
+
+impl Read for Growing {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if self.pos >= self.len || buf.is_empty() {
+            return Ok(0);
+        }
+        let mut state = self.shared.lock();
+        loop {
+            let have = state.data.len() as u64;
+            if have > self.pos {
+                let start = self.pos as usize;
+                let n = buf.len().min(state.data.len() - start);
+                buf[..n].copy_from_slice(&state.data[start..start + n]);
+                self.pos += n as u64;
+                return Ok(n);
+            }
+            if state.done {
+                return match &state.error {
+                    Some(e) => Err(std::io::Error::other(e.clone())),
+                    None => Ok(0),
+                };
+            }
+            state = self
+                .shared
+                .more
+                .wait(state)
+                .unwrap_or_else(|e| e.into_inner());
+        }
+    }
+}
+
+impl Seek for Growing {
+    fn seek(&mut self, to: SeekFrom) -> std::io::Result<u64> {
+        let pos = match to {
+            SeekFrom::Start(p) => p as i64,
+            SeekFrom::Current(d) => self.pos as i64 + d,
+            SeekFrom::End(d) => self.len as i64 + d,
+        };
+        if pos < 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "seek before the start",
+            ));
+        }
+        self.pos = pos as u64;
+        Ok(self.pos)
+    }
 }
 
 /// The best unencrypted AAC stream of the full track, if it has one.
@@ -143,7 +259,8 @@ impl SoundCloud {
             bytes.extend(part?);
         }
         Ok(Audio {
-            bytes,
+            len: bytes.len() as u64,
+            reader: Reader::Whole(std::io::Cursor::new(bytes)),
             extension: "m4a",
             quality: AudioQuality {
                 codec: Codec::Aac,
@@ -155,11 +272,68 @@ impl SoundCloud {
         })
     }
 
-    /// The file the uploader put up, as it is.
+    /// The file the uploader put up, as it is, read as it downloads: its
+    /// first bytes say what it is.
     async fn original(&self, track: &types::Track) -> Result<Audio> {
         let at: types::Download = self.get(&format!("/tracks/{}/download", track.id)).await?;
-        let (bytes, content_type) = self.public_bytes(&at.redirect_uri).await?;
-        let extension = original_extension(content_type.as_deref(), &bytes);
+        let failed = |e: reqwest::Error| Error::Network(format!("SoundCloud download: {e}"));
+        let mut resp = self
+            .http
+            .get(&at.redirect_uri)
+            .send()
+            .await
+            .map_err(failed)?;
+        if !resp.status().is_success() {
+            return Err(Error::Protocol(format!(
+                "SoundCloud download: HTTP {}",
+                resp.status()
+            )));
+        }
+        let content_type = resp
+            .headers()
+            .get("content-type")
+            .and_then(|t| t.to_str().ok())
+            .map(str::to_owned);
+        let len = resp.content_length();
+        let first = resp.chunk().await.map_err(failed)?.unwrap_or_default();
+        let extension = original_extension(content_type.as_deref(), &first);
+        let (reader, len) = match len {
+            Some(len) => {
+                let shared = Arc::new(Shared {
+                    state: Mutex::new(State::default()),
+                    more: Condvar::new(),
+                });
+                shared.push(&first);
+                let weak = Arc::downgrade(&shared);
+                tokio::spawn(async move {
+                    loop {
+                        let chunk = resp.chunk().await;
+                        // The reader is gone: so is the need.
+                        let Some(shared) = weak.upgrade() else { return };
+                        match chunk {
+                            Ok(Some(bytes)) => shared.push(&bytes),
+                            Ok(None) => return shared.end(None),
+                            Err(e) => return shared.end(Some(e.to_string())),
+                        }
+                    }
+                });
+                let growing = Growing {
+                    shared,
+                    pos: 0,
+                    len,
+                };
+                (Reader::Growing(growing), len)
+            }
+            // Of no told length: whole, then.
+            None => {
+                let mut bytes = first.to_vec();
+                while let Some(chunk) = resp.chunk().await.map_err(failed)? {
+                    bytes.extend_from_slice(&chunk);
+                }
+                let len = bytes.len() as u64;
+                (Reader::Whole(std::io::Cursor::new(bytes)), len)
+            }
+        };
         let codec = match extension {
             "wav" => Codec::Wav,
             "flac" => Codec::Flac,
@@ -168,7 +342,8 @@ impl SoundCloud {
             other => Codec::Other(other.to_uppercase()),
         };
         Ok(Audio {
-            bytes,
+            reader,
+            len,
             extension,
             quality: AudioQuality {
                 codec,
@@ -250,6 +425,33 @@ mod tests {
                 "https://x/data001.m4s?s=1"
             ]
         );
+    }
+
+    #[test]
+    fn a_growing_file_reads_what_has_come_and_waits_for_the_rest() {
+        let shared = Arc::new(Shared {
+            state: Mutex::new(State::default()),
+            more: Condvar::new(),
+        });
+        shared.push(b"abc");
+        let mut reader = Growing {
+            shared: shared.clone(),
+            pos: 0,
+            len: 6,
+        };
+        let later = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            shared.push(b"def");
+            shared.end(None);
+        });
+        let mut all = Vec::new();
+        reader.read_to_end(&mut all).unwrap();
+        later.join().unwrap();
+        assert_eq!(all, b"abcdef");
+        reader.seek(SeekFrom::End(-2)).unwrap();
+        let mut tail = Vec::new();
+        reader.read_to_end(&mut tail).unwrap();
+        assert_eq!(tail, b"ef");
     }
 
     #[test]
