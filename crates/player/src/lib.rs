@@ -1,18 +1,25 @@
 //! Decoding and audio output.
 //!
-//! This first version plays one source to the end through the default output
-//! device, at the source's own sample rate. It is the shared (PipeWire) path;
-//! the bit-perfect `hw:` path and gapless queue playback come later.
+//! A [`Player`] owns an engine thread that decodes ahead into a ring of 32-bit
+//! integer frames, and an output that plays from it: shared (PipeWire, with
+//! software volume) or exclusive (an ALSA `hw:` device at the source's own rate,
+//! untouched). A track set with [`Player::set_next`] follows the current one
+//! without a gap when both have the same rate and channel count.
+
+mod decoder;
+mod engine;
+mod output;
+mod reserve;
 
 use std::io::{Read, Seek};
+use std::sync::mpsc::{Receiver, Sender};
+use std::sync::{Arc, Mutex};
+use std::thread::JoinHandle;
 use std::time::Duration;
 
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use symphonia::core::codecs::audio::AudioDecoderOptions;
-use symphonia::core::formats::probe::Hint;
-use symphonia::core::formats::{FormatOptions, TrackType};
-use symphonia::core::io::{MediaSource, MediaSourceStream};
-use symphonia::core::meta::MetadataOptions;
+use symphonia::core::io::MediaSource;
+
+use engine::{Command, Engine};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -24,25 +31,46 @@ pub enum Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-/// Any seekable byte source of known length, for symphonia.
-struct Source<R> {
+/// The caller's name for a source, echoed back in events and status.
+pub type Token = u64;
+
+/// Something to play: any seekable bytes of known length.
+pub struct Source {
+    reader: Box<dyn MediaSource>,
+    extension: Option<String>,
+}
+
+impl Source {
+    /// `extension` is a format hint (`"m4a"`, `"flac"`…).
+    pub fn new<R>(reader: R, len: u64, extension: Option<&str>) -> Self
+    where
+        R: Read + Seek + Send + Sync + 'static,
+    {
+        Self {
+            reader: Box::new(Bytes { inner: reader, len }),
+            extension: extension.map(str::to_owned),
+        }
+    }
+}
+
+struct Bytes<R> {
     inner: R,
     len: u64,
 }
 
-impl<R: Read> Read for Source<R> {
+impl<R: Read> Read for Bytes<R> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         self.inner.read(buf)
     }
 }
 
-impl<R: Seek> Seek for Source<R> {
+impl<R: Seek> Seek for Bytes<R> {
     fn seek(&mut self, pos: std::io::SeekFrom) -> std::io::Result<u64> {
         self.inner.seek(pos)
     }
 }
 
-impl<R: Read + Seek + Send + Sync> MediaSource for Source<R> {
+impl<R: Read + Seek + Send + Sync> MediaSource for Bytes<R> {
     fn is_seekable(&self) -> bool {
         true
     }
@@ -52,150 +80,146 @@ impl<R: Read + Seek + Send + Sync> MediaSource for Source<R> {
     }
 }
 
-/// What the output device was actually opened with.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct OutputFormat {
-    pub sample_rate: u32,
-    pub channels: u16,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OutputMode {
+    /// The default device, through the sound server.
+    Shared,
+    /// An ALSA device (`hw:CARD=USB,DEV=0`…) opened directly and exclusively.
+    Exclusive { device: String },
 }
 
-/// Play `source` (`len` bytes, `extension` as a format hint) to the end. Blocks.
-/// `on_start` gets the source and output formats once the device is open.
-pub fn play<R>(
-    source: R,
-    len: u64,
-    extension: Option<&str>,
-    on_start: impl FnOnce(OutputFormat, OutputFormat),
-) -> Result<()>
-where
-    R: Read + Seek + Send + Sync + 'static,
-{
-    let decode = |e: symphonia::core::errors::Error| Error::Decode(e.to_string());
-    let output = |e: &dyn std::fmt::Display| Error::Output(e.to_string());
+/// The source as decoded.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SourceFormat {
+    pub codec: String,
+    pub sample_rate: u32,
+    pub channels: u16,
+    /// For lossless sources; lossy codecs have no inherent bit depth.
+    pub bits_per_sample: Option<u32>,
+    pub duration: Option<Duration>,
+}
 
-    let mut hint = Hint::new();
-    if let Some(ext) = extension {
-        hint.with_extension(ext);
-    }
-    let stream = MediaSourceStream::new(Box::new(Source { inner: source, len }), Default::default());
-    let mut format = symphonia::default::get_probe()
-        .probe(
-            &hint,
-            stream,
-            FormatOptions::default(),
-            MetadataOptions::default(),
-        )
-        .map_err(decode)?;
-    let track = format
-        .first_track(TrackType::Audio)
-        .ok_or_else(|| Error::Decode("no audio track".into()))?;
-    let track_id = track.id;
-    let params = track
-        .codec_params
-        .as_ref()
-        .and_then(|p| p.audio())
-        .cloned()
-        .ok_or_else(|| Error::Decode("no audio parameters".into()))?;
-    let source_format = OutputFormat {
-        sample_rate: params
-            .sample_rate
-            .ok_or_else(|| Error::Decode("unknown sample rate".into()))?,
-        channels: params.channels.as_ref().map_or(2, |c| c.count() as u16),
-    };
-    let mut decoder = symphonia::default::get_codecs()
-        .make_audio_decoder(&params, &AudioDecoderOptions::default())
-        .map_err(decode)?;
+/// The output as opened.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OutputInfo {
+    pub device: String,
+    pub sample_rate: u32,
+    pub channels: u16,
+    pub sample_format: &'static str,
+    /// The decoder's samples reach the device unchanged: exclusive access, the
+    /// source's rate and channels, no volume, a container wide enough.
+    pub bit_perfect: bool,
+}
 
-    let device = cpal::default_host()
-        .default_output_device()
-        .ok_or_else(|| Error::Output("no output device".into()))?;
-    // The source's own layout, else the device's usual one (stereo is then
-    // spread or folded by the channel mapping below), never whatever comes first.
-    let default_channels = device
-        .default_output_config()
-        .map_err(|e| output(&e))?
-        .channels();
-    let configs: Vec<_> = device
-        .supported_output_configs()
-        .map_err(|e| output(&e))?
-        .filter(|c| c.sample_format() == cpal::SampleFormat::F32)
-        .collect();
-    let config = [source_format.channels, default_channels]
-        .into_iter()
-        .find_map(|channels| {
-            configs
-                .iter()
-                .filter(|c| c.channels() == channels)
-                .find_map(|c| c.try_with_sample_rate(source_format.sample_rate))
-        })
-        .ok_or_else(|| {
-            Error::Output(format!(
-                "the output device can't run at {} Hz",
-                source_format.sample_rate
-            ))
-        })?;
-    let out_format = OutputFormat {
-        sample_rate: config.sample_rate(),
-        channels: config.channels(),
-    };
+#[derive(Debug, Clone, PartialEq)]
+pub enum Event {
+    /// `token` is now audible: after [`Player::play`], or when a queued track
+    /// takes over.
+    Started {
+        token: Token,
+        source: SourceFormat,
+        output: OutputInfo,
+    },
+    /// The last track played to the end and nothing is queued.
+    Finished,
+    Error {
+        token: Option<Token>,
+        message: String,
+    },
+}
 
-    // Two seconds of audio between the decoder and the device.
-    let capacity = (out_format.sample_rate as usize) * usize::from(out_format.channels) * 2;
-    let (mut producer, mut consumer) = rtrb::RingBuffer::<f32>::new(capacity);
-    let stream = device
-        .build_output_stream(
-            config.config(),
-            move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                for sample in data.iter_mut() {
-                    *sample = consumer.pop().unwrap_or(0.0);
-                }
-            },
-            |err| eprintln!("audio output error: {err}"),
-            None,
-        )
-        .map_err(|e| output(&e))?;
-    stream.play().map_err(|e| output(&e))?;
-    on_start(source_format, out_format);
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Status {
+    pub token: Option<Token>,
+    pub position: Duration,
+    pub paused: bool,
+    pub source: Option<SourceFormat>,
+    pub output: Option<OutputInfo>,
+}
 
-    let in_channels = usize::from(source_format.channels);
-    let out_channels = usize::from(out_format.channels);
-    let mut interleaved: Vec<f32> = Vec::new();
-    loop {
-        let packet = match format.next_packet() {
-            Ok(Some(packet)) => packet,
-            Ok(None) => break,
-            Err(symphonia::core::errors::Error::IoError(e))
-                if e.kind() == std::io::ErrorKind::UnexpectedEof =>
-            {
-                break;
-            }
-            Err(e) => return Err(decode(e)),
-        };
-        if packet.track_id != track_id {
-            continue;
-        }
-        let decoded = match decoder.decode(&packet) {
-            Ok(decoded) => decoded,
-            Err(symphonia::core::errors::Error::DecodeError(_)) => continue,
-            Err(e) => return Err(decode(e)),
-        };
-        interleaved.clear();
-        decoded.copy_to_vec_interleaved(&mut interleaved);
+pub struct Player {
+    commands: Sender<Command>,
+    events: Receiver<Event>,
+    status: Arc<Mutex<Status>>,
+    thread: Option<JoinHandle<()>>,
+}
 
-        for frame in interleaved.chunks_exact(in_channels) {
-            for c in 0..out_channels {
-                let sample = frame[c % in_channels];
-                while producer.push(sample).is_err() {
-                    std::thread::sleep(Duration::from_millis(5));
-                }
-            }
+impl Player {
+    pub fn new(mode: OutputMode) -> Self {
+        let (commands, command_rx) = std::sync::mpsc::channel();
+        let (event_tx, events) = std::sync::mpsc::channel();
+        let status = Arc::new(Mutex::new(Status::default()));
+        let engine = Engine::new(mode, status.clone(), event_tx);
+        let thread = std::thread::Builder::new()
+            .name("player".into())
+            .spawn(move || engine.run(command_rx))
+            .expect("spawn the player thread");
+        Self {
+            commands,
+            events,
+            status,
+            thread: Some(thread),
         }
     }
 
-    // Let the device drain what is still buffered.
-    while producer.slots() < capacity {
-        std::thread::sleep(Duration::from_millis(20));
+    fn send(&self, command: Command) {
+        let _ = self.commands.send(command);
     }
-    std::thread::sleep(Duration::from_millis(200));
-    Ok(())
+
+    /// Play `source` now, dropping whatever was playing or queued.
+    pub fn play(&self, token: Token, source: Source) {
+        self.send(Command::Play(token, source));
+    }
+
+    /// The track to follow the current one. Set it once per track: once it has
+    /// started streaming in behind the current one it can't be replaced.
+    pub fn set_next(&self, token: Token, source: Source) {
+        self.send(Command::SetNext(token, source));
+    }
+
+    pub fn pause(&self) {
+        self.send(Command::Pause);
+    }
+
+    pub fn resume(&self) {
+        self.send(Command::Resume);
+    }
+
+    pub fn seek(&self, to: Duration) {
+        self.send(Command::Seek(to));
+    }
+
+    pub fn stop(&self) {
+        self.send(Command::Stop);
+    }
+
+    /// Shared output only: exclusive output is never scaled.
+    pub fn set_volume(&self, volume: f32) {
+        self.send(Command::Volume(volume.clamp(0.0, 1.0)));
+    }
+
+    /// Switch outputs, carrying on from the same position.
+    pub fn set_output(&self, mode: OutputMode) {
+        self.send(Command::Output(mode));
+    }
+
+    pub fn status(&self) -> Status {
+        self.status
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+
+    pub fn events(&self) -> &Receiver<Event> {
+        &self.events
+    }
+}
+
+impl Drop for Player {
+    fn drop(&mut self) {
+        self.send(Command::Quit);
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
 }

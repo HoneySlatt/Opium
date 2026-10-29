@@ -4,7 +4,7 @@
 //!   cargo run -p apple-music --example am -- library
 //!   cargo run -p apple-music --example am -- search "daft punk"
 //!   cargo run -p apple-music --example am -- fetch 1463409605 out.m4a
-//!   cargo run -p apple-music --example am -- play 1463409605
+//!   cargo run -p apple-music --example am -- play 1463409605 1463409610
 //!
 //! The browser defaults to `brave-origin`; set `MUSIC_BROWSER` for another one.
 //! The token is stored under `$XDG_CONFIG_HOME/music/apple-music/` and never printed.
@@ -36,9 +36,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some("library") => library(&connect().await?).await,
         Some("search") => search(&connect().await?, &args[1..].join(" ")).await,
         Some("fetch") if args.len() == 3 => fetch(&connect().await?, &args[1], &args[2]).await,
-        Some("play") if args.len() == 2 => play(&connect().await?, &args[1]).await,
+        Some("play") if args.len() >= 2 => play(&connect().await?, &args[1..]).await,
         _ => {
-            eprintln!("usage: am signin | library | search <term> | fetch <id> <out> | play <id>");
+            eprintln!("usage: am signin | library | search <term> | fetch <id> <out> | play <id>…");
             Ok(())
         }
     }
@@ -113,7 +113,7 @@ async fn search(am: &AppleMusic, term: &str) -> Result<(), Box<dyn std::error::E
         r.playlists.len()
     );
     for t in r.tracks.iter().take(5) {
-        println!("  {} — {}", t.title, t.artists.join(", "));
+        println!("  {} — {} [{}] {:?}", t.title, t.artists.join(", "), t.id.id, t.track_number);
     }
     for a in r.albums.iter().take(3) {
         println!("  [album] {} — {} ({:?})", a.title, a.artists.join(", "), a.year);
@@ -141,23 +141,103 @@ async fn fetch(am: &AppleMusic, id: &str, out: &str) -> Result<(), Box<dyn std::
     Ok(())
 }
 
-async fn play(am: &AppleMusic, id: &str) -> Result<(), Box<dyn std::error::Error>> {
+/// Play `ids` in order, gapless where the formats allow. `MUSIC_OUTPUT=hw:…`
+/// selects exclusive output. On stdin: `p` pause/resume, `s <seconds>` seek,
+/// `n` next, `q` quit.
+async fn play(am: &AppleMusic, ids: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let mode = match std::env::var("MUSIC_OUTPUT") {
+        Ok(device) => player::OutputMode::Exclusive { device },
+        Err(_) => player::OutputMode::Shared,
+    };
+    let player = player::Player::new(mode);
     let started = std::time::Instant::now();
-    let stream = open_track(am, id).await?;
-    let len = stream.len();
-    tokio::task::spawn_blocking(move || {
-        player::play(stream, len, Some("m4a"), |source, output| {
+
+    player.play(0, make_source(open_track(am, &ids[0]).await?));
+    let mut queued = 0;
+
+    let (lines_tx, lines) = std::sync::mpsc::channel::<String>();
+    std::thread::spawn(move || {
+        for line in std::io::stdin().lines().map_while(Result::ok) {
+            if lines_tx.send(line).is_err() {
+                break;
+            }
+        }
+    });
+
+    let mut paused = false;
+    let mut last_report = std::time::Instant::now();
+    loop {
+        while let Ok(event) = player.events().try_recv() {
+            match event {
+                player::Event::Started { token, source, output } => {
+                    println!(
+                        "[{:>6.2?}] ▶ {} — {} {} Hz × {} → {} {} Hz × {} {}{}",
+                        started.elapsed(),
+                        ids[token as usize],
+                        source.codec,
+                        source.sample_rate,
+                        source.channels,
+                        output.device,
+                        output.sample_rate,
+                        output.channels,
+                        output.sample_format,
+                        if output.bit_perfect { " (bit-perfect)" } else { "" },
+                    );
+                    // Queue the following track as soon as this one is audible.
+                    let following = token as usize + 1;
+                    if following < ids.len() && queued < following {
+                        queued = following;
+                        player.set_next(following as u64, make_source(open_track(am, &ids[following]).await?));
+                    }
+                }
+                player::Event::Finished => {
+                    println!("[{:>6.2?}] finished", started.elapsed());
+                    return Ok(());
+                }
+                player::Event::Error { token, message } => println!("error ({token:?}): {message}"),
+            }
+        }
+        while let Ok(line) = lines.try_recv() {
+            println!("[{:>6.2?}] < {line}", started.elapsed());
+            let mut words = line.split_whitespace();
+            match words.next() {
+                Some("p") => {
+                    paused = !paused;
+                    if paused { player.pause() } else { player.resume() }
+                }
+                Some("s") => {
+                    if let Some(secs) = words.next().and_then(|w| w.parse::<f64>().ok()) {
+                        player.seek(std::time::Duration::from_secs_f64(secs));
+                    }
+                }
+                Some("n") => {
+                    let status = player.status();
+                    let following = status.token.map_or(0, |t| t as usize + 1);
+                    if following < ids.len() {
+                        queued = following;
+                        player.play(following as u64, make_source(open_track(am, &ids[following]).await?));
+                    }
+                }
+                Some("q") => return Ok(()),
+                _ => {}
+            }
+        }
+        if last_report.elapsed() >= std::time::Duration::from_secs(1) {
+            last_report = std::time::Instant::now();
+            let status = player.status();
             println!(
-                "playing after {:.2?}: source {} Hz × {} → output {} Hz × {}",
+                "[{:>6.2?}] {:?} at {:.1?}{}",
                 started.elapsed(),
-                source.sample_rate,
-                source.channels,
-                output.sample_rate,
-                output.channels
+                status.token.map(|t| &ids[t as usize]),
+                status.position,
+                if status.paused { " (paused)" } else { "" }
             );
-        })
-    })
-    .await??;
-    println!("finished after {:.2?}", started.elapsed());
-    Ok(())
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+}
+
+fn make_source(stream: apple_music::AudioStream) -> player::Source {
+    let len = stream.len();
+    player::Source::new(stream, len, Some("m4a"))
 }
