@@ -156,7 +156,8 @@ pub enum Request {
     },
     /// Songs, albums, artists and playlists matching a query, in the
     /// catalog or in the library.
-    Search(SearchScope, String),
+    /// A search, of every service or only the one given.
+    Search(SearchScope, Option<ProviderKind>, String),
 }
 
 pub enum Reply {
@@ -305,6 +306,7 @@ pub enum Reply {
     },
     Search {
         scope: SearchScope,
+        source: Option<ProviderKind>,
         query: String,
         result: Result<SearchResults, String>,
     },
@@ -809,13 +811,13 @@ async fn run(
                 });
                 continue;
             }
-            Request::Search(scope, query) => {
+            Request::Search(scope, source, query) => {
                 let services = Services {
                     apple: apple.clone(),
                     soundcloud: sc.clone(),
                     navidrome: nd.clone(),
                 };
-                tokio::spawn(search(services, scope, query, replies));
+                tokio::spawn(search(services, scope, source, query, replies));
                 continue;
             }
             _ => {}
@@ -1731,14 +1733,21 @@ async fn load_soundcloud_library(sc: Arc<SoundCloud>, replies: Replies) {
 }
 
 /// A search of every service (see `services::Services::search`).
-async fn search(services: Services, scope: SearchScope, query: String, replies: Replies) {
+async fn search(
+    services: Services,
+    scope: SearchScope,
+    source: Option<ProviderKind>,
+    query: String,
+    replies: Replies,
+) {
     let within = match scope {
         SearchScope::AppleMusic => services::Scope::Catalog,
         SearchScope::Library => services::Scope::Library,
     };
-    let result = services.search(within, &query, None).await;
+    let result = services.search(within, &query, source).await;
     replies.send(Reply::Search {
         scope,
+        source,
         query,
         result,
     });

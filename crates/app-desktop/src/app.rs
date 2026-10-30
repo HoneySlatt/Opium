@@ -132,6 +132,9 @@ pub enum Enqueue {
 /// What the albums' order was built from: the list's version and the sort.
 type AlbumsOrderKey = (u64, crate::settings::AlbumSort, bool);
 
+/// A search's scope, the one service asked (or all), and its query.
+type SearchKey = (SearchScope, Option<ProviderKind>, String);
+
 /// A playlist's songs that match a search, and where each is in the playlist.
 struct Searched {
     query: String,
@@ -354,7 +357,8 @@ pub struct App {
     pub search_edited: Option<f64>,
     /// Put the cursor in the search field on the next frame.
     pub focus_search: bool,
-    searches: HashMap<(SearchScope, String), Loaded<Arc<SearchResults>>>,
+    /// By scope, the one service asked (or all), and query.
+    searches: HashMap<SearchKey, Loaded<Arc<SearchResults>>>,
     pub search_scope: SearchScope,
     pub search_source: Option<ProviderKind>,
     /// Playlists opened from outside the library (search results).
@@ -774,11 +778,14 @@ impl App {
                 }
             }
             Page::Search(query) => {
-                let key = (self.search_scope, query.clone());
+                let key = (self.search_scope, self.search_source, query.clone());
                 if let std::collections::hash_map::Entry::Vacant(e) = self.searches.entry(key) {
                     e.insert(Loaded::Loading);
-                    self.backend
-                        .send(Request::Search(self.search_scope, query.clone()));
+                    self.backend.send(Request::Search(
+                        self.search_scope,
+                        self.search_source,
+                        query.clone(),
+                    ));
                 }
             }
             // A catalog playlist says whether it is a favourite when asked.
@@ -1322,7 +1329,8 @@ impl App {
 
     /// The results for `query` where Search looks now.
     pub fn search_results(&self, query: &str) -> Option<&Loaded<Arc<SearchResults>>> {
-        self.searches.get(&(self.search_scope, query.to_owned()))
+        self.searches
+            .get(&(self.search_scope, self.search_source, query.to_owned()))
     }
 
     /// Look in the catalog or the library, searching there if not done yet.
@@ -1336,6 +1344,56 @@ impl App {
         }
     }
 
+    /// Search one service alone, or all: the one chosen is asked by itself,
+    /// for its own copies of what others have too.
+    pub fn set_search_source(&mut self, source: Option<ProviderKind>) {
+        if source != self.search_source {
+            self.search_source = source;
+            self.arrived();
+        }
+    }
+
+    /// SoundCloud has no search of one's likes: they are matched here, in the
+    /// library as read, taken in turns with the other services' songs. A song
+    /// another service has too shows once.
+    fn with_likes(&self, results: &mut SearchResults, query: &str) {
+        let words: Vec<String> = fold(query.trim())
+            .split_whitespace()
+            .map(str::to_owned)
+            .collect();
+        let found = |text: String| {
+            let text = fold(&text);
+            words.iter().all(|w| text.contains(w.as_str()))
+        };
+        let liked = |id: &ItemId| id.provider == ProviderKind::SoundCloud;
+        let songs = self.songs.iter().filter(|t| {
+            liked(&t.id)
+                && found(format!(
+                    "{} {} {}",
+                    t.title,
+                    t.artists.join(" "),
+                    t.album.as_deref().unwrap_or_default()
+                ))
+        });
+        let all = services::in_turns(
+            std::mem::take(&mut results.tracks),
+            songs.cloned().collect(),
+        );
+        let worse = music_core::dedupe::songs(&all);
+        results.tracks = all
+            .into_iter()
+            .enumerate()
+            .filter(|(i, _)| !worse.contains(i))
+            .map(|(_, t)| t)
+            .collect();
+        results.playlists.extend(
+            self.playlists
+                .iter()
+                .filter(|p| liked(&p.id) && found(p.name.clone()))
+                .cloned(),
+        );
+    }
+
     /// Search for what the field holds: a new page, or the search page
     /// updated in place while typing.
     pub fn submit_search(&mut self) {
@@ -1345,7 +1403,7 @@ impl App {
             return;
         }
         // A search that failed is tried again.
-        let key = (self.search_scope, query.clone());
+        let key = (self.search_scope, self.search_source, query.clone());
         if matches!(self.searches.get(&key), Some(Loaded::Failed(_))) {
             self.searches.remove(&key);
         }
@@ -3063,6 +3121,7 @@ impl App {
                 },
                 Reply::Search {
                     scope,
+                    source,
                     query,
                     result,
                 } => {
@@ -3075,6 +3134,11 @@ impl App {
                             results.albums.retain(|a| on(&a.id));
                             results.artists.retain(|a| on(&a.id));
                             results.playlists.retain(|p| on(&p.id));
+                            if scope == SearchScope::Library
+                                && source.is_none_or(|s| s == ProviderKind::SoundCloud)
+                            {
+                                self.with_likes(&mut results, &query);
+                            }
                             Loaded::Ready(Arc::new(results))
                         }
                         Err(e) => Loaded::Failed(e),
@@ -3083,7 +3147,7 @@ impl App {
                     if self.searches.len() >= SEARCHES_KEPT {
                         self.searches.clear();
                     }
-                    self.searches.insert((scope, query), loaded);
+                    self.searches.insert((scope, source, query), loaded);
                 }
                 Reply::Fetched { token, result } => {
                     // An encode below Apple's usual 256 kbps shows as it is,

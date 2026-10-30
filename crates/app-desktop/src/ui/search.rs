@@ -2,21 +2,18 @@
 //! library to search, the top result beside the first songs, then shelves of
 //! albums and playlists.
 
-use std::sync::Arc;
-
 use egui::{Id, Rect, Sense, Ui, pos2, vec2};
-use music_core::model::{
-    Artwork, Collection, FavouriteKind, ItemId, ProviderKind, SearchResults, Track,
-};
+use music_core::model::{Artwork, Collection, FavouriteKind, ItemId, SearchResults, Track};
 
 use crate::app::{App, Loaded, Page, SearchScope};
 use crate::fonts::{Weight, font};
 use crate::theme::Theme;
 
-use super::grid::{CardClick, ShelfCard, cover_shelf};
+use super::grid::{CardClick, CoverCard, Grid, ShelfCard, cover_card, cover_shelf, round_shelf};
 use super::songs::source_chips;
 use super::tracks::{self, Columns, RowAction, RowState};
-use super::{artwork, glow, paint_text, text};
+use super::{artwork, glow, paint_icon, paint_text, text};
+use crate::icons;
 
 /// Where the sections start, under the title and the scope switch.
 const BODY_TOP: f32 = 172.0;
@@ -58,26 +55,31 @@ enum Open {
 pub fn show(app: &mut App, ui: &mut Ui, pad: f32, query: &str) -> f32 {
     let theme = app.theme.clone();
     let loaded = match app.search_results(query) {
-        Some(Loaded::Ready(results)) => Ok(Some(filtered(results, app.search_source))),
+        Some(Loaded::Ready(results)) => Ok(Some(results.clone())),
         Some(Loaded::Failed(e)) => Err(e.clone()),
         _ => Ok(None),
     };
     let width = ui.available_width() - 2.0 * pad;
     let side_by_side = width >= TOP_RESULT_LEFT + COLUMN_GAP + SONGS_MIN;
+    let grid = Grid::new(width);
+    let unfolded = |ui: &Ui, name: &str| {
+        let id = unfold_id(app, query, name);
+        (
+            id,
+            ui.ctx().data(|d| d.get_temp::<bool>(id)).unwrap_or(false),
+        )
+    };
+    let (songs_id, all_songs) = unfolded(ui, "Songs");
 
     // Lay the sections out first: the scroll area needs the height.
-    let (top, songs, albums, playlists) = match &loaded {
-        Ok(Some(r)) => (
-            top_result(r),
-            r.tracks
-                .iter()
-                .take(SONGS_SHOWN)
-                .cloned()
-                .collect::<Vec<_>>(),
-            album_cards(r),
-            playlist_cards(r),
-        ),
-        _ => (None, Vec::new(), Vec::new(), Vec::new()),
+    let (top, all_tracks, sections) = match &loaded {
+        Ok(Some(r)) => (top_result(r), r.tracks.clone(), sections(r)),
+        _ => (None, Vec::new(), Vec::new()),
+    };
+    let songs: Vec<Track> = if all_songs {
+        all_tracks.clone()
+    } else {
+        all_tracks.iter().take(SONGS_SHOWN).cloned().collect()
     };
     let loading = matches!(loaded, Ok(None));
     let song_rows = if loading { SONGS_SHOWN } else { songs.len() };
@@ -98,12 +100,32 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, query: &str) -> f32 {
     } else {
         top_height + songs_height
     };
-    let shelves = [("Albums", &albums), ("Playlists", &playlists)];
-    let shelf_count = shelves.iter().filter(|(_, c)| !c.is_empty()).count();
-    let empty = !loading && top.is_none() && songs.is_empty() && shelf_count == 0;
+    // Each section of covers: a shelf, or all of them in a grid once its
+    // title is clicked.
+    let sections: Vec<(Section, Id, bool)> = sections
+        .into_iter()
+        .filter(|s| !s.cards.is_empty())
+        .map(|s| {
+            let (id, open) = unfolded(ui, s.title);
+            (s, id, open)
+        })
+        .collect();
+    let section_height = |s: &Section, open: bool| {
+        SECTION_GAP
+            + SECTION_HEAD
+            + if open {
+                grid.height(s.cards.len())
+            } else {
+                CARD_HEIGHT
+            }
+    };
+    let empty = !loading && top.is_none() && songs.is_empty() && sections.is_empty();
     let total = BODY_TOP
         + if empty { 160.0 } else { columns_height }
-        + shelf_count as f32 * (SECTION_GAP + SECTION_HEAD + CARD_HEIGHT)
+        + sections
+            .iter()
+            .map(|(s, _, open)| section_height(s, *open))
+            .sum::<f32>()
         + 104.0
         + 40.0;
 
@@ -141,7 +163,7 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, query: &str) -> f32 {
                 content.top() + 73.0,
                 app.search_source,
             ) {
-                app.search_source = source;
+                app.set_search_source(source);
                 app.detail_selected = None;
             }
 
@@ -209,7 +231,15 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, query: &str) -> f32 {
                 }
             }
             if song_rows > 0 {
-                section_head(ui, &theme, songs_rect.left(), songs_rect.top(), "Songs");
+                // The first six; the title shows the others, when there are.
+                if all_tracks.len() > SONGS_SHOWN {
+                    let at = songs_rect.left_top();
+                    if fold_head(ui, &theme, at, "Songs", all_songs, songs_id) {
+                        ui.ctx().data_mut(|d| d.insert_temp(songs_id, !all_songs));
+                    }
+                } else {
+                    section_head(ui, &theme, songs_rect.left(), songs_rect.top(), "Songs");
+                }
                 let rows_top = songs_rect.top() + SECTION_HEAD;
                 if loading {
                     tracks::skeleton(
@@ -226,69 +256,91 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, query: &str) -> f32 {
             }
             y += columns_height;
 
-            for (title, cards) in shelves {
-                if cards.is_empty() {
-                    continue;
-                }
+            for (section, id, open) in &sections {
                 y += SECTION_GAP;
-                shelf(app, ui, &theme, pos2(left, y), width, title, cards, query);
-                y += SECTION_HEAD + CARD_HEIGHT;
+                let at = pos2(left, y);
+                let clicked = if *open {
+                    covers_grid(app, ui, &theme, &grid, at, section, *id, query)
+                } else {
+                    shelf(app, ui, &theme, at, width, section, *id, query)
+                };
+                // More than a row holds: the title shows them all.
+                if *open || section.cards.len() > grid.columns() {
+                    if fold_head(ui, &theme, at, section.title, *open, *id) {
+                        ui.ctx().data_mut(|d| d.insert_temp(*id, !*open));
+                    }
+                } else {
+                    section_head(ui, &theme, at.x, at.y, section.title);
+                }
+                if let Some((i, click)) = clicked {
+                    card_clicked(app, ui, section, i, click, query);
+                }
+                y += section_height(section, *open) - SECTION_GAP;
             }
         });
     output.state.clamped_offset().y
 }
 
-/// The results from the chosen source only.
-/// The results of one service, made once for the results and the source
-/// shown: the page asks for them for every card.
-fn filtered(results: &Arc<SearchResults>, source: Option<ProviderKind>) -> Arc<SearchResults> {
-    type Made = (Arc<SearchResults>, ProviderKind, Arc<SearchResults>);
-    thread_local! {
-        static LAST: std::cell::RefCell<Option<Made>> = const { std::cell::RefCell::new(None) };
-    }
-    let Some(source) = source else {
-        return results.clone();
-    };
-    LAST.with_borrow_mut(|last| {
-        if let Some((of, from, made)) = last
-            && Arc::ptr_eq(of, results)
-            && *from == source
-        {
-            return made.clone();
-        }
-        let made = only(results, source);
-        *last = Some((results.clone(), source, made.clone()));
-        made
-    })
+/// Where a section of the current search keeps whether it shows all it found.
+fn unfold_id(app: &App, query: &str, name: &str) -> Id {
+    Id::unique((
+        "search-unfolded",
+        query,
+        app.search_scope,
+        app.search_source,
+        name,
+    ))
 }
 
-fn only(results: &SearchResults, source: ProviderKind) -> Arc<SearchResults> {
-    Arc::new(SearchResults {
-        tracks: results
-            .tracks
-            .iter()
-            .filter(|t| t.id.provider == source)
-            .cloned()
-            .collect(),
-        albums: results
-            .albums
-            .iter()
-            .filter(|a| a.id.provider == source)
-            .cloned()
-            .collect(),
-        artists: results
-            .artists
-            .iter()
-            .filter(|a| a.id.provider == source)
-            .cloned()
-            .collect(),
-        playlists: results
-            .playlists
-            .iter()
-            .filter(|p| p.id.provider == source)
-            .cloned()
-            .collect(),
-    })
+/// A section's title that shows all it found, or folds them back: a chevron
+/// after it, right when folded, down when open. Returns whether it was clicked.
+fn fold_head(ui: &Ui, theme: &Theme, at: egui::Pos2, label: &str, open: bool, id: Id) -> bool {
+    let g = text(ui, label, font(18.0, Weight::SemiBold), theme.text, 400.0);
+    let end = at.x + g.size().x;
+    paint_text(ui, g, at.x, at.y + 11.0, egui::Align::Min, theme.text);
+    let response = ui.interact(
+        Rect::from_min_max(pos2(at.x, at.y - 4.0), pos2(end + 26.0, at.y + 26.0)),
+        id.with("head"),
+        Sense::click(),
+    );
+    let colour = if response.hovered() {
+        theme.text
+    } else {
+        theme.muted()
+    };
+    let chevron = if open { icons::DOWN } else { icons::RIGHT };
+    paint_icon(ui, chevron, pos2(end + 13.0, at.y + 11.0), 15.0, colour);
+    response
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .clicked()
+}
+
+/// A section of covers: albums, artists or playlists.
+struct Section {
+    title: &'static str,
+    cards: Vec<Card>,
+    round: bool,
+}
+
+/// Albums, the artists after the top result, playlists.
+fn sections(r: &SearchResults) -> Vec<Section> {
+    vec![
+        Section {
+            title: "Albums",
+            cards: album_cards(r),
+            round: false,
+        },
+        Section {
+            title: "Artists",
+            cards: artist_cards(r),
+            round: true,
+        },
+        Section {
+            title: "Playlists",
+            cards: playlist_cards(r),
+            round: false,
+        },
+    ]
 }
 
 /// An artist first, else an album, else a playlist.
@@ -323,6 +375,21 @@ fn album_cards(r: &SearchResults) -> Vec<Card> {
         .collect()
 }
 
+/// The artists after the first, which is the top result.
+fn artist_cards(r: &SearchResults) -> Vec<Card> {
+    r.artists
+        .iter()
+        .skip(1)
+        .map(|a| Card {
+            title: a.name.clone(),
+            sub: "Artist".into(),
+            art: a.artwork.clone(),
+            open: Open::Artist(a.id.clone()),
+            explicit: false,
+        })
+        .collect()
+}
+
 fn playlist_cards(r: &SearchResults) -> Vec<Card> {
     r.playlists
         .iter()
@@ -345,7 +412,7 @@ fn open(app: &mut App, what: Open, query: &str) {
         Open::Artist(id) => app.go(Page::Artist(id)),
         Open::Playlist(i) => {
             let playlist = match app.search_results(query) {
-                Some(Loaded::Ready(r)) => filtered(r, app.search_source).playlists.get(i).cloned(),
+                Some(Loaded::Ready(r)) => r.playlists.get(i).cloned(),
                 _ => None,
             };
             if let Some(playlist) = playlist {
@@ -404,7 +471,7 @@ fn top_card(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect, top: &Top, qu
             let Some(Loaded::Ready(r)) = app.search_results(query) else {
                 return;
             };
-            let Some(p) = filtered(r, app.search_source).playlists.get(*i).cloned() else {
+            let Some(p) = r.playlists.get(*i).cloned() else {
                 return;
             };
             (
@@ -489,65 +556,117 @@ fn song_list(app: &mut App, ui: &mut Ui, theme: &Theme, area: Rect, top: f32, so
     }
 }
 
-/// A shelf of covers; a click opens the result.
+/// The album or playlist a card stands for.
+fn collection(app: &App, open: &Open, query: &str) -> Option<Collection> {
+    let Some(Loaded::Ready(r)) = app.search_results(query) else {
+        return None;
+    };
+    match open {
+        Open::Album(id) => r
+            .albums
+            .iter()
+            .find(|a| a.id == *id)
+            .cloned()
+            .map(Collection::Album),
+        Open::Playlist(k) => r.playlists.get(*k).cloned().map(Collection::Playlist),
+        Open::Artist(_) => None,
+    }
+}
+
+/// A section's covers in a row that scrolls sideways (its title is drawn
+/// over it, to be clicked); returns the cover clicked, and how.
 #[allow(clippy::too_many_arguments)]
 fn shelf(
-    app: &mut App,
+    app: &App,
     ui: &mut Ui,
     theme: &Theme,
     at: egui::Pos2,
     width: f32,
-    title: &str,
-    cards: &[Card],
+    section: &Section,
+    id: Id,
     query: &str,
-) {
-    // The album or playlist a card stands for.
-    let collection = |app: &App, open: &Open| -> Option<Collection> {
-        let Some(Loaded::Ready(r)) = app.search_results(query) else {
-            return None;
-        };
-        let r = filtered(r, app.search_source);
-        match open {
-            Open::Album(id) => r
-                .albums
-                .iter()
-                .find(|a| a.id == *id)
-                .cloned()
-                .map(Collection::Album),
-            Open::Playlist(k) => r.playlists.get(*k).cloned().map(Collection::Playlist),
-            Open::Artist(_) => None,
-        }
-    };
-    let items: Vec<ShelfCard> = cards
+) -> Option<(usize, CardClick)> {
+    let items: Vec<ShelfCard> = section
+        .cards
         .iter()
         .map(|c| ShelfCard {
             title: c.title.clone(),
             sub: c.sub.clone(),
             url: c.art.as_ref().map(|a| a.url(376)),
             explicit: c.explicit,
-            addable: collection(app, &c.open).is_some_and(|c| app.can_add_to_library(&c)),
+            addable: collection(app, &c.open, query).is_some_and(|c| app.can_add_to_library(&c)),
         })
         .collect();
-    let id = Id::unique(("search-shelf", title, query));
-    let Some((i, click)) = cover_shelf(ui, theme, at, width, title, &items, CARD, id) else {
-        return;
-    };
+    let id = id.with("shelf");
+    if section.round {
+        round_shelf(ui, theme, at, width, "", &items, CARD, id).map(|i| (i, CardClick::Open))
+    } else {
+        cover_shelf(ui, theme, at, width, "", &items, CARD, id)
+    }
+}
+
+/// All of a section's covers, in as many columns as fit.
+#[allow(clippy::too_many_arguments)]
+fn covers_grid(
+    app: &App,
+    ui: &mut Ui,
+    theme: &Theme,
+    grid: &Grid,
+    at: egui::Pos2,
+    section: &Section,
+    id: Id,
+    query: &str,
+) -> Option<(usize, CardClick)> {
+    let top = at.y + SECTION_HEAD;
+    let mut clicked = None;
+    for (i, c) in section.cards.iter().enumerate() {
+        let art = grid.cell(i, at.x, top);
+        if !ui.is_rect_visible(art.with_max_y(art.bottom() + super::grid::CARD_TEXT)) {
+            continue;
+        }
+        let card = CoverCard {
+            url: c.art.as_ref().map(|a| a.url(376)),
+            title: &c.title,
+            sub: &c.sub,
+            round: section.round,
+            explicit: c.explicit,
+            addable: collection(app, &c.open, query).is_some_and(|c| app.can_add_to_library(&c)),
+            menu: !section.round,
+        };
+        if let Some(click) = cover_card(ui, theme, art, &card, id.with(("card", i))) {
+            clicked = Some((i, click));
+        }
+    }
+    clicked
+}
+
+/// What a click on one of a section's covers does: open it, or what its
+/// menu asked for.
+fn card_clicked(
+    app: &mut App,
+    ui: &Ui,
+    section: &Section,
+    i: usize,
+    click: CardClick,
+    query: &str,
+) {
+    let target = section.cards[i].open.clone();
     let now = ui.input(|i| i.time);
     let how = match click {
-        CardClick::Open => return open(app, cards[i].open.clone(), query),
+        CardClick::Open => return open(app, target, query),
         CardClick::AddToLibrary => {
-            if let Some(item) = collection(app, &cards[i].open) {
+            if let Some(item) = collection(app, &target, query) {
                 app.add_collection_to_library(&item, now);
             }
             return;
         }
         CardClick::Enqueue(how) => how,
     };
-    match &cards[i].open {
+    match &target {
         Open::Album(id) => app.enqueue_album(id.clone(), how, now),
         Open::Playlist(k) => {
             let playlist = match app.search_results(query) {
-                Some(Loaded::Ready(r)) => filtered(r, app.search_source).playlists.get(*k).cloned(),
+                Some(Loaded::Ready(r)) => r.playlists.get(*k).cloned(),
                 _ => None,
             };
             if let Some(playlist) = playlist {
