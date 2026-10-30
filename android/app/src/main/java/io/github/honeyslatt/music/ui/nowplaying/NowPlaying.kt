@@ -75,6 +75,13 @@ import io.github.honeyslatt.music.ui.components.Glyph
 import io.github.honeyslatt.music.ui.components.Line
 import io.github.honeyslatt.music.ui.components.at
 import io.github.honeyslatt.music.ui.components.press
+import io.github.honeyslatt.music.ui.components.Sheet
+import io.github.honeyslatt.music.ui.detail.MotionArtwork
+import coil3.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.BlurEffect
+import androidx.compose.ui.graphics.TileMode
+import androidx.compose.ui.graphics.graphicsLayer
 import io.github.honeyslatt.music.ui.detail.CoverColours
 import io.github.honeyslatt.music.ui.detail.label
 import io.github.honeyslatt.music.ui.theme.geist
@@ -93,6 +100,8 @@ class NpActions(
     val close: () -> Unit,
     val openAlbum: (Track) -> Unit,
     val openArtist: (Track) -> Unit,
+    /** The song's animated cover, when it has one and they are wanted. */
+    val motion: suspend (Track) -> String?,
 )
 
 /**
@@ -106,8 +115,11 @@ fun NowPlaying(playback: Playback, actions: NpActions) {
     val playing by playback.playing.collectAsStateWithLifecycle()
     val t = track ?: return
     var mode by remember { mutableStateOf(NpMode.Artwork) }
+    var signalOpen by remember { mutableStateOf(false) }
+    val motion by produceState<String?>(null, t.albumId) { value = actions.motion(t) }
     val dark = roles.dark
-    val np = if (dark) {
+    // Over the moving cover the text is white in both themes.
+    val np = if (dark || motion != null) {
         NpColours(Color.White, Color.White.copy(alpha = 0.62f), Color.White.copy(alpha = 0.28f), Color.White.copy(alpha = 0.14f))
     } else {
         val c = roles.text
@@ -138,7 +150,8 @@ fun NowPlaying(playback: Playback, actions: NpActions) {
                     }
                 },
         ) {
-            Wash(t)
+            val m = motion
+            if (m != null) Backdrop(t, m, flat = mode != NpMode.Artwork) else Wash(t)
             Column(
                 Modifier
                     .fillMaxSize()
@@ -150,7 +163,11 @@ fun NowPlaying(playback: Playback, actions: NpActions) {
                     Box(Modifier.size(40.dp, 5.dp).background(np.fg.copy(alpha = 0.35f), RoundedCornerShape(3.dp)))
                 }
                 when (mode) {
-                    NpMode.Artwork -> {
+                    NpMode.Artwork -> if (m != null) {
+                        // The cover moves behind everything instead.
+                        Spacer(Modifier.weight(1f))
+                        TitleRow(t, actions)
+                    } else {
                         BoxWithConstraints(Modifier.fillMaxWidth().padding(top = 26.dp)) {
                             val scale by animateFloatAsState(if (playing) 1f else 0.86f, tween(400, easing = io.github.honeyslatt.music.ui.chrome.Standard), label = "art")
                             val shape = RoundedCornerShape(14.dp)
@@ -185,10 +202,11 @@ fun NowPlaying(playback: Playback, actions: NpActions) {
                     exit = fadeOut(Calm) + slideOutVertically(tween(CALM_MS)) { it / 12 } + shrinkVertically(tween(CALM_MS)),
                 ) {
                     Column {
-                        Controls(playback, t, playing, mode) { mode = if (mode == it) NpMode.Artwork else it }
+                        Controls(playback, t, playing, mode, onSignal = { signalOpen = true }) { mode = if (mode == it) NpMode.Artwork else it }
                     }
                 }
             }
+            Sheet(signalOpen, "Signal Path", onClose = { signalOpen = false }) { SignalPath(playback, t) }
         }
     }
 }
@@ -196,6 +214,47 @@ fun NowPlaying(playback: Playback, actions: NpActions) {
 /** How long the lyrics' header and controls take to step aside. */
 internal const val CALM_MS = 350
 private val Calm = tween<Float>(CALM_MS)
+
+/**
+ * The animated cover filling the player, over its still cover until the
+ * video's first frame, under a scrim that keeps the text readable: a
+ * gradient with the artwork; blurred and flat with the lyrics or the queue.
+ */
+@Composable
+private fun Backdrop(t: Track, motion: String, flat: Boolean) {
+    val flatness by animateFloatAsState(if (flat) 1f else 0f, tween(400), label = "scrim")
+    Box(Modifier.fillMaxSize().background(Color.Black)) {
+        Box(
+            Modifier.fillMaxSize().graphicsLayer {
+                // Read here, the blur changes without recomposing.
+                val radius = flatness * 36.dp.toPx()
+                renderEffect = if (radius > 0.5f) BlurEffect(radius, radius, TileMode.Clamp) else null
+            },
+        ) {
+            t.artwork?.let {
+                AsyncImage(it.at(1200), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            }
+            MotionArtwork(motion, Modifier.fillMaxSize(), crop = true)
+        }
+        Box(
+            Modifier.fillMaxSize().drawBehind {
+                val shade = Color.Black
+                drawRect(
+                    Brush.verticalGradient(
+                        0f to shade.copy(alpha = 0.35f),
+                        0.2f to Color.Transparent,
+                        0.4f to Color.Transparent,
+                        0.58f to shade.copy(alpha = 0.62f),
+                        0.72f to shade.copy(alpha = 0.8f),
+                        1f to shade.copy(alpha = 0.9f),
+                    ),
+                    alpha = 1f - flatness,
+                )
+                drawRect(shade.copy(alpha = 0.62f * flatness))
+            },
+        )
+    }
+}
 
 /** The cover's three colours as four large blobs drifting over 40 s, under a vignette. */
 @Composable
@@ -311,7 +370,7 @@ fun rememberPosition(playback: Playback, playing: Boolean): Long {
 
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
-private fun Controls(playback: Playback, t: Track, playing: Boolean, mode: NpMode, onMode: (NpMode) -> Unit) {
+private fun Controls(playback: Playback, t: Track, playing: Boolean, mode: NpMode, onSignal: () -> Unit, onMode: (NpMode) -> Unit) {
     val np = LocalNp.current
     val position = rememberPosition(playback, playing)
     val duration = playback.duration ?: 0L
@@ -350,7 +409,11 @@ private fun Controls(playback: Playback, t: Track, playing: Boolean, mode: NpMod
         val times = geist(12.sp, FontWeight.Medium).tabular().copy(color = np.sub)
         BasicText(clock(shown), Modifier.weight(1f), style = times)
         t.quality?.let { q ->
-            Box(Modifier.height(22.dp).background(np.button, RoundedCornerShape(6.dp)).padding(horizontal = 9.dp), contentAlignment = Alignment.Center) {
+            val chip = RoundedCornerShape(6.dp)
+            Box(
+                Modifier.height(22.dp).press(chip, shrink = 0.94f, onClick = onSignal).background(np.button, chip).padding(horizontal = 9.dp),
+                contentAlignment = Alignment.Center,
+            ) {
                 BasicText(q.label(), style = geist(11.5.sp, FontWeight.SemiBold, 0.02f).copy(color = np.fg))
             }
         }

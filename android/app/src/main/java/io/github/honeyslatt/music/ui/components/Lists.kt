@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
@@ -233,12 +234,20 @@ fun Album.byline() = listOfNotNull(artists.joinToString(", ").ifEmpty { null }, 
 /** A song's row in a list: artwork, title, artist. */
 @Composable
 fun TrackRow(track: Track, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
+    val mark = LocalNowPlaying.current
+    val now = mark.id == track.id
     Row(
         Modifier.fillMaxWidth().height(60.dp).press(onLongClick = onLongClick, onClick = onClick).padding(start = 20.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Cover(track.artwork, 48.dp, RoundedCornerShape(7.dp), Modifier.size(48.dp))
+        Box(contentAlignment = Alignment.Center) {
+            Cover(track.artwork, 48.dp, RoundedCornerShape(7.dp), Modifier.size(48.dp))
+            if (now) {
+                Box(Modifier.size(48.dp).background(Color.Black.copy(alpha = 0.45f), RoundedCornerShape(7.dp)))
+                Bars(Color.White, mark.playing, width = 16.dp)
+            }
+        }
         Row(
             Modifier.weight(1f).fillMaxHeight().underline(roles.line).padding(end = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -246,7 +255,7 @@ fun TrackRow(track: Track, onLongClick: (() -> Unit)? = null, onClick: () -> Uni
         ) {
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Line(track.title, geist(16.sp).copy(color = roles.text), Modifier.weight(1f, fill = false))
+                    Line(track.title, geist(16.sp).copy(color = if (now) roles.tint else roles.text), Modifier.weight(1f, fill = false))
                     if (track.explicit) ExplicitBadge()
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {

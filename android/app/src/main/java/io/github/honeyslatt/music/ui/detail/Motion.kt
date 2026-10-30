@@ -9,7 +9,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
 import androidx.media3.common.MediaItem
@@ -18,6 +22,8 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.compose.PlayerSurface
 import androidx.media3.ui.compose.SURFACE_TYPE_TEXTURE_VIEW
+import androidx.media3.ui.compose.modifiers.resizeWithContentScale
+import androidx.media3.ui.compose.state.rememberPresentationState
 
 /**
  * An animated cover: Apple's video, looping without sound, faded in over
@@ -26,7 +32,7 @@ import androidx.media3.ui.compose.SURFACE_TYPE_TEXTURE_VIEW
  */
 @OptIn(UnstableApi::class)
 @Composable
-fun MotionArtwork(url: String, modifier: Modifier = Modifier) {
+fun MotionArtwork(url: String, modifier: Modifier = Modifier, crop: Boolean = false) {
     val context = LocalContext.current
     var shown by remember(url) { mutableStateOf(false) }
     val player = remember(url) {
@@ -45,5 +51,17 @@ fun MotionArtwork(url: String, modifier: Modifier = Modifier) {
     }
     DisposableEffect(player) { onDispose { player.release() } }
     val fade by animateFloatAsState(if (shown) 1f else 0f, tween(400), label = "motion")
-    PlayerSurface(player, modifier.alpha(fade), surfaceType = SURFACE_TYPE_TEXTURE_VIEW)
+    if (crop) {
+        // Filling the space whatever its shape, as the still cover does.
+        val presentation = rememberPresentationState(player)
+        Box(modifier.clipToBounds().alpha(fade), contentAlignment = Alignment.Center) {
+            PlayerSurface(
+                player,
+                Modifier.resizeWithContentScale(ContentScale.Crop, presentation.videoSizeDp),
+                surfaceType = SURFACE_TYPE_TEXTURE_VIEW,
+            )
+        }
+    } else {
+        PlayerSurface(player, modifier.alpha(fade), surfaceType = SURFACE_TYPE_TEXTURE_VIEW)
+    }
 }

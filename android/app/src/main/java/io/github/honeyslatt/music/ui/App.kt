@@ -11,6 +11,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import io.github.honeyslatt.music.core.LyricsSite
 import io.github.honeyslatt.music.ui.nowplaying.LyricsSource
+import io.github.honeyslatt.music.ui.components.LocalNowPlaying
+import io.github.honeyslatt.music.ui.components.NowPlayingMark
 import io.github.honeyslatt.music.ui.nowplaying.NowPlaying
 import io.github.honeyslatt.music.ui.nowplaying.NpActions
 import kotlinx.coroutines.launch
@@ -76,6 +78,8 @@ fun App(core: Core, library: Library, playback: io.github.honeyslatt.music.playb
     LyricsSource.find = { track ->
         runCatching { core.session.lyrics(track, listOf(LyricsSite.LRCLIB, LyricsSite.NET_EASE, LyricsSite.KU_GOU), false) }.getOrNull()
     }
+    // An album's animated cover, asked once.
+    val motions = remember { java.util.concurrent.ConcurrentHashMap<String, String>() }
     val npActions = NpActions(
         close = { npOpen = false },
         openAlbum = { t -> t.albumId?.let { npOpen = false; nav.push(Route.Album(it)) } },
@@ -87,10 +91,18 @@ fun App(core: Core, library: Library, playback: io.github.honeyslatt.music.playb
                 }
             }
         },
+        motion = { t ->
+            val album = t.albumId
+            when {
+                !context.animatedArtwork || album == null -> null
+                else -> motions[album.id] ?: runCatching { core.session.albumMotion(album) }.getOrNull()?.also { motions[album.id] = it }
+            }
+        },
     )
 
     BackHandler(enabled = nav.canPop && !npOpen) { nav.pop() }
     BackHandler(enabled = npOpen) { npOpen = false }
+    androidx.compose.runtime.CompositionLocalProvider(LocalNowPlaying provides NowPlayingMark(now?.id, playing)) {
     Box(Modifier.fillMaxSize().background(roles.base)) {
         AnimatedContent(
             targetState = Triple(nav.tab, nav.stack.size, nav.page),
@@ -109,6 +121,7 @@ fun App(core: Core, library: Library, playback: io.github.honeyslatt.music.playb
         ) {
             SwipeDown({ npOpen = false }) { NowPlaying(playback, npActions) }
         }
+    }
     }
 }
 

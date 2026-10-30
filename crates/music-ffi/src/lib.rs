@@ -312,6 +312,12 @@ impl Session {
         Ok(AlbumDetail { album, tracks })
     }
 
+    /// The album's animated cover, without its songs: Now Playing's
+    /// background.
+    pub async fn album_motion(&self, id: ItemId) -> Result<Option<String>, MusicError> {
+        Ok(self.provider(id.provider)?.album(&id).await?.motion)
+    }
+
     pub async fn artist(&self, id: ItemId) -> Result<ArtistDetail, MusicError> {
         Ok(self.provider(id.provider)?.artist(&id).await?)
     }

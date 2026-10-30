@@ -17,7 +17,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.honeyslatt.music.core.model.Track
 import io.github.honeyslatt.music.ui.Icons
+import io.github.honeyslatt.music.ui.components.Bars
 import io.github.honeyslatt.music.ui.components.ExplicitBadge
+import io.github.honeyslatt.music.ui.components.LocalNowPlaying
 import io.github.honeyslatt.music.ui.components.Glyph
 import io.github.honeyslatt.music.ui.components.Line
 import io.github.honeyslatt.music.ui.components.press
@@ -28,23 +30,27 @@ import io.github.honeyslatt.music.ui.theme.roles
 /** A song of an album: its number, its title, the E, its menu. */
 @Composable
 fun AlbumTrackRow(number: Int, track: Track, last: Boolean, onLongClick: () -> Unit = {}, onClick: () -> Unit = {}) {
+    val mark = LocalNowPlaying.current
+    val now = mark.id == track.id
     Row(
         Modifier.fillMaxWidth().heightIn(min = 52.dp).press(onLongClick = onLongClick, onClick = onClick).padding(start = 20.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        BasicText(
-            number.toString(),
-            Modifier.width(22.dp),
-            style = geist(15.sp).copy(color = roles.sub, textAlign = TextAlign.Center),
-        )
+        Box(Modifier.width(22.dp), contentAlignment = Alignment.Center) {
+            if (now) {
+                Bars(roles.tint, mark.playing)
+            } else {
+                BasicText(number.toString(), style = geist(15.sp).copy(color = roles.sub, textAlign = TextAlign.Center))
+            }
+        }
         Row(
             Modifier.weight(1f).heightIn(min = 52.dp).then(if (last) Modifier else Modifier.underline(roles.line)),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Line(track.title, geist(16.sp).copy(color = roles.text), Modifier.weight(1f, fill = false))
+                Line(track.title, geist(16.sp).copy(color = if (now) roles.tint else roles.text), Modifier.weight(1f, fill = false))
                 if (track.explicit) ExplicitBadge()
             }
             Box(Modifier.padding(end = 6.dp).size(44.dp).press(onClick = onLongClick), contentAlignment = Alignment.Center) {

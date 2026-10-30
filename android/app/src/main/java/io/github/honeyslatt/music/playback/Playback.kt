@@ -3,6 +3,7 @@ package io.github.honeyslatt.music.playback
 import android.content.Context
 import android.net.Uri
 import androidx.media3.common.AudioAttributes
+import androidx.media3.common.Format
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -10,7 +11,10 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.DecoderReuseEvaluation
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.analytics.AnalyticsListener
+import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.source.MediaSource
 import io.github.honeyslatt.music.core.PlayQueue
 import io.github.honeyslatt.music.core.QueueRepeat
@@ -24,6 +28,16 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+
+/**
+ * What the player made of the sound, as Media3 says it: the decoder, what
+ * went in, and the track it opened with Android.
+ */
+data class Signal(
+    val decoder: String? = null,
+    val input: Format? = null,
+    val output: AudioSink.AudioTrackConfig? = null,
+)
 
 /** How many songs in a row may fail to play before playback stops. */
 private const val MAX_SKIPS = 5
@@ -74,6 +88,9 @@ class Playback(context: Context, private val core: Core, private val scope: Coro
     val shuffleOn: StateFlow<Boolean> = _shuffle.asStateFlow()
     private val _repeat = MutableStateFlow(QueueRepeat.OFF)
     val repeat: StateFlow<QueueRepeat> = _repeat.asStateFlow()
+
+    private val _signal = MutableStateFlow(Signal())
+    val signal: StateFlow<Signal> = _signal.asStateFlow()
 
     /** Where the song is, in ms; read as often as wanted. */
     val position: Long get() = player.currentPosition.coerceAtLeast(0)
@@ -172,6 +189,28 @@ class Playback(context: Context, private val core: Core, private val scope: Coro
             override fun onPlayerError(error: PlaybackException) {
                 _error.value = "Couldn't play “${_now.value?.title}”: ${error.errorCodeName}"
                 skipFailed()
+            }
+        })
+        player.addAnalyticsListener(object : AnalyticsListener {
+            override fun onAudioDecoderInitialized(
+                eventTime: AnalyticsListener.EventTime,
+                decoderName: String,
+                initializedTimestampMs: Long,
+                initializationDurationMs: Long,
+            ) {
+                _signal.value = _signal.value.copy(decoder = decoderName)
+            }
+
+            override fun onAudioInputFormatChanged(
+                eventTime: AnalyticsListener.EventTime,
+                format: Format,
+                decoderReuseEvaluation: DecoderReuseEvaluation?,
+            ) {
+                _signal.value = _signal.value.copy(input = format)
+            }
+
+            override fun onAudioTrackInitialized(eventTime: AnalyticsListener.EventTime, audioTrackConfig: AudioSink.AudioTrackConfig) {
+                _signal.value = _signal.value.copy(output = audioTrackConfig)
             }
         })
     }
