@@ -131,13 +131,25 @@ fun Switch(on: Boolean, onChange: (Boolean) -> Unit) {
 @Composable
 private fun Root(core: Core, settings: Settings, go: (SettingsPage) -> Unit) {
     val apple by core.apple.collectAsStateWithLifecycle()
+    val profile by core.appleProfile.collectAsStateWithLifecycle()
     Column(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        // The account's picture on Apple Music, over its initial until it comes.
         Box(
             Modifier.size(76.dp).background(Brush.linearGradient(listOf(roles.accent, roles.mauve)), CircleShape),
             contentAlignment = Alignment.Center,
-        ) { BasicText("H", style = geist(30.sp, FontWeight.SemiBold).copy(color = Color.White)) }
+        ) {
+            BasicText("H", style = geist(30.sp, FontWeight.SemiBold).copy(color = Color.White))
+            profile?.picture?.let { io.github.honeyslatt.music.ui.components.Cover(it, 76.dp, CircleShape, Modifier.size(76.dp)) }
+        }
+        // Its handle there, else its name.
+        val p = profile
         BasicText(
-            if (apple is Connection.Connected) "Apple Music · storefront ${(apple as Connection.Connected).name}" else "Apple Music isn’t connected",
+            when {
+                apple !is Connection.Connected -> "Apple Music isn’t connected"
+                p?.handle != null -> "@${p.handle}"
+                p?.name != null -> p.name!!
+                else -> "Apple Music"
+            },
             Modifier.padding(top = 10.dp),
             style = geist(14.sp).copy(color = roles.sub),
         )

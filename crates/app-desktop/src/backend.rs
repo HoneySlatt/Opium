@@ -554,7 +554,9 @@ async fn connect(replies: &Replies) -> Option<Arc<AppleMusic>> {
             let am = Arc::new(am);
             let (picture_am, picture_replies) = (am.clone(), replies.clone());
             tokio::spawn(async move {
-                if let Ok(Some(picture)) = picture_am.profile_picture().await {
+                if let Ok(Some(profile)) = picture_am.profile().await
+                    && let Some(picture) = profile.picture
+                {
                     picture_replies.send(Reply::ProfilePicture(picture));
                 }
             });

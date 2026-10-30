@@ -38,6 +38,11 @@ class Core(context: Context) {
 
     val apple: StateFlow<Connection> = connection(ProviderKind.APPLE_MUSIC)
 
+    private val _appleProfile = MutableStateFlow<io.github.honeyslatt.music.core.AppleProfile?>(null)
+
+    /** The account's profile on Apple Music, once connected and read. */
+    val appleProfile: StateFlow<io.github.honeyslatt.music.core.AppleProfile?> = _appleProfile.asStateFlow()
+
     init {
         // The account token from before the vault: moved in.
         val old = File(context.filesDir, "apple-token")
@@ -170,6 +175,9 @@ class Core(context: Context) {
             Connection.Connected(sign())
         } catch (e: MusicException) {
             Connection.Failed(e.message ?: e.toString())
+        }
+        if (kind == ProviderKind.APPLE_MUSIC) {
+            _appleProfile.value = if (state.value is Connection.Connected) runCatching { session.appleProfile() }.getOrNull() else null
         }
         return state.value
     }

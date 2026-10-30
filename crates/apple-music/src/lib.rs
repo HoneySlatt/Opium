@@ -172,6 +172,15 @@ pub struct AppleMusic {
     storefront: String,
 }
 
+/// The account as others see it on Apple Music.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Profile {
+    pub name: Option<String>,
+    /// Without the `@`.
+    pub handle: Option<String>,
+    pub picture: Option<music_core::model::Artwork>,
+}
+
 impl AppleMusic {
     /// Fetch a developer token and look up the account's storefront (its country),
     /// which every catalog request is scoped to.
@@ -205,18 +214,24 @@ impl AppleMusic {
         Ok(am)
     }
 
-    /// The account's picture on Apple Music, where it has made a profile.
-    pub async fn profile_picture(&self) -> Result<Option<music_core::model::Artwork>> {
+    /// The account's profile on Apple Music, where it has made one.
+    pub async fn profile(&self) -> Result<Option<Profile>> {
         #[derive(serde::Deserialize)]
-        struct Profile {
+        struct Attributes {
+            name: Option<String>,
+            handle: Option<String>,
             artwork: Option<types::Artwork>,
         }
-        let profile: Option<types::Response<types::Resource<Profile>>> =
+        let profile: Option<types::Response<types::Resource<Attributes>>> =
             self.fetch("/v1/me/social-profile").await?;
         Ok(profile
             .and_then(|r| r.data.into_iter().next())
             .and_then(|p| p.attributes)
-            .and_then(|p| convert::artwork(p.artwork.as_ref())))
+            .map(|p| Profile {
+                picture: convert::artwork(p.artwork.as_ref()),
+                name: p.name.filter(|n| !n.is_empty()),
+                handle: p.handle.filter(|h| !h.is_empty()),
+            }))
     }
 
     pub fn storefront(&self) -> &str {

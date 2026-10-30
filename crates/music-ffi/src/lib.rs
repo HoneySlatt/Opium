@@ -665,11 +665,16 @@ impl Session {
         .await
     }
 
-    /// The account's picture on Apple Music, where it has made a profile.
-    pub async fn apple_profile_picture(
-        self: Arc<Self>,
-    ) -> Result<Option<music_core::model::Artwork>, MusicError> {
-        off(async move { Ok(self.apple()?.profile_picture().await?) }).await
+    /// The account's profile on Apple Music, where it has made one.
+    pub async fn apple_profile(self: Arc<Self>) -> Result<Option<AppleProfile>, MusicError> {
+        off(async move {
+            Ok(self.apple()?.profile().await?.map(|p| AppleProfile {
+                name: p.name,
+                handle: p.handle,
+                picture: p.picture,
+            }))
+        })
+        .await
     }
 
     /// A catalog album's other editions and its songs' music videos.
@@ -907,6 +912,15 @@ fn kept<T: serde::de::DeserializeOwned>(path: &str) -> Vec<T> {
         .ok()
         .and_then(|bytes| serde_json::from_slice(&bytes).ok())
         .unwrap_or_default()
+}
+
+/// The account as others see it on Apple Music: its name, its handle
+/// (without the `@`) and its picture.
+#[derive(uniffi::Record)]
+pub struct AppleProfile {
+    pub name: Option<String>,
+    pub handle: Option<String>,
+    pub picture: Option<music_core::model::Artwork>,
 }
 
 /// What was opened or played from a search, as Recently Searched lists it.

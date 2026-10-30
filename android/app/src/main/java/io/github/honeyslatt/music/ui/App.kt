@@ -82,10 +82,8 @@ fun App(core: Core, library: Library, playback: io.github.honeyslatt.music.playb
     val services = ProviderKind.entries.filter { core.connection(it).collectAsStateWithLifecycle().value is Connection.Connected }
     var settingsOpen by remember { mutableStateOf(false) }
     // The account's picture on Apple Music, once connected.
-    val apple by core.apple.collectAsStateWithLifecycle()
-    val picture by androidx.compose.runtime.produceState<io.github.honeyslatt.music.core.model.Artwork?>(null, apple is Connection.Connected) {
-        if (apple is Connection.Connected) value = runCatching { core.session.appleProfilePicture() }.getOrNull()
-    }
+    val profile by core.appleProfile.collectAsStateWithLifecycle()
+    val picture = profile?.picture
     val account: @Composable () -> Unit = { Avatar("H", picture) { settingsOpen = true } }
     val now by playback.now.collectAsStateWithLifecycle()
     val playing by playback.playing.collectAsStateWithLifecycle()
