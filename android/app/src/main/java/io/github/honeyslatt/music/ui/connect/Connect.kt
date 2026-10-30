@@ -91,13 +91,18 @@ class Connecting {
     }
 }
 
-/** A service's sign-in page and where its token is left. */
-private class Site(val url: String, val origin: String, val token: String, val also: List<String> = emptyList())
+/** A service's sign-in page and where its token is left: on a phone, SoundCloud's mobile site keeps it on its own host. */
+private class Site(val url: String, val origins: List<String>, val token: String, val also: List<String> = emptyList())
 
 private val ProviderKind.site
     get() = when (this) {
-        ProviderKind.APPLE_MUSIC -> Site("https://music.apple.com/signin", "https://music.apple.com", "media-user-token")
-        ProviderKind.SOUND_CLOUD -> Site("https://soundcloud.com/signin", "https://soundcloud.com", "oauth_token", listOf("oauth_refresh_token"))
+        ProviderKind.APPLE_MUSIC -> Site("https://music.apple.com/signin", listOf("https://music.apple.com"), "media-user-token")
+        ProviderKind.SOUND_CLOUD -> Site(
+            "https://soundcloud.com/signin",
+            listOf("https://soundcloud.com", "https://m.soundcloud.com"),
+            "oauth_token",
+            listOf("oauth_refresh_token"),
+        )
         ProviderKind.NAVIDROME -> error("Navidrome signs in with a form")
     }
 
@@ -359,14 +364,16 @@ private fun WebSignIn(kind: ProviderKind, onCancel: () -> Unit, onDone: (Map<Str
     LaunchedEffect(kind) {
         // Ten minutes, then it gives up.
         repeat(1_200) {
-            val cookies = CookieManager.getInstance().getCookie(site.origin).orEmpty()
-                .split(';')
-                .map { it.trim() }
-                .mapNotNull { it.split('=', limit = 2).takeIf { p -> p.size == 2 }?.let { (k, v) -> k to v } }
-                .toMap()
-            if (cookies[site.token].orEmpty().isNotEmpty()) {
-                CookieManager.getInstance().flush()
-                return@LaunchedEffect onDone(cookies.filterKeys { it == site.token || it in site.also })
+            for (origin in site.origins) {
+                val cookies = CookieManager.getInstance().getCookie(origin).orEmpty()
+                    .split(';')
+                    .map { it.trim() }
+                    .mapNotNull { it.split('=', limit = 2).takeIf { p -> p.size == 2 }?.let { (k, v) -> k to v } }
+                    .toMap()
+                if (cookies[site.token].orEmpty().isNotEmpty()) {
+                    CookieManager.getInstance().flush()
+                    return@LaunchedEffect onDone(cookies.filterKeys { it == site.token || it in site.also })
+                }
             }
             delay(500)
         }
@@ -398,15 +405,14 @@ private fun WebSignIn(kind: ProviderKind, onCancel: () -> Unit, onDone: (Map<Str
 
 /** A service's cookies go when it is signed out of, so the next sign-in starts afresh. */
 fun forgetCookies(kind: ProviderKind) {
-    val origin = when (kind) {
-        ProviderKind.APPLE_MUSIC -> "https://music.apple.com"
-        ProviderKind.SOUND_CLOUD -> "https://soundcloud.com"
-        ProviderKind.NAVIDROME -> return
-    }
+    if (kind == ProviderKind.NAVIDROME) return
     val manager = CookieManager.getInstance()
-    manager.getCookie(origin).orEmpty().split(';').map { it.trim().substringBefore('=') }.filter { it.isNotEmpty() }.forEach { name ->
-        manager.setCookie(origin, "$name=; Max-Age=0; Path=/")
-        manager.setCookie(origin, "$name=; Max-Age=0; Path=/; Domain=${origin.removePrefix("https://").removePrefix("music.")}")
+    for (origin in kind.site.origins) {
+        val domain = origin.removePrefix("https://").removePrefix("music.").removePrefix("m.")
+        manager.getCookie(origin).orEmpty().split(';').map { it.trim().substringBefore('=') }.filter { it.isNotEmpty() }.forEach { name ->
+            manager.setCookie(origin, "$name=; Max-Age=0; Path=/")
+            manager.setCookie(origin, "$name=; Max-Age=0; Path=/; Domain=$domain")
+        }
     }
     manager.flush()
 }
