@@ -373,6 +373,22 @@ fn now_playing(app: &mut App, ui: &mut Ui, theme: &Theme, lcd: Rect) {
     if track.explicit {
         explicit_badge(ui, theme, pos2(title_end + 5.0 + 6.0, lcd.center().y - 7.0));
     }
+    // Spatial Audio: the Dolby logo at the right, named on hover.
+    if super::plays_in_atmos(&track) {
+        let mark = Rect::from_center_size(
+            pos2(chip_right - 12.0, lcd.center().y - 7.0),
+            vec2(20.0, 20.0),
+        );
+        let hover = ui.interact(mark, Id::unique("player-atmos"), Sense::hover());
+        ui.painter().rect_filled(mark, 5.0, theme.hover());
+        let color = if hover.hovered() {
+            theme.text
+        } else {
+            theme.subtext0
+        };
+        super::dolby_logo(ui, mark.center(), 9.0, color);
+        hover.on_hover_text("Dolby Atmos");
+    }
     let album = track.album.clone().unwrap_or_default();
     let mut subtitle = if album.is_empty() {
         track.artists.join(", ")

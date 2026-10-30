@@ -719,6 +719,32 @@ pub fn explicit_badge(ui: &Ui, theme: &Theme, center: Pos2) {
     paint_text(ui, e, center.x, center.y, egui::Align::Center, theme.base);
 }
 
+/// Whether `track` plays as Spatial Audio, its Dolby Atmos mix.
+pub fn plays_in_atmos(track: &music_core::model::Track) -> bool {
+    track
+        .quality
+        .as_ref()
+        .is_some_and(|q| q.codec == music_core::model::Codec::Other("Dolby Atmos".into()))
+}
+
+/// The Dolby double D, centred on `center`, `size` high: two half discs
+/// whose curves face each other, their flat sides outside.
+pub fn dolby_logo(ui: &Ui, center: Pos2, size: f32, color: Color32) {
+    let r = size / 2.0;
+    let gap = size * 0.08;
+    for side in [-1.0f32, 1.0] {
+        let flat = center.x + side * (gap + r);
+        let points: Vec<Pos2> = (0..=12)
+            .map(|i| {
+                let a = std::f32::consts::PI * (i as f32 / 12.0 - 0.5);
+                pos2(flat - side * r * a.cos(), center.y + r * a.sin())
+            })
+            .collect();
+        ui.painter()
+            .add(egui::Shape::convex_polygon(points, color, Stroke::NONE));
+    }
+}
+
 /// `AAC 256`, `FLAC 24/96`… from what the provider says it delivers.
 pub fn quality_label(track: &music_core::model::Track) -> Option<(String, bool)> {
     use music_core::model::Codec;
