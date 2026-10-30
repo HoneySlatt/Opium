@@ -2280,6 +2280,21 @@ impl App {
         });
     }
 
+    /// Show the track of `token` as Dolby Atmos when `stream` is Spatial
+    /// Audio.
+    fn says_if_atmos(&mut self, token: Token, stream: &Playable) {
+        if let Playable::Track { spatial: true, .. } = stream
+            && let Some(track) = self.tracks.get_mut(&token)
+        {
+            track.quality = Some(music_core::model::AudioQuality {
+                codec: music_core::model::Codec::Other("Dolby Atmos".into()),
+                sample_rate: Some(48_000),
+                bit_depth: None,
+                bitrate_kbps: None,
+            });
+        }
+    }
+
     fn play_now(&mut self, token: Token, stream: Playable) {
         self.playing = Some(token);
         self.player.play(token, Self::source(stream));
@@ -2384,6 +2399,9 @@ impl App {
                 }
                 match warm.ready {
                     Some(stream) => {
+                        // Fetched before it was listed to play: Spatial
+                        // Audio says so now.
+                        self.says_if_atmos(warm.token, &stream);
                         self.pending_play = None;
                         self.play_now(warm.token, stream);
                     }
@@ -3433,15 +3451,8 @@ impl App {
                 }
                 Reply::Fetched { token, result } => {
                     // Spatial Audio says so where the encode shows.
-                    if let Ok(Playable::Track { spatial: true, .. }) = &result
-                        && let Some(track) = self.tracks.get_mut(&token)
-                    {
-                        track.quality = Some(music_core::model::AudioQuality {
-                            codec: music_core::model::Codec::Other("Dolby Atmos".into()),
-                            sample_rate: Some(48_000),
-                            bit_depth: None,
-                            bitrate_kbps: None,
-                        });
+                    if let Ok(stream) = &result {
+                        self.says_if_atmos(token, stream);
                     }
                     // An encode below Apple's usual 256 kbps shows as it is,
                     // and is told of when it is to play.
