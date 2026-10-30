@@ -1,7 +1,7 @@
 //! Decoding and audio output.
 //!
 //! A [`Player`] owns an engine thread that decodes ahead into a ring of 32-bit
-//! integer frames, and a PipeWire stream that plays from it while other programs
+//! float frames, and a PipeWire stream that plays from it while other programs
 //! keep playing. The stream pulls the graph to the source's rate, so the music is
 //! not resampled. A track set with [`Player::set_next`] follows the current one
 //! without a gap when both have the same rate and channel count.
@@ -13,6 +13,7 @@ mod graph;
 mod output;
 
 use std::io::{Read, Seek};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
@@ -211,51 +212,88 @@ pub struct Status {
 }
 
 pub struct Player {
-    commands: Sender<Command>,
+    engine: Mutex<Running>,
     /// Counts the next tracks asked for, so that only the last one opened
     /// is taken.
-    next_asked: std::sync::atomic::AtomicU64,
+    next_asked: AtomicU64,
+    events_tx: Sender<Event>,
     events: Receiver<Event>,
+    /// As last set, for an engine started anew.
+    volume: AtomicU32,
+    paused: AtomicBool,
+}
+
+/// An engine thread, and what the player shares with it.
+struct Running {
+    commands: Sender<Command>,
     status: Arc<Mutex<Status>>,
+    shared: Arc<engine::Shared>,
     thread: Option<JoinHandle<()>>,
 }
 
+/// How long the engine may wait on a read before it counts as stuck: a
+/// download that stalled (the network gone) holds it until its timeout.
+const STALLED: Duration = Duration::from_millis(400);
+
 impl Player {
     pub fn new() -> Self {
-        let (commands, command_rx) = std::sync::mpsc::channel();
-        let (event_tx, events) = std::sync::mpsc::channel();
-        let status = Arc::new(Mutex::new(Status::default()));
-        let engine = Engine::new(status.clone(), event_tx);
-        let thread = std::thread::Builder::new()
-            .name("player".into())
-            .spawn(move || engine.run(command_rx))
-            .expect("spawn the player thread");
+        let (events_tx, events) = std::sync::mpsc::channel();
         Self {
-            commands,
+            engine: Mutex::new(start(events_tx.clone())),
             next_asked: Default::default(),
+            events_tx,
             events,
-            status,
-            thread: Some(thread),
+            volume: AtomicU32::new(1.0_f32.to_bits()),
+            paused: AtomicBool::new(false),
         }
     }
 
+    fn engine(&self) -> std::sync::MutexGuard<'_, Running> {
+        self.engine.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     fn send(&self, command: Command) {
-        let _ = self.commands.send(command);
+        let _ = self.engine().commands.send(command);
+    }
+
+    /// Whether the engine has been waiting on a read for a while: what it
+    /// is asked then waits too, unless the player starts afresh.
+    pub fn stalled(&self) -> bool {
+        self.engine().shared.waiting_for() > STALLED
+    }
+
+    /// The engine stuck on a read is let go of: silenced now, it ends once
+    /// the read gives up, and a new one takes over at once, at the volume
+    /// and pause as set.
+    fn start_afresh_if_stalled(&self) {
+        let mut engine = self.engine();
+        if engine.shared.waiting_for() <= STALLED {
+            return;
+        }
+        engine.shared.retire();
+        let fresh = start(self.events_tx.clone());
+        let _ = fresh
+            .commands
+            .send(Command::Volume(f32::from_bits(self.volume.load(Ordering::Relaxed))));
+        if self.paused.load(Ordering::Relaxed) {
+            let _ = fresh.commands.send(Command::Pause);
+        }
+        // Not joined: it may not wake for a while.
+        let _stuck = std::mem::replace(&mut *engine, fresh);
     }
 
     /// Play `source` now, dropping whatever was playing or queued.
     pub fn play(&self, token: Token, source: Source) {
+        self.start_afresh_if_stalled();
         self.send(Command::Play(token, source));
     }
 
     /// The track to follow the current one. Set it once per track: to change
     /// it, [`clear_next`](Self::clear_next) first.
     pub fn set_next(&self, token: Token, source: Source) {
-        let generation = self
-            .next_asked
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let generation = self.next_asked.fetch_add(1, Ordering::Relaxed);
         self.send(Command::Opening(generation));
-        let commands = self.commands.clone();
+        let commands = self.engine().commands.clone();
         let opened = std::thread::Builder::new()
             .name("player-open".into())
             .spawn(move || {
@@ -286,11 +324,16 @@ impl Player {
         self.send(Command::SkipToNext);
     }
 
+    /// Heard at once, even with the engine waiting on a read.
     pub fn pause(&self) {
+        self.paused.store(true, Ordering::Relaxed);
+        self.engine().shared.output_paused(true);
         self.send(Command::Pause);
     }
 
     pub fn resume(&self) {
+        self.paused.store(false, Ordering::Relaxed);
+        self.engine().shared.output_paused(false);
         self.send(Command::Resume);
     }
 
@@ -299,23 +342,45 @@ impl Player {
     }
 
     pub fn stop(&self) {
+        self.start_afresh_if_stalled();
         self.send(Command::Stop);
     }
 
-    /// Below 1.0 the samples are scaled; at 1.0 they pass untouched.
+    /// Below 1.0 the samples are scaled; at 1.0 they pass untouched. Heard
+    /// at once, even with the engine waiting on a read.
     pub fn set_volume(&self, volume: f32) {
-        self.send(Command::Volume(volume.clamp(0.0, 1.0)));
+        let volume = volume.clamp(0.0, 1.0);
+        self.volume.store(volume.to_bits(), Ordering::Relaxed);
+        self.engine().shared.output_volume(volume);
+        self.send(Command::Volume(volume));
     }
 
     pub fn status(&self) -> Status {
-        self.status
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone()
+        let status = self.engine().status.clone();
+        let status = status.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        status
     }
 
     pub fn events(&self) -> &Receiver<Event> {
         &self.events
+    }
+}
+
+/// An engine on a thread of its own.
+fn start(events: Sender<Event>) -> Running {
+    let (commands, command_rx) = std::sync::mpsc::channel();
+    let status = Arc::new(Mutex::new(Status::default()));
+    let shared = Arc::new(engine::Shared::default());
+    let engine = Engine::new(status.clone(), events, shared.clone());
+    let thread = std::thread::Builder::new()
+        .name("player".into())
+        .spawn(move || engine.run(command_rx))
+        .expect("spawn the player thread");
+    Running {
+        commands,
+        status,
+        shared,
+        thread: Some(thread),
     }
 }
 
@@ -327,9 +392,48 @@ impl Default for Player {
 
 impl Drop for Player {
     fn drop(&mut self) {
-        self.send(Command::Quit);
-        if let Some(thread) = self.thread.take() {
+        let mut engine = self.engine();
+        let _ = engine.commands.send(Command::Quit);
+        if let Some(thread) = engine.thread.take() {
             let _ = thread.join();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A download that never comes, as with the network gone.
+    struct Stalled(Mutex<std::sync::mpsc::Receiver<()>>);
+
+    impl Read for Stalled {
+        fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+            let _ = self.0.lock().unwrap().recv();
+            Ok(0)
+        }
+    }
+
+    impl Seek for Stalled {
+        fn seek(&mut self, _: std::io::SeekFrom) -> std::io::Result<u64> {
+            Ok(0)
+        }
+    }
+
+    #[test]
+    fn a_player_stuck_on_a_read_starts_afresh() {
+        let (wake, stalled) = std::sync::mpsc::channel();
+        let player = Player::new();
+        player.play(1, Source::new(Stalled(Mutex::new(stalled)), 1_000_000, Some("flac")));
+        std::thread::sleep(STALLED + Duration::from_millis(200));
+        assert!(player.stalled());
+        // Stop doesn't wait on it: a fresh engine takes over.
+        player.stop();
+        assert!(!player.stalled());
+        assert_eq!(player.status().token, None);
+        // The stuck one, woken, ends without a word.
+        drop(wake);
+        std::thread::sleep(Duration::from_millis(100));
+        assert!(player.events().try_recv().is_err());
     }
 }

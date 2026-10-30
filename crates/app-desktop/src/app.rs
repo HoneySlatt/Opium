@@ -2498,6 +2498,13 @@ impl App {
                     .is_some_and(|t| self.token_plays(token, &t.id))
         });
         match lined_up {
+            // The player stuck on a read (the network gone): it would wait
+            // to switch; the next song is fetched anew instead.
+            Some(_) if self.next_ready && self.player.stalled() => {
+                if self.queue.skip_next().is_some() {
+                    self.start_current();
+                }
+            }
             // It starts at once; its Started moves the queue on.
             Some(_) if self.next_ready => self.player.skip_to_next(),
             // Still on its way: it plays when it comes.
@@ -2521,7 +2528,10 @@ impl App {
             return;
         }
         self.failed_in_row = 0;
-        if self.status.position > Duration::from_secs(3) {
+        // The player stuck on a read: the song starts again afresh.
+        if self.status.position > Duration::from_secs(3) && self.player.stalled() {
+            self.start_current();
+        } else if self.status.position > Duration::from_secs(3) {
             self.player.seek(Duration::ZERO);
         } else {
             self.queue.skip_previous();

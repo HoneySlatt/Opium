@@ -1,7 +1,9 @@
-//! One source, demuxed and decoded to interleaved 32-bit integer frames.
+//! One source, demuxed and decoded to interleaved 32-bit float frames.
 //!
-//! Integers rather than floats so a 16- or 24-bit lossless source reaches the
-//! output unchanged: symphonia widens them by shifting, which is exact.
+//! A 16- or 24-bit lossless source reaches the output unchanged: a float
+//! holds 24 bits exactly, and PipeWire mixes in floats. A lossy one keeps
+//! what its decoder gives above full scale (loud masters' AAC goes over),
+//! so the volume brings it down rather than it being clipped first.
 
 use std::time::Duration;
 
@@ -19,7 +21,7 @@ pub(crate) struct Decoder {
     decoder: Box<dyn AudioDecoder>,
     track_id: u32,
     pub info: SourceFormat,
-    samples: Vec<i32>,
+    samples: Vec<f32>,
     seek_hint: Option<SeekHint>,
     /// Where the music is among the frames of an AAC encode in MP4.
     music: Option<Music>,
@@ -137,7 +139,7 @@ impl Decoder {
     }
 
     /// The next packet's frames, interleaved. `None` at the end of the source.
-    pub fn next(&mut self) -> Result<Option<&[i32]>> {
+    pub fn next(&mut self) -> Result<Option<&[f32]>> {
         loop {
             let packet = match self.format.next_packet() {
                 Ok(Some(packet)) => packet,

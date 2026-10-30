@@ -2,7 +2,7 @@
 //! actually played, and turns commands into changes to both.
 
 use std::collections::VecDeque;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -40,6 +40,71 @@ struct Item {
     decoder: Decoder,
 }
 
+/// What the player reaches without going through the engine's commands,
+/// which wait while the engine waits on a read.
+#[derive(Default)]
+pub(crate) struct Shared {
+    /// When the engine began waiting on a read, in ms from [`epoch`]; 0
+    /// while it isn't.
+    waiting_since: AtomicU64,
+    /// Let go of: it ends at its next turn, saying nothing more.
+    retired: AtomicBool,
+    /// The output playing, to pause or set the volume of at once.
+    output: Mutex<Option<Arc<OutputState>>>,
+}
+
+fn epoch_ms() -> u64 {
+    static EPOCH: std::sync::LazyLock<Instant> = std::sync::LazyLock::new(Instant::now);
+    EPOCH.elapsed().as_millis() as u64 + 1
+}
+
+impl Shared {
+    /// How long the engine has been waiting on the read it is in.
+    pub fn waiting_for(&self) -> Duration {
+        match self.waiting_since.load(Ordering::Relaxed) {
+            0 => Duration::ZERO,
+            since => Duration::from_millis(epoch_ms().saturating_sub(since)),
+        }
+    }
+
+    /// Run `read`, which may wait on the network, saying so meanwhile.
+    fn waiting<T>(&self, read: impl FnOnce() -> T) -> T {
+        self.waiting_since.store(epoch_ms(), Ordering::Relaxed);
+        let result = read();
+        self.waiting_since.store(0, Ordering::Relaxed);
+        result
+    }
+
+    /// Silence it now; it ends once its read gives up.
+    pub fn retire(&self) {
+        self.retired.store(true, Ordering::Relaxed);
+        self.output_paused(true);
+    }
+
+    fn retired(&self) -> bool {
+        self.retired.load(Ordering::Relaxed)
+    }
+
+    fn output(&self) -> Option<Arc<OutputState>> {
+        self.output
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+
+    pub fn output_paused(&self, paused: bool) {
+        if let Some(output) = self.output() {
+            output.paused.store(paused, Ordering::Relaxed);
+        }
+    }
+
+    pub fn output_volume(&self, volume: f32) {
+        if let Some(output) = self.output() {
+            output.volume.store(volume.to_bits(), Ordering::Relaxed);
+        }
+    }
+}
+
 /// A track with frames in the ring, in play order.
 struct Segment {
     item: Item,
@@ -53,7 +118,7 @@ struct Sink {
     _output: Output,
     info: OutputInfo,
     state: Arc<OutputState>,
-    producer: Producer<i32>,
+    producer: Producer<f32>,
     channels: u64,
     layout: Option<u64>,
     sample_rate: u32,
@@ -121,10 +186,11 @@ pub(crate) struct Engine {
     /// Samples pushed into the ring since the output was opened.
     written: u64,
     /// Decoded samples that didn't fit in the ring yet.
-    pending: Vec<i32>,
+    pending: Vec<f32>,
     pending_at: usize,
     status: Arc<Mutex<Status>>,
     events: Sender<Event>,
+    shared: Arc<Shared>,
 }
 
 /// How much audio the ring holds between the decoder and the device.
@@ -133,7 +199,7 @@ const RING_SECONDS: usize = 2;
 const IDLE: Duration = Duration::from_millis(10);
 
 impl Engine {
-    pub fn new(status: Arc<Mutex<Status>>, events: Sender<Event>) -> Self {
+    pub fn new(status: Arc<Mutex<Status>>, events: Sender<Event>, shared: Arc<Shared>) -> Self {
         Self {
             volume: 1.0,
             paused: false,
@@ -149,6 +215,7 @@ impl Engine {
             pending_at: 0,
             status,
             events,
+            shared,
         }
     }
 
@@ -167,14 +234,23 @@ impl Engine {
                 Ok(command) => self.handle(command),
                 Err(RecvTimeoutError::Timeout) => {}
             }
+            // Let go of while it waited on a read: another plays now.
+            if self.shared.retired() {
+                return;
+            }
             self.advance();
             self.pump();
+            if self.shared.retired() {
+                return;
+            }
             self.publish();
         }
     }
 
     fn emit(&self, event: Event) {
-        let _ = self.events.send(event);
+        if !self.shared.retired() {
+            let _ = self.events.send(event);
+        }
     }
 
     fn handle(&mut self, command: Command) {
@@ -257,7 +333,7 @@ impl Engine {
     }
 
     fn open(&self, token: Token, source: Source) -> Option<Item> {
-        match Decoder::open(source) {
+        match self.shared.waiting(|| Decoder::open(source)) {
             Ok(decoder) => Some(Item { token, decoder }),
             Err(e) => {
                 self.emit(Event::Error {
@@ -293,7 +369,7 @@ impl Engine {
         let base_time = if at.is_zero() {
             at
         } else {
-            match item.decoder.seek(at) {
+            match self.shared.waiting(|| item.decoder.seek(at)) {
                 Ok(actual) => actual,
                 Err(_) => Duration::ZERO,
             }
@@ -312,6 +388,7 @@ impl Engine {
             state.clone(),
         ) {
             Ok((output, info)) => {
+                *self.shared.output.lock().unwrap_or_else(|e| e.into_inner()) = Some(state.clone());
                 self.emit(Event::Started {
                     token: item.token,
                     source: format.clone(),
@@ -362,7 +439,8 @@ impl Engine {
         let (Some(sink), Some(front)) = (&self.sink, self.segments.front_mut()) else {
             return;
         };
-        let actual = match front.item.decoder.seek(to) {
+        let shared = self.shared.clone();
+        let actual = match shared.waiting(|| front.item.decoder.seek(to)) {
             Ok(actual) => actual,
             Err(e) => {
                 let token = front.item.token;
@@ -459,6 +537,9 @@ impl Engine {
     /// Decode into the ring until it is full or there is nothing left to decode.
     fn pump(&mut self) {
         loop {
+            if self.shared.retired() {
+                return;
+            }
             let Some(sink) = &mut self.sink else { return };
             if self.pending_at < self.pending.len() {
                 let pushed = push(&mut sink.producer, &self.pending[self.pending_at..]);
@@ -474,7 +555,8 @@ impl Engine {
             if segment.decoded_all {
                 return;
             }
-            match segment.item.decoder.next() {
+            let shared = self.shared.clone();
+            match shared.waiting(|| segment.item.decoder.next()) {
                 Ok(Some(samples)) => {
                     self.pending.clear();
                     self.pending.extend_from_slice(samples);
@@ -583,7 +665,7 @@ impl Engine {
 }
 
 /// Push as much of `samples` as fits; returns how many went in.
-fn push(producer: &mut Producer<i32>, samples: &[i32]) -> usize {
+fn push(producer: &mut Producer<f32>, samples: &[f32]) -> usize {
     let n = producer.slots().min(samples.len());
     if n == 0 {
         return 0;

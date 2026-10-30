@@ -1,10 +1,11 @@
-//! Audio output: a PipeWire stream fed from the ring of interleaved `i32` frames.
+//! Audio output: a PipeWire stream fed from the ring of interleaved `f32` frames.
 //!
 //! Other programs keep playing alongside. The stream asks the graph to run at the
 //! source's rate (`node.force-rate`), which puts the resampling on whatever else
-//! is playing rather than on the music, and sends 32-bit integers, which
-//! PipeWire's float mixer carries exactly up to 24 bits. Volume is applied here,
-//! and only below 100 %.
+//! is playing rather than on the music, and sends 32-bit floats, as PipeWire
+//! mixes them: a 24-bit source goes through exactly. Volume is applied here; at
+//! 100 % the samples pass untouched. Pausing, resuming, seeking and a change of
+//! volume ramp over a few milliseconds rather than step, which would click.
 
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -51,39 +52,72 @@ impl OutputState {
     }
 }
 
-/// Move buffered frames into `out`, converting each sample. Silence while
-/// paused or when the decoder falls behind.
-fn fill<T: Copy>(
-    consumer: &mut Consumer<i32>,
+/// How long a change of gain takes: short enough to pass for at once, long
+/// enough not to click.
+const RAMP: f32 = 0.005;
+
+/// Move buffered frames into `out` at the volume. `gain` is the gain as
+/// it stands, moved towards the volume, or towards silence to pause or
+/// before dropping what is buffered (a seek), by [`RAMP`]. Once silent
+/// that way, nothing more is read until it is to sound again. Silence too
+/// when the decoder falls behind.
+fn fill(
+    consumer: &mut Consumer<f32>,
     state: &OutputState,
-    out: &mut [T],
+    gain: &mut f32,
+    out: &mut [f32],
     channels: usize,
-    silence: T,
-    convert: impl Fn(i32) -> T,
+    sample_rate: u32,
 ) {
-    if state.flush.load(Ordering::Acquire) {
+    let flush = state.flush.load(Ordering::Acquire);
+    let volume = f32::from_bits(state.volume.load(Ordering::Relaxed));
+    // Muted, it plays on unheard; paused, or to drop what is buffered, it
+    // stops once silent.
+    let stopping = flush || state.paused.load(Ordering::Relaxed);
+    let target = if stopping { 0.0 } else { volume };
+    let step = 1.0 / (RAMP * sample_rate as f32);
+    let mut n = 0;
+    if !(stopping && *gain == 0.0) {
+        n = consumer.slots().min(out.len());
+        n -= n % channels;
+        if let Ok(chunk) = consumer.read_chunk(n) {
+            let (a, b) = chunk.as_slices();
+            let mut src = a.iter().chain(b);
+            let mut read = 0;
+            for frame in out[..n].chunks_exact_mut(channels) {
+                // Faded out: the rest stays in the ring.
+                if stopping && *gain == 0.0 {
+                    break;
+                }
+                if *gain != target {
+                    *gain = if *gain < target {
+                        (*gain + step).min(target)
+                    } else {
+                        (*gain - step).max(target)
+                    };
+                }
+                for dst in frame {
+                    let s = *src.next().unwrap_or(&0.0);
+                    // At full volume, and steady, untouched.
+                    *dst = if *gain == 1.0 { s } else { s * *gain };
+                }
+                read += channels;
+            }
+            chunk.commit(read);
+            n = read;
+        }
+    }
+    out[n..].fill(0.0);
+    state
+        .played
+        .fetch_add((n / channels) as u64, Ordering::Relaxed);
+    // Silent now: what is buffered can go without a click.
+    if flush && *gain == 0.0 {
         if let Ok(chunk) = consumer.read_chunk(consumer.slots()) {
             chunk.commit_all();
         }
         state.flush.store(false, Ordering::Release);
     }
-    if state.paused.load(Ordering::Relaxed) {
-        out.fill(silence);
-        return;
-    }
-    let mut n = consumer.slots().min(out.len());
-    n -= n % channels;
-    if let Ok(chunk) = consumer.read_chunk(n) {
-        let (a, b) = chunk.as_slices();
-        for (dst, &src) in out.iter_mut().zip(a.iter().chain(b)) {
-            *dst = convert(src);
-        }
-        chunk.commit_all();
-    }
-    out[n..].fill(silence);
-    state
-        .played
-        .fetch_add((n / channels) as u64, Ordering::Relaxed);
 }
 
 pub(crate) struct Output {
@@ -105,7 +139,7 @@ impl Output {
         sample_rate: u32,
         channels: u16,
         layout: Option<u64>,
-        consumer: Consumer<i32>,
+        consumer: Consumer<f32>,
         state: Arc<OutputState>,
     ) -> Result<(Self, OutputInfo)> {
         let (quit, quit_rx) = pw::channel::channel::<()>();
@@ -126,7 +160,7 @@ impl Output {
             device: "PipeWire".into(),
             sample_rate,
             channels,
-            sample_format: "S32_LE",
+            sample_format: "F32_LE",
             mixing: Mixing::default(),
         };
         Ok((
@@ -141,11 +175,13 @@ impl Output {
 
 /// What the realtime process callback works with.
 struct Feed {
-    consumer: Consumer<i32>,
+    consumer: Consumer<f32>,
     state: Arc<OutputState>,
     channels: usize,
     sample_rate: u32,
-    scratch: Vec<i32>,
+    scratch: Vec<f32>,
+    /// The gain applied as of the last frame.
+    gain: f32,
 }
 
 /// Each channel's speaker: as the file lays them out, else mono, stereo, or
@@ -213,7 +249,7 @@ fn positions(channels: u16, layout: Option<u64>) -> [u32; spa::param::audio::MAX
 /// Runs on the output thread until `quit` fires.
 fn run(
     (sample_rate, channels, layout): (u32, u16, Option<u64>),
-    consumer: Consumer<i32>,
+    consumer: Consumer<f32>,
     state: Arc<OutputState>,
     quit: pw::channel::Receiver<()>,
     opened: &std::sync::mpsc::SyncSender<Result<()>>,
@@ -276,12 +312,20 @@ fn run(
         Some(Duration::from_millis(500)),
     );
 
+    // A track starts at the volume as it is, from its first sample.
+    let gain = if state.paused.load(Ordering::Relaxed) {
+        0.0
+    } else {
+        f32::from_bits(state.volume.load(Ordering::Relaxed))
+    };
     let feed = Feed {
         consumer,
         state,
         channels: usize::from(channels),
         sample_rate,
-        scratch: Vec::new(),
+        // Room for a large quantum, so the realtime callback rarely allocates.
+        scratch: Vec::with_capacity(8192 * usize::from(channels)),
+        gain,
     };
     let _listener = stream
         .add_local_listener_with_user_data(feed)
@@ -320,17 +364,14 @@ fn run(
             if requested > 0 {
                 frames = frames.min(requested);
             }
-            feed.scratch.resize(frames * feed.channels, 0);
-            let volume = f32::from_bits(feed.state.volume.load(Ordering::Relaxed));
-            // At full volume the samples pass through untouched.
-            let gain = (volume < 1.0).then_some(f64::from(volume));
+            feed.scratch.resize(frames * feed.channels, 0.0);
             fill(
                 &mut feed.consumer,
                 &feed.state,
+                &mut feed.gain,
                 &mut feed.scratch,
                 feed.channels,
-                0,
-                |s| gain.map_or(s, |g| (f64::from(s) * g) as i32),
+                feed.sample_rate,
             );
             for (dst, s) in bytes.as_chunks_mut::<4>().0.iter_mut().zip(&feed.scratch) {
                 dst.copy_from_slice(&s.to_le_bytes());
@@ -343,7 +384,7 @@ fn run(
         .register()?;
 
     let mut info = spa::param::audio::AudioInfoRaw::new();
-    info.set_format(spa::param::audio::AudioFormat::S32LE);
+    info.set_format(spa::param::audio::AudioFormat::F32LE);
     info.set_rate(sample_rate);
     info.set_channels(u32::from(channels));
     info.set_position(positions(channels, layout));
