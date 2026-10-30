@@ -3,7 +3,9 @@
 //! albums and playlists.
 
 use egui::{Id, Rect, Sense, Ui, pos2, vec2};
-use music_core::model::{Artwork, Collection, FavouriteKind, ItemId, SearchResults, Track};
+use music_core::model::{
+    Artwork, Collection, FavouriteKind, ItemId, ProviderKind, SearchResults, Track,
+};
 
 use crate::app::{App, Loaded, Page, SearchScope};
 use crate::fonts::{Weight, font};
@@ -175,8 +177,15 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, query: &str) -> f32 {
                 app.detail_selected = None;
             }
 
+            // The catalogue searched, as the source chosen says: a server's
+            // songs are only in the library.
+            let catalogue = match app.search_source {
+                Some(ProviderKind::AppleMusic) => "Apple Music",
+                Some(ProviderKind::SoundCloud) => "SoundCloud",
+                _ => "All",
+            };
             let scopes = [
-                (SearchScope::AppleMusic, "Apple Music"),
+                (SearchScope::AppleMusic, catalogue),
                 (SearchScope::Library, "Library"),
             ];
             let at = pos2(left, content.top() + 118.0);
@@ -191,9 +200,11 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, query: &str) -> f32 {
                 return;
             }
             if empty {
-                let place = match app.search_scope {
-                    SearchScope::AppleMusic => "on Apple Music",
-                    SearchScope::Library => "in your library",
+                let place = match (app.search_scope, app.search_source) {
+                    (SearchScope::Library, _) => "in your library",
+                    (_, Some(ProviderKind::AppleMusic)) => "on Apple Music",
+                    (_, Some(ProviderKind::SoundCloud)) => "on SoundCloud",
+                    _ => "on Apple Music or SoundCloud",
                 };
                 let detail = format!(
                     "Nothing {place} matches “{query}”. Check the spelling, or try fewer words."

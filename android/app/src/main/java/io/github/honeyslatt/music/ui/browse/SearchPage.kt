@@ -121,7 +121,14 @@ fun SearchPage(c: LibraryContext) {
     ListPage(c.nav, "Search", fold = Fold(sources) { sources = !sources }) {
         item { SearchReveal(true, query, if (library) "Your Library" else "Artists, Songs, Lyrics and More", focusOnOpen = false) { query = it } }
         item {
-            Segmented(listOf("Apple Music", "Your Library"), if (library) 1 else 0) {
+            // The catalogue searched, as the source chosen says: a server's
+            // songs are only in the library.
+            val catalogue = when (source) {
+                ProviderKind.APPLE_MUSIC -> "Apple Music"
+                ProviderKind.SOUND_CLOUD -> "SoundCloud"
+                else -> "All"
+            }
+            Segmented(listOf(catalogue, "Your Library"), if (library) 1 else 0) {
                 library = it == 1
                 c.core.setSetting("search-scope", if (library) "library" else "catalog")
             }
@@ -134,7 +141,7 @@ fun SearchPage(c: LibraryContext) {
                 keepSearched(c.core.searched, recent)
             }
             r !is Loading.Ready -> item { Empty(r.listing(), "", "") }
-            else -> results(c, r.value, library, words, { name -> Fold(name in unfolded) { unfolded = if (name in unfolded) unfolded - name else unfolded + name } }) { keep(it, library) }
+            else -> results(c, r.value, library, source, words, { name -> Fold(name in unfolded) { unfolded = if (name in unfolded) unfolded - name else unfolded + name } }) { keep(it, library) }
         }
     }
 }
@@ -279,6 +286,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.results(
     c: LibraryContext,
     r: SearchResults,
     library: Boolean,
+    source: ProviderKind?,
     words: String,
     fold: (String) -> Fold,
     keep: (Searched) -> Unit,
@@ -288,7 +296,14 @@ private fun androidx.compose.foundation.lazy.LazyListScope.results(
             Empty(
                 io.github.honeyslatt.music.data.Listing<Unit>(done = true),
                 "No results",
-                "Nothing ${if (library) "in your library" else "on Apple Music"} matches “$words”.",
+                "Nothing ${
+                    when {
+                        library -> "in your library"
+                        source == ProviderKind.APPLE_MUSIC -> "on Apple Music"
+                        source == ProviderKind.SOUND_CLOUD -> "on SoundCloud"
+                        else -> "on Apple Music or SoundCloud"
+                    }
+                } matches “$words”.",
             )
         }
         return
