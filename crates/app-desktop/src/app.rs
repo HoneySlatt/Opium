@@ -494,6 +494,9 @@ pub struct App {
     /// Where a track handed over from another device goes on from, once
     /// it plays.
     start_at: Option<(Token, Duration)>,
+    /// The song that played when the app last closed, shown paused, and
+    /// where it was: it goes on from there once played.
+    resume: Option<(ItemId, Duration)>,
     /// Fetching or fetched, to follow the current track.
     queued_next: Option<Token>,
     /// The player has `queued_next` as its next track, fetched.
@@ -639,7 +642,7 @@ impl App {
             page_search_open: false,
             searched: None,
             drawer_tab: DrawerTab::default(),
-            history: Vec::new(),
+            history: read_history(),
             queue: Queue::new(),
             tracks: HashMap::new(),
             stands_for: HashMap::new(),
@@ -648,6 +651,7 @@ impl App {
             next_token: 0,
             pending_play: None,
             start_at: None,
+            resume: None,
             queued_next: None,
             next_ready: false,
             warm: None,
@@ -681,6 +685,7 @@ impl App {
         if let Some(repeat) = app.settings.repeat {
             app.queue.set_repeat(repeat.into());
         }
+        app.resume_session();
         // The first page loads what it shows, as any page does on arrival.
         app.arrived();
         app
@@ -2224,6 +2229,49 @@ impl App {
         }
     }
 
+    /// Show what played when the app last closed, paused where it was; it
+    /// is fetched only once played, the services being still on their way.
+    fn resume_session(&mut self) {
+        let Some(session) = std::fs::read(crate::settings::dir().join("session.json"))
+            .ok()
+            .and_then(|b| serde_json::from_slice::<connect::Handoff>(&b).ok())
+        else {
+            return;
+        };
+        let order = session.order.into_iter().map(|i| i as usize).collect();
+        self.queue
+            .restore(session.tracks, order, session.at as usize, session.shuffle);
+        self.queue.set_repeat(session.repeat);
+        self.station = session.station;
+        self.now = self.queue.current().cloned();
+        self.resume = self
+            .now
+            .as_ref()
+            .map(|t| (t.id.clone(), Duration::from_millis(session.position_ms)));
+    }
+
+    /// Keep what plays for the next time the app opens: the queue and
+    /// where it is; written off the interface's thread, but at once when
+    /// the app closes.
+    fn keep_session(&self, closing: bool) {
+        let session = self.handoff();
+        let write = move || {
+            let Ok(bytes) = serde_json::to_vec(&session) else {
+                return;
+            };
+            let path = crate::settings::dir().join("session.json");
+            let partial = path.with_extension("json.part");
+            let _ = std::fs::create_dir_all(crate::settings::dir())
+                .and_then(|()| std::fs::write(&partial, bytes))
+                .and_then(|()| std::fs::rename(&partial, &path));
+        };
+        if closing {
+            write();
+        } else {
+            std::thread::spawn(write);
+        }
+    }
+
     fn now_title(&self, token: Option<Token>) -> String {
         token
             .and_then(|t| self.tracks.get(&t))
@@ -2271,13 +2319,18 @@ impl App {
     fn start_current(&mut self) {
         self.queued_next = None;
         self.next_ready = false;
+        let resume = self.resume.take();
         if let Some(track) = self.queue.current().cloned() {
+            let resume = resume.filter(|(id, _)| *id == track.id).map(|(_, at)| at);
             // What played stops at once, as in Apple Music, rather than go on
             // over the wait.
             self.player.stop();
             // Fetched already, or on its way, while the pointer rested on it.
             if let Some(warm) = self.warm.take_if(|w| w.track.id == track.id) {
                 self.plays_as(warm.token, track);
+                if let Some(at) = resume {
+                    self.start_at = Some((warm.token, at));
+                }
                 match warm.ready {
                     Some(stream) => {
                         self.pending_play = None;
@@ -2287,7 +2340,11 @@ impl App {
                 }
                 return;
             }
-            self.pending_play = Some(self.issue(track));
+            let token = self.issue(track);
+            self.pending_play = Some(token);
+            if let Some(at) = resume {
+                self.start_at = Some((token, at));
+            }
         }
     }
 
@@ -2375,6 +2432,7 @@ impl App {
             self.player.resume();
         } else {
             self.player.pause();
+            self.keep_session(false);
         }
     }
 
@@ -2426,6 +2484,13 @@ impl App {
     pub fn seek(&mut self, to: Duration) {
         let position_ms = to.as_millis() as u64;
         if self.ask_far(connect::Command::Seek { position_ms }) {
+            return;
+        }
+        // Not fetched yet: it will go on from there.
+        if self.status.token.is_none()
+            && let Some((_, at)) = &mut self.resume
+        {
+            *at = to;
             return;
         }
         self.player.seek(to);
@@ -3373,9 +3438,11 @@ impl App {
                         if self.history.len() > HISTORY {
                             self.history.remove(0);
                         }
+                        keep_history(self.history.clone());
                     }
                     self.now = started;
                     self.now_stands_for = self.stands_for.get(&token).cloned();
+                    self.keep_session(false);
                     let (pending, queued) = (self.pending_play, self.queued_next);
                     let wanted =
                         |t: &Token| *t == token || Some(*t) == pending || Some(*t) == queued;
@@ -3666,7 +3733,7 @@ impl App {
             has_track: self.queue.current().is_some(),
             loading: self.loading().cloned(),
             playing: self.is_playing(),
-            position: self.status.position,
+            position: self.shown_here_position(),
             duration: self.duration(),
             shuffle: self.queue.shuffle(),
             repeat: self.queue.repeat(),
@@ -3708,9 +3775,18 @@ impl App {
             at: at as u32,
             shuffle: self.queue.shuffle(),
             repeat: self.queue.repeat(),
-            position_ms: self.status.position.as_millis() as u64,
+            position_ms: self.shown_here_position().as_millis() as u64,
             playing: self.is_playing(),
             station: self.station.clone(),
+        }
+    }
+
+    /// Where the song is here: as far as it played, or where the one shown
+    /// since the app opened will go on from.
+    fn shown_here_position(&self) -> Duration {
+        match &self.resume {
+            Some((_, at)) if self.status.token.is_none() => *at,
+            _ => self.status.position,
         }
     }
 
@@ -3778,6 +3854,7 @@ impl App {
 
 impl eframe::App for App {
     fn on_exit(&mut self) {
+        self.keep_session(true);
         // A volume still settling is kept as it is.
         if self.volume_changed.is_some() {
             self.settings.volume = Some(self.volume);
@@ -3884,6 +3961,29 @@ impl eframe::App for App {
         self.mpris.update(self.media_state());
         self.tell_devices();
     }
+}
+
+/// The songs played, as kept when the app last closed.
+fn read_history() -> Vec<Track> {
+    std::fs::read(crate::settings::dir().join("history.json"))
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .unwrap_or_default()
+}
+
+/// Keep the songs played for the next time the app opens: written aside
+/// and moved over, off the interface's thread.
+fn keep_history(history: Vec<Track>) {
+    std::thread::spawn(move || {
+        let Ok(bytes) = serde_json::to_vec(&history) else {
+            return;
+        };
+        let path = crate::settings::dir().join("history.json");
+        let partial = path.with_extension("json.part");
+        let _ = std::fs::create_dir_all(crate::settings::dir())
+            .and_then(|()| std::fs::write(&partial, bytes))
+            .and_then(|()| std::fs::rename(&partial, &path));
+    });
 }
 
 /// Stock, or Amane's theme when it is chosen (or, until it is chosen either

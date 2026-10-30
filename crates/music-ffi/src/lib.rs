@@ -928,6 +928,22 @@ pub fn kept_searched(path: String) -> Vec<RecentlySearched> {
     kept(&path)
 }
 
+/// Keep what played when the app closed: the queue and where it was.
+#[uniffi::export]
+pub fn keep_session(path: String, session: connect::Handoff) {
+    let Ok(bytes) = serde_json::to_vec(&session) else {
+        return;
+    };
+    let partial = format!("{path}.part");
+    let _ = std::fs::write(&partial, bytes).and_then(|()| std::fs::rename(&partial, &path));
+}
+
+/// What played when the app last closed, if anything did.
+#[uniffi::export]
+pub fn kept_session(path: String) -> Option<connect::Handoff> {
+    serde_json::from_slice(&std::fs::read(path).ok()?).ok()
+}
+
 #[uniffi::export]
 pub fn keep_tracks(path: String, items: Vec<Track>) {
     keep(&path, &items);

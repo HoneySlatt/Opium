@@ -127,7 +127,15 @@ class Playback(private val context: Context, private val core: Core, private val
     val signal: StateFlow<Signal> = _signal.asStateFlow()
 
     /** Where the song is, in ms; read as often as wanted. */
-    val position: Long get() = remote.value?.let(::farPosition) ?: player.currentPosition.coerceAtLeast(0)
+    val position: Long get() = remote.value?.let(::farPosition) ?: herePosition
+
+    /** Where the song is here: as far as it played, or where the one shown since the app opened goes on from. */
+    private val herePosition: Long
+        get() = resume?.takeIf { player.playbackState == Player.STATE_IDLE }?.second
+            ?: player.currentPosition.coerceAtLeast(0)
+
+    /** The song that played when the app last closed, shown paused, and where it was. */
+    private var resume: Pair<String, Long>? = null
 
     /** Where the song the device played on plays is by now. */
     private fun farPosition(peer: Peer): Long {
@@ -157,7 +165,11 @@ class Playback(private val context: Context, private val core: Core, private val
         if (id != null) devices.send(id, command()) else here()
     }
 
-    fun seekTo(ms: Long) = either({ Command.Seek(ms.coerceAtLeast(0).toULong()) }) { player.seekTo(ms) }
+    fun seekTo(ms: Long) = either({ Command.Seek(ms.coerceAtLeast(0).toULong()) }) {
+        // Not made playable yet: it goes on from there.
+        val r = resume
+        if (r != null && player.playbackState == Player.STATE_IDLE) resume = r.first to ms.coerceAtLeast(0) else player.seekTo(ms)
+    }
 
     fun setShuffle(on: Boolean) = either({ Command.SetShuffle(on) }) {
         queue.setShuffle(on)
@@ -235,6 +247,7 @@ class Playback(private val context: Context, private val core: Core, private val
 
     fun clearHistory() {
         _history.value = emptyList()
+        keepHistory()
     }
 
     /** The station of songs playing, which goes on as the queue runs out. */
@@ -271,6 +284,15 @@ class Playback(private val context: Context, private val core: Core, private val
 
     private fun played(track: Track) {
         _history.value = (listOf(track) + _history.value.filter { it.id != track.id }).take(100)
+        keepHistory()
+    }
+
+    /** Where the songs played are kept, from one launch to the next. */
+    private val historyFile = java.io.File(context.filesDir, "history.json").path
+
+    private fun keepHistory() {
+        val history = _history.value
+        scope.launch(kotlinx.coroutines.Dispatchers.IO) { io.github.honeyslatt.music.core.keepTracks(historyFile, history) }
     }
 
     /** Bumped when the queue starts over, so late resolutions are dropped. */
@@ -279,6 +301,7 @@ class Playback(private val context: Context, private val core: Core, private val
     private var failedInRow = 0
 
     init {
+        _history.value = io.github.honeyslatt.music.core.keptTracks(historyFile)
         Http.warm()
         player.addListener(object : Player.Listener {
 
@@ -286,6 +309,7 @@ class Playback(private val context: Context, private val core: Core, private val
                 _playing.value = isPlaying
                 devices.playing(isPlaying)
                 tell()
+                if (!isPlaying) keepSession()
             }
 
             // A seek, or a song that moved on: told at once.
@@ -306,6 +330,7 @@ class Playback(private val context: Context, private val core: Core, private val
                     changed()
                     failedInRow = 0
                     lineUpNext()
+                    keepSession()
                 }
             }
 
@@ -483,8 +508,10 @@ class Playback(private val context: Context, private val core: Core, private val
     /** Make the queue's current song playable and play it, at once. */
     private fun startCurrent() {
         val track = queue.current() ?: return
-        val from = startAt
+        var from = startAt
         startAt = 0
+        resume?.let { (id, at) -> if (id == "${track.id.provider}:${track.id.id}") from = at }
+        resume = null
         changed()
         val mine = ++generation
         lining?.cancel()
@@ -551,13 +578,20 @@ class Playback(private val context: Context, private val core: Core, private val
     /** The queue as it stands, for another device to play on from here. */
     private fun handoff(): Handoff {
         val s = queue.snapshot()
-        return Handoff(s.tracks, s.order, s.at, queue.shuffle(), repeatOf(queue.repeat()), player.currentPosition.coerceAtLeast(0).toULong(), player.isPlaying, station)
+        return Handoff(s.tracks, s.order, s.at, queue.shuffle(), repeatOf(queue.repeat()), herePosition.toULong(), player.isPlaying, station)
     }
 
-    /** Play on from where another device left off. */
-    private fun take(from: String, h: Handoff) {
-        target.value = null
-        val previous = _now.value
+    /** Where what plays is kept when the app closes. */
+    private val sessionFile = java.io.File(context.filesDir, "session.json").path
+
+    /** Keep what plays for the next time the app opens: the queue and where it is. */
+    fun keepSession() {
+        val session = handoff()
+        scope.launch(kotlinx.coroutines.Dispatchers.IO) { io.github.honeyslatt.music.core.keepSession(sessionFile, session) }
+    }
+
+    /** Take over a queue as kept or handed over: its songs, its order, its station. */
+    private fun adopt(h: Handoff) {
         // A station on air came as the queue's one song: it plays as one here too.
         h.tracks.filter { it.id.id.startsWith("ra.") && it.duration == null }.forEach {
             val kind = if (it.artists.any { a -> a.startsWith("Live", ignoreCase = true) }) {
@@ -570,6 +604,23 @@ class Playback(private val context: Context, private val core: Core, private val
         queue.restore(h.tracks, h.order, h.at, h.shuffle)
         queue.setRepeat(queueRepeat(h.repeat))
         station = h.station
+    }
+
+    /** Show what played when the app last closed, paused where it was; made playable once played. */
+    private fun resumeSession() {
+        val h = io.github.honeyslatt.music.core.keptSession(sessionFile) ?: return
+        adopt(h)
+        val t = queue.current() ?: return
+        _now.value = t
+        resume = "${t.id.provider}:${t.id.id}" to h.positionMs.toLong()
+        changed()
+    }
+
+    /** Play on from where another device left off. */
+    private fun take(from: String, h: Handoff) {
+        target.value = null
+        val previous = _now.value
+        adopt(h)
         previous?.let(::played)
         startAt = h.positionMs.toLong()
         startCurrent()
@@ -661,6 +712,7 @@ class Playback(private val context: Context, private val core: Core, private val
                 else -> {}
             }
         }
+        resumeSession()
         scope.launch { devices.peers.collect(::follow) }
         // Changes are told as they happen; while it plays, now and then
         // too, should the music have stalled. Nothing runs while it doesn't.

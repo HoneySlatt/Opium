@@ -43,8 +43,11 @@ class MainActivity : ComponentActivity() {
         (application as MusicApp).devices.looking(true)
     }
 
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     override fun onStop() {
         (application as MusicApp).devices.looking(false)
+        // Closed or not, what plays is kept, to be found as it was.
+        (application as MusicApp).playback.keepSession()
         controller?.let(MediaController::releaseFuture)
         controller = null
         super.onStop()
