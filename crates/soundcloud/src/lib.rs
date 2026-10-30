@@ -43,10 +43,15 @@ fn slow_down() -> Error {
     Error::Protocol("SoundCloud asks to slow down: try again in a few minutes".into())
 }
 
-/// SoundCloud's bot guard (DataDome) turns away changes, a like or a
-/// playlist, that it doesn't take for its web player's.
+/// SoundCloud's bot guard (DataDome) asks some networks, a VPN's often, to
+/// pass a check before a change, a like or a playlist: a browser shows it,
+/// the app can't.
 fn turned_away() -> Error {
-    Error::Protocol("SoundCloud's bot guard turned this change away".into())
+    Error::Protocol(
+        "SoundCloud wants a bot check the app can't show, as it often does behind a VPN: \
+         try without it"
+            .into(),
+    )
 }
 
 /// The user's tokens, as the browser keeps them.
