@@ -35,6 +35,13 @@ class PlaybackService : MediaSessionService() {
             Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
+        // The app's note in the media controls and the status bar, as
+        // Apple Music has its own, rather than Media3's play button.
+        setMediaNotificationProvider(
+            androidx.media3.session.DefaultMediaNotificationProvider.Builder(this).build().apply {
+                setSmallIcon(io.github.honeyslatt.music.R.drawable.ic_notification)
+            },
+        )
         val session = MediaSession.Builder(this, here).setSessionActivity(open).build()
         this.session = session
         scope.launch {

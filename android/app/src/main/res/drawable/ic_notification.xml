@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The app's note, as the launcher icon draws it, for the media controls
+     and the status bar: white on nothing, which Android tints. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <group
+        android:scaleX="0.0548"
+        android:scaleY="0.0548"
+        android:translateX="-1.0"
+        android:translateY="-1.8">
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M199 359V199q0-9 10-11l138-28q11-2 12 10v122q0 15-45 20c-57 9-48 105 30 79 30-11 35-40 35-69V88s0-20-17-15l-170 35s-13 2-13 18v203q0 15-45 20c-57 9-48 105 30 79 30-11 35-40 35-69" />
+    </group>
+</vector>
