@@ -1092,6 +1092,14 @@ impl ProtectedTrack {
         found
     }
 
+    /// The encode's real bit rate when it is less than the usual 256 kbps:
+    /// `None` for the usual.
+    pub async fn lesser_kbps(self: Arc<Self>) -> Option<u32> {
+        off(async move { Ok(self.apple.lesser_kbps(&self.protected).await) })
+            .await
+            .unwrap_or(None)
+    }
+
     /// The licence, in answer to the CDM's challenge.
     pub async fn license(self: Arc<Self>, challenge: Vec<u8>) -> Result<Vec<u8>, MusicError> {
         off(async move { Ok(self.apple.license(&self.protected, &challenge).await?) }).await

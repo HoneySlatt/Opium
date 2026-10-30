@@ -276,6 +276,45 @@ impl AppleMusic {
             .map(|d| AAC_FRAMES - d)
     }
 
+    /// What `protected`'s encode really is, when its flavour is less than
+    /// the usual 256 kbps (whose name says it right), as a flavour's name
+    /// may say less. The whole song's average, without downloading it: its
+    /// fragments' sizes, less what their boxes take per sample as the first
+    /// fragment shows.
+    pub async fn lesser_kbps(&self, protected: &Protected) -> Option<u32> {
+        if protected.kbps >= 256 {
+            return None;
+        }
+        let playlist = m3u8_rs::parse_media_playlist_res(protected.playlist.as_bytes()).ok()?;
+        let first = playlist.segments.first()?.byte_range.as_ref()?;
+        // The movie box, then the first fragment.
+        let end = first.offset? + first.length;
+        let resp = self
+            .asset_request(&protected.url)
+            .header("Range", format!("bytes=0-{}", end - 1))
+            .send()
+            .await
+            .ok()?;
+        let head = resp.bytes().await.ok()?;
+        let samples = cenc::index_fmp4(&head).ok()?.samples;
+        let audio: usize = samples.iter().map(|s| s.len).sum();
+        let boxes = first.length.checked_sub(audio as u64)? as f64 / samples.len() as f64;
+        let bytes: u64 = playlist
+            .segments
+            .iter()
+            .filter_map(|s| s.byte_range.as_ref())
+            .map(|r| r.length)
+            .sum();
+        let seconds: f64 = playlist
+            .segments
+            .iter()
+            .map(|s| f64::from(s.duration))
+            .sum();
+        let frames = seconds / AAC_FRAME.as_secs_f64();
+        let audio = bytes as f64 - boxes * frames;
+        (seconds > 0.0 && audio > 0.0).then(|| (audio * 8.0 / seconds / 1000.0).round() as u32)
+    }
+
     /// Open the connections a song's start goes through (the web player,
     /// the files, the licences), so that the first song starts as fast as
     /// the next ones.

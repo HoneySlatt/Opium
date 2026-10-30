@@ -16,8 +16,10 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.source.MediaSource
+import io.github.honeyslatt.music.core.MusicException
 import io.github.honeyslatt.music.core.PlayQueue
 import io.github.honeyslatt.music.core.QueueRepeat
+import io.github.honeyslatt.music.core.model.AudioQuality
 import io.github.honeyslatt.music.core.model.ProviderKind
 import io.github.honeyslatt.music.core.model.Track
 import io.github.honeyslatt.music.data.Core
@@ -292,6 +294,13 @@ class Playback(private val context: Context, private val core: Core, private val
 
     fun source(track: Track): Source? = sources[track.id.id]
 
+    /** The real bit rates of Apple songs served below the usual 256 kbps, once read. */
+    private val lesser = androidx.compose.runtime.mutableStateMapOf<String, UInt>()
+
+    /** `track`'s quality as it plays: Apple's listing says 256 kbps even when less is served. */
+    fun quality(track: Track): AudioQuality? =
+        lesser[track.id.id]?.let { kbps -> track.quality?.copy(bitrateKbps = kbps) } ?: track.quality
+
     /** Whether `track` stands for a station's stream, rather than a song. */
     fun isStation(track: Track) = track.id.id in stations
 
@@ -417,7 +426,15 @@ class Playback(private val context: Context, private val core: Core, private val
         if (track.id.id in stations) return liveSource(core.session.liveStation(track.id), item)
         return when (track.id.provider) {
             ProviderKind.APPLE_MUSIC -> {
-                val protected = core.session.protected(track.id) ?: error("a song you uploaded can't play here yet")
+                // A catalog song Apple no longer offers here plays from the
+                // library's copy, as Apple Music does.
+                val protected = try {
+                    core.session.protected(track.id)
+                } catch (e: MusicException) {
+                    val copy = track.libraryId?.takeIf { it != track.id } ?: throw e
+                    core.session.protected(copy)
+                } ?: error("a song you uploaded can't play here yet")
+                scope.launch { protected.lesserKbps()?.let { lesser[track.id.id] = it } }
                 appleSource(protected, "$generation-${keys++}", item, player)
             }
             ProviderKind.SOUND_CLOUD -> {

@@ -98,7 +98,7 @@ fun SignalPath(playback: Playback, track: Track) {
         val source = playback.source(track)
         val original = source == Playback.Source.Original
         // An original's quality is the file's: what the service listed is its stream's.
-        val listed = track.quality.takeIf { !original }
+        val listed = playback.quality(track).takeIf { !original }
         val format = listOfNotNull(
             codec(input?.sampleMimeType) ?: listed?.label(),
             rate?.let(::khz),

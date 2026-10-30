@@ -466,7 +466,7 @@ private fun Scrubber(playback: Playback, t: Track, playing: Boolean, onSignal: (
         BasicText(clock(shown), Modifier.weight(1f), style = times)
         // The uploader's own file: its quality is the file's, told in the signal path.
         val original = playback.source(t) == Playback.Source.Original
-        (if (original) "Original" else t.quality?.label())?.let { label ->
+        (if (original) "Original" else playback.quality(t)?.label())?.let { label ->
             val chip = RoundedCornerShape(6.dp)
             Box(
                 Modifier.height(22.dp).press(chip, shrink = 0.94f, onClick = onSignal).background(np.button, chip).padding(horizontal = 9.dp),
