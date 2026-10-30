@@ -18,6 +18,9 @@ import androidx.compose.ui.unit.sp
 import io.github.honeyslatt.music.core.model.Track
 import io.github.honeyslatt.music.ui.Icons
 import io.github.honeyslatt.music.ui.components.Bars
+import io.github.honeyslatt.music.ui.components.anchor
+import io.github.honeyslatt.music.ui.components.rememberAnchor
+import io.github.honeyslatt.music.ui.actions.LocalActions
 import io.github.honeyslatt.music.ui.components.ExplicitBadge
 import io.github.honeyslatt.music.ui.components.LocalNowPlaying
 import io.github.honeyslatt.music.ui.components.Glyph
@@ -29,11 +32,19 @@ import io.github.honeyslatt.music.ui.theme.roles
 
 /** A song of an album: its number, its title, the E, its menu. */
 @Composable
-fun AlbumTrackRow(number: Int, track: Track, last: Boolean, onLongClick: () -> Unit = {}, onClick: () -> Unit = {}) {
+fun AlbumTrackRow(number: Int, track: Track, last: Boolean, onClick: () -> Unit = {}) {
     val mark = LocalNowPlaying.current
     val now = mark.id == track.id
+    val actions = LocalActions.current
+    val anchor = rememberAnchor()
+    val more = rememberAnchor()
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 52.dp).press(onLongClick = onLongClick, onClick = onClick).padding(start = 20.dp),
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = 52.dp)
+            .anchor(anchor)
+            .press(onLongClick = { actions?.trackMenu(track, anchor.rect) }, onClick = onClick)
+            .padding(start = 20.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -53,7 +64,7 @@ fun AlbumTrackRow(number: Int, track: Track, last: Boolean, onLongClick: () -> U
                 Line(track.title, geist(16.sp).copy(color = if (now) roles.tint else roles.text), Modifier.weight(1f, fill = false))
                 if (track.explicit) ExplicitBadge()
             }
-            Box(Modifier.padding(end = 6.dp).size(44.dp).press(onClick = onLongClick), contentAlignment = Alignment.Center) {
+            Box(Modifier.padding(end = 6.dp).size(44.dp).anchor(more).press { actions?.trackMenu(track, more.rect) }, contentAlignment = Alignment.Center) {
                 Glyph(Icons.More, roles.text, 20.dp)
             }
         }

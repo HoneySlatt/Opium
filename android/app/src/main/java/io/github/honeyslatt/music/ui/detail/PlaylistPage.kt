@@ -38,6 +38,7 @@ import io.github.honeyslatt.music.ui.components.press
 import io.github.honeyslatt.music.ui.library.Empty
 import io.github.honeyslatt.music.ui.library.LibraryContext
 import io.github.honeyslatt.music.ui.library.PlayShuffle
+import io.github.honeyslatt.music.ui.actions.LocalActions
 import io.github.honeyslatt.music.ui.theme.geist
 import io.github.honeyslatt.music.ui.theme.roles
 
@@ -60,7 +61,10 @@ fun PlaylistPage(c: LibraryContext, id: ItemId) {
             all.toList()
         }
     }
-    val tracks = (loaded as? Loading.Ready)?.value.orEmpty()
+    // Songs taken out here, gone at once.
+    var removed by remember(id) { mutableStateOf(setOf<ItemId>()) }
+    val tracks = (loaded as? Loading.Ready)?.value.orEmpty().filter { it.id !in removed }
+    val actions = LocalActions.current
     val favourites = playlist?.favourites == true
     val page = if (favourites) favouritesPage(roles.dark) else rememberPageColour(playlist?.artwork)
     val name = playlist?.name ?: "Playlist"
@@ -70,8 +74,14 @@ fun PlaylistPage(c: LibraryContext, id: ItemId) {
         page,
         listOf(
             BarAction(Icons.Search, "Search in Playlist") {},
-            BarAction(if (playlist?.inFavourites == true) Icons.Starf else Icons.Star, "Favourite") {},
-            BarAction(Icons.More, "More") {},
+            *listOfNotNull(
+                if (playlist != null && !favourites && playlist.id.provider == ProviderKind.APPLE_MUSIC) {
+                    BarAction(if (actions?.isFavourite(playlist) == true) Icons.Starf else Icons.Star, "Favourite") { actions?.togglePlaylistFavourite(playlist) }
+                } else {
+                    null
+                },
+            ).toTypedArray(),
+            BarAction(Icons.More, "More") { rect -> playlist?.let { actions?.playlistMenu(it, rect, onDeleted = { c.nav.pop() }) } },
         ),
     ) {
         item {
@@ -105,7 +115,9 @@ fun PlaylistPage(c: LibraryContext, id: ItemId) {
         item { PlayShuffle(tracks.isNotEmpty(), { c.playback.play(tracks, 0) }, { c.playback.shuffle(tracks) }) }
         item { Spacer(Modifier.height(8.dp)) }
         if (tracks.isEmpty()) item { Empty(loaded.listing(), "No songs", "This playlist is empty.") }
-        items(tracks.withIndex().toList(), key = { (i, t) -> "$i" + t.id.id }) { (i, track) -> TrackRow(track) { c.playback.play(tracks, i) } }
+        items(tracks.withIndex().toList(), key = { (i, t) -> "$i" + t.id.id }) { (i, track) ->
+            TrackRow(track, inPlaylist = playlist, onRemoved = { removed = removed + track.id }) { c.playback.play(tracks, i) }
+        }
         // Its count and length go under the songs, once they are all in.
         if (tracks.isNotEmpty() && complete) item { Foot(listOf(countAndLength(tracks))) }
     }

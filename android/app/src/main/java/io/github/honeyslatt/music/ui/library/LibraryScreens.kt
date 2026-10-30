@@ -53,6 +53,8 @@ import io.github.honeyslatt.music.ui.components.label
 import io.github.honeyslatt.music.ui.components.press
 import io.github.honeyslatt.music.ui.nav.Navigator
 import io.github.honeyslatt.music.ui.nav.Route
+import io.github.honeyslatt.music.ui.actions.LocalActions
+import io.github.honeyslatt.music.ui.actions.SheetSpec
 import io.github.honeyslatt.music.ui.theme.geist
 import io.github.honeyslatt.music.ui.theme.roles
 import kotlinx.coroutines.Dispatchers
@@ -126,11 +128,25 @@ private fun androidx.compose.foundation.lazy.grid.LazyGridScope.collections(
         return
     }
     items(items) { item ->
+        val actions = LocalActions.current
         when (item) {
-            is Collection.Album -> CoverCard(item.v1.artwork, item.v1.title, item.v1.artists.joinToString(", "), item.v1.explicit, modifier = Modifier.gridCell()) {
+            is Collection.Album -> CoverCard(
+                item.v1.artwork,
+                item.v1.title,
+                item.v1.artists.joinToString(", "),
+                item.v1.explicit,
+                modifier = Modifier.gridCell(),
+                onMenu = { actions?.albumMenu(item.v1, it) },
+            ) {
                 c.nav.push(Route.Album(item.v1.id))
             }
-            is Collection.Playlist -> CoverCard(item.v1.artwork, item.v1.name, item.v1.curator ?: "Playlist", modifier = Modifier.gridCell()) {
+            is Collection.Playlist -> CoverCard(
+                item.v1.artwork,
+                item.v1.name,
+                item.v1.curator ?: "Playlist",
+                modifier = Modifier.gridCell(),
+                onMenu = { actions?.playlistMenu(item.v1, it) },
+            ) {
                 c.nav.push(Route.Playlist(item.v1.id))
             }
             is Collection.Station -> CoverCard(item.v1.artwork, item.v1.name, "Station", modifier = Modifier.gridCell()) {}
@@ -160,6 +176,7 @@ fun Empty(listing: Listing<*>, title: String, detail: String) {
 
 @Composable
 fun Playlists(c: LibraryContext) {
+    val actions = LocalActions.current
     val playlists = c.lists.playlists
     val favourites = playlists.items.firstOrNull { it.favourites }
     ListPage(c.nav, "Playlists", actions = listOf(BarAction(Icons.Search, "Search Playlists") {})) {
@@ -172,7 +189,7 @@ fun Playlists(c: LibraryContext) {
                         Glyph(Icons.Plus, roles.tint, 26.dp)
                     }
                 },
-            ) {}
+            ) { actions?.sheet = SheetSpec.PlaylistForm(null) }
         }
         if (favourites != null) {
             item {
@@ -189,6 +206,7 @@ fun Playlists(c: LibraryContext) {
                             contentAlignment = Alignment.Center,
                         ) { Glyph(Icons.Starf, roles.onAccent, 26.dp) }
                     },
+                    onMenu = { actions?.playlistMenu(favourites, it) },
                 ) { c.nav.push(Route.Playlist(favourites.id)) }
             }
         }
@@ -202,7 +220,8 @@ fun Playlists(c: LibraryContext) {
                 p.name,
                 subtitle = p.trackCount?.let { songs(it.toInt()) } ?: p.curator,
                 logo = p.id.provider.takeIf { it != ProviderKind.APPLE_MUSIC },
-                star = p.inFavourites == true,
+                star = actions?.isFavourite(p) ?: (p.inFavourites == true),
+                onMenu = { actions?.playlistMenu(p, it) },
             ) { c.nav.push(Route.Playlist(p.id)) }
         }
     }
@@ -236,7 +255,8 @@ fun Albums(c: LibraryContext) {
 
 @Composable
 private fun AlbumCard(c: LibraryContext, album: Album) {
-    CoverCard(album.artwork, album.title, album.byline(), album.explicit, modifier = Modifier.gridCell()) {
+    val actions = LocalActions.current
+    CoverCard(album.artwork, album.title, album.byline(), album.explicit, modifier = Modifier.gridCell(), onMenu = { actions?.albumMenu(album, it) }) {
         c.nav.push(Route.Album(album.id))
     }
 }

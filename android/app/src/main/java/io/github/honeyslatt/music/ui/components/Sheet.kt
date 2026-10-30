@@ -23,6 +23,9 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
@@ -64,7 +67,14 @@ val sheetCell @Composable get() = if (roles.dark) Color(0xFF1E1B26) else roles.c
  * button or Back closes it.
  */
 @Composable
-fun Sheet(open: Boolean, title: String, onClose: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+fun Sheet(
+    open: Boolean,
+    title: String?,
+    onClose: () -> Unit,
+    left: (@Composable () -> Unit)? = null,
+    right: (@Composable () -> Unit)? = null,
+    content: @Composable ColumnScope.() -> Unit,
+) {
     BackHandler(open, onClose)
     Box(Modifier.fillMaxSize()) {
         AnimatedVisibility(open, enter = fadeIn(tween(300)), exit = fadeOut(tween(300))) {
@@ -108,17 +118,29 @@ fun Sheet(open: Boolean, title: String, onClose: () -> Unit, content: @Composabl
                         // The sheet keeps its touches from the scrim.
                         .clickable(remember { MutableInteractionSource() }, indication = null) {},
                 ) {
-                    Box(Modifier.fillMaxWidth().height(60.dp).padding(start = 14.dp, end = 14.dp, top = 8.dp)) {
-                        Box(
-                            Modifier.align(Alignment.CenterStart).size(40.dp).press(CircleShape, shrink = 0.92f, onClick = onClose).background(roles.surface, CircleShape),
-                            contentAlignment = Alignment.Center,
-                        ) { Glyph(Icons.X, roles.text, 19.dp) }
-                        BasicText(
-                            title,
-                            Modifier.align(Alignment.Center).padding(horizontal = 56.dp),
-                            style = geist(16.5.sp, FontWeight.SemiBold).copy(color = roles.text, textAlign = TextAlign.Center),
-                            maxLines = 1,
-                        )
+                    // No title: a sheet of its own words, as a confirmation.
+                    if (title != null) {
+                        Box(Modifier.fillMaxWidth().height(60.dp).padding(start = 14.dp, end = 14.dp, top = 8.dp)) {
+                            Box(Modifier.align(Alignment.CenterStart)) {
+                                if (left != null) {
+                                    left()
+                                } else {
+                                    Box(
+                                        Modifier.size(40.dp).press(CircleShape, shrink = 0.92f, onClick = onClose).background(roles.surface, CircleShape),
+                                        contentAlignment = Alignment.Center,
+                                    ) { Glyph(Icons.X, roles.text, 19.dp) }
+                                }
+                            }
+                            BasicText(
+                                title,
+                                Modifier.align(Alignment.Center).padding(horizontal = 80.dp),
+                                style = geist(16.5.sp, FontWeight.SemiBold).copy(color = roles.text, textAlign = TextAlign.Center),
+                                maxLines = 1,
+                            )
+                            right?.let { Box(Modifier.align(Alignment.CenterEnd)) { it() } }
+                        }
+                    } else {
+                        Spacer(Modifier.height(14.dp))
                     }
                     Column(
                         Modifier
@@ -146,4 +168,38 @@ fun Group(footer: String? = null, content: @Composable ColumnScope.() -> Unit) {
             )
         }
     }
+}
+
+/** A sheet's text button: grey, or violet for what it is for. */
+@Composable
+fun SheetButton(label: String, primary: Boolean = false, enabled: Boolean = true, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(20.dp)
+    Box(
+        Modifier
+            .height(40.dp)
+            .alpha(if (enabled) 1f else 0.4f)
+            .then(if (enabled) Modifier.press(shape, shrink = 0.94f, onClick = onClick) else Modifier)
+            .background(if (primary) roles.accent else roles.surface, shape)
+            .padding(horizontal = 14.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        BasicText(label, style = geist(15.sp, FontWeight.SemiBold).copy(color = if (primary) roles.onAccent else roles.text))
+    }
+}
+
+/** A row of a group: a press, a hairline above all but the first. */
+@Composable
+fun GroupRow(first: Boolean, inset: androidx.compose.ui.unit.Dp = 16.dp, onClick: (() -> Unit)? = null, content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit) {
+    val line = roles.line
+    androidx.compose.foundation.layout.Row(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = 52.dp)
+            .drawBehind { if (!first) drawLine(line, androidx.compose.ui.geometry.Offset(inset.toPx(), 0f), androidx.compose.ui.geometry.Offset(size.width, 0f), 1.dp.toPx()) }
+            .then(if (onClick != null) Modifier.press(onClick = onClick) else Modifier)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
+        content = content,
+    )
 }

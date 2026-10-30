@@ -67,6 +67,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.util.UnstableApi
 import io.github.honeyslatt.music.core.model.Track
+import io.github.honeyslatt.music.core.model.FavouriteKind
+import io.github.honeyslatt.music.core.model.ProviderKind
+import io.github.honeyslatt.music.ui.actions.LocalActions
+import io.github.honeyslatt.music.ui.components.anchor
+import io.github.honeyslatt.music.ui.components.rememberAnchor
 import io.github.honeyslatt.music.playback.Playback
 import io.github.honeyslatt.music.ui.Icons
 import io.github.honeyslatt.music.ui.components.Cover
@@ -309,6 +314,19 @@ private fun RoundSmall(icon: androidx.compose.ui.graphics.vector.ImageVector, on
     ) { Glyph(icon, np.fg, 18.dp) }
 }
 
+/** Favourite (the star fills), and the song's menu. */
+@androidx.annotation.OptIn(UnstableApi::class)
+@Composable
+private fun StarAndMore(t: Track) {
+    val actions = LocalActions.current
+    if (t.id.provider != ProviderKind.NAVIDROME) {
+        val favourite = actions?.isFavourite(FavouriteKind.SONG, t.id) == true
+        RoundSmall(if (favourite) Icons.Starf else Icons.Star) { actions?.toggleFavourite(t) }
+    }
+    val anchor = rememberAnchor()
+    Box(Modifier.anchor(anchor)) { RoundSmall(Icons.More) { actions?.trackMenu(t, anchor.rect) } }
+}
+
 /** Title (it opens the album) and artist (the artist), with favourite and more. */
 @Composable
 private fun TitleRow(t: Track, actions: NpActions) {
@@ -327,8 +345,7 @@ private fun TitleRow(t: Track, actions: NpActions) {
                 Line(t.artists.joinToString(", "), geist(20.sp).copy(color = np.sub))
             }
         }
-        RoundSmall(Icons.Star) {}
-        RoundSmall(Icons.More) {}
+        StarAndMore(t)
     }
 }
 
@@ -343,8 +360,7 @@ private fun Head(t: Track) {
             Line(t.title, geist(16.sp, FontWeight.SemiBold).copy(color = np.fg))
             Line(t.artists.joinToString(", "), geist(15.sp).copy(color = np.sub))
         }
-        RoundSmall(Icons.Star) {}
-        RoundSmall(Icons.More) {}
+        StarAndMore(t)
     }
 }
 

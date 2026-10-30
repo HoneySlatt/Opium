@@ -33,6 +33,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import io.github.honeyslatt.music.ui.components.anchor
+import io.github.honeyslatt.music.ui.components.rememberAnchor
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
@@ -111,7 +113,10 @@ private fun Bar(nav: Navigator, title: String, solid: Boolean, actions: List<Bar
             Line(title, geist(16.sp, FontWeight.SemiBold).copy(color = roles.text))
         }
         Row(Modifier.align(Alignment.CenterEnd), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            actions.forEach { Box(Modifier.shadowIf(!solid)) { RoundButton(it.icon, it.onClick, fill) } }
+            actions.forEach { a ->
+                val anchor = rememberAnchor()
+                Box(Modifier.shadowIf(!solid).anchor(anchor)) { RoundButton(a.icon, { a.onClick(anchor.rect) }, fill) }
+            }
         }
     }
 }

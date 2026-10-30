@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.Composable
+import io.github.honeyslatt.music.ui.actions.LocalActions
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Modifier
@@ -71,7 +72,8 @@ fun AlbumPage(c: LibraryContext, id: ItemId) {
     }
     val page = rememberPageColour(album?.artwork)
     val quality = tracks.firstNotNullOfOrNull { it.quality }
-    DetailPage(c.nav, album?.title.orEmpty(), page, listOf(BarAction(Icons.More, "More") {})) {
+    val actions = LocalActions.current
+    DetailPage(c.nav, album?.title.orEmpty(), page, listOf(BarAction(Icons.More, "More") { rect -> album?.let { actions?.albumMenu(it, rect) } })) {
         item {
             DetailHeader(
                 artwork = album?.artwork,

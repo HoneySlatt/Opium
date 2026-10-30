@@ -23,6 +23,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.geometry.Rect
+import io.github.honeyslatt.music.core.model.Playlist
+import io.github.honeyslatt.music.ui.actions.LocalActions
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
@@ -153,12 +156,18 @@ fun ItemRow(
     round: Boolean = false,
     star: Boolean = false,
     leading: (@Composable () -> Unit)? = null,
-    onLongClick: (() -> Unit)? = null,
+    onMenu: ((Rect) -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     val art = if (round) 48.dp else 56.dp
+    val anchor = rememberAnchor()
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 68.dp).press(onLongClick = onLongClick, onClick = onClick).padding(start = 20.dp),
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = 68.dp)
+            .anchor(anchor)
+            .press(onLongClick = onMenu?.let { { it(anchor.rect) } }, onClick = onClick)
+            .padding(start = 20.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
@@ -196,10 +205,11 @@ fun CoverCard(
     explicit: Boolean = false,
     round: Boolean = false,
     modifier: Modifier = Modifier,
-    onLongClick: (() -> Unit)? = null,
+    onMenu: ((Rect) -> Unit)? = null,
     onClick: () -> Unit,
 ) {
-    Column(modifier.press(shrink = 0.97f, onLongClick = onLongClick, onClick = onClick)) {
+    val anchor = rememberAnchor()
+    Column(modifier.anchor(anchor).press(shrink = 0.97f, onLongClick = onMenu?.let { { it(anchor.rect) } }, onClick = onClick)) {
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             Cover(
                 artwork,
@@ -233,11 +243,19 @@ fun Album.byline() = listOfNotNull(artists.joinToString(", ").ifEmpty { null }, 
 
 /** A song's row in a list: artwork, title, artist. */
 @Composable
-fun TrackRow(track: Track, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
+fun TrackRow(track: Track, inPlaylist: Playlist? = null, onRemoved: () -> Unit = {}, onClick: () -> Unit) {
     val mark = LocalNowPlaying.current
     val now = mark.id == track.id
+    val actions = LocalActions.current
+    val anchor = rememberAnchor()
+    val more = rememberAnchor()
     Row(
-        Modifier.fillMaxWidth().height(60.dp).press(onLongClick = onLongClick, onClick = onClick).padding(start = 20.dp),
+        Modifier
+            .fillMaxWidth()
+            .height(60.dp)
+            .anchor(anchor)
+            .press(onLongClick = { actions?.trackMenu(track, anchor.rect, inPlaylist, onRemoved) }, onClick = onClick)
+            .padding(start = 20.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -263,7 +281,10 @@ fun TrackRow(track: Track, onLongClick: (() -> Unit)? = null, onClick: () -> Uni
                     Line(track.artists.joinToString(", "), geist(13.5.sp).copy(color = roles.sub))
                 }
             }
-            Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) { Glyph(Icons.More, roles.text, 20.dp) }
+            Box(
+                Modifier.size(44.dp).anchor(more).press(CircleShape) { actions?.trackMenu(track, more.rect, inPlaylist, onRemoved) },
+                contentAlignment = Alignment.Center,
+            ) { Glyph(Icons.More, roles.text, 20.dp) }
         }
     }
 }

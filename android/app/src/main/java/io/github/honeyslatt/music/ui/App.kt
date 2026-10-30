@@ -12,6 +12,14 @@ import androidx.compose.runtime.setValue
 import io.github.honeyslatt.music.core.LyricsSite
 import io.github.honeyslatt.music.ui.nowplaying.LyricsSource
 import io.github.honeyslatt.music.ui.components.LocalNowPlaying
+import io.github.honeyslatt.music.ui.components.Hud
+import io.github.honeyslatt.music.ui.components.HudHost
+import io.github.honeyslatt.music.ui.components.Menus
+import io.github.honeyslatt.music.ui.components.MenuHost
+import io.github.honeyslatt.music.ui.components.LocalMenus
+import io.github.honeyslatt.music.ui.actions.Actions
+import io.github.honeyslatt.music.ui.actions.ActionSheets
+import io.github.honeyslatt.music.ui.actions.LocalActions
 import io.github.honeyslatt.music.ui.components.NowPlayingMark
 import io.github.honeyslatt.music.ui.nowplaying.NowPlaying
 import io.github.honeyslatt.music.ui.nowplaying.NpActions
@@ -75,6 +83,11 @@ fun App(core: Core, library: Library, playback: io.github.honeyslatt.music.playb
     var npOpen by rememberSaveable { mutableStateOf(false) }
     val mini = MiniState(now, playing, loading, playback::toggle, playback::next, playback::previous, onOpen = { npOpen = true })
     val scope = rememberCoroutineScope()
+    val appContext = androidx.compose.ui.platform.LocalContext.current.applicationContext
+    val hud = remember { Hud(scope) }
+    val menus = remember { Menus() }
+    val actions = remember { Actions(appContext, core, library, playback, nav, hud, menus, scope) }
+    actions.beforeLeaving = { npOpen = false }
     LyricsSource.find = { track ->
         runCatching { core.session.lyrics(track, listOf(LyricsSite.LRCLIB, LyricsSite.NET_EASE, LyricsSite.KU_GOU), false) }.getOrNull()
     }
@@ -102,7 +115,11 @@ fun App(core: Core, library: Library, playback: io.github.honeyslatt.music.playb
 
     BackHandler(enabled = nav.canPop && !npOpen) { nav.pop() }
     BackHandler(enabled = npOpen) { npOpen = false }
-    androidx.compose.runtime.CompositionLocalProvider(LocalNowPlaying provides NowPlayingMark(now?.id, playing)) {
+    androidx.compose.runtime.CompositionLocalProvider(
+        LocalNowPlaying provides NowPlayingMark(now?.id, playing),
+        LocalActions provides actions,
+        LocalMenus provides menus,
+    ) {
     Box(Modifier.fillMaxSize().background(roles.base)) {
         AnimatedContent(
             targetState = Triple(nav.tab, nav.stack.size, nav.page),
@@ -121,6 +138,9 @@ fun App(core: Core, library: Library, playback: io.github.honeyslatt.music.playb
         ) {
             SwipeDown({ npOpen = false }) { NowPlaying(playback, npActions) }
         }
+        ActionSheets(actions)
+        MenuHost(menus)
+        HudHost(hud)
     }
     }
 }

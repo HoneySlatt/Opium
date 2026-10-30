@@ -48,7 +48,8 @@ import io.github.honeyslatt.music.ui.theme.geist
 import io.github.honeyslatt.music.ui.theme.roles
 
 /** A button of the navigation bar's right side. */
-data class BarAction(val icon: ImageVector, val label: String, val onClick: () -> Unit)
+/** A button of a page's bar; it is told where it is, for a menu. */
+data class BarAction(val icon: ImageVector, val label: String, val onClick: (androidx.compose.ui.geometry.Rect) -> Unit)
 
 /** Room left under a page for the bottom chrome. */
 private val Under = ChromeHeight + 58.dp + 10.dp + 24.dp
@@ -197,7 +198,10 @@ fun NavBar(
             Line(title, geist(16.sp, FontWeight.SemiBold).copy(color = roles.text))
         }
         Row(Modifier.align(Alignment.CenterEnd), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            actions.forEach { RoundButton(it.icon, it.onClick) }
+            actions.forEach { a ->
+                val anchor = rememberAnchor()
+                Box(Modifier.anchor(anchor)) { RoundButton(a.icon, { a.onClick(anchor.rect) }) }
+            }
             account?.invoke()
         }
     }

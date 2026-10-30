@@ -61,6 +61,25 @@ class Library(private val core: Core, private val scope: CoroutineScope) {
         }
     }
 
+    /** A playlist just made: first in the list, as the newest. */
+    fun playlistMade(playlist: Playlist) {
+        _lists.update { it.copy(playlists = it.playlists.copy(items = listOf(playlist) + it.playlists.items)) }
+    }
+
+    fun playlistEdited(id: io.github.honeyslatt.music.core.model.ItemId, name: String, description: String) {
+        _lists.update { l ->
+            l.copy(
+                playlists = l.playlists.copy(
+                    items = l.playlists.items.map { if (it.id == id) it.copy(name = name, description = description.ifEmpty { null }) else it },
+                ),
+            )
+        }
+    }
+
+    fun playlistDeleted(id: io.github.honeyslatt.music.core.model.ItemId) {
+        _lists.update { l -> l.copy(playlists = l.playlists.copy(items = l.playlists.items.filter { it.id != id })) }
+    }
+
     private fun <T> Listing<T>.more(items: List<T>, done: Boolean, error: String?) =
         copy(items = this.items + items, done = done, error = error ?: this.error)
 

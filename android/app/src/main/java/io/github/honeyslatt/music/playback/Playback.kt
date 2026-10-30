@@ -222,6 +222,24 @@ class Playback(context: Context, private val core: Core, private val scope: Coro
         startCurrent()
     }
 
+    /** Play `tracks` right after the current song, in their order. */
+    fun playNext(tracks: List<Track>) {
+        if (tracks.isEmpty()) return
+        if (_now.value == null) return play(tracks, 0)
+        tracks.asReversed().forEach(queue::addNext)
+        changed()
+        lineUpNext()
+    }
+
+    /** Play `tracks` once everything else has. */
+    fun addToQueue(tracks: List<Track>) {
+        if (tracks.isEmpty()) return
+        if (_now.value == null) return play(tracks, 0)
+        tracks.forEach(queue::addLast)
+        changed()
+        lineUpNext()
+    }
+
     /** Play `tracks` shuffled, from a random one. */
     fun shuffle(tracks: List<Track>) {
         if (tracks.isEmpty()) return

@@ -6,8 +6,8 @@ use std::sync::{Arc, RwLock};
 use apple_music::{AppleMusic, Protected};
 use music_core::Provider;
 use music_core::model::{
-    Album, AlbumExtras, Artist, ArtistDetail, Collection, Cursor, ItemId, Lyrics, Playlist,
-    ProviderKind, SearchResults, Shelf, SongLinks, Track,
+    Album, AlbumExtras, Artist, ArtistDetail, Collection, Cursor, FavouriteKind, ItemId, Lyrics,
+    Playlist, ProviderKind, SearchResults, Shelf, SongLinks, Track,
 };
 use navidrome::Navidrome;
 use services::Services;
@@ -335,6 +335,110 @@ impl Session {
             items: page.items,
             next: next(page.next),
         })
+    }
+
+    /// Add to the favourites, or take out. `id` names the catalog item.
+    pub async fn set_favourite(
+        &self,
+        kind: FavouriteKind,
+        id: ItemId,
+        on: bool,
+    ) -> Result<(), MusicError> {
+        Ok(self
+            .provider(id.provider)?
+            .set_favourite(kind, &id, on)
+            .await?)
+    }
+
+    /// Whether `id` is a favourite, when the service can say.
+    pub async fn is_favourite(
+        &self,
+        kind: FavouriteKind,
+        id: ItemId,
+    ) -> Result<Option<bool>, MusicError> {
+        Ok(self.provider(id.provider)?.is_favourite(kind, &id).await?)
+    }
+
+    pub async fn add_to_library(&self, kind: FavouriteKind, id: ItemId) -> Result<(), MusicError> {
+        Ok(self
+            .provider(id.provider)?
+            .add_to_library(kind, &id)
+            .await?)
+    }
+
+    /// Take a song out of the library, by its library id.
+    pub async fn remove_from_library(&self, library_id: ItemId) -> Result<(), MusicError> {
+        Ok(self
+            .provider(library_id.provider)?
+            .remove_from_library(&library_id)
+            .await?)
+    }
+
+    pub async fn create_playlist(
+        &self,
+        kind: ProviderKind,
+        name: String,
+        description: String,
+        tracks: Vec<ItemId>,
+    ) -> Result<Playlist, MusicError> {
+        Ok(self
+            .provider(kind)?
+            .create_playlist(&name, &description, &tracks)
+            .await?)
+    }
+
+    pub async fn edit_playlist(
+        &self,
+        playlist: ItemId,
+        name: String,
+        description: String,
+    ) -> Result<(), MusicError> {
+        Ok(self
+            .provider(playlist.provider)?
+            .edit_playlist(&playlist, &name, &description)
+            .await?)
+    }
+
+    pub async fn delete_playlist(&self, playlist: ItemId) -> Result<(), MusicError> {
+        Ok(self
+            .provider(playlist.provider)?
+            .delete_playlist(&playlist)
+            .await?)
+    }
+
+    /// Take a song out of a playlist, by its row's id there.
+    pub async fn remove_from_playlist(
+        &self,
+        playlist: ItemId,
+        entry: ItemId,
+    ) -> Result<(), MusicError> {
+        Ok(self
+            .provider(playlist.provider)?
+            .remove_from_playlist(&playlist, &entry)
+            .await?)
+    }
+
+    pub async fn add_to_playlist(
+        &self,
+        playlist: ItemId,
+        tracks: Vec<ItemId>,
+    ) -> Result<(), MusicError> {
+        Ok(self
+            .provider(playlist.provider)?
+            .add_to_playlist(&playlist, &tracks)
+            .await?)
+    }
+
+    /// The next `count` songs of a station.
+    pub async fn station_tracks(
+        &self,
+        station: ItemId,
+        count: u32,
+    ) -> Result<Vec<Track>, MusicError> {
+        Ok(self
+            .provider(station.provider)?
+            .station_tracks(&station, count as usize)
+            .await?)
     }
 
     /// A song's artist and station, to open from it.
