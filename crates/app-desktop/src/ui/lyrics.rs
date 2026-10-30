@@ -216,8 +216,11 @@ fn time_chip(ui: &Ui, painter: &egui::Painter, theme: &Theme, line: Rect, at: st
 }
 
 /// How bright what is still to be sung in the line playing is, to what is
-/// sung.
-const UNSUNG: f32 = 0.42;
+/// sung: as Apple Music shows it.
+const UNSUNG: f32 = 0.35;
+/// How many letters the edge of the light spreads over, as it moves along
+/// a word: a soft wipe rather than letter by letter.
+const EDGE: f32 = 1.8;
 
 /// The line playing, word by word: each letter lit as its word goes by, the
 /// word being sung filling from its first letter to its last.
@@ -251,14 +254,21 @@ fn sung(
             word.text.as_str()
         };
         let letters = text.chars().filter(|c| !c.is_whitespace()).count().max(1);
+        // Where the light's edge is, in letters: past the last one by the
+        // edge's width once the word is sung, so that it ends wholly lit.
+        let edge = progress * (letters as f32 - 1.0 + EDGE);
         let mut n = 0usize;
+        let mut last = 0.0;
         for c in text.chars() {
             let lit = if c.is_whitespace() {
-                progress
+                last
             } else {
+                let t = ((edge - n as f32) / EDGE).clamp(0.0, 1.0);
                 n += 1;
-                (progress * letters as f32 - (n - 1) as f32).clamp(0.0, 1.0)
+                // Eased, as the light comes on and settles.
+                t * t * (3.0 - 2.0 * t)
             };
+            last = lit;
             job.append(&c.to_string(), 0.0, format(UNSUNG + (1.0 - UNSUNG) * lit));
         }
     }
