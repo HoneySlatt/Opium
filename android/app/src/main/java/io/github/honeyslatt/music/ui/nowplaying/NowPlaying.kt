@@ -328,7 +328,7 @@ private fun StarAndMore(t: Track) {
         RoundSmall(if (favourite) Icons.Starf else Icons.Star) { actions?.toggleFavourite(t) }
     }
     val anchor = rememberAnchor()
-    Box(Modifier.anchor(anchor)) { RoundSmall(Icons.More) { actions?.trackMenu(t, anchor.rect) } }
+    Box(Modifier.anchor(anchor)) { RoundSmall(Icons.More) { actions?.trackMenu(t, anchor.rect, nowPlaying = true) } }
 }
 
 /** Title (it opens the album) and artist (the artist), with favourite and more. */

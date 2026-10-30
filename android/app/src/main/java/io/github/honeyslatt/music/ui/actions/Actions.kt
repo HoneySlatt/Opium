@@ -118,7 +118,34 @@ class Actions(
 
     fun isStation(track: Track) = playback.isStation(track)
 
-    fun trackMenu(track: Track, anchor: Rect, inPlaylist: Playlist? = null, onRemoved: () -> Unit = {}) {
+    /** The sleep timer's choices, the one set ticked. */
+    fun sleepMenu(anchor: Rect) {
+        val set = playback.sleep.value
+        menus.show(
+            MenuSpec(anchor, null) {
+                listOf(
+                    listOf(5, 15, 30, 45, 60).map { m ->
+                        MenuItem(if (m == 60) "1 Hour" else "$m Minutes", Icons.Clock, checked = (set as? Playback.Sleep.At)?.minutes == m) {
+                            playback.sleepIn(m)
+                        }
+                    } + MenuItem("End of Track", Icons.Note, checked = set == Playback.Sleep.EndOfTrack) { playback.sleepAtEndOfTrack() },
+                    listOfNotNull(set?.let { MenuItem("Turn Off Timer", Icons.X) { playback.sleepIn(null) } }),
+                )
+            },
+        )
+    }
+
+    /** The sleep timer's line in Now Playing's menu: what is left of it. */
+    private fun sleepLabel(): String = when (val s = playback.sleep.value) {
+        null -> "Sleep Timer"
+        Playback.Sleep.EndOfTrack -> "Sleep Timer · End of Track"
+        is Playback.Sleep.At -> {
+            val left = ((s.endsAt - android.os.SystemClock.elapsedRealtime()).coerceAtLeast(0) + 59_999) / 60_000
+            "Sleep Timer · $left min left"
+        }
+    }
+
+    fun trackMenu(track: Track, anchor: Rect, inPlaylist: Playlist? = null, onRemoved: () -> Unit = {}, nowPlaying: Boolean = false) {
         if (playback.isStation(track)) return
         val head = MenuHead(track.artwork, track.title, track.artists.joinToString(", "))
         menus.show(
@@ -157,6 +184,8 @@ class Actions(
                             MenuItem("Remove from Playlist", Icons.Minuscircle, danger = true) { removeFromPlaylist(p, track, onRemoved) }
                         },
                     ),
+                    // Now Playing's own: the sleep timer.
+                    listOfNotNull(if (nowPlaying) MenuItem(sleepLabel(), Icons.Clock, checked = playback.sleep.value != null) { sleepMenu(anchor) } else null),
                 )
             },
         )

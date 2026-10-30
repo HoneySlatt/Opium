@@ -43,6 +43,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -317,6 +318,14 @@ class Playback(private val context: Context, private val core: Core, private val
                 tell()
             }
 
+            // Paused at the end of the song, for the sleep timer: it is done.
+            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                if (reason == Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM && _sleep.value == Sleep.EndOfTrack) {
+                    _sleep.value = null
+                    player.pauseAtEndOfMediaItems = false
+                }
+            }
+
             override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
                 // The next song followed on its own: the queue moves on.
                 if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) queue.trackFinished()
@@ -361,6 +370,59 @@ class Playback(private val context: Context, private val core: Core, private val
                 _signal.value = _signal.value.copy(output = audioTrackConfig)
             }
         })
+    }
+
+    /** When the music stops by itself: at a time, or at the end of the song. */
+    sealed interface Sleep {
+        /** At [endsAt], in [SystemClock.elapsedRealtime] ms, after [minutes]. */
+        data class At(val minutes: Int, val endsAt: Long) : Sleep
+
+        data object EndOfTrack : Sleep
+    }
+
+    private val _sleep = MutableStateFlow<Sleep?>(null)
+    val sleep: StateFlow<Sleep?> = _sleep.asStateFlow()
+    private var sleeping: Job? = null
+
+    /** Pause in `minutes`, or never when null. */
+    fun sleepIn(minutes: Int?) {
+        sleeping?.cancel()
+        player.pauseAtEndOfMediaItems = false
+        if (minutes == null) {
+            _sleep.value = null
+            return
+        }
+        val endsAt = SystemClock.elapsedRealtime() + minutes * 60_000L
+        _sleep.value = Sleep.At(minutes, endsAt)
+        sleeping = scope.launch {
+            // Checked against the clock: a delay alone stretches while the phone sleeps.
+            while (SystemClock.elapsedRealtime() < endsAt) kotlinx.coroutines.delay(1_000)
+            fallAsleep()
+        }
+    }
+
+    /** Pause once the song playing ends. */
+    fun sleepAtEndOfTrack() {
+        sleeping?.cancel()
+        _sleep.value = Sleep.EndOfTrack
+        val far = remote.value?.playing?.track?.id
+        if (far != null) {
+            // The device played on: paused as soon as it moves on.
+            sleeping = scope.launch {
+                remote.first { it == null || it.playing?.track?.id != far }
+                fallAsleep()
+            }
+        } else {
+            player.pauseAtEndOfMediaItems = true
+        }
+    }
+
+    /** The timer ran out: what plays, here or on the device played on, pauses. */
+    private fun fallAsleep() {
+        _sleep.value = null
+        player.pauseAtEndOfMediaItems = false
+        val id = remote.value?.device?.id
+        if (id != null) devices.send(id, Command.Pause) else player.pause()
     }
 
     /** Play `tracks` from `start`. */
