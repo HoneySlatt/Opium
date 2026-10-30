@@ -34,7 +34,13 @@ import java.text.Normalizer
 
 /** For matching and sorting names: lower case, without accents. */
 fun fold(text: String): String =
-    Normalizer.normalize(text, Normalizer.Form.NFD).replace(Regex("\\p{Mn}+"), "").lowercase()
+    if (text.all { it.code < 128 }) {
+        text.lowercase()
+    } else {
+        Normalizer.normalize(text, Normalizer.Form.NFD).replace(Marks, "").lowercase()
+    }
+
+private val Marks = Regex("\\p{Mn}+")
 
 /** Whether any of `fields` holds the folded `query`; an empty one matches all. */
 fun matches(query: String, vararg fields: String?): Boolean {

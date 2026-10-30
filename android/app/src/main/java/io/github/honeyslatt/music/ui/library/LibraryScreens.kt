@@ -276,14 +276,19 @@ fun Albums(c: LibraryContext) {
     var order by remember { mutableStateOf(c.core.setting("albums-sort")?.let { runCatching { AlbumSort.valueOf(it) }.getOrNull() } ?: AlbumSort.Added) }
     val menus = LocalMenus.current
     val all = c.lists.albums.items
-    val shown by produceState(all, all, source, query, order) {
+    // What another service has too is left out once, not at every letter typed.
+    val some by produceState(all, all, source) {
         value = withContext(Dispatchers.Default) {
-            val some = if (source != null) {
+            if (source != null) {
                 all.filter { it.id.provider == source }
             } else {
                 val out = albumsLeftOut(all).toSet()
                 all.filterIndexed { i, _ -> i.toUInt() !in out }
             }
+        }
+    }
+    val shown by produceState(some, some, query, order) {
+        value = withContext(Dispatchers.Default) {
             some.filter { matches(query, it.title, it.artists.joinToString(", ")) }.sortedBy(order)
         }
     }
@@ -350,7 +355,8 @@ fun Songs(c: LibraryContext) {
     LaunchedEffect(order) { if (order == SongSort.Added) c.library?.loadNewestSongs() }
     val listing = if (order == SongSort.Added) c.lists.newestSongs else c.lists.songs
     val all = listing.items
-    val shown by produceState(all, all, source, query, order) {
+    // What another service has too is left out once, not at every letter typed.
+    val some by produceState(all, all, source) {
         value = withContext(Dispatchers.Default) {
             val some = if (source != null) {
                 all.filter { it.id.provider == source }
@@ -359,7 +365,12 @@ fun Songs(c: LibraryContext) {
                 all.filterIndexed { i, _ -> i.toUInt() !in out }
             }
             // Apple lists a song saved twice twice: once is enough.
-            some.distinctBy { it.id }.filter { matches(query, it.title, it.artists.joinToString(", "), it.album) }.sortedBy(order)
+            some.distinctBy { it.id }
+        }
+    }
+    val shown by produceState(some, some, query, order) {
+        value = withContext(Dispatchers.Default) {
+            some.filter { matches(query, it.title, it.artists.joinToString(", "), it.album) }.sortedBy(order)
         }
     }
     ListPage(
@@ -427,16 +438,22 @@ enum class SongSort(val label: String) { Name("Name"), Artist("Artist"), Album("
  * those without the date sorted by go last.
  */
 private fun List<Album>.sortedBy(order: AlbumSort): List<Album> = when (order) {
-    AlbumSort.Name -> sortedBy { fold(it.title) }
-    AlbumSort.Artist -> sortedWith(compareBy({ fold(it.artists.joinToString(", ")) }, { fold(it.title) }))
+    AlbumSort.Name -> sortedOnce { fold(it.title) }
+    AlbumSort.Artist -> sortedOnce { fold(it.artists.joinToString(", ")) + '\u0000' + fold(it.title) }
     AlbumSort.Added -> sortedWith(compareBy(nullsLast(reverseOrder())) { it.added })
     AlbumSort.Released -> sortedWith(compareBy(nullsLast(reverseOrder())) { it.released ?: it.year?.toString() })
 }
 
 /** Songs in `order`; Date Added keeps the order they came in, newest first. */
 private fun List<Track>.sortedBy(order: SongSort): List<Track> = when (order) {
-    SongSort.Name -> sortedBy { fold(it.title) }
-    SongSort.Artist -> sortedWith(compareBy({ fold(it.artists.joinToString(", ")) }, { fold(it.title) }))
-    SongSort.Album -> sortedWith(compareBy({ fold(it.album.orEmpty()) }, { it.discNumber?.toInt() ?: 1 }, { it.trackNumber?.toInt() ?: 0 }))
+    SongSort.Name -> sortedOnce { fold(it.title) }
+    SongSort.Artist -> sortedOnce { fold(it.artists.joinToString(", ")) + '\u0000' + fold(it.title) }
+    SongSort.Album -> map { fold(it.album.orEmpty()) to it }
+        .sortedWith(compareBy({ it.first }, { it.second.discNumber?.toInt() ?: 1 }, { it.second.trackNumber?.toInt() ?: 0 }))
+        .map { it.second }
     SongSort.Added -> this
 }
+
+/** Sorted by `key`, worked out once for each item rather than at every comparison. */
+private fun <T> List<T>.sortedOnce(key: (T) -> String): List<T> =
+    map { key(it) to it }.sortedBy { it.first }.map { it.second }
