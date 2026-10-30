@@ -28,6 +28,8 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicText
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.State
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.LaunchedEffect
@@ -95,7 +97,9 @@ fun Lyrics(playback: Playback, track: Track, calm: Boolean, onFound: (Boolean) -
         return
     }
     val position = rememberPosition(playback, playing)
-    val current = if (l.synced) l.lines.indexOfLast { it.startMs <= position }.coerceAtLeast(0) else -1
+    // The line sung changes a few times a minute: only then is the list
+    // composed again, the line itself following each frame (`Sung`).
+    val current by remember(l) { derivedStateOf { if (l.synced) l.lines.indexOfLast { it.startMs <= position.value }.coerceAtLeast(0) else -1 } }
     val state = rememberLazyListState()
     var glide by remember { mutableStateOf<Glide?>(null) }
     BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -207,8 +211,9 @@ private fun lyricStyle() = geist(27.sp, FontWeight.Bold, -0.01f).copy(lineHeight
 /** The line being sung: each word lit as far as it has been sung. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun Sung(line: LyricLine, next: LyricLine?, position: Long) {
+private fun Sung(line: LyricLine, next: LyricLine?, positionState: State<Long>) {
     val np = LocalNp.current
+    val position = positionState.value
     val words = line.text.split(' ').filter { it.isNotEmpty() }
     val progress: List<Float> = if (line.words.isNotEmpty()) {
         // The source timed each word.

@@ -8,12 +8,9 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -40,6 +37,8 @@ import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.State
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -157,7 +156,7 @@ fun NowPlaying(playback: Playback, actions: NpActions) {
                 },
         ) {
             val m = motion
-            if (m != null) Backdrop(t, m, flat = mode != NpMode.Artwork) else Wash(t)
+            if (m != null) Backdrop(t, m, flat = mode != NpMode.Artwork) else Wash(t, playing)
             Column(
                 Modifier
                     .fillMaxSize()
@@ -263,21 +262,29 @@ private fun Backdrop(t: Track, motion: String, flat: Boolean) {
     }
 }
 
-/** The cover's three colours as four large blobs drifting over 40 s, under a vignette. */
+/**
+ * The cover's three colours as four large blobs drifting over 40 s, under
+ * a vignette. They drift while the music plays: paused, the screen stays
+ * still and nothing is drawn again.
+ */
 @Composable
-private fun Wash(track: Track) {
+private fun Wash(track: Track, playing: Boolean) {
     val light = !roles.dark
     val base = roles.base
     val url = track.artwork?.at(120)
     val colours by produceState(listOf(roles.accent, roles.mauve, roles.accent), url, light) {
         url?.let { CoverColours.wash(it, light) }?.let { value = it }
     }
-    val drift by rememberInfiniteTransition(label = "wash").animateFloat(
-        0f,
-        1f,
-        infiniteRepeatable(tween(40_000, easing = LinearEasing), RepeatMode.Reverse),
-        label = "drift",
-    )
+    val wash = remember { androidx.compose.animation.core.Animatable(0f) }
+    var rising by remember { mutableStateOf(true) }
+    LaunchedEffect(playing) {
+        while (playing) {
+            val to = if (rising) 1f else 0f
+            val left = (kotlin.math.abs(to - wash.value) * 40_000).toInt().coerceAtLeast(1)
+            wash.animateTo(to, tween(left, easing = LinearEasing))
+            rising = !rising
+        }
+    }
     val (c1, c2, c3) = colours
     val fill = lerp(c1, Color.Black, 0.2f)
     Box(
@@ -285,7 +292,7 @@ private fun Wash(track: Track) {
             drawRect(fill)
             val w = size.width
             val h = size.height
-            val d = (drift - 0.5f) * 0.12f
+            val d = (wash.value - 0.5f) * 0.12f
             fun blob(x: Float, y: Float, r: Float, c: Color) = drawCircle(
                 Brush.radialGradient(listOf(c, c.copy(alpha = 0f)), Offset(w * x, h * y), r),
                 radius = r,
@@ -374,15 +381,19 @@ fun clock(ms: Long): String {
     return "${s / 60}:${(s % 60).toString().padStart(2, '0')}"
 }
 
-/** The position, read at every frame while the song plays. */
+/**
+ * The position, read at every frame while the song plays. A state, to be
+ * read where it is used (in drawing, or through `derivedStateOf`), so that
+ * only that follows each frame rather than the whole screen.
+ */
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
-fun rememberPosition(playback: Playback, playing: Boolean): Long {
-    var position by remember { mutableLongStateOf(playback.position) }
+fun rememberPosition(playback: Playback, playing: Boolean): State<Long> {
+    val position = remember { mutableLongStateOf(playback.position) }
     LaunchedEffect(playing) {
-        position = playback.position
+        position.longValue = playback.position
         while (playing) {
-            withFrameMillis { position = playback.position }
+            withFrameMillis { position.longValue = playback.position }
         }
     }
     return position
@@ -435,7 +446,9 @@ private fun Scrubber(playback: Playback, t: Track, playing: Boolean, onSignal: (
     val position = rememberPosition(playback, playing)
     val duration = playback.duration ?: 0L
     var dragging by remember { mutableStateOf<Float?>(null) }
-    val shown = dragging?.let { (it * duration).toLong() } ?: position
+    // Where the bar is, read as it is drawn; the times, once a second.
+    val shownMs = { dragging?.let { (it * duration).toLong() } ?: position.value }
+    val shown by remember(duration) { derivedStateOf { shownMs() / 1000 * 1000 } }
     // The scrubber: 7 dp, 12 dp while dragged; it seeks on release.
     val thickness by animateDpAsState(if (dragging != null) 12.dp else 7.dp, tween(150), label = "scrub")
     BoxWithConstraints(Modifier.fillMaxWidth().padding(top = 22.dp).height(18.dp)) {
@@ -459,10 +472,14 @@ private fun Scrubber(playback: Playback, t: Track, playing: Boolean, onSignal: (
                 },
             contentAlignment = Alignment.CenterStart,
         ) {
-            val fraction = if (duration > 0) (shown.toFloat() / duration).coerceIn(0f, 1f) else 0f
-            Box(Modifier.fillMaxWidth().height(thickness).background(np.dim, RoundedCornerShape(6.dp))) {
-                Box(Modifier.fillMaxWidth(fraction).height(thickness).background(np.fg.copy(alpha = 0.9f), RoundedCornerShape(6.dp)))
-            }
+            val fill = np.fg.copy(alpha = 0.9f)
+            Box(
+                Modifier.fillMaxWidth().height(thickness).background(np.dim, RoundedCornerShape(6.dp)).drawBehind {
+                    val fraction = if (duration > 0) (shownMs().toFloat() / duration).coerceIn(0f, 1f) else 0f
+                    val radius = androidx.compose.ui.geometry.CornerRadius(6.dp.toPx())
+                    drawRoundRect(fill, size = size.copy(width = size.width * fraction), cornerRadius = radius)
+                },
+            )
         }
     }
     Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -512,11 +529,21 @@ private fun Output(playback: Playback, onDevices: () -> Unit) {
     val np = LocalNp.current
     val remote by playback.remote.collectAsStateWithLifecycle()
     val device = remember { mutableStateOf(Outputs.current(context)) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            device.value = Outputs.current(context)
-            kotlinx.coroutines.delay(2_000)
+    // Told when an output comes or goes (headphones, Bluetooth), rather
+    // than asked every two seconds.
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        val audio = context.getSystemService(android.media.AudioManager::class.java)
+        val callback = object : android.media.AudioDeviceCallback() {
+            override fun onAudioDevicesAdded(added: Array<out android.media.AudioDeviceInfo>) {
+                device.value = Outputs.current(context)
+            }
+
+            override fun onAudioDevicesRemoved(removed: Array<out android.media.AudioDeviceInfo>) {
+                device.value = Outputs.current(context)
+            }
         }
+        audio.registerAudioDeviceCallback(callback, null)
+        onDispose { audio.unregisterAudioDeviceCallback(callback) }
     }
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         val r = remote
