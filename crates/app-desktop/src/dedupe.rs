@@ -144,8 +144,10 @@ pub fn album_tracks(copies: &[&[Track]]) -> Vec<Track> {
     copies.sort_by_key(|c| c.first().map_or(u8::MAX, |t| rank(t.id.provider)));
     let mut out: Vec<Track> = Vec::new();
     for copy in copies {
+        // A copy's own songs all stay: two of its interludes are two songs.
+        let before = out.len();
         for track in copy {
-            if !out.iter().any(|t| same_song(t, track)) {
+            if !out[..before].iter().any(|t| same_song(t, track)) {
                 out.push(track.clone());
             }
         }
@@ -236,6 +238,16 @@ mod tests {
                 ("Three", ProviderKind::Navidrome),
             ]
         );
+    }
+
+    #[test]
+    fn an_albums_own_namesakes_stay_when_merged() {
+        let server = vec![track(ProviderKind::Navidrome, "One", "Artist", 100)];
+        let apple = vec![
+            track(ProviderKind::AppleMusic, "Interlude", "Artist", 60),
+            track(ProviderKind::AppleMusic, "Interlude", "Artist", 61),
+        ];
+        assert_eq!(album_tracks(&[&apple, &server]).len(), 3);
     }
 
     #[test]

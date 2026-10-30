@@ -47,10 +47,11 @@ fn read_box(data: &[u8], pos: usize) -> Option<(usize, usize, usize)> {
         if pos + 16 > data.len() {
             return None;
         }
-        let ext = u64be(data, pos + 8) as usize;
+        let ext = usize::try_from(u64be(data, pos + 8)).ok()?;
         let body_start = pos + 16;
-        let body_end = pos + ext;
-        if body_end > data.len() {
+        let body_end = pos.checked_add(ext)?;
+        // A size too small for its own header would never move on.
+        if ext < 16 || body_end > data.len() {
             return None;
         }
         Some((body_start, body_end, ext))

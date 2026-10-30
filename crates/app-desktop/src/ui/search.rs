@@ -157,7 +157,7 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, query: &str) -> f32 {
 
             let mut y = content.top() + BODY_TOP;
             if let Err(e) = &loaded {
-                message(ui, &theme, left, y, width, "Couldn't search Apple Music", e);
+                message(ui, &theme, left, y, width, "Couldn't search", e);
                 return;
             }
             if empty {
@@ -239,10 +239,30 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, query: &str) -> f32 {
 }
 
 /// The results from the chosen source only.
+/// The results of one service, made once for the results and the source
+/// shown: the page asks for them for every card.
 fn filtered(results: &Arc<SearchResults>, source: Option<ProviderKind>) -> Arc<SearchResults> {
+    type Made = (Arc<SearchResults>, ProviderKind, Arc<SearchResults>);
+    thread_local! {
+        static LAST: std::cell::RefCell<Option<Made>> = const { std::cell::RefCell::new(None) };
+    }
     let Some(source) = source else {
         return results.clone();
     };
+    LAST.with_borrow_mut(|last| {
+        if let Some((of, from, made)) = last
+            && Arc::ptr_eq(of, results)
+            && *from == source
+        {
+            return made.clone();
+        }
+        let made = only(results, source);
+        *last = Some((results.clone(), source, made.clone()));
+        made
+    })
+}
+
+fn only(results: &SearchResults, source: ProviderKind) -> Arc<SearchResults> {
     Arc::new(SearchResults {
         tracks: results
             .tracks

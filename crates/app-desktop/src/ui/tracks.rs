@@ -420,8 +420,10 @@ fn bars(ui: &Ui, theme: &Theme, center: egui::Pos2, moving: bool) {
         );
         ui.painter().rect_filled(rect, 1.0, theme.accent);
     }
+    // 30 frames a second are plenty for them.
     if moving {
-        ui.ctx().request_repaint();
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_millis(33));
     }
 }
 
@@ -443,7 +445,7 @@ pub fn visible(viewport: Rect, top: f32, count: usize) -> std::ops::Range<usize>
 
 /// Arrow keys move the selection, Enter plays it. Returns the row to play.
 pub fn keyboard(ui: &Ui, rows: usize, selected: &mut Option<usize>) -> Option<usize> {
-    if rows == 0 || ui.ctx().egui_wants_keyboard_input() {
+    if rows == 0 || super::keys_taken(ui.ctx()) {
         return None;
     }
     let (down, up, enter) = ui.input(|i| {
@@ -459,5 +461,22 @@ pub fn keyboard(ui: &Ui, rows: usize, selected: &mut Option<usize>) -> Option<us
     if up {
         *selected = Some(selected.map_or(0, |s| s.saturating_sub(1)));
     }
+    if let Some(row) = selected.filter(|_| down || up) {
+        ui.ctx().data_mut(|d| d.insert_temp(scroll_id(), row));
+        ui.ctx().request_repaint();
+    }
     if enter { *selected } else { None }
+}
+
+fn scroll_id() -> Id {
+    Id::unique("track-row-scroll")
+}
+
+/// Bring the row the arrow keys moved to into view, in the list whose rows
+/// start at `rows_top`.
+pub fn scroll_to_selected(ui: &Ui, rows_top: f32, left: f32, width: f32) {
+    if let Some(row) = ui.ctx().data_mut(|d| d.remove_temp::<usize>(scroll_id())) {
+        let rect = Rect::from_min_size(pos2(left, rows_top + row as f32 * ROW), vec2(width, ROW));
+        ui.scroll_to_rect(rect, None);
+    }
 }

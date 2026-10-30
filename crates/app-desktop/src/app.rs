@@ -435,6 +435,10 @@ pub struct App {
     /// Albums made whole from their copies on other services, and how many
     /// copies they were made from.
     whole_albums: HashMap<ItemId, (usize, Arc<Vec<Track>>)>,
+    /// An album's copies on other services, as of a version of the
+    /// library's albums; an artist's, of its artists.
+    twins: HashMap<ItemId, (u64, Vec<ItemId>)>,
+    artist_twins: HashMap<ItemId, (u64, Vec<ItemId>)>,
     pub artists: HashMap<ItemId, Loaded<Arc<ArtistDetail>>>,
     /// Catalog albums' other editions and music videos.
     album_extras: HashMap<ItemId, Loaded<Arc<music_core::model::AlbumExtras>>>,
@@ -491,6 +495,8 @@ pub struct App {
     waiting: Option<(Waiting, Enqueue)>,
     /// Tracks that failed to start one after the other, skipped.
     failed_in_row: usize,
+    /// When covers out of sight were last let go of.
+    covers_forgotten: f64,
     /// The track handed to the player to play at once, until it starts: an
     /// error before then means it can't play at all.
     playing: Option<Token>,
@@ -596,6 +602,8 @@ impl App {
             grid_source: None,
             albums: HashMap::new(),
             whole_albums: HashMap::new(),
+            twins: HashMap::new(),
+            artist_twins: HashMap::new(),
             artists: HashMap::new(),
             album_extras: HashMap::new(),
             playlist_tracks: HashMap::new(),
@@ -626,6 +634,7 @@ impl App {
             waiting: None,
             failed_in_row: 0,
             playing: None,
+            covers_forgotten: 0.0,
             playing_from: None,
             now: None,
             status: Status::default(),
@@ -776,7 +785,8 @@ impl App {
             }
             // Their releases on every service the library has them on.
             Page::LibraryArtist(id) => {
-                for twin in self.artist_twins(id) {
+                let id = id.clone();
+                for twin in self.artist_twins(&id) {
                     if !self.artist_albums.contains_key(&twin) {
                         self.artist_albums.insert(twin.clone(), Loaded::Loading);
                         self.backend.send(Request::LibraryArtistAlbums(twin));
@@ -1646,7 +1656,13 @@ impl App {
 
     /// The artist's page ids on every service the library has them on, by
     /// their name: `id`'s own first.
-    pub fn artist_twins(&self, id: &ItemId) -> Vec<ItemId> {
+    pub fn artist_twins(&mut self, id: &ItemId) -> Vec<ItemId> {
+        let version = self.library_artists.version;
+        if let Some((built, twins)) = self.artist_twins.get(id)
+            && *built == version
+        {
+            return twins.clone();
+        }
         let Some(name) = self.library_artist(id).map(|a| fold(a.name.trim())) else {
             return vec![id.clone()];
         };
@@ -1657,22 +1673,33 @@ impl App {
                 twins.push(page);
             }
         }
+        self.artist_twins
+            .insert(id.clone(), (version, twins.clone()));
         twins
     }
 
     /// The album's copies on the library's other services, by their title
     /// and artist.
-    pub fn album_twins(&self, id: &ItemId) -> Vec<ItemId> {
+    pub fn album_twins(&mut self, id: &ItemId) -> Vec<ItemId> {
+        let version = self.library_albums.version;
+        if let Some((built, twins)) = self.twins.get(id)
+            && *built == version
+        {
+            return twins.clone();
+        }
         let Some(Loaded::Ready((album, _))) = self.albums.get(id) else {
             return Vec::new();
         };
         let key = crate::dedupe::album_key(album);
-        self.library_albums
+        let twins: Vec<ItemId> = self
+            .library_albums
             .items
             .iter()
             .filter(|a| a.id.provider != id.provider && crate::dedupe::album_key(a) == key)
             .map(|a| a.id.clone())
-            .collect()
+            .collect();
+        self.twins.insert(id.clone(), (version, twins.clone()));
+        twins
     }
 
     /// The album's tracks, whole from its copies on every service the
@@ -2235,6 +2262,12 @@ impl App {
 
     /// Have the track after the current one fetched, so it follows without a gap.
     fn prefetch_next(&mut self) {
+        // Already lined up (shuffle or repeat changed, and not what follows).
+        if let (Some(token), Some(next)) = (self.queued_next, self.queue.peek_finished())
+            && self.token_plays(token, &next.id)
+        {
+            return;
+        }
         self.queued_next = self.queue.peek_finished().cloned().map(|t| self.issue(t));
         self.next_ready = false;
     }
@@ -3326,6 +3359,12 @@ impl eframe::App for App {
         }
         ui::show(self, ui);
         self.forget_unseen_motion();
+        // Every few seconds, the covers long out of sight leave memory.
+        let now = ui.input(|i| i.time);
+        if now - self.covers_forgotten > 10.0 {
+            self.covers_forgotten = now;
+            crate::covers::forget_unseen(ui.ctx());
+        }
         let under = ui::song_under_pointer(ui.ctx());
         self.rest_on(under, now, ui.ctx());
         // The covers just drawn that Apple hasn't said about yet.

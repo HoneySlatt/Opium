@@ -55,6 +55,38 @@ pub fn write_motion(url: &str, size: u32, bytes: &[u8]) -> Option<PathBuf> {
     Some(path)
 }
 
+/// When each cover was last drawn, to let go of those not seen for a while.
+static SEEN: std::sync::LazyLock<std::sync::Mutex<HashMap<String, f64>>> =
+    std::sync::LazyLock::new(Default::default);
+/// How long a cover may go unseen before its image and texture are dropped.
+const UNSEEN_FOR: f64 = 60.0;
+
+/// The cover at `url` is drawn now.
+pub fn seen(ctx: &egui::Context, url: &str) {
+    let now = ctx.input(|i| i.time);
+    let mut seen = SEEN.lock().unwrap_or_else(|e| e.into_inner());
+    match seen.get_mut(url) {
+        Some(at) => *at = now,
+        None => {
+            seen.insert(url.to_owned(), now);
+        }
+    }
+}
+
+/// Drop the covers not drawn for a while from memory (the disk keeps
+/// them), so that scrolling through a large library doesn't fill it.
+pub fn forget_unseen(ctx: &egui::Context) {
+    let now = ctx.input(|i| i.time);
+    let mut seen = SEEN.lock().unwrap_or_else(|e| e.into_inner());
+    seen.retain(|url, at| {
+        let keep = now - *at < UNSEEN_FOR;
+        if !keep {
+            ctx.forget_image(url);
+        }
+        keep
+    });
+}
+
 /// The cover kept for `url`, if it was.
 pub fn read(url: &str) -> Option<Vec<u8>> {
     std::fs::read(file(url)?).ok()

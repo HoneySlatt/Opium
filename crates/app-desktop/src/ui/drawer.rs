@@ -260,13 +260,13 @@ fn playing_next(app: &App, ui: &mut Ui, theme: &Theme) -> Action {
         row(ui, theme, now, RowKind::Current, "now");
     }
 
-    let upcoming: Vec<Track> = app.queue.upcoming().cloned().collect();
+    let upcoming_len = app.queue.upcoming_len();
     let repeat_icon = if app.queue.repeat() == Repeat::One {
         icons::REPEAT_ONE
     } else {
         icons::REPEAT
     };
-    let caption = format!("PLAYING NEXT · {}", upcoming.len());
+    let caption = format!("PLAYING NEXT · {upcoming_len}");
     match label(
         ui,
         theme,
@@ -282,19 +282,28 @@ fn playing_next(app: &App, ui: &mut Ui, theme: &Theme) -> Action {
         Some(2) => action = Action::Clear,
         _ => {}
     }
-    if upcoming.is_empty() {
+    if upcoming_len == 0 {
         note(ui, theme, "The queue ends here.");
     }
-    for (k, track) in upcoming.iter().enumerate() {
+    // Only the rows in view are drawn, and their covers loaded; the others
+    // just take their room.
+    let visible = ui.clip_rect().y_range();
+    let first =
+        (((visible.min - ui.cursor().top()) / ROW).floor().max(0.0) as usize).min(upcoming_len);
+    let shown = ((visible.span() / ROW).ceil() as usize + 1).min(upcoming_len - first);
+    ui.allocate_space(vec2(ui.available_width(), first as f32 * ROW));
+    for (k, track) in app.queue.upcoming().enumerate().skip(first).take(shown) {
         match row(ui, theme, track, RowKind::Upcoming, &format!("next-{k}")) {
             RowAction::Open => action = Action::Jump(k),
             RowAction::Remove => action = Action::Remove(k),
             RowAction::None => {}
         }
     }
+    let after = upcoming_len - first - shown;
+    ui.allocate_space(vec2(ui.available_width(), after as f32 * ROW));
 
     // Whether the next track will join without a gap.
-    if let (Some(next), Some(source)) = (upcoming.first(), &app.status.source) {
+    if let (Some(next), Some(source)) = (app.queue.upcoming().next(), &app.status.source) {
         let next_rate = next.quality.as_ref().and_then(|q| q.sample_rate);
         if let Some(next_rate) = next_rate {
             let (icon, message) = if next_rate == source.sample_rate {
@@ -384,8 +393,11 @@ enum RowAction {
 
 /// A 52 px row: 40 px artwork, title, source and artist; a remove button on
 /// hover for upcoming tracks, the length for the current one.
+/// A row's height.
+const ROW: f32 = 52.0;
+
 fn row(ui: &mut Ui, theme: &Theme, track: &Track, kind: RowKind, salt: &str) -> RowAction {
-    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), 52.0), Sense::click());
+    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), ROW), Sense::click());
     let hovered = response.contains_pointer();
     let fade = if kind == RowKind::Past { 0.6 } else { 1.0 };
     let fill = match kind {

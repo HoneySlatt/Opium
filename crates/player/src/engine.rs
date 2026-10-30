@@ -15,7 +15,15 @@ use crate::{Event, OutputInfo, Source, Status, Token};
 
 pub(crate) enum Command {
     Play(Token, Source),
-    SetNext(Token, Source),
+    /// A next track is being opened, on a thread of its own: opening one
+    /// may wait on its download, which mustn't starve the track playing.
+    Opening(u64),
+    /// The next track, opened.
+    Opened {
+        token: Token,
+        generation: u64,
+        decoder: std::result::Result<Decoder, String>,
+    },
     SkipToNext,
     Pause,
     Resume,
@@ -80,6 +88,10 @@ pub(crate) struct Engine {
     segments: VecDeque<Segment>,
     /// The track to follow the last segment, not decoding yet.
     next: Option<Item>,
+    /// The next track being opened, by the generation it was asked with.
+    opening: Option<u64>,
+    /// Skip to it as soon as it is open.
+    skip_when_opened: bool,
     /// A next track whose format needs another output; waits for the ring to drain.
     switch: Option<Item>,
     /// Samples pushed into the ring since the output was opened.
@@ -104,6 +116,8 @@ impl Engine {
             sink: None,
             segments: VecDeque::new(),
             next: None,
+            opening: None,
+            skip_when_opened: false,
             switch: None,
             written: 0,
             pending: Vec::new(),
@@ -143,14 +157,33 @@ impl Engine {
             Command::Play(token, source) => {
                 self.next = None;
                 self.switch = None;
+                self.opening = None;
+                self.skip_when_opened = false;
                 if let Some(item) = self.open(token, source) {
                     self.start(item, Duration::ZERO);
                 }
             }
-            Command::SetNext(token, source) => {
+            Command::Opening(generation) => self.opening = Some(generation),
+            // Opened for a queue that has since changed: dropped.
+            Command::Opened { generation, .. } if self.opening != Some(generation) => {}
+            Command::Opened { token, decoder, .. } => {
+                self.opening = None;
                 self.switch = None;
-                self.next = self.open(token, source);
-                if self.segments.back().is_some_and(|s| s.decoded_all) {
+                self.next = match decoder {
+                    Ok(decoder) => Some(Item { token, decoder }),
+                    Err(message) => {
+                        self.emit(Event::Error {
+                            token: Some(token),
+                            message,
+                        });
+                        None
+                    }
+                };
+                if std::mem::take(&mut self.skip_when_opened) {
+                    if let Some(item) = self.next.take() {
+                        self.start(item, Duration::ZERO);
+                    }
+                } else if self.segments.back().is_some_and(|s| s.decoded_all) {
                     self.queue_next();
                 }
             }
@@ -159,6 +192,8 @@ impl Engine {
                 self.park_queued();
                 if let Some(item) = self.next.take() {
                     self.start(item, Duration::ZERO);
+                } else if self.opening.is_some() {
+                    self.skip_when_opened = true;
                 }
             }
             Command::Pause => self.set_paused(true),
@@ -166,6 +201,8 @@ impl Engine {
             Command::Seek(to) => self.seek(to),
             Command::Stop => {
                 self.segments.clear();
+                self.opening = None;
+                self.skip_when_opened = false;
                 self.next = None;
                 self.switch = None;
                 self.sink = None;

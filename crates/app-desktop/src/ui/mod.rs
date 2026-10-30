@@ -202,6 +202,7 @@ fn top_bar(app: &mut App, ui: &mut Ui, main: Rect, scrolled: f32) {
         theme.subtext0,
         app.can_go_back(),
     )
+    .on_hover_text("Back")
     .clicked()
     {
         app.go_back();
@@ -215,6 +216,7 @@ fn top_bar(app: &mut App, ui: &mut Ui, main: Rect, scrolled: f32) {
         theme.subtext0,
         app.can_go_forward(),
     )
+    .on_hover_text("Forward")
     .clicked()
     {
         app.go_forward();
@@ -234,6 +236,11 @@ fn top_bar(app: &mut App, ui: &mut Ui, main: Rect, scrolled: f32) {
         theme.subtext0,
         true,
     )
+    .on_hover_text(if app.sidebar_collapsed {
+        "Show Sidebar"
+    } else {
+        "Hide Sidebar"
+    })
     .clicked()
     {
         app.sidebar_collapsed = !app.sidebar_collapsed;
@@ -351,13 +358,21 @@ fn toast(app: &mut App, ui: &mut Ui, main: Rect) {
     painter.galley(rect.min + vec2(14.0, 9.0), galley, theme.text);
 }
 
+/// Whether the keys are someone else's: a field being typed in, or a dialog
+/// over the page.
+pub fn keys_taken(ctx: &egui::Context) -> bool {
+    ctx.egui_wants_keyboard_input() || ctx.memory(|m| m.top_modal_layer()).is_some()
+}
+
 fn shortcuts(app: &mut App, ui: &mut Ui) {
-    let typing = ui.ctx().egui_wants_keyboard_input();
-    if !typing && ui.input(|i| i.key_pressed(egui::Key::Space)) {
+    if keys_taken(ui.ctx()) {
+        return;
+    }
+    if ui.input(|i| i.key_pressed(egui::Key::Space)) {
         app.toggle_play();
     }
     // Escape closes the popover first, then Now Playing, then the drawer.
-    if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+    if ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
         if app.signal_open.is_some() {
             app.signal_open = None;
         } else if app.now_playing {
@@ -371,7 +386,7 @@ fn shortcuts(app: &mut App, ui: &mut Ui) {
 /// The player's keys, as Apple Music's: Ctrl with the arrows for the next
 /// or previous song and the volume, Shift with them to move in the song.
 fn player_shortcuts(app: &mut App, ui: &mut Ui) {
-    if ui.ctx().egui_wants_keyboard_input() {
+    if keys_taken(ui.ctx()) {
         return;
     }
     use egui::{Key, Modifiers};
@@ -499,7 +514,7 @@ pub(super) fn page_search(
             theme.subtext0,
             true,
         )
-        .on_hover_text("Search in Playlist")
+        .on_hover_text(hint)
         .clicked()
         {
             app.page_search_open = true;
@@ -560,7 +575,9 @@ pub(super) fn page_search(
     if focus {
         response.request_focus();
     }
-    if response.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+    if response.has_focus()
+        && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
+    {
         changed |= !app.page_search.is_empty();
         app.page_search.clear();
         app.page_search_open = false;
@@ -750,6 +767,7 @@ pub fn format_date(iso: &str) -> Option<String> {
 pub fn artwork(ui: &Ui, url: Option<String>, rect: Rect, radius: f32, theme: &Theme) {
     ui.painter().rect_filled(rect, radius, theme.surface0);
     if let Some(url) = url {
+        crate::covers::seen(ui.ctx(), &url);
         egui::Image::new(url)
             .corner_radius(CornerRadius::same(radius as u8))
             .show_loading_spinner(false)

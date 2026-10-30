@@ -101,6 +101,7 @@ fn transport(app: &mut App, ui: &mut Ui, theme: &Theme, inner: Rect) -> f32 {
         dim,
         has_track,
     )
+    .on_hover_text("Previous")
     .clicked()
     {
         app.previous();
@@ -135,6 +136,7 @@ fn transport(app: &mut App, ui: &mut Ui, theme: &Theme, inner: Rect) -> f32 {
         dim,
         has_track,
     )
+    .on_hover_text("Next")
     .clicked()
     {
         app.next();

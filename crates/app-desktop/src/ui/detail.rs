@@ -513,8 +513,10 @@ fn page(
     };
     let total = table_top + head + rows.max(1) as f32 * tracks::ROW + foot + 104.0;
     let colors = super::backdrop(app);
+    // Each album and playlist keeps its own place.
+    let page = format!("{:?}", app.page);
     let output = egui::ScrollArea::vertical()
-        .id_salt(listing.list)
+        .id_salt((listing.list, page))
         .auto_shrink(false)
         .show_viewport(ui, |ui, viewport| {
             let (content, _) =
@@ -569,6 +571,7 @@ fn page(
                 tracks::head(ui, &theme, &columns, table, left, width, None);
             }
             let rows_top = table + head;
+            tracks::scroll_to_selected(ui, rows_top, left, width);
             if let Some(error) = &listing.error {
                 let g = text(
                     ui,

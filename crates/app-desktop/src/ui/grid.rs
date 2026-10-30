@@ -540,13 +540,26 @@ fn page(app: &mut App, ui: &mut Ui, pad: f32, kind: Kind) -> f32 {
     // for is there.
     let query = crate::app::fold(app.page_search.trim());
     let searching = kind != Kind::Recent && !query.is_empty();
-    let shown: Vec<usize> = if searching {
+    // Made again only when the search or the list changes.
+    type Found = ((Kind, String, Vec<usize>), Vec<usize>);
+    thread_local! {
+        static FOUND: std::cell::RefCell<Option<Found>> = const { std::cell::RefCell::new(None) };
+    }
+    let asked = (kind, query.clone(), shown.clone());
+    let known = FOUND.with_borrow(|f| {
+        f.as_ref()
+            .filter(|(key, _)| searching && *key == asked)
+            .map(|(_, found)| found.clone())
+    });
+    let shown: Vec<usize> = if let Some(found) = known {
+        found
+    } else if searching {
         let words: Vec<&str> = query.split_whitespace().collect();
         let found = |text: String| {
             let text = crate::app::fold(&text);
             words.iter().all(|w| text.contains(w))
         };
-        shown
+        let kept: Vec<usize> = shown
             .into_iter()
             .filter(|&i| match kind {
                 Kind::Albums => {
@@ -556,7 +569,9 @@ fn page(app: &mut App, ui: &mut Ui, pad: f32, kind: Kind) -> f32 {
                 Kind::Artists => found(app.library_artists.items[i].name.clone()),
                 Kind::Recent => true,
             })
-            .collect()
+            .collect();
+        FOUND.set(Some((asked, kept.clone())));
+        kept
     } else {
         shown
     };

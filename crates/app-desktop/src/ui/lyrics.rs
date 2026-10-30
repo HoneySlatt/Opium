@@ -161,7 +161,10 @@ pub fn show(
         let fade = edge_fade(rect.center().y, list, offset);
         opacity *= fade;
         let color = theme.text_a(opacity);
-        let scale = 1.0 + (LIT - 1.0) * lit;
+        // On half-point sizes: each size is drawn into the font atlas, and
+        // a zoom through every fraction of one would fill it.
+        let grown = (size * (LIT - 1.0) * lit * 2.0).round() / 2.0;
+        let scale = 1.0 + grown / size;
         match &galleys[i] {
             // The line being sung word by word: what is sung lights up as
             // it goes.

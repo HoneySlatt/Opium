@@ -44,11 +44,15 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
                 app.songs_view.selected = None;
             }
             let rows_top = table_top + tracks::HEAD_SPACE;
+            tracks::scroll_to_selected(ui, rows_top, left, width);
 
             if rows == 0 {
                 empty(app, ui, &theme, rows_top, left, width);
                 return;
             }
+            // Carried out after the rows: it may take songs out of the list
+            // they index.
+            let mut chosen = None;
             for position in tracks::visible(viewport, TABLE_TOP + tracks::HEAD_SPACE, rows) {
                 let top = rows_top + position as f32 * tracks::ROW;
                 let rect = Rect::from_min_size(pos2(left, top), vec2(width, tracks::ROW));
@@ -73,11 +77,11 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
                         app.play_list(shown_tracks(app), position);
                     }
                     RowAction::OpenAlbum(id) => app.go(Page::Album(id)),
-                    RowAction::Menu(choice) => {
-                        let track = track.clone();
-                        app.track_choice(track, choice, ui.input(|i| i.time));
-                    }
+                    RowAction::Menu(choice) => chosen = Some((track.clone(), choice)),
                 }
+            }
+            if let Some((track, choice)) = chosen {
+                app.track_choice(track, choice, ui.input(|i| i.time));
             }
             let foot_text = if app.songs_done {
                 format!("{rows} songs")
@@ -234,20 +238,20 @@ fn rebuild_order(app: &mut App) {
         })
         .collect();
     if let Some((by, ascending)) = view.sort {
-        let text_cmp = |a: &str, b: &str| a.to_lowercase().cmp(&b.to_lowercase());
-        order.sort_by(|&a, &b| {
-            let (a, b) = (&songs[a], &songs[b]);
-            let ord = match by {
-                SortKey::Title => text_cmp(&a.title, &b.title),
-                SortKey::Artist => text_cmp(&a.artists.join(", "), &b.artists.join(", ")),
-                SortKey::Album => text_cmp(
-                    a.album.as_deref().unwrap_or(""),
-                    b.album.as_deref().unwrap_or(""),
-                ),
-                SortKey::Duration => a.duration.cmp(&b.duration),
-            };
-            if ascending { ord } else { ord.reverse() }
-        });
+        // Each song's key made once, not at each comparison.
+        let text = |t: &Track| match by {
+            SortKey::Title => t.title.to_lowercase(),
+            SortKey::Artist => t.artists.join(", ").to_lowercase(),
+            SortKey::Album => t.album.as_deref().unwrap_or("").to_lowercase(),
+            SortKey::Duration => String::new(),
+        };
+        match by {
+            SortKey::Duration => order.sort_by_key(|&i| songs[i].duration),
+            _ => order.sort_by_cached_key(|&i| text(&songs[i])),
+        }
+        if !ascending {
+            order.reverse();
+        }
     }
     if order.len() != view.order.len() {
         view.selected = None;

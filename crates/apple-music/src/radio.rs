@@ -7,8 +7,8 @@
 use std::io::Read;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc;
 use std::time::Duration;
+use tokio::sync::mpsc;
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
@@ -172,17 +172,17 @@ impl Read for LiveStream {
     fn read(&mut self, out: &mut [u8]) -> std::io::Result<usize> {
         while self.pos == self.buffer.len() {
             let next = match self.frames.get_mut() {
-                Ok(frames) => frames.recv(),
+                Ok(frames) => frames.blocking_recv(),
                 Err(_) => return Ok(0),
             };
             match next {
-                Ok(Ok(next)) => {
+                Some(Ok(next)) => {
                     self.buffer = next;
                     self.pos = 0;
                 }
-                Ok(Err(e)) => return Err(std::io::Error::other(e)),
+                Some(Err(e)) => return Err(std::io::Error::other(e)),
                 // The station stopped (an episode ended): the stream ends.
-                Err(_) => return Ok(0),
+                None => return Ok(0),
             }
         }
         let n = out.len().min(self.buffer.len() - self.pos);
@@ -511,7 +511,9 @@ impl AppleMusic {
             None => Segments::Ts,
         };
 
-        let (tx, frames) = mpsc::sync_channel(8);
+        // Waited on without holding up a worker of the runtime while the
+        // player is paused, or an episode is ahead of it.
+        let (tx, frames) = mpsc::channel(8);
         let stop = Arc::new(AtomicBool::new(false));
         let http = self.http.clone();
         let running = stop.clone();
@@ -544,7 +546,7 @@ impl AppleMusic {
                             key_uri = Some(uri.clone());
                         }
                         Err(e) => {
-                            let _ = tx.send(Err(e.to_string()));
+                            let _ = tx.send(Err(e.to_string())).await;
                             return;
                         }
                     }
@@ -561,12 +563,12 @@ impl AppleMusic {
                     let frames = match segments.frames(&bytes, iv.as_deref()) {
                         Ok(frames) => frames,
                         Err(e) => {
-                            let _ = tx.send(Err(e.to_string()));
+                            let _ = tx.send(Err(e.to_string())).await;
                             return;
                         }
                     };
                     // The player went away: stop.
-                    if tx.send(Ok(frames)).is_err() {
+                    if tx.send(Ok(frames)).await.is_err() {
                         return;
                     }
                     next = seq + 1;

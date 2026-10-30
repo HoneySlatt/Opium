@@ -197,6 +197,9 @@ pub struct Status {
 
 pub struct Player {
     commands: Sender<Command>,
+    /// Counts the next tracks asked for, so that only the last one opened
+    /// is taken.
+    next_asked: std::sync::atomic::AtomicU64,
     events: Receiver<Event>,
     status: Arc<Mutex<Status>>,
     thread: Option<JoinHandle<()>>,
@@ -214,6 +217,7 @@ impl Player {
             .expect("spawn the player thread");
         Self {
             commands,
+            next_asked: Default::default(),
             events,
             status,
             thread: Some(thread),
@@ -232,7 +236,28 @@ impl Player {
     /// The track to follow the current one. Set it once per track: once it has
     /// started streaming in behind the current one it can't be replaced.
     pub fn set_next(&self, token: Token, source: Source) {
-        self.send(Command::SetNext(token, source));
+        let generation = self
+            .next_asked
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.send(Command::Opening(generation));
+        let commands = self.commands.clone();
+        let opened = std::thread::Builder::new()
+            .name("player-open".into())
+            .spawn(move || {
+                let decoder = decoder::Decoder::open(source).map_err(|e| e.to_string());
+                let _ = commands.send(Command::Opened {
+                    token,
+                    generation,
+                    decoder,
+                });
+            });
+        if let Err(e) = opened {
+            self.send(Command::Opened {
+                token,
+                generation,
+                decoder: Err(e.to_string()),
+            });
+        }
     }
 
     /// Play the track set with [`set_next`](Self::set_next) now.

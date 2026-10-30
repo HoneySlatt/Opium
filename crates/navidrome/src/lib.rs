@@ -26,6 +26,8 @@ const VERSION: &str = "1.16.1";
 const CLIENT: &str = "music";
 /// Items a page of a list asks for.
 const PAGE: usize = 500;
+/// Songs named in one request's URL.
+const SONGS_PER_CALL: usize = 100;
 /// A song's station, as the app names it: `similar:<song id>`.
 const STATION: &str = "similar:";
 
@@ -313,9 +315,11 @@ impl Navidrome {
         cursor.and_then(|c| c.0.parse().ok()).unwrap_or(0)
     }
 
-    /// The cursor after `got` items at `offset`, unless the list ended.
+    /// The cursor after `got` items at `offset`, unless the list ended: a
+    /// server may hand back pages shorter than asked, so only an empty one
+    /// ends it.
     fn next(offset: usize, got: usize) -> Option<Cursor> {
-        (got == PAGE).then(|| Cursor((offset + got).to_string()))
+        (got > 0).then(|| Cursor((offset + got).to_string()))
     }
 
     async fn playlist_of(&self, playlist: &ItemId) -> Result<types::Playlist> {
@@ -644,13 +648,19 @@ impl Provider for Navidrome {
         description: &str,
         tracks: &[ItemId],
     ) -> Result<Playlist> {
+        // The songs go in the URL: a few at a time, so that it stays short
+        // enough for the proxies in front of servers.
+        let (first, rest) = tracks.split_at(tracks.len().min(SONGS_PER_CALL));
         let mut query = vec![("name", name.to_owned())];
-        query.extend(tracks.iter().map(|t| ("songId", t.id.clone())));
+        query.extend(first.iter().map(|t| ("songId", t.id.clone())));
         let made = self
             .call("createPlaylist", &query)
             .await?
             .playlist
             .ok_or_else(|| Error::Protocol("Navidrome: the playlist wasn't made".into()))?;
+        if !rest.is_empty() {
+            self.add_to_playlist(&convert::id(&made.id), rest).await?;
+        }
         if !description.is_empty() {
             self.call(
                 "updatePlaylist",
@@ -709,9 +719,12 @@ impl Provider for Navidrome {
     }
 
     async fn add_to_playlist(&self, playlist: &ItemId, tracks: &[ItemId]) -> Result<()> {
-        let mut query = vec![("playlistId", playlist.id.clone())];
-        query.extend(tracks.iter().map(|t| ("songIdToAdd", t.id.clone())));
-        self.call("updatePlaylist", &query).await.map(drop)
+        for some in tracks.chunks(SONGS_PER_CALL) {
+            let mut query = vec![("playlistId", playlist.id.clone())];
+            query.extend(some.iter().map(|t| ("songIdToAdd", t.id.clone())));
+            self.call("updatePlaylist", &query).await?;
+        }
+        Ok(())
     }
 }
 

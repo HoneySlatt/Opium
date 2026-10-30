@@ -40,12 +40,18 @@ pub fn show(app: &mut App, ui: &mut Ui, collapsed: bool) {
             row(ui, Page::Home, icons::HOME, "Home");
             row(ui, Page::New, icons::GRID, "New");
             row(ui, Page::Radio, icons::RADIO, "Radio");
-            section(ui, &theme, "Library", icons::DOWN, collapsed);
+            section(ui, &theme, "Library", None, collapsed);
             row(ui, Page::RecentlyAdded, icons::CLOCK, "Recently Added");
             row(ui, Page::Songs, icons::NOTE, "Songs");
             row(ui, Page::Albums, icons::DISC, "Albums");
             row(ui, Page::Artists, icons::MIC, "Artists");
-            if section(ui, &theme, "Playlists", icons::PLUS, collapsed) {
+            if section(
+                ui,
+                &theme,
+                "Playlists",
+                Some((icons::PLUS, "New Playlist")),
+                collapsed,
+            ) {
                 new_playlist = true;
             }
             // Apple's own playlist of favourites, once the library says which,
@@ -175,7 +181,15 @@ fn search(app: &mut App, ui: &mut Ui, theme: &Theme, full: Rect, collapsed: bool
 
 /// A section's title, with its button on the right; returns whether the
 /// button was clicked.
-fn section(ui: &mut Ui, theme: &Theme, label: &str, icon: Icon, collapsed: bool) -> bool {
+/// A section's name, and the button beside it, if any: whether it was
+/// clicked.
+fn section(
+    ui: &mut Ui,
+    theme: &Theme,
+    label: &str,
+    button: Option<(Icon, &str)>,
+    collapsed: bool,
+) -> bool {
     ui.add_space(12.0);
     let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 28.0), Sense::hover());
     let rect = rect.shrink2(vec2(8.0, 0.0));
@@ -202,10 +216,15 @@ fn section(ui: &mut Ui, theme: &Theme, label: &str, icon: Icon, collapsed: bool)
         egui::Align::Min,
         theme.muted(),
     );
+    let Some((icon, tip)) = button else {
+        return false;
+    };
     let button =
         Rect::from_center_size(pos2(rect.right() - 20.0, rect.center().y), vec2(22.0, 22.0));
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(button));
-    icon_button(&mut child, theme, icon, 22.0, 14.0, theme.muted(), true).clicked()
+    icon_button(&mut child, theme, icon, 22.0, 14.0, theme.muted(), true)
+        .on_hover_text(tip)
+        .clicked()
 }
 
 /// The sizes of a sidebar row.

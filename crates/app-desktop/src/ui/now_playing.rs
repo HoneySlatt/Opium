@@ -127,7 +127,10 @@ fn backdrop(app: &mut App, ui: &Ui, theme: &Theme, full: Rect) {
         0.45 * d.min(1.0)
     };
     wash_with(ui, full, theme.base, &blobs, vignette);
-    ui.ctx().request_repaint_after(Duration::from_millis(50));
+    // It drifts while the music plays.
+    if app.is_playing() {
+        ui.ctx().request_repaint_after(Duration::from_millis(50));
+    }
 }
 
 /// The artwork, or its animated cover, the window's height a side from the
@@ -164,6 +167,7 @@ fn cover(app: &mut App, ui: &Ui, track: &Track, full: Rect, narrow: bool, lyrics
         .or_else(|| {
             let size = if pixels > 1500.0 { 3000 } else { 1500 };
             let url = track.artwork.as_ref()?.url(size);
+            crate::covers::seen(ui.ctx(), &url);
             match egui::Image::new(url).load_for_size(ui.ctx(), art.size()) {
                 Ok(egui::load::TexturePoll::Ready { texture }) => Some(texture),
                 _ => None,

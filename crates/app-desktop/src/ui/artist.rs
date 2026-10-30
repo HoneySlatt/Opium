@@ -303,6 +303,7 @@ fn banner(app: &mut App, ui: &Ui, theme: &Theme, artist: &ArtistDetail, rect: Re
                 None => (artist.artist.artwork.as_ref().map(|a| a.url(1600)), true),
             };
             let texture = url.and_then(|url| {
+                crate::covers::seen(ui.ctx(), &url);
                 match egui::Image::new(url).load_for_size(ui.ctx(), area.size()) {
                     Ok(egui::load::TexturePoll::Ready { texture }) => Some(texture),
                     _ => None,
