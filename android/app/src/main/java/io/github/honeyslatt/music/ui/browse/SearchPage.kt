@@ -29,6 +29,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.honeyslatt.music.core.SearchScope
+import io.github.honeyslatt.music.core.songsLeftOut
+import io.github.honeyslatt.music.data.LibraryLists
 import io.github.honeyslatt.music.core.model.Artist
 import io.github.honeyslatt.music.core.model.ProviderKind
 import io.github.honeyslatt.music.core.model.SearchResults
@@ -44,6 +46,7 @@ import io.github.honeyslatt.music.ui.components.SearchReveal
 import io.github.honeyslatt.music.ui.components.SectionHeader
 import io.github.honeyslatt.music.ui.components.SourceChips
 import io.github.honeyslatt.music.ui.components.TrackRow
+import io.github.honeyslatt.music.ui.components.matches
 import io.github.honeyslatt.music.ui.components.press
 import io.github.honeyslatt.music.ui.detail.Loading
 import io.github.honeyslatt.music.ui.detail.listing
@@ -58,6 +61,9 @@ import kotlinx.coroutines.delay
 /** How many searches Recently Searched keeps. */
 private const val RECENT = 10
 
+/** How many songs a search shows before its title is tapped. */
+private const val SONGS = 6
+
 /**
  * Search: the field, `Apple Music | Your Library` (remembered), and what
  * matches: the top result, songs, albums, artists, playlists. Before a
@@ -69,8 +75,11 @@ fun SearchPage(c: LibraryContext) {
     var library by remember { mutableStateOf(c.core.setting("search-scope") == "library") }
     var source by rememberSaveable { mutableStateOf<ProviderKind?>(null) }
     var sources by rememberSaveable { mutableStateOf(false) }
+    var allSongs by remember { mutableStateOf(false) }
     var recent by remember { mutableStateOf(c.core.setting("recent-searches")?.split('\n')?.filter { it.isNotBlank() }.orEmpty()) }
     val words = query.trim()
+    // Each search starts with its first songs only.
+    androidx.compose.runtime.LaunchedEffect(words, library, source) { allSongs = false }
     // A service chosen is asked alone: its own copies of what others have too.
     val results by produceState<Loading<SearchResults>?>(null, words, library, source) {
         if (words.isEmpty()) {
@@ -80,7 +89,11 @@ fun SearchPage(c: LibraryContext) {
         // Typed on: asked once the typing pauses.
         delay(300)
         value = Loading.Pending
-        value = load { c.core.session.search(if (library) SearchScope.LIBRARY else SearchScope.CATALOG, words, source) }
+        val lists = c.lists
+        value = load {
+            val found = c.core.session.search(if (library) SearchScope.LIBRARY else SearchScope.CATALOG, words, source)
+            if (library && (source == null || source == ProviderKind.SOUND_CLOUD)) found.withLikes(lists, words) else found
+        }
     }
     // A result opened: its search is worth keeping.
     val keep = {
@@ -104,10 +117,32 @@ fun SearchPage(c: LibraryContext) {
                 c.core.setSetting("recent-searches", "")
             }
             r !is Loading.Ready -> item { Empty(r.listing(), "", "") }
-            else -> results(c, r.value, library, words, keep)
+            else -> results(c, r.value, library, words, Fold(allSongs) { allSongs = !allSongs }, keep)
         }
     }
 }
+
+/**
+ * SoundCloud has no search of one's likes: they are matched here, in the
+ * library as last read. A song another service has too shows once.
+ */
+private fun SearchResults.withLikes(lists: LibraryLists, words: String): SearchResults {
+    val soundcloud = ProviderKind.SOUND_CLOUD
+    // Taken in turns with the others', as the services' results are.
+    val songs = inTurns(
+        tracks,
+        lists.songs.items.filter { it.id.provider == soundcloud && matches(words, it.title, it.artists.joinToString(", "), it.album) },
+    )
+    val out = songsLeftOut(songs).toSet()
+    return copy(
+        tracks = songs.filterIndexed { i, _ -> i.toUInt() !in out },
+        playlists = playlists + lists.playlists.items.filter { it.id.provider == soundcloud && matches(words, it.name) },
+    )
+}
+
+/** `a`'s and `b`'s items in turns, starting with `a`'s; the longer one's rest after. */
+private fun <T> inTurns(a: List<T>, b: List<T>): List<T> =
+    (0 until maxOf(a.size, b.size)).flatMap { i -> listOfNotNull(a.getOrNull(i), b.getOrNull(i)) }
 
 private fun androidx.compose.foundation.lazy.LazyListScope.recentSearches(recent: List<String>, onPick: (String) -> Unit, onClear: () -> Unit) {
     if (recent.isEmpty()) return
@@ -137,6 +172,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.results(
     r: SearchResults,
     library: Boolean,
     words: String,
+    allSongs: Fold,
     keep: () -> Unit,
 ) {
     if (r.tracks.isEmpty() && r.albums.isEmpty() && r.artists.isEmpty() && r.playlists.isEmpty()) {
@@ -160,8 +196,9 @@ private fun androidx.compose.foundation.lazy.LazyListScope.results(
         }
     }
     if (r.tracks.isNotEmpty()) {
-        item { SectionHeader("Songs") }
-        val songs = r.tracks.take(6)
+        // The first six; the title shows the others, when there are.
+        item { SectionHeader("Songs", fold = allSongs.takeIf { r.tracks.size > SONGS }) }
+        val songs = if (allSongs.open) r.tracks else r.tracks.take(SONGS)
         items(songs.size) { i ->
             TrackRow(songs[i]) {
                 keep()
