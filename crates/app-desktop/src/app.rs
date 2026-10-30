@@ -365,6 +365,8 @@ pub struct App {
     pub connection: Connection,
     /// The Apple Music storefront (country) of the account, once connected.
     pub storefront: Option<String>,
+    /// The account's picture on Apple Music, once read.
+    pub profile_picture: Option<music_core::model::Artwork>,
     /// The browser sign-in is open, waiting for the user.
     pub signing_in: bool,
     pub soundcloud: SoundCloudState,
@@ -572,6 +574,7 @@ impl App {
                 Connection::Connecting
             },
             storefront: None,
+            profile_picture: None,
             signing_in: false,
             soundcloud: SoundCloudState::Connecting,
             soundcloud_signing_in: false,
@@ -2920,6 +2923,7 @@ impl App {
     fn pump(&mut self, now: f64) {
         while let Some(reply) = self.backend.try_recv() {
             match reply {
+                Reply::ProfilePicture(picture) => self.profile_picture = Some(picture),
                 Reply::Connected { storefront } => {
                     // After a sign-in, the library loads now; at start it was
                     // already asked for.

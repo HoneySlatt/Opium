@@ -205,6 +205,20 @@ impl AppleMusic {
         Ok(am)
     }
 
+    /// The account's picture on Apple Music, where it has made a profile.
+    pub async fn profile_picture(&self) -> Result<Option<music_core::model::Artwork>> {
+        #[derive(serde::Deserialize)]
+        struct Profile {
+            artwork: Option<types::Artwork>,
+        }
+        let profile: Option<types::Response<types::Resource<Profile>>> =
+            self.fetch("/v1/me/social-profile").await?;
+        Ok(profile
+            .and_then(|r| r.data.into_iter().next())
+            .and_then(|p| p.attributes)
+            .and_then(|p| convert::artwork(p.artwork.as_ref())))
+    }
+
     pub fn storefront(&self) -> &str {
         &self.storefront
     }

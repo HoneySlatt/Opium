@@ -165,6 +165,8 @@ pub enum Reply {
     Connected {
         storefront: String,
     },
+    /// The account's picture on Apple Music, once read.
+    ProfilePicture(music_core::model::Artwork),
     /// The browser sign-in ended: the token is saved, or why not.
     SignedIn(Result<(), String>),
     /// SoundCloud is connected as this user, or isn't signed in (`None`),
@@ -549,7 +551,14 @@ async fn connect(replies: &Replies) -> Option<Arc<AppleMusic>> {
             replies.send(Reply::Connected {
                 storefront: am.storefront().to_owned(),
             });
-            Some(Arc::new(am))
+            let am = Arc::new(am);
+            let (picture_am, picture_replies) = (am.clone(), replies.clone());
+            tokio::spawn(async move {
+                if let Ok(Some(picture)) = picture_am.profile_picture().await {
+                    picture_replies.send(Reply::ProfilePicture(picture));
+                }
+            });
+            Some(am)
         }
         Err(Error::NotSignedIn) => {
             replies.send(Reply::NotSignedIn);

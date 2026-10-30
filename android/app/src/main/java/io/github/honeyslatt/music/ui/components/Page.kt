@@ -211,7 +211,7 @@ fun NavBar(
 
 /** The account's avatar on root pages: it opens Settings. */
 @Composable
-fun Avatar(initial: String, onClick: () -> Unit) {
+fun Avatar(initial: String, picture: io.github.honeyslatt.music.core.model.Artwork? = null, onClick: () -> Unit) {
     Box(
         Modifier
             .size(40.dp)
@@ -222,6 +222,8 @@ fun Avatar(initial: String, onClick: () -> Unit) {
             ),
         contentAlignment = Alignment.Center,
     ) {
+        // The account's picture on Apple Music, over its initial until it comes.
         Line(initial, geist(17.sp, FontWeight.SemiBold).copy(color = roles.onAccent))
+        if (picture != null) Cover(picture, 40.dp, CircleShape, Modifier.size(40.dp))
     }
 }

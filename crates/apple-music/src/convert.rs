@@ -14,9 +14,16 @@ fn id(id: impl Into<String>) -> ItemId {
 }
 
 /// Apple sizes art with `{w}x{h}` in the URL.
-fn artwork(art: Option<&types::Artwork>) -> Option<Artwork> {
+pub(crate) fn artwork(art: Option<&types::Artwork>) -> Option<Artwork> {
     art.filter(|a| !a.url.is_empty()).map(|a| Artwork {
-        url_template: a.url.replace("{w}", "{size}").replace("{h}", "{size}"),
+        // Some (a profile's picture) leave the crop and the format to the
+        // asker too: a square, as JPEG.
+        url_template: a
+            .url
+            .replace("{w}", "{size}")
+            .replace("{h}", "{size}")
+            .replace("{c}", "cc")
+            .replace("{f}", "jpg"),
         background: a.bg_color.as_deref().and_then(hex_color),
     })
 }

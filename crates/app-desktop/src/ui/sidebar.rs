@@ -338,7 +338,17 @@ fn account(app: &mut App, ui: &mut Ui, theme: &Theme, full: Rect, collapsed: boo
     } else {
         pos2(rect.left() + 8.0 + 15.0, rect.center().y)
     };
-    avatar_disc(ui, theme, avatar, &name);
+    // The account's picture on Apple Music, else its initial.
+    match &app.profile_picture {
+        Some(picture) => super::artwork(
+            ui,
+            Some(picture.url(60)),
+            Rect::from_center_size(avatar, vec2(30.0, 30.0)),
+            15.0,
+            theme,
+        ),
+        None => avatar_disc(ui, theme, avatar, &name),
+    }
     if collapsed {
         return;
     }

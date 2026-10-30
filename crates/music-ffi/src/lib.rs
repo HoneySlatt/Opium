@@ -665,6 +665,13 @@ impl Session {
         .await
     }
 
+    /// The account's picture on Apple Music, where it has made a profile.
+    pub async fn apple_profile_picture(
+        self: Arc<Self>,
+    ) -> Result<Option<music_core::model::Artwork>, MusicError> {
+        off(async move { Ok(self.apple()?.profile_picture().await?) }).await
+    }
+
     /// A catalog album's other editions and its songs' music videos.
     pub async fn album_extras(self: Arc<Self>, id: ItemId) -> Result<AlbumExtras, MusicError> {
         off(async move { Ok(self.apple()?.album_extras(&id).await?) }).await
