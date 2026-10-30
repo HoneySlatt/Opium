@@ -1,0 +1,24 @@
+[package]
+name = "music-ffi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[[bin]]
+# Generates the Kotlin bindings from the built library.
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"
+
+[dependencies]
+apple-music = { path = "../apple-music" }
+music-core = { path = "../music-core" }
+thiserror = "2.0.21"
+tokio = { version = "1.54.1", features = ["rt-multi-thread"] }
+uniffi = { version = "0.32.2", features = ["tokio", "cli"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.22.4"
+rustls-platform-verifier = "0.7.1"

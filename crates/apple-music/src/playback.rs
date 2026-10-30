@@ -107,7 +107,7 @@ fn audio_kbps(samples: &[cenc::EncryptedSample]) -> Option<u32> {
 }
 
 /// An encrypted track as its media playlist describes it.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 struct EncryptedFile {
     /// The whole fMP4: Apple maps every segment onto one file.
     url: String,
@@ -137,7 +137,104 @@ fn read_media_playlist(playlist_url: &str, body: &[u8]) -> Option<EncryptedFile>
     })
 }
 
+/// A catalog track's encrypted file, and what its licence is asked with:
+/// for a player that decrypts by itself (Android's MediaDrm), which sends
+/// its own challenge through [`AppleMusic::license`].
+#[derive(Debug, Clone)]
+pub struct Protected {
+    /// The whole fragmented MP4.
+    pub url: String,
+    pub key_id: Vec<u8>,
+    /// A Widevine `pssh` box for the key, which Apple's file lacks.
+    pub pssh: Vec<u8>,
+    /// The track's media playlist as an HLS player reads Widevine CENC:
+    /// its key named the standard way, its addresses absolute.
+    pub playlist: String,
+    /// The encode's bit rate, as its flavour names it.
+    pub kbps: u32,
+    licensed_as: String,
+    is_library: bool,
+    file: EncryptedFile,
+}
+
+/// Apple's media playlist as players read Widevine CENC: its key (method
+/// `ISO-23001-7`, a bare key id) as `SAMPLE-AES-CTR` with the `pssh`, and
+/// every address made absolute from `playlist_url`.
+fn widevine_playlist(body: &str, playlist_url: &str, pssh: &[u8]) -> String {
+    let base = playlist_url
+        .rsplit_once('/')
+        .map_or(playlist_url, |(base, _)| base);
+    let absolute = |uri: &str| {
+        if uri.starts_with("http") {
+            uri.to_owned()
+        } else {
+            format!("{base}/{uri}")
+        }
+    };
+    body.lines()
+        .map(|line| {
+            if line.starts_with("#EXT-X-KEY") {
+                format!(
+                    "#EXT-X-KEY:METHOD=SAMPLE-AES-CTR,URI=\"data:text/plain;base64,{}\",\
+                     KEYFORMAT=\"urn:uuid:edef8ba9-79d6-4ace-a3c8-27dcd51d21ed\",KEYFORMATVERSIONS=\"1\"",
+                    STANDARD.encode(pssh)
+                )
+            } else if let Some(rest) = line.strip_prefix("#EXT-X-MAP:URI=\"")
+                && let Some((uri, after)) = rest.split_once('"')
+            {
+                format!("#EXT-X-MAP:URI=\"{}\"{after}", absolute(uri))
+            } else if !line.starts_with('#') && !line.trim().is_empty() {
+                absolute(line.trim())
+            } else {
+                line.to_owned()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 impl AppleMusic {
+    /// Where `track`'s encrypted file is, and its key: `None` for a user's
+    /// upload, which has no licence to ask for.
+    pub async fn protected(&self, track: &ItemId) -> Result<Option<Protected>> {
+        let adam_id = track.id.as_str();
+        let song = self.web_playback(adam_id).await?;
+        // A library song Apple matched to the catalog is licensed by the
+        // catalog's id, said here, though asked for as the library's.
+        let licensed_as = song_id(&song).unwrap_or_else(|| adam_id.to_owned());
+        let Asset::Catalog { url, kbps } = select_asset(&song)? else {
+            return Ok(None);
+        };
+        let playlist = self.download(&url).await?;
+        let file = read_media_playlist(&url, &playlist)
+            .ok_or_else(|| playback_error("catalog asset without a Widevine key"))?;
+        let key_id = STANDARD
+            .decode(&file.key_id_base64)
+            .map_err(|e| playback_error(format!("key id: {e}")))?;
+        let pssh = widevine::build_pssh(&key_id);
+        Ok(Some(Protected {
+            url: file.url.clone(),
+            playlist: widevine_playlist(&String::from_utf8_lossy(&playlist), &url, &pssh),
+            pssh,
+            key_id,
+            kbps,
+            licensed_as,
+            is_library: is_library_id(adam_id),
+            file,
+        }))
+    }
+
+    /// The licence for `protected`, in answer to a CDM's `challenge`.
+    pub async fn license(&self, protected: &Protected, challenge: &[u8]) -> Result<Vec<u8>> {
+        self.request_license(
+            challenge,
+            &protected.licensed_as,
+            protected.is_library,
+            &protected.file,
+        )
+        .await
+    }
+
     /// Download `track` and license it. The result reads as a plain MP4 any AAC
     /// decoder accepts, decrypting in the background as it goes; with the
     /// audio's bit rate, about 256 kbps but for a few songs only kept in a
@@ -256,6 +353,22 @@ impl AppleMusic {
         is_library: bool,
         file: &EncryptedFile,
     ) -> Result<()> {
+        let license = self
+            .request_license(challenge, adam_id, is_library, file)
+            .await?;
+        session
+            .update(&license)
+            .map_err(|e| playback_error(e.to_string()))
+    }
+
+    /// The licence server's answer to a CDM's challenge.
+    async fn request_license(
+        &self,
+        challenge: &[u8],
+        adam_id: &str,
+        is_library: bool,
+        file: &EncryptedFile,
+    ) -> Result<Vec<u8>> {
         let envelope = serde_json::json!({
             "challenge": STANDARD.encode(challenge),
             "key-system": "com.widevine.alpha",
@@ -281,9 +394,7 @@ impl AppleMusic {
             .as_str()
             .and_then(|l| STANDARD.decode(l).ok())
             .ok_or_else(|| playback_error("licence response without a licence"))?;
-        session
-            .update(&license)
-            .map_err(|e| playback_error(e.to_string()))
+        Ok(license)
     }
 
     pub(crate) async fn download(&self, url: &str) -> Result<Vec<u8>> {
@@ -335,6 +446,29 @@ async fn json_body(resp: reqwest::Response, what: &str) -> Result<serde_json::Va
     resp.json()
         .await
         .map_err(|e| Error::Protocol(format!("{what}: {e}")))
+}
+
+#[cfg(test)]
+mod widevine_playlist_tests {
+    use super::*;
+
+    #[test]
+    fn the_key_is_named_the_standard_way_and_addresses_are_absolute() {
+        let body = "#EXTM3U\n#EXT-X-KEY:METHOD=ISO-23001-7,URI=\"data:;base64,AAAA\",KEYFORMAT=\"x\"\n\
+                    #EXT-X-MAP:URI=\"t.mp4\",BYTERANGE=\"10@0\"\n#EXTINF:10.0,\n#EXT-X-BYTERANGE:5@10\nt.mp4\n";
+        let out = widevine_playlist(body, "https://a.apple.com/x/p.m3u8", &[1, 2, 3]);
+        let lines: Vec<&str> = out.lines().collect();
+        assert!(
+            lines[1].starts_with(
+                "#EXT-X-KEY:METHOD=SAMPLE-AES-CTR,URI=\"data:text/plain;base64,AQID\""
+            )
+        );
+        assert_eq!(
+            lines[2],
+            "#EXT-X-MAP:URI=\"https://a.apple.com/x/t.mp4\",BYTERANGE=\"10@0\""
+        );
+        assert_eq!(lines[5], "https://a.apple.com/x/t.mp4");
+    }
 }
 
 #[cfg(test)]

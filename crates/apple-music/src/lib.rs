@@ -14,6 +14,7 @@ pub mod signin;
 mod types;
 
 pub use cenc::AudioStream;
+pub use playback::Protected;
 pub use radio::LiveStream;
 
 use async_trait::async_trait;

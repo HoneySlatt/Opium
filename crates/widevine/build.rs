@@ -1,6 +1,10 @@
 //! Compiles the C++ host for the system Widevine CDM (see `shim/widevine_shim.cc`).
 
 fn main() {
+    // Android has no browser CDM: the system's MediaDrm decrypts there.
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("android") {
+        return;
+    }
     println!("cargo:rerun-if-changed=shim/widevine_shim.cc");
     println!("cargo:rerun-if-changed=vendor/content_decryption_module.h");
 

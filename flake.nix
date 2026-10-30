@@ -1,10 +1,17 @@
 {
   description = "Music player for Apple Music, SoundCloud and Navidrome";
 
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    # Rust with the Android targets, for the Android app's core.
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+  };
 
   outputs =
-    { nixpkgs, ... }:
+    { nixpkgs, rust-overlay, ... }:
     let
       forAllSystems = nixpkgs.lib.genAttrs [ "x86_64-linux" "aarch64-linux" ];
       # Loaded at run time by winit and wgpu.
@@ -85,6 +92,52 @@
             buildInputs = with pkgs; [ ffmpeg ];
             LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath (runtimeLibs pkgs);
           };
+        }
+        // nixpkgs.lib.optionalAttrs (system == "x86_64-linux") {
+          # The Android app: its Rust core for the phone, and Gradle.
+          android =
+            let
+              pkgs = import nixpkgs {
+                inherit system;
+                overlays = [ rust-overlay.overlays.default ];
+                # Google's SDK, under its own licence: accepted for this
+                # shell only, as the project's owner agreed.
+                config = {
+                  allowUnfree = true;
+                  android_sdk.accept_license = true;
+                };
+              };
+              buildTools = "36.1.0";
+              ndk = "30.0.16248370";
+              sdk =
+                (pkgs.androidenv.composeAndroidPackages {
+                  platformVersions = [ "37.0" ];
+                  buildToolsVersions = [ buildTools ];
+                  includeNDK = true;
+                  ndkVersions = [ ndk ];
+                }).androidsdk;
+              home = "${sdk}/libexec/android-sdk";
+              rust = pkgs.rust-bin.stable.latest.default.override {
+                targets = [
+                  "aarch64-linux-android"
+                  "x86_64-linux-android"
+                ];
+              };
+            in
+            pkgs.mkShell {
+              packages = [
+                rust
+                pkgs.cargo-ndk
+                pkgs.jdk17
+                pkgs.gradle_9
+                sdk
+              ];
+              ANDROID_HOME = home;
+              ANDROID_NDK_HOME = "${home}/ndk/${ndk}";
+              JAVA_HOME = pkgs.jdk17.home;
+              # Gradle's own aapt2 is built for other Linuxes; the SDK's runs here.
+              GRADLE_OPTS = "-Dorg.gradle.project.android.aapt2FromMavenOverride=${home}/build-tools/${buildTools}/aapt2";
+            };
         }
       );
     };
