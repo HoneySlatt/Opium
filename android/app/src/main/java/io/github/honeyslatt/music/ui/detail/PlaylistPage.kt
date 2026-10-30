@@ -45,6 +45,7 @@ import io.github.honeyslatt.music.ui.theme.roles
 fun PlaylistPage(c: LibraryContext, id: ItemId) {
     val playlist: Playlist? = c.lists.playlists.items.firstOrNull { it.id == id }
     // Every page of its songs, one after another.
+    var complete by remember(id) { mutableStateOf(false) }
     val loaded by produceState<Loading<List<Track>>>(Loading.Pending, id) {
         value = load {
             val all = mutableListOf<Track>()
@@ -55,6 +56,7 @@ fun PlaylistPage(c: LibraryContext, id: ItemId) {
                 value = Loading.Ready(all.toList())
                 page = got.next
             } while (page != null)
+            complete = true
             all.toList()
         }
     }
@@ -79,7 +81,7 @@ fun PlaylistPage(c: LibraryContext, id: ItemId) {
                 title = name,
                 byline = playlist?.curator ?: playlist?.id?.provider?.takeIf { it != ProviderKind.APPLE_MUSIC }?.label(),
                 onByline = null,
-                meta = { if (tracks.isNotEmpty()) Meta(countAndLength(tracks)) },
+                meta = {},
                 art = if (favourites) {
                     {
                         Box(
@@ -104,6 +106,8 @@ fun PlaylistPage(c: LibraryContext, id: ItemId) {
         item { Spacer(Modifier.height(8.dp)) }
         if (tracks.isEmpty()) item { Empty(loaded.listing(), "No songs", "This playlist is empty.") }
         items(tracks.withIndex().toList(), key = { (i, t) -> "$i" + t.id.id }) { (_, track) -> TrackRow(track) {} }
+        // Its count and length go under the songs, once they are all in.
+        if (tracks.isNotEmpty() && complete) item { Foot(listOf(countAndLength(tracks))) }
     }
 }
 
