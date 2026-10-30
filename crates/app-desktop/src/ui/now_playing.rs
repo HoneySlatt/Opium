@@ -4,8 +4,6 @@
 //! bottom left. While the lyrics run and the pointer rests, the card and the
 //! buttons fade away.
 
-use std::time::Duration;
-
 use egui::{Color32, Id, Mesh, Rect, Sense, Stroke, Ui, pos2, vec2};
 use music_core::model::{FavouriteKind, Track};
 
@@ -128,10 +126,8 @@ fn backdrop(app: &mut App, ui: &Ui, theme: &Theme, full: Rect) {
         0.45 * d.min(1.0)
     };
     wash_with(ui, full, theme.base, &blobs, vignette);
-    // It drifts while the music plays.
-    if app.shown().playing {
-        ui.ctx().request_repaint_after(Duration::from_millis(50));
-    }
+    // It drifts while the music plays, a few points a second: the player's
+    // own tick of four a second moves it on.
 }
 
 /// The artwork, or its animated cover, the window's height a side from the

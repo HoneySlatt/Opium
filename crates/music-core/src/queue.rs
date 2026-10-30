@@ -97,9 +97,20 @@ impl Queue {
     /// Play `track` right after the current one.
     pub fn add_next(&mut self, track: Track) {
         self.revision += 1;
+        // Next in the tracks' own order too, so turning shuffle off keeps it
+        // there rather than at the very end.
+        let index = self
+            .order
+            .get(self.pos)
+            .map_or(self.tracks.len(), |&current| current + 1);
+        for i in &mut self.order {
+            if *i >= index {
+                *i += 1;
+            }
+        }
+        self.tracks.insert(index, track);
         let at = (self.pos + 1).min(self.order.len());
-        self.order.insert(at, self.tracks.len());
-        self.tracks.push(track);
+        self.order.insert(at, index);
     }
 
     pub fn add_last(&mut self, track: Track) {
@@ -364,6 +375,19 @@ mod tests {
         q.add_last(track(100));
         let upcoming: Vec<u32> = q.upcoming().filter_map(|t| t.track_number).collect();
         assert_eq!(upcoming, vec![99, 1, 2, 100]);
+    }
+
+    #[test]
+    fn a_song_added_next_stays_next_when_shuffle_goes_off() {
+        let mut q = queue_of(20, 4);
+        q.set_shuffle(true);
+        q.add_next(track(99));
+        assert_eq!(number(q.upcoming().next()), Some(99));
+        let playing = number(q.current()).unwrap();
+        q.set_shuffle(false);
+        assert_eq!(number(q.current()), Some(playing));
+        assert_eq!(number(q.upcoming().next()), Some(99));
+        assert_eq!(q.upcoming_len() + 1 + playing as usize, 21);
     }
 
     #[test]

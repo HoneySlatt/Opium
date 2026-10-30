@@ -123,6 +123,44 @@ pub fn dir() -> PathBuf {
     config.join("music")
 }
 
+/// Keep `value` as JSON in `name` under [`dir`], written aside and moved
+/// over, on a thread of its own unless `now`. Writes of a file wait for one
+/// another, and one overtaken by a later one is dropped: what stays is the
+/// last asked for.
+pub fn keep_json<T: Serialize + Send + 'static>(name: &'static str, value: T, now: bool) {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static ASKED: AtomicU64 = AtomicU64::new(0);
+    static WRITTEN: std::sync::Mutex<Vec<(&str, u64)>> = std::sync::Mutex::new(Vec::new());
+    let asked = ASKED.fetch_add(1, Ordering::Relaxed) + 1;
+    let write = move || {
+        let mut written = WRITTEN.lock().unwrap_or_else(|e| e.into_inner());
+        let last = match written.iter_mut().find(|(n, _)| *n == name) {
+            Some((_, last)) => last,
+            None => {
+                written.push((name, 0));
+                &mut written.last_mut().expect("just pushed").1
+            }
+        };
+        if *last > asked {
+            return;
+        }
+        *last = asked;
+        let Ok(bytes) = serde_json::to_vec(&value) else {
+            return;
+        };
+        let path = dir().join(name);
+        let partial = path.with_extension("json.part");
+        let _ = std::fs::create_dir_all(dir())
+            .and_then(|()| std::fs::write(&partial, bytes))
+            .and_then(|()| std::fs::rename(&partial, &path));
+    };
+    if now {
+        write();
+    } else {
+        std::thread::spawn(write);
+    }
+}
+
 fn path() -> PathBuf {
     dir().join("settings.toml")
 }

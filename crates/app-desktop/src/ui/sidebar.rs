@@ -284,7 +284,10 @@ fn nav_item(
     if let Some(icon) = icon {
         let color = if active { theme.accent } else { theme.subtext0 };
         paint_icon(ui, icon, lead, 16.0, color);
-    } else if let Some(url) = art {
+    } else if let Some(url) = art
+        // Scrolled out of sight, its cover isn't loaded, nor kept.
+        && ui.is_rect_visible(rect)
+    {
         artwork(
             ui,
             url,

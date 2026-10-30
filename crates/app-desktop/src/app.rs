@@ -163,6 +163,8 @@ struct Warm {
     track: Track,
     /// Once fetched.
     ready: Option<Playable>,
+    /// It couldn't be: not asked again while the pointer stays on it.
+    failed: bool,
 }
 
 /// How long the pointer rests on a song before it is fetched ahead: longer
@@ -520,6 +522,11 @@ pub struct App {
     failed_in_row: usize,
     /// When covers out of sight were last let go of.
     covers_forgotten: f64,
+    /// When the window was last drawn, in egui's time.
+    drawn_at: f64,
+    /// Apple Music out of reach (offline at start, say): when to try again,
+    /// and how long the wait was.
+    apple_retry: Option<(f64, f64)>,
     /// The track handed to the player to play at once, until it starts: an
     /// error before then means it can't play at all.
     playing: Option<Token>,
@@ -556,6 +563,9 @@ impl App {
         watch_theme(cc.egui_ctx.clone(), theme_changed.clone());
         // Ctrl +, − and 0 are ours: 0 goes back to the scale that suits the screen.
         cc.egui_ctx.options_mut(|o| o.zoom_with_keyboard = false);
+        // A cover on the GPU isn't kept decoded in memory too: a library's
+        // worth of them took hundreds of megabytes.
+        cc.egui_ctx.options_mut(|o| o.reduce_texture_memory = true);
         let backend = Backend::start(cc.egui_ctx.clone(), settings.services_off.clone());
         backend.send(Request::Library);
         let mut app = Self {
@@ -673,6 +683,8 @@ impl App {
             failed_in_row: 0,
             playing: None,
             covers_forgotten: 0.0,
+            drawn_at: 0.0,
+            apple_retry: None,
             playing_from: None,
             now: None,
             status: Status::default(),
@@ -924,6 +936,11 @@ impl App {
             ProviderKind::Navidrome => self.navidrome = SoundCloudState::Connecting,
         }
         if on {
+            // Read again, the service's albums with the rest, when shown.
+            self.library_albums = Streamed::default();
+            self.library_artists = Streamed::default();
+            self.recently_added = Streamed::default();
+            self.arrived();
             return;
         }
         self.songs.retain(|t| !of_it(&t.id));
@@ -2188,10 +2205,15 @@ impl App {
                 .send(&id, connect::Command::PlayList { tracks, start });
             return;
         }
+        self.failed_in_row = 0;
         // Whatever plays now is no longer a station of songs.
         self.station = None;
+        self.station_loading = false;
         self.queue.replace(tracks, start);
         self.start_current();
+        // A song picked plays, even with the music paused: once what played
+        // has stopped, so none of it is heard again.
+        self.player.resume();
         // Played from a list of songs; elsewhere the song's album will do.
         self.playing_from = match &self.page {
             Page::Playlist(_)
@@ -2270,6 +2292,7 @@ impl App {
             .restore(session.tracks, order, session.at as usize, session.shuffle);
         self.queue.set_repeat(session.repeat);
         self.station = session.station;
+        self.station_loading = false;
         self.now = self.queue.current().cloned();
         self.resume = self
             .now
@@ -2281,22 +2304,7 @@ impl App {
     /// where it is; written off the interface's thread, but at once when
     /// the app closes.
     fn keep_session(&self, closing: bool) {
-        let session = self.handoff();
-        let write = move || {
-            let Ok(bytes) = serde_json::to_vec(&session) else {
-                return;
-            };
-            let path = crate::settings::dir().join("session.json");
-            let partial = path.with_extension("json.part");
-            let _ = std::fs::create_dir_all(crate::settings::dir())
-                .and_then(|()| std::fs::write(&partial, bytes))
-                .and_then(|()| std::fs::rename(&partial, &path));
-        };
-        if closing {
-            write();
-        } else {
-            std::thread::spawn(write);
-        }
+        crate::settings::keep_json("session.json", self.handoff(), closing);
     }
 
     fn now_title(&self, token: Option<Token>) -> String {
@@ -2310,6 +2318,12 @@ impl App {
     /// this country, a broken file), as Apple Music does; a run of failures
     /// stops, in case nothing plays.
     fn skip_failed(&mut self, title: &str, error: &str, now: f64) {
+        // Offline, every song would fail the same: the queue waits on this
+        // one, for Play to try again.
+        if error.starts_with("network error") {
+            self.notify(format!("Couldn't play “{title}”: no connection"), now);
+            return;
+        }
         self.failed_in_row += 1;
         if self.failed_in_row <= MAX_SKIPS && self.queue.skip_next().is_some() {
             self.notify(format!("Skipped “{title}”: {error}"), now);
@@ -2353,7 +2367,7 @@ impl App {
             // over the wait.
             self.player.stop();
             // Fetched already, or on its way, while the pointer rested on it.
-            if let Some(warm) = self.warm.take_if(|w| w.track.id == track.id) {
+            if let Some(warm) = self.warm.take_if(|w| w.track.id == track.id && !w.failed) {
                 self.plays_as(warm.token, track);
                 if let Some(at) = resume {
                     self.start_at = Some((warm.token, at));
@@ -2432,6 +2446,7 @@ impl App {
             token,
             track,
             ready: None,
+            failed: false,
         });
     }
 
@@ -2442,6 +2457,10 @@ impl App {
             && self.token_plays(token, &next.id)
         {
             return;
+        }
+        // The player may have the old one already: it mustn't play.
+        if self.queued_next.is_some() {
+            self.player.clear_next();
         }
         self.queued_next = self.queue.peek_finished().cloned().map(|t| self.issue(t));
         self.next_ready = false;
@@ -2467,6 +2486,7 @@ impl App {
         if self.ask_far(connect::Command::Next) {
             return;
         }
+        self.failed_in_row = 0;
         // The track lined up to follow is the one Next moves to, unless the
         // current one repeats: play what was fetched for it rather than fetch
         // it again.
@@ -2500,6 +2520,7 @@ impl App {
         if self.ask_far(connect::Command::Previous) {
             return;
         }
+        self.failed_in_row = 0;
         if self.status.position > Duration::from_secs(3) {
             self.player.seek(Duration::ZERO);
         } else {
@@ -2540,9 +2561,11 @@ impl App {
         if !volume.is_finite() {
             return;
         }
-        if self
-            .far()
-            .is_some_and(|p| p.playing.as_ref().is_some_and(|p| p.volume.is_some()))
+        // Asked by the device played on itself, it is for here.
+        if self.far_id().is_some()
+            && self
+                .far()
+                .is_some_and(|p| p.playing.as_ref().is_some_and(|p| p.volume.is_some()))
         {
             self.far_unmuted = None;
             let volume = volume.clamp(0.0, 1.0);
@@ -2559,6 +2582,7 @@ impl App {
     pub fn toggle_mute(&mut self) {
         if let Some(volume) = self
             .far()
+            .filter(|_| !self.obeying)
             .map(|p| p.playing.as_ref().and_then(|p| p.volume))
         {
             // Muted from here: back to where it was; it can't be set: as it is.
@@ -2796,9 +2820,11 @@ impl App {
         if self.ask_far(connect::Command::Jump { k: k as u32 }) {
             return;
         }
+        self.failed_in_row = 0;
         if k < self.queue.upcoming_len() {
             self.queue.jump(k);
             self.start_current();
+            self.player.resume();
         }
     }
 
@@ -2929,6 +2955,7 @@ impl App {
                     // already asked for.
                     let reconnected = self.connection != Connection::Connecting;
                     self.connection = Connection::Connected;
+                    self.apple_retry = None;
                     self.storefront = Some(storefront);
                     if reconnected {
                         self.reload_library();
@@ -2981,8 +3008,15 @@ impl App {
                     }
                 }
                 Reply::CouldntConnect(e) => {
-                    self.connection = Connection::Failed(e.clone());
-                    self.notify(e, now);
+                    // Said once; tried again, less and less often.
+                    if self.apple_retry.is_none() {
+                        self.notify(e.clone(), now);
+                    }
+                    let wait = self
+                        .apple_retry
+                        .map_or(10.0, |(_, wait)| (wait * 2.0).min(300.0));
+                    self.apple_retry = Some((now + wait, wait));
+                    self.connection = Connection::Failed(e);
                 }
                 Reply::Failed(e) => self.notify(e, now),
                 // A service turned off since says nothing more.
@@ -3369,9 +3403,10 @@ impl App {
                         }
                         Err(e) => Loaded::Failed(e),
                     };
-                    // Only the last few searches are kept.
+                    // Only the last few searches are kept, and those on their
+                    // way: the page waiting on one would wait forever.
                     if self.searches.len() >= SEARCHES_KEPT {
-                        self.searches.clear();
+                        self.searches.retain(|_, l| matches!(l, Loaded::Loading));
                     }
                     self.searches.insert((scope, source, query), loaded);
                 }
@@ -3415,7 +3450,9 @@ impl App {
                         Ok(_) => {}
                         // Fetched ahead and not played: nothing to say.
                         Err(_) if self.warm.as_ref().is_some_and(|w| w.token == token) => {
-                            self.warm = None;
+                            if let Some(warm) = &mut self.warm {
+                                warm.failed = true;
+                            }
                         }
                         Err(e) => {
                             let title = self
@@ -3493,7 +3530,14 @@ impl App {
                     if token.is_some() && token == self.queued_next {
                         self.queued_next = None;
                         self.next_ready = false;
-                        self.notify(message, now);
+                        // The track before it had already ended, waiting on it:
+                        // the queue moves on to it anyway, to fetch it anew.
+                        if self.player.status().token.is_none() && self.pending_play.is_none() {
+                            self.queue.track_finished();
+                            self.start_current();
+                        } else {
+                            self.notify(message, now);
+                        }
                     } else if token.is_some() && token == self.playing {
                         // What was to play now can't: the queue goes on.
                         self.playing = None;
@@ -3521,8 +3565,8 @@ impl App {
             acted = true;
             match action {
                 Action::PlayPause => self.toggle_play(),
-                Action::Play if !self.is_playing() => self.toggle_play(),
-                Action::Pause if self.is_playing() => self.player.pause(),
+                Action::Play if !self.shown().playing => self.toggle_play(),
+                Action::Pause if self.shown().playing => self.toggle_play(),
                 Action::Play | Action::Pause => {}
                 // Paused at the start: Play goes on from there.
                 Action::Stop => {
@@ -3549,7 +3593,33 @@ impl App {
         }
     }
 
+    /// What the desktop's media controls show: another device's music
+    /// while it is the one played on, as the app shows it.
     fn media_state(&self) -> crate::mpris::State {
+        use crate::mpris::Playback;
+        if self.far().is_some() {
+            let shown = self.shown();
+            return crate::mpris::State {
+                length: shown.duration,
+                playback: if shown.playing {
+                    Playback::Playing
+                } else if shown.track.is_some() {
+                    Playback::Paused
+                } else {
+                    Playback::Stopped
+                },
+                position: shown.position,
+                volume: shown.volume.unwrap_or(1.0),
+                shuffle: shown.shuffle,
+                repeat: shown.repeat,
+                track: shown.track,
+            };
+        }
+        self.here_state()
+    }
+
+    /// What this computer's player plays.
+    fn here_state(&self) -> crate::mpris::State {
         use crate::mpris::Playback;
         crate::mpris::State {
             track: self.now.clone(),
@@ -3820,13 +3890,16 @@ impl App {
 
     /// Play on from where another device left off.
     fn take_over(&mut self, handoff: connect::Handoff) {
+        self.failed_in_row = 0;
         let order = handoff.order.into_iter().map(|i| i as usize).collect();
         self.queue
             .restore(handoff.tracks, order, handoff.at as usize, handoff.shuffle);
         self.queue.set_repeat(handoff.repeat);
         self.playing_from = None;
         self.start_current();
+        self.player.resume();
         self.station = handoff.station;
+        self.station_loading = false;
         let at = Duration::from_millis(handoff.position_ms);
         match self.pending_play {
             Some(token) => self.start_at = Some((token, at)),
@@ -3836,7 +3909,7 @@ impl App {
 
     /// Tell the other devices what plays here.
     fn tell_devices(&mut self) {
-        let state = self.media_state();
+        let state = self.here_state();
         self.devices.node.publish(connect::Playing {
             live: state.track.is_some() && state.length.is_none(),
             track: state.track,
@@ -3891,28 +3964,59 @@ impl eframe::App for App {
         }
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        self.zoom(ui.ctx());
-        self.keep_volume(ui.ctx());
+    /// What goes on whether the window shows or not: on another workspace
+    /// eframe runs only this, and the music, the media keys and the other
+    /// devices mustn't wait for the window to come back.
+    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.keep_volume(ctx);
         if self.theme_changed.swap(false, Ordering::Relaxed) {
             let theme = resolve_theme(&self.settings);
             if theme != self.theme {
-                theme.apply(ui.ctx());
+                theme.apply(ctx);
                 self.theme = theme;
             }
         }
-        let now = ui.input(|i| i.time);
+        let now = ctx.input(|i| i.time);
         self.pump(now);
-        self.media_controls(ui.ctx());
+        self.media_controls(ctx);
         self.other_devices(now);
         if let Some(edited) = self.search_edited {
             if now - edited >= SEARCH_PAUSE {
                 self.submit_search();
             } else {
-                ui.ctx()
-                    .request_repaint_after(Duration::from_secs_f64(SEARCH_PAUSE));
+                ctx.request_repaint_after(Duration::from_secs_f64(SEARCH_PAUSE));
             }
         }
+        if let Some((at, wait)) = self.apple_retry
+            && matches!(self.connection, Connection::Failed(_))
+        {
+            if now >= at {
+                // Its next failure sets the next try.
+                self.apple_retry = Some((f64::INFINITY, wait));
+                self.backend.send(Request::Reconnect);
+            } else {
+                ctx.request_repaint_after(Duration::from_secs_f64(at - now));
+            }
+        }
+        // Out of sight a while: the moving covers stop decoding.
+        if now - self.drawn_at > 2.0 {
+            self.motion_views.clear();
+        }
+        if self.is_playing()
+            || self
+                .far()
+                .and_then(|p| p.playing.as_ref())
+                .is_some_and(|p| p.playing)
+        {
+            ctx.request_repaint_after(Duration::from_millis(250));
+        }
+        self.mpris.update(self.media_state());
+        self.tell_devices();
+    }
+
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        self.zoom(ui.ctx());
+        self.drawn_at = ui.input(|i| i.time);
         ui::show(self, ui);
         self.forget_unseen_motion();
         // Every few seconds, the covers long out of sight leave memory.
@@ -3978,16 +4082,6 @@ impl eframe::App for App {
         if let Some(screenshot) = &mut self.screenshot {
             screenshot.update(ui.ctx());
         }
-        if self.is_playing()
-            || self
-                .far()
-                .and_then(|p| p.playing.as_ref())
-                .is_some_and(|p| p.playing)
-        {
-            ui.ctx().request_repaint_after(Duration::from_millis(250));
-        }
-        self.mpris.update(self.media_state());
-        self.tell_devices();
     }
 }
 
@@ -3999,19 +4093,10 @@ fn read_history() -> Vec<Track> {
         .unwrap_or_default()
 }
 
-/// Keep the songs played for the next time the app opens: written aside
-/// and moved over, off the interface's thread.
+/// Keep the songs played for the next time the app opens, off the
+/// interface's thread.
 fn keep_history(history: Vec<Track>) {
-    std::thread::spawn(move || {
-        let Ok(bytes) = serde_json::to_vec(&history) else {
-            return;
-        };
-        let path = crate::settings::dir().join("history.json");
-        let partial = path.with_extension("json.part");
-        let _ = std::fs::create_dir_all(crate::settings::dir())
-            .and_then(|()| std::fs::write(&partial, bytes))
-            .and_then(|()| std::fs::rename(&partial, &path));
-    });
+    crate::settings::keep_json("history.json", history, false);
 }
 
 /// Stock, or Amane's theme when it is chosen (or, until it is chosen either

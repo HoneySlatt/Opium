@@ -248,8 +248,8 @@ impl Player {
         self.send(Command::Play(token, source));
     }
 
-    /// The track to follow the current one. Set it once per track: once it has
-    /// started streaming in behind the current one it can't be replaced.
+    /// The track to follow the current one. Set it once per track: to change
+    /// it, [`clear_next`](Self::clear_next) first.
     pub fn set_next(&self, token: Token, source: Source) {
         let generation = self
             .next_asked
@@ -273,6 +273,12 @@ impl Player {
                 decoder: Err(e.to_string()),
             });
         }
+    }
+
+    /// Drop the track set with [`set_next`](Self::set_next), even once it has
+    /// started streaming in behind the current one.
+    pub fn clear_next(&self) {
+        self.send(Command::ClearNext);
     }
 
     /// Play the track set with [`set_next`](Self::set_next) now.

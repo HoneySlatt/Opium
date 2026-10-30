@@ -172,8 +172,11 @@ pub fn show(
                 let galley = sung(ui, line, position, size, wrap, scale, theme, fade);
                 let top = rect.center().y - galley.size().y / 2.0;
                 painter.galley(pos2(rect.left() + PAD.x, top), galley, color);
+                // 60 frames a second light it smoothly: no need for the
+                // screen's every refresh.
                 if app.shown().playing {
-                    ui.ctx().request_repaint();
+                    ui.ctx()
+                        .request_repaint_after(std::time::Duration::from_millis(16));
                 }
             }
             Some(galley) => {
@@ -189,7 +192,13 @@ pub fn show(
                     color,
                 );
             }
-            None => dots(&painter, rect, on, time, opacity, theme),
+            None => {
+                dots(&painter, rect, on, time, opacity, theme);
+                if on && app.shown().playing {
+                    ui.ctx()
+                        .request_repaint_after(std::time::Duration::from_millis(33));
+                }
+            }
         }
     }
 }

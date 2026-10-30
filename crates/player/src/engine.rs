@@ -25,6 +25,8 @@ pub(crate) enum Command {
         decoder: std::result::Result<Decoder, String>,
     },
     SkipToNext,
+    /// The next track isn't wanted any more: the queue changed.
+    ClearNext,
     Pause,
     Resume,
     Seek(Duration),
@@ -219,6 +221,18 @@ impl Engine {
                 } else if self.opening.is_some() {
                     self.skip_when_opened = true;
                 }
+            }
+            Command::ClearNext => {
+                self.opening = None;
+                self.skip_when_opened = false;
+                self.switch = None;
+                // Already in the ring behind the playing one: taken back out
+                // the way a seek to where it plays does.
+                if self.segments.len() > 1 {
+                    let at = self.position();
+                    self.seek(at);
+                }
+                self.next = None;
             }
             Command::Pause => self.set_paused(true),
             Command::Resume => self.set_paused(false),
