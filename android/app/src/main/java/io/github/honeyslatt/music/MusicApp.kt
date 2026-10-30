@@ -7,6 +7,7 @@ import io.github.honeyslatt.music.data.Library
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 class MusicApp : Application() {
     /** For work that outlives a screen: sign-ins, the library's loading. */
@@ -34,5 +35,17 @@ class MusicApp : Application() {
         library = Library(core, scope)
         devices = io.github.honeyslatt.music.data.Devices(this)
         playback = io.github.honeyslatt.music.playback.Playback(this, core, scope, devices)
+        // Back on a network (out of the metro, onto the Wi-Fi): the services
+        // it kept out connect, and a song it stopped goes on.
+        getSystemService(android.net.ConnectivityManager::class.java).registerDefaultNetworkCallback(
+            object : android.net.ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: android.net.Network) {
+                    scope.launch {
+                        playback.online()
+                        core.retryFailed()
+                    }
+                }
+            },
+        )
     }
 }

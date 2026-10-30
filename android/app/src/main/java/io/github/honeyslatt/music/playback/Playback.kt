@@ -86,6 +86,9 @@ class Playback(private val context: Context, private val core: Core, private val
         .setHandleAudioBecomingNoisy(true)
         // Start once half a second is in, rather than the default 2.5 s.
         .setLoadControl(DefaultLoadControl.Builder().setBufferDurationsMs(20_000, 60_000, 500, 1_500).build())
+        // The screen off, the Wi-Fi kept awake while it plays: a stream
+        // starved by power saving would stall.
+        .setWakeMode(C.WAKE_MODE_NETWORK)
         .build()
 
     private val _now = MutableStateFlow<Track?>(null)
@@ -308,6 +311,7 @@ class Playback(private val context: Context, private val core: Core, private val
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 _playing.value = isPlaying
+                if (isPlaying) failedInRow = 0
                 devices.playing(isPlaying)
                 tell()
                 if (!isPlaying) keepSession()
@@ -343,9 +347,33 @@ class Playback(private val context: Context, private val core: Core, private val
                 }
             }
 
+            // The song ended with nothing after it in the player: the next
+            // one couldn't be made playable in time, or at all. The queue
+            // moves on as if it had followed. Not when paused there by the
+            // sleep timer.
+            override fun onPlaybackStateChanged(state: Int) {
+                if (state != Player.STATE_ENDED || !player.playWhenReady) return
+                val previous = _now.value
+                if (queue.trackFinished() != null) {
+                    previous?.let(::played)
+                    startCurrent()
+                }
+            }
+
             override fun onPlayerError(error: PlaybackException) {
                 _error.value = "Couldn't play “${_now.value?.title}”: ${error.errorCodeName}"
-                skipFailed()
+                when {
+                    // Paused on a station too long: back to what airs now.
+                    error.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW -> {
+                        player.seekToDefaultPosition()
+                        player.prepare()
+                    }
+                    // The network gone (a tunnel, the metro): the song waits
+                    // where it was, to go on once it is back, rather than the
+                    // queue running through songs that can't load either.
+                    error.errorCode in 2000..2999 -> {}
+                    else -> skipFailed()
+                }
             }
         })
         player.addAnalyticsListener(object : AnalyticsListener {
@@ -432,6 +460,7 @@ class Playback(private val context: Context, private val core: Core, private val
     }
 
     private fun playHere(tracks: List<Track>, start: Int) {
+        failedInRow = 0
         station = null
         queue.replace(tracks, start.toUInt())
         startCurrent()
@@ -534,11 +563,29 @@ class Playback(private val context: Context, private val core: Core, private val
     }
 
     fun toggle() = either({ Command.Toggle }) {
-        if (player.playbackState == Player.STATE_IDLE && _now.value != null) {
-            startCurrent()
-        } else if (player.isPlaying) {
-            player.pause()
-        } else {
+        when {
+            player.isPlaying -> player.pause()
+            _now.value == null -> player.play()
+            // Stopped by the network: on from where it was.
+            player.playerError != null && player.mediaItemCount > 0 -> {
+                player.prepare()
+                player.play()
+            }
+            // Not made playable yet (as the app opened), or after a failure.
+            player.playbackState == Player.STATE_IDLE || player.mediaItemCount == 0 -> startCurrent()
+            // The queue played to its end: its last song again.
+            player.playbackState == Player.STATE_ENDED -> {
+                player.seekToDefaultPosition()
+                player.play()
+            }
+            else -> player.play()
+        }
+    }
+
+    /** The network is back: a song stopped for want of it goes on. */
+    fun online() {
+        if (player.playerError?.errorCode in 2000..2999 && player.mediaItemCount > 0) {
+            player.prepare()
             player.play()
         }
     }
@@ -585,11 +632,15 @@ class Playback(private val context: Context, private val core: Core, private val
         scope.launch {
             val source = try {
                 playable(track, mine)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 if (mine != generation) return@launch
                 _loading.value = false
                 _error.value = "Couldn't play “${track.title}”: ${e.message}"
-                skipFailed()
+                // Offline, every song would fail alike: the queue waits on
+                // this one, for Play to try it again.
+                if ((e as? MusicException.Failed)?.reason?.startsWith("network error") != true) skipFailed()
                 return@launch
             }
             if (mine != generation) return@launch
@@ -603,9 +654,15 @@ class Playback(private val context: Context, private val core: Core, private val
 
     /** Have the song that follows in the player, so it joins without a gap. */
     private fun lineUpNext() {
-        val next = queue.peekFinished() ?: return
         val mine = generation
         lining?.cancel()
+        val next = queue.peekFinished()
+        // Nothing follows any more (cleared, or repeat turned off on the
+        // last song): what the player had lined up mustn't play.
+        if (next == null) {
+            while (player.mediaItemCount > player.currentMediaItemIndex + 1) player.removeMediaItem(player.mediaItemCount - 1)
+            return
+        }
         lining = scope.launch {
             val source = runCatching { playable(next, mine) }.getOrNull() ?: return@launch
             // Still what follows, in the same queue.

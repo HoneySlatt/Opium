@@ -75,6 +75,24 @@ class PlaybackService : MediaSessionService() {
             override fun seekToPrevious() = playback.previous()
 
             override fun seekToPreviousMediaItem() = playback.previous()
+
+            // Play from the earbuds, the lock screen or the car with nothing
+            // made playable yet (the app just opened on what played last),
+            // or at the queue's end: the app's own Play, which sees to it.
+            override fun play() {
+                if (player === playback.player && player.playbackState.let { it == Player.STATE_IDLE || it == Player.STATE_ENDED }) {
+                    playback.toggle()
+                } else {
+                    super.play()
+                }
+            }
+
+            override fun setPlayWhenReady(playWhenReady: Boolean) = if (playWhenReady) play() else super.setPlayWhenReady(false)
+
+            // Media3 prepares an idle player before Play; the app does that its own way.
+            override fun prepare() {
+                if (player !== playback.player || player.mediaItemCount > 0) super.prepare()
+            }
         }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo) = session

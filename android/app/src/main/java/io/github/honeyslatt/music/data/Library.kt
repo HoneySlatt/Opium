@@ -108,6 +108,9 @@ class Library(private val core: Core, private val scope: CoroutineScope) {
 
     /** Load `provider`'s lists, adding to those of the others. */
     fun load(provider: ProviderKind) {
+        // Already, since the app started: the screen made anew (turned, or
+        // gone dark at sunset) doesn't read the whole library again.
+        if (provider in providers) return
         providers += provider
         showing += provider
         if (newestAsked) newest(provider, ask = true)

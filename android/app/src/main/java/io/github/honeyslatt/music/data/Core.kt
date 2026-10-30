@@ -81,10 +81,24 @@ class Core(context: Context) {
         get() = prefs.getBoolean("welcomed", false) || ProviderKind.entries.any { signedIn(it) }
         set(v) = prefs.edit().putBoolean("welcomed", v).apply()
 
-    /** Sign in again with what was kept, every service at once. */
+    /**
+     * Sign in again with what was kept, every service at once; those that
+     * are already, or on their way, are left be (the screen made anew calls
+     * this again).
+     */
     suspend fun start() {
         kotlinx.coroutines.coroutineScope {
             ProviderKind.entries.filter { signedIn(it) && enabled(it) }.forEach { kind ->
+                val now = connections.getValue(kind).value
+                if (now !is Connection.Connected && now != Connection.Connecting) launch { connect(kind) }
+            }
+        }
+    }
+
+    /** The network is back: the services it kept out are tried again. */
+    suspend fun retryFailed() {
+        kotlinx.coroutines.coroutineScope {
+            ProviderKind.entries.filter { signedIn(it) && enabled(it) && connections.getValue(it).value is Connection.Failed }.forEach { kind ->
                 launch { connect(kind) }
             }
         }
@@ -175,6 +189,10 @@ class Core(context: Context) {
             Connection.Connected(sign())
         } catch (e: MusicException) {
             Connection.Failed(e.message ?: e.toString())
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            // Called off midway: not left Connecting for good.
+            state.value = Connection.Failed("cancelled")
+            throw e
         }
         if (kind == ProviderKind.APPLE_MUSIC) {
             _appleProfile.value = if (state.value is Connection.Connected) runCatching { session.appleProfile() }.getOrNull() else null

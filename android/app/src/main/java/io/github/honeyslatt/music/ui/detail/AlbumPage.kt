@@ -50,6 +50,9 @@ fun <T> Loading<T>.listing(): Listing<T> = when (this) {
 suspend fun <T> load(get: suspend () -> T): Loading<T> =
     try {
         Loading.Ready(get())
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        // Called off (typed on, left the page): not a failure to show.
+        throw e
     } catch (e: Exception) {
         Loading.Failed(e.message ?: e.toString())
     }

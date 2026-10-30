@@ -60,10 +60,15 @@ fun MotionArtwork(url: String, modifier: Modifier = Modifier, crop: Boolean = fa
                 }
             })
             prepare()
-            playWhenReady = true
         }
     }
     DisposableEffect(player) { onDispose { player.release() } }
+    // Only while the app shows: the phone locked or the app away, the music
+    // playing on, the video stops looping (and loading) in the background.
+    androidx.lifecycle.compose.LifecycleStartEffect(player) {
+        player.play()
+        onStopOrDispose { player.pause() }
+    }
     val fade by animateFloatAsState(if (shown) 1f else 0f, tween(400), label = "motion")
     if (crop) {
         // Filling the space whatever its shape, as the still cover does.

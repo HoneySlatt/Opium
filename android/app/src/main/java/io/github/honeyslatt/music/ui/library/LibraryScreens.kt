@@ -234,7 +234,9 @@ fun Playlists(c: LibraryContext) {
                 ) { c.nav.push(Route.Playlist(favourites.id)) }
             }
         }
-        val rest = playlists.items.filter { !it.favourites && matches(query, it.name, it.curator) }
+        // SoundCloud lists the user's own playlists, then those liked: one
+        // both is shown once (twice, its key would crash the list).
+        val rest = playlists.items.filter { !it.favourites && matches(query, it.name, it.curator) }.distinctBy { it.id }
         if (rest.isEmpty() && favourites == null) {
             item { Empty(playlists, "No playlists", "Playlists you make or add show here.") }
         }
@@ -353,7 +355,7 @@ fun Songs(c: LibraryContext) {
     val listing = if (order == SongSort.Added) c.lists.newestSongs else c.lists.songs
     val all = listing.items
     // What another service has too is left out once, not at every letter typed.
-    val some by produceState(all, all, source) {
+    val some by produceState(all.distinctBy { it.id }, all, source) {
         value = withContext(Dispatchers.Default) {
             val some = if (source != null) {
                 all.filter { it.id.provider == source }
