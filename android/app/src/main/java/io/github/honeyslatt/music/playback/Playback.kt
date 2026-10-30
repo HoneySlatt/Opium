@@ -55,7 +55,9 @@ private const val MAX_SKIPS = 5
 class Playback(private val context: Context, private val core: Core, private val scope: CoroutineScope) {
     val queue = PlayQueue()
 
-    val player: ExoPlayer = ExoPlayer.Builder(context)
+    // Decoded to float rather than 16 bits: a 24-bit file keeps its bits
+    // on the way to Android's mixer, which works in float itself.
+    val player: ExoPlayer = ExoPlayer.Builder(context, androidx.media3.exoplayer.DefaultRenderersFactory(context).setEnableAudioFloatOutput(true))
         .setAudioAttributes(
             AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(),
             true,
