@@ -257,6 +257,36 @@ fun AudioQuality.label(): String {
 
 fun AudioQuality.lossless() = codec is Codec.Flac || codec is Codec.Alac || codec is Codec.Wav
 
+/** Spatial Audio: the Dolby Atmos mix, rendered binaurally. */
+fun AudioQuality.atmos() = codec == Codec.Other("Dolby Atmos")
+
+/** The badge a quality earns, as Apple Music gives them: Lossless or Dolby Atmos, none for a lossy stream. */
+fun AudioQuality.badge(): String? = when {
+    lossless() -> "Lossless"
+    atmos() -> "Dolby Atmos"
+    else -> null
+}
+
+/** Whether the player's input, by its type, is lossless: an uploader's own file says so only once it plays. */
+fun losslessMime(mime: String?) = mime in setOf(
+    androidx.media3.common.MimeTypes.AUDIO_FLAC,
+    androidx.media3.common.MimeTypes.AUDIO_ALAC,
+    androidx.media3.common.MimeTypes.AUDIO_RAW,
+    androidx.media3.common.MimeTypes.AUDIO_WAV,
+)
+
+/** The Dolby double D, `height` high: two half discs whose curves face each other. */
+@Composable
+fun DolbyLogo(color: androidx.compose.ui.graphics.Color, height: androidx.compose.ui.unit.Dp) {
+    androidx.compose.foundation.Canvas(Modifier.size(height * 1.08f, height)) {
+        val r = size.height / 2
+        val disc = androidx.compose.ui.geometry.Size(2 * r, 2 * r)
+        // The left D's flat side at the left edge, the right one's at the right.
+        drawArc(color, -90f, 180f, true, topLeft = androidx.compose.ui.geometry.Offset(-r, 0f), size = disc)
+        drawArc(color, 90f, 180f, true, topLeft = androidx.compose.ui.geometry.Offset(size.width - r, 0f), size = disc)
+    }
+}
+
 /** A row of covers that scrolls sideways, under its title. */
 fun LazyListScope.shelf(
     title: String,

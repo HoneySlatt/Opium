@@ -121,7 +121,7 @@ fun AlbumPage(c: LibraryContext, id: ItemId) {
                 onByline = album?.artistId?.let { artist -> { c.nav.push(Route.Artist(artist)) } },
                 meta = {
                     if (album != null) Meta(listOfNotNull(album.kind(), album.year?.toString()).joinToString(" · "))
-                    if (quality != null) Tag(quality.label(), quality.lossless())
+                    quality?.badge()?.let { Tag(it, quality.lossless()) }
                 },
             )
         }

@@ -86,7 +86,10 @@ import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.graphicsLayer
 import io.github.honeyslatt.music.ui.detail.CoverColours
-import io.github.honeyslatt.music.ui.detail.label
+import io.github.honeyslatt.music.ui.detail.DolbyLogo
+import io.github.honeyslatt.music.ui.detail.atmos
+import io.github.honeyslatt.music.ui.detail.badge
+import io.github.honeyslatt.music.ui.detail.losslessMime
 import io.github.honeyslatt.music.ui.theme.geist
 import io.github.honeyslatt.music.ui.theme.roles
 import io.github.honeyslatt.music.ui.theme.tabular
@@ -489,14 +492,20 @@ private fun Scrubber(playback: Playback, t: Track, playing: Boolean, onSignal: (
     Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         val times = geist(12.sp, FontWeight.Medium).tabular().copy(color = np.sub)
         BasicText(clock(shown), Modifier.weight(1f), style = times)
-        // The uploader's own file: its quality is the file's, told in the signal path.
+        // Only Lossless and Dolby Atmos earn a badge, as in Apple Music. The
+        // uploader's own file is lossless once the player reads it so.
         val original = playback.source(t) == Playback.Source.Original
-        (if (original) "Original" else playback.quality(t)?.label())?.let { label ->
+        val signal by playback.signal.collectAsStateWithLifecycle()
+        val quality = playback.quality(t)
+        val badge = if (original) "Lossless".takeIf { losslessMime(signal.input?.sampleMimeType) } else quality?.badge()
+        badge?.let { label ->
             val chip = RoundedCornerShape(6.dp)
-            Box(
+            Row(
                 Modifier.height(22.dp).press(chip, shrink = 0.94f, onClick = onSignal).background(np.button, chip).padding(horizontal = 9.dp),
-                contentAlignment = Alignment.Center,
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(5.dp),
             ) {
+                if (quality?.atmos() == true && !original) DolbyLogo(np.fg, 9.dp)
                 BasicText(label, style = geist(11.5.sp, FontWeight.SemiBold, 0.02f).copy(color = np.fg))
             }
         }
