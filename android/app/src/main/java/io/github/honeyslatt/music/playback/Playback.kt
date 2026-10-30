@@ -34,7 +34,10 @@ import io.github.honeyslatt.music.data.Devices
 import io.github.honeyslatt.music.ui.components.at
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
@@ -197,6 +200,32 @@ class Playback(private val context: Context, private val core: Core, private val
         queue.clearUpcoming()
         changed()
         lineUpNext()
+    }
+
+    /** What the volume keys last set the device played on to, and when. */
+    private var keyed: Pair<Float, Long>? = null
+
+    private val _remoteVolume = MutableSharedFlow<Float>(extraBufferCapacity = 1)
+
+    /** The volume of the device played on, as the volume keys just set it. */
+    val remoteVolume: SharedFlow<Float> = _remoteVolume.asSharedFlow()
+
+    /**
+     * A press of a volume key in the app: a twentieth up or down on the
+     * device played on. False when none is, or its volume isn't to be set
+     * from here: the key is then the phone's.
+     */
+    fun stepRemoteVolume(up: Boolean): Boolean {
+        val r = remote.value ?: return false
+        val reported = r.playing?.volume ?: return false
+        val now = SystemClock.elapsedRealtime()
+        // Pressed again before the device said where it is: on from there.
+        val from = keyed?.takeIf { now - it.second < 2_000 }?.first ?: reported
+        val to = (Math.round(from * 20 + if (up) 1 else -1) / 20f).coerceIn(0f, 1f)
+        keyed = to to now
+        devices.send(r.device.id, Command.SetVolume(to))
+        _remoteVolume.tryEmit(to)
+        return true
     }
 
     /** The volume of the device played on, from 0 to 1. */

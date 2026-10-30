@@ -3,7 +3,6 @@ package io.github.honeyslatt.music.playback
 import android.net.Uri
 import android.os.Looper
 import androidx.media3.common.C
-import androidx.media3.common.DeviceInfo
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
@@ -13,13 +12,12 @@ import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import io.github.honeyslatt.music.core.connect.Command
 import io.github.honeyslatt.music.ui.components.at
-import kotlin.math.roundToInt
 
 /**
  * The device played on, as Android's media session sees a player: the
  * notification, the lock screen and the control centre show what it
- * plays, their buttons control it, and the volume keys set its volume,
- * as Spotify does with its devices.
+ * plays, and their buttons control it, as Spotify does with its devices.
+ * The volume keys stay the phone's, but in the app (see MainActivity).
  */
 @UnstableApi
 class RemotePlayer(private val playback: Playback) : SimpleBasePlayer(Looper.getMainLooper()) {
@@ -30,8 +28,6 @@ class RemotePlayer(private val playback: Playback) : SimpleBasePlayer(Looper.get
         playback.remote.value?.let { playback.devices.send(it.device.id, command) }
         return Futures.immediateVoidFuture()
     }
-
-    private val volume: Float? get() = playback.remote.value?.playing?.volume
 
     override fun getState(): State {
         val p = playback.remote.value?.playing
@@ -49,19 +45,7 @@ class RemotePlayer(private val playback: Playback) : SimpleBasePlayer(Looper.get
             Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM,
         )
         if (seekable) commands.add(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)
-        val v = p?.volume
-        if (v != null) {
-            commands.addAll(
-                Player.COMMAND_GET_DEVICE_VOLUME,
-                Player.COMMAND_SET_DEVICE_VOLUME_WITH_FLAGS,
-                Player.COMMAND_ADJUST_DEVICE_VOLUME_WITH_FLAGS,
-            )
-        }
         val state = State.Builder().setAvailableCommands(commands.build())
-        if (v != null) {
-            state.setDeviceInfo(DeviceInfo.Builder(DeviceInfo.PLAYBACK_TYPE_REMOTE).setMaxVolume(VOLUME_STEPS).build())
-                .setDeviceVolume((v * VOLUME_STEPS).roundToInt())
-        }
         if (t == null) return state.setPlaybackState(Player.STATE_IDLE).build()
         val metadata = MediaMetadata.Builder()
             .setTitle(t.title)
@@ -99,21 +83,4 @@ class RemotePlayer(private val playback: Playback) : SimpleBasePlayer(Looper.get
             else -> Command.Seek(positionMs.coerceAtLeast(0).toULong())
         },
     )
-
-    override fun handleSetDeviceVolume(deviceVolume: Int, flags: Int) =
-        send(Command.SetVolume((deviceVolume.toFloat() / VOLUME_STEPS).coerceIn(0f, 1f)))
-
-    override fun handleIncreaseDeviceVolume(flags: Int) = step(1)
-
-    override fun handleDecreaseDeviceVolume(flags: Int) = step(-1)
-
-    private fun step(by: Int): ListenableFuture<*> {
-        val v = volume ?: return Futures.immediateVoidFuture()
-        return send(Command.SetVolume((v + by.toFloat() / VOLUME_STEPS).coerceIn(0f, 1f)))
-    }
-
-    private companion object {
-        /** The volume keys move it a twentieth at a time. */
-        const val VOLUME_STEPS = 20
-    }
 }

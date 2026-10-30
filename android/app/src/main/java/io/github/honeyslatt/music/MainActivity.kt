@@ -50,6 +50,14 @@ class MainActivity : ComponentActivity() {
         super.onStop()
     }
 
+    /** In the app, the volume keys set the volume of the device played on, if any. */
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+    override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent): Boolean {
+        val up = keyCode == android.view.KeyEvent.KEYCODE_VOLUME_UP
+        if ((up || keyCode == android.view.KeyEvent.KEYCODE_VOLUME_DOWN) && (application as MusicApp).playback.stepRemoteVolume(up)) return true
+        return super.onKeyDown(keyCode, event)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)

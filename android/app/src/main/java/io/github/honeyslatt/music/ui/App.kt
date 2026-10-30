@@ -95,6 +95,9 @@ fun App(core: Core, library: Library, playback: io.github.honeyslatt.music.playb
     val actions = remember { Actions(appContext, core, library, playback, nav, hud, menus, scope) }
     val browse = remember { Browse(core, scope) }
     LaunchedEffect(Unit) { playback.devices.notices.collect { hud.show(it) } }
+    LaunchedEffect(Unit) {
+        playback.remoteVolume.collect { v -> hud.show("${Math.round(v * 100)} %", if (v == 0f) Icons.Vlow else Icons.Vhigh) }
+    }
     actions.beforeLeaving = { npOpen = false }
     LyricsSource.find = { track ->
         // A station's stream has no lyrics to look for.
