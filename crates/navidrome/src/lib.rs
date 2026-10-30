@@ -232,14 +232,20 @@ impl Navidrome {
         Ok(response.body.unwrap_or_default())
     }
 
-    /// A song's file as it is on the server, read as it downloads.
-    pub async fn audio(&self, track: &ItemId) -> Result<Audio> {
-        let url = format!(
+    /// Where a song's file streams from, as it is on the server: signed
+    /// with the token, so never shown.
+    pub fn stream_url(&self, track: &ItemId) -> String {
+        format!(
             "{}/rest/stream.view?id={}&format=raw&{}",
             self.credentials.url,
             encode(&track.id),
             self.urls.auth
-        );
+        )
+    }
+
+    /// A song's file as it is on the server, read as it downloads.
+    pub async fn audio(&self, track: &ItemId) -> Result<Audio> {
+        let url = self.stream_url(track);
         let failed =
             |e: reqwest::Error| Error::Network(format!("Navidrome stream: {}", e.without_url()));
         let mut resp = self.http.get(&url).send().await.map_err(failed)?;

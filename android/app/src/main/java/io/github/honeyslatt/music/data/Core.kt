@@ -3,34 +3,49 @@ package io.github.honeyslatt.music.data
 import android.content.Context
 import io.github.honeyslatt.music.core.MusicException
 import io.github.honeyslatt.music.core.Session
+import io.github.honeyslatt.music.core.TokenKeeper
+import io.github.honeyslatt.music.core.model.ProviderKind
 import io.github.honeyslatt.music.ui.theme.Appearance
 import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import org.json.JSONObject
 
 /** How a service stands. */
 sealed interface Connection {
     data object Off : Connection
     data object Connecting : Connection
+
+    /** `name`: Apple's storefront, the SoundCloud or Navidrome user. */
     data class Connected(val name: String) : Connection
     data class Failed(val reason: String) : Connection
 }
 
 /**
  * The Rust core's session, and what the app keeps between launches: the
- * sign-ins and the settings.
+ * sign-ins (in the vault) and the settings.
  */
 class Core(context: Context) {
     val session = Session()
     private val prefs = context.getSharedPreferences("music", Context.MODE_PRIVATE)
+    private val vault = Vault(context)
 
-    // The account token, readable by the app only. Android Keystore comes
-    // with the sign-in screens.
-    private val appleToken = File(context.filesDir, "apple-token")
+    private val connections = ProviderKind.entries.associateWith { MutableStateFlow<Connection>(Connection.Off) }
 
-    private val _apple = MutableStateFlow<Connection>(Connection.Off)
-    val apple: StateFlow<Connection> = _apple.asStateFlow()
+    fun connection(kind: ProviderKind): StateFlow<Connection> = connections.getValue(kind).asStateFlow()
+
+    val apple: StateFlow<Connection> = connection(ProviderKind.APPLE_MUSIC)
+
+    init {
+        // The account token from before the vault: moved in.
+        val old = File(context.filesDir, "apple-token")
+        if (old.exists()) {
+            vault.write(APPLE, old.readText())
+            old.delete()
+        }
+    }
 
     private val _appearance = MutableStateFlow(
         runCatching { Appearance.valueOf(prefs.getString("appearance", null) ?: "") }
@@ -43,8 +58,6 @@ class Core(context: Context) {
         prefs.edit().putString("appearance", appearance.name).apply()
     }
 
-    val hasAppleToken get() = appleToken.exists()
-
     /** A choice the app remembers: a sort order, a switch. */
     fun setting(key: String): String? = prefs.getString(key, null)
 
@@ -52,43 +65,117 @@ class Core(context: Context) {
         prefs.edit().putString(key, value).apply()
     }
 
-    /** Settings → Apple Music → Use Apple Music: off keeps the sign-in. */
-    val appleEnabled get() = prefs.getBoolean("apple-enabled", true)
+    /** Whether a sign-in to `kind` is kept. */
+    fun signedIn(kind: ProviderKind) = vault.has(kind.vaultName)
 
-    /** Sign in again with what was kept. */
+    /** Settings → a service → Use: off keeps the sign-in. */
+    fun enabled(kind: ProviderKind) = prefs.getBoolean("enabled-${kind.name}", true)
+
+    /** The first launch's screen, until one service is connected and Continue is tapped. */
+    var welcomed: Boolean
+        get() = prefs.getBoolean("welcomed", false) || ProviderKind.entries.any { signedIn(it) }
+        set(v) = prefs.edit().putBoolean("welcomed", v).apply()
+
+    /** Sign in again with what was kept, every service at once. */
     suspend fun start() {
-        if (hasAppleToken && appleEnabled) connectApple(appleToken.readText())
-    }
-
-    suspend fun setAppleEnabled(on: Boolean) {
-        prefs.edit().putBoolean("apple-enabled", on).apply()
-        if (on) {
-            start()
-        } else {
-            session.disconnect(io.github.honeyslatt.music.core.model.ProviderKind.APPLE_MUSIC)
-            _apple.value = Connection.Off
+        kotlinx.coroutines.coroutineScope {
+            ProviderKind.entries.filter { signedIn(it) && enabled(it) }.forEach { kind ->
+                launch { connect(kind) }
+            }
         }
     }
 
-    /** Forget the account: its token goes from the phone. */
-    fun signOutOfApple() {
-        session.disconnect(io.github.honeyslatt.music.core.model.ProviderKind.APPLE_MUSIC)
-        appleToken.delete()
-        _apple.value = Connection.Off
+    suspend fun setEnabled(kind: ProviderKind, on: Boolean) {
+        prefs.edit().putBoolean("enabled-${kind.name}", on).apply()
+        if (on) {
+            if (signedIn(kind)) connect(kind)
+        } else {
+            session.disconnect(kind)
+            connections.getValue(kind).value = Connection.Off
+        }
+    }
+
+    /** Forget the account: its sign-in goes from the phone. */
+    fun signOut(kind: ProviderKind) {
+        session.disconnect(kind)
+        vault.delete(kind.vaultName)
+        connections.getValue(kind).value = Connection.Off
     }
 
     /** The token Apple's sign-in page left, kept and used. */
-    suspend fun signedInToApple(token: String) {
-        appleToken.writeText(token)
-        connectApple(token)
+    suspend fun signedInToApple(token: String): Connection {
+        vault.write(APPLE, token)
+        return connect(ProviderKind.APPLE_MUSIC)
     }
 
-    private suspend fun connectApple(token: String) {
-        _apple.value = Connection.Connecting
-        _apple.value = try {
-            Connection.Connected(session.connectApple(token))
+    /** The tokens SoundCloud's web player left, kept and used. */
+    suspend fun signedInToSoundCloud(oauth: String, refresh: String?): Connection {
+        keepSoundCloud(oauth, refresh)
+        return connect(ProviderKind.SOUND_CLOUD)
+    }
+
+    /**
+     * Sign in to a Navidrome server. The password goes into a salted token
+     * at once and is never kept; what signs in again is kept once it has.
+     */
+    suspend fun signInToNavidrome(url: String, user: String, password: String): Connection {
+        val kind = ProviderKind.NAVIDROME
+        val credentials = try {
+            session.navidromeCredentials(url, user, password)
+        } catch (e: MusicException) {
+            return Connection.Failed(e.message ?: e.toString()).also { connections.getValue(kind).value = it }
+        }
+        val got = attempt(kind) { session.connectNavidrome(credentials) }
+        if (got is Connection.Connected) {
+            vault.write(kind.vaultName, credentials)
+            prefs.edit().putBoolean("enabled-${kind.name}", true).apply()
+        }
+        return got
+    }
+
+    private fun keepSoundCloud(oauth: String, refresh: String?) {
+        vault.write(SOUNDCLOUD, JSONObject().put("oauth", oauth).put("refresh", refresh ?: JSONObject.NULL).toString())
+    }
+
+    /** SoundCloud renews its tokens as they expire: the new ones are kept. */
+    private val keeper = object : TokenKeeper {
+        override fun keep(oauth: String, refresh: String?) = keepSoundCloud(oauth, refresh)
+    }
+
+    private suspend fun connect(kind: ProviderKind): Connection {
+        val kept = vault.read(kind.vaultName) ?: return Connection.Off.also { connections.getValue(kind).value = it }
+        return attempt(kind) {
+            when (kind) {
+                ProviderKind.APPLE_MUSIC -> session.connectApple(kept)
+                ProviderKind.NAVIDROME -> session.connectNavidrome(kept)
+                ProviderKind.SOUND_CLOUD -> {
+                    val json = JSONObject(kept)
+                    session.connectSoundcloud(json.getString("oauth"), json.optString("refresh").takeIf { !json.isNull("refresh") && it.isNotEmpty() }, keeper)
+                }
+            }
+        }
+    }
+
+    private suspend fun attempt(kind: ProviderKind, sign: suspend () -> String): Connection {
+        val state = connections.getValue(kind)
+        state.value = Connection.Connecting
+        state.value = try {
+            Connection.Connected(sign())
         } catch (e: MusicException) {
             Connection.Failed(e.message ?: e.toString())
         }
+        return state.value
+    }
+
+    private val ProviderKind.vaultName
+        get() = when (this) {
+            ProviderKind.APPLE_MUSIC -> APPLE
+            ProviderKind.SOUND_CLOUD -> SOUNDCLOUD
+            ProviderKind.NAVIDROME -> "navidrome"
+        }
+
+    private companion object {
+        const val APPLE = "apple-music"
+        const val SOUNDCLOUD = "soundcloud"
     }
 }

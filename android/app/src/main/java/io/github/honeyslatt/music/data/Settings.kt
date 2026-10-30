@@ -19,6 +19,7 @@ class Settings(context: Context) {
     private val playlistSongs = flag("playlist-songs-to-library", true)
     private val sitesFirstState = flag("lyrics-sites-first", false)
     private val animatedState = flag("animated-artwork", true)
+    private val originals = flag("soundcloud-originals", true)
     private val qualityState = mutableStateOf(
         runCatching { MotionQuality.valueOf(prefs.getString("animated-quality", null) ?: "") }.getOrDefault(MotionQuality.Automatic),
     )
@@ -52,6 +53,11 @@ class Settings(context: Context) {
     var sitesFirst: Boolean
         get() = sitesFirstState.value
         set(v) = save("lyrics-sites-first", v).also { sitesFirstState.value = v }
+
+    /** SoundCloud → Play the uploader's own file, where they allow downloads. */
+    var soundcloudOriginals: Boolean
+        get() = originals.value
+        set(v) = save("soundcloud-originals", v).also { originals.value = v }
 
     var animatedArtwork: Boolean
         get() = animatedState.value

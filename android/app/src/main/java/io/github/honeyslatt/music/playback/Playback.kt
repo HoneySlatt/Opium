@@ -52,7 +52,7 @@ private const val MAX_SKIPS = 5
  * without a gap while the whole queue isn't resolved at once.
  */
 @UnstableApi
-class Playback(context: Context, private val core: Core, private val scope: CoroutineScope) {
+class Playback(private val context: Context, private val core: Core, private val scope: CoroutineScope) {
     val queue = PlayQueue()
 
     val player: ExoPlayer = ExoPlayer.Builder(context)
@@ -411,7 +411,11 @@ class Playback(context: Context, private val core: Core, private val scope: Coro
                 val protected = core.session.protected(track.id) ?: error("a song you uploaded can't play here yet")
                 appleSource(protected, "$generation-${keys++}", item, player)
             }
-            else -> error("${track.id.provider} plays once it is connected")
+            ProviderKind.SOUND_CLOUD -> {
+                val settings = (context.applicationContext as io.github.honeyslatt.music.MusicApp).settings
+                soundCloudSource(core.session.soundcloudStream(track.id, settings.soundcloudOriginals), item)
+            }
+            ProviderKind.NAVIDROME -> navidromeSource(core.session.navidromeStreamUrl(track.id), item)
         }
     }
 }

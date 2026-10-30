@@ -186,7 +186,81 @@ fn segments(playlist: &str) -> Vec<String> {
     urls
 }
 
+/// A stream's quality: AAC at 44.1 kHz, 256 kbps with Go+, 160 without.
+fn stream_quality(best: &types::Transcoding) -> AudioQuality {
+    AudioQuality {
+        codec: Codec::Aac,
+        sample_rate: Some(44_100),
+        bit_depth: None,
+        bitrate_kbps: Some(if best.quality == "hq" { 256 } else { 160 }),
+    }
+}
+
+/// Where a track plays from, for a player that reads HLS and files, and
+/// asks for Widevine licences, itself (Android's).
+#[derive(Debug, Clone)]
+pub struct Playable {
+    pub url: String,
+    /// An HLS playlist; else the uploader's file, whole.
+    pub hls: bool,
+    /// An encrypted stream's: what its licence is asked with.
+    pub license_token: Option<String>,
+    /// The stream's; an original's is known once it is read.
+    pub quality: Option<AudioQuality>,
+    pub original: bool,
+}
+
 impl SoundCloud {
+    /// Where `track` plays from: the uploader's file when `original` and
+    /// they allow it, else the best stream, encrypted when it is only so.
+    pub async fn playable(&self, track: &ItemId, original: bool) -> Result<Playable> {
+        let found: types::Track = self.get(&format!("/tracks/{}", track.id)).await?;
+        if original && found.downloadable && found.has_downloads_left {
+            // Not for this account or client: the stream will do.
+            if let Ok(at) = self
+                .get::<types::Download>(&format!("/tracks/{}/download", found.id))
+                .await
+            {
+                return Ok(Playable {
+                    url: at.redirect_uri,
+                    hls: false,
+                    license_token: None,
+                    quality: None,
+                    original: true,
+                });
+            }
+        }
+        if let Some(best) = best_transcoding(&found) {
+            let at: types::StreamUrl = self.resolve(&found, best).await?;
+            return Ok(Playable {
+                url: at.url,
+                hls: true,
+                license_token: None,
+                quality: Some(stream_quality(best)),
+                original: false,
+            });
+        }
+        let Some(best) = best_encrypted(&found) else {
+            return Err(unplayable(&found));
+        };
+        let at: types::StreamUrl = self.resolve(&found, best).await?;
+        let token = at.license_auth_token.ok_or_else(|| {
+            Error::Playback("SoundCloud: an encrypted stream without a licence".into())
+        })?;
+        Ok(Playable {
+            url: at.url,
+            hls: true,
+            license_token: Some(token),
+            quality: Some(stream_quality(best)),
+            original: false,
+        })
+    }
+
+    /// A Widevine licence for an encrypted stream's `challenge`.
+    pub async fn widevine_license(&self, token: &str, challenge: Vec<u8>) -> Result<Vec<u8>> {
+        self.license(token, challenge).await
+    }
+
     /// `track`'s audio, the original file first when `original` and the
     /// uploader allows it; an encrypted track needs `cdm`.
     pub async fn audio(
@@ -204,12 +278,7 @@ impl SoundCloud {
                 Err(e) => return Err(e),
             }
         }
-        let quality = |best: &types::Transcoding| AudioQuality {
-            codec: Codec::Aac,
-            sample_rate: Some(44_100),
-            bit_depth: None,
-            bitrate_kbps: Some(if best.quality == "hq" { 256 } else { 160 }),
-        };
+        let quality = stream_quality;
         if let Some(best) = best_transcoding(&found) {
             let at: types::StreamUrl = self.resolve(&found, best).await?;
             let playlist = self.public_text(&at.url).await?;

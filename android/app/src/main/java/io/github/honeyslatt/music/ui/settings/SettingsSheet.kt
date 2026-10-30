@@ -67,7 +67,7 @@ private sealed interface SettingsPage {
 /** Settings, from the avatar: the services, then how the app behaves. */
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
-fun SettingsSheet(open: Boolean, core: Core, settings: Settings, onSignIn: () -> Unit, onClose: () -> Unit) {
+fun SettingsSheet(open: Boolean, core: Core, settings: Settings, onSignIn: (ProviderKind) -> Unit, onClose: () -> Unit) {
     var page by remember { mutableStateOf<SettingsPage>(SettingsPage.Root) }
     val close = {
         onClose()
@@ -84,7 +84,7 @@ fun SettingsSheet(open: Boolean, core: Core, settings: Settings, onSignIn: () ->
         SettingsPage.Root -> Sheet(open, "Account", close, left = { Spacer(Modifier.size(40.dp)) }, right = { SheetButton("Done", onClick = close) }) {
             Root(core, settings) { page = it }
         }
-        is SettingsPage.Service -> Sheet(open, p.kind.label(), close, left = backButton) { Service(core, p.kind, onSignIn, close) }
+        is SettingsPage.Service -> Sheet(open, p.kind.label(), close, left = backButton) { Service(core, settings, p.kind, onSignIn, close) }
         SettingsPage.LyricsSites -> Sheet(open, "Lyrics Sites", close, left = backButton) { LyricsSites(settings) }
         SettingsPage.Motion -> Sheet(open, "Animated Artwork", close, left = backButton) { Motion(settings) }
     }
@@ -146,11 +146,12 @@ private fun Root(core: Core, settings: Settings, go: (SettingsPage) -> Unit) {
     Label("Services")
     Group("Each service keeps its own sign-in, on this phone only. A song you have on several services plays from your server’s file first, then Apple Music, then SoundCloud.") {
         ProviderKind.entries.forEachIndexed { i, kind ->
+            val state by core.connection(kind).collectAsStateWithLifecycle()
             val status = when {
-                kind != ProviderKind.APPLE_MUSIC -> "Not signed in"
-                apple is Connection.Connected -> "Connected"
-                apple is Connection.Connecting -> "Connecting…"
-                !core.appleEnabled -> "Off"
+                state is Connection.Connected -> "Connected"
+                state is Connection.Connecting -> "Connecting…"
+                state is Connection.Failed -> "Couldn’t connect"
+                core.signedIn(kind) && !core.enabled(kind) -> "Off"
                 else -> "Not signed in"
             }
             GroupRow(first = i == 0, inset = 58.dp, onClick = { go(SettingsPage.Service(kind)) }) {
@@ -231,63 +232,72 @@ private fun Root(core: Core, settings: Settings, go: (SettingsPage) -> Unit) {
 
 /** A service's page: using it, what it gives, and its sign-in. */
 @Composable
-private fun Service(core: Core, kind: ProviderKind, onSignIn: () -> Unit, close: () -> Unit) {
-    val apple by core.apple.collectAsStateWithLifecycle()
+private fun Service(core: Core, settings: Settings, kind: ProviderKind, onSignIn: (ProviderKind) -> Unit, close: () -> Unit) {
+    val state by core.connection(kind).collectAsStateWithLifecycle()
     val actions = LocalActions.current
     val scope = rememberCoroutineScope()
-    val connected = kind == ProviderKind.APPLE_MUSIC && apple is Connection.Connected
+    val connected = state as? Connection.Connected
     Column(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         ServiceLogo(kind, 64.dp)
         BasicText(kind.label(), Modifier.padding(top = 10.dp), style = geist(20.sp, FontWeight.Bold).copy(color = roles.text))
         BasicText(
             when (kind) {
-                ProviderKind.APPLE_MUSIC -> if (connected) "Storefront ${(apple as Connection.Connected).name} · up to AAC 256 kb/s" else "Your library, playlists and the catalogue, at AAC 256 kb/s."
-                ProviderKind.SOUND_CLOUD -> "Your likes and playlists, and the uploaders’ own files where they allow downloads."
-                ProviderKind.NAVIDROME -> "Your server’s files, as they are."
+                ProviderKind.APPLE_MUSIC -> connected?.let { "Storefront ${it.name} · up to AAC 256 kb/s" } ?: "Your library, playlists and the catalogue, at AAC 256 kb/s."
+                ProviderKind.SOUND_CLOUD -> connected?.let { "${it.name} · AAC 160 kb/s, 256 with Go+" } ?: "Your likes and playlists, and the uploaders’ own files where they allow downloads."
+                ProviderKind.NAVIDROME -> connected?.let { "${it.name} · files as they are" } ?: "Your server’s files, as they are."
             },
             Modifier.padding(top = 2.dp, start = 20.dp, end = 20.dp),
             style = geist(14.sp).copy(color = roles.sub, textAlign = TextAlign.Center),
         )
+        (state as? Connection.Failed)?.let {
+            BasicText(it.reason, Modifier.padding(top = 6.dp, start = 20.dp, end = 20.dp), style = geist(13.sp).copy(color = roles.red, textAlign = TextAlign.Center))
+        }
     }
     val limits = when (kind) {
         ProviderKind.APPLE_MUSIC -> "Apple Music stops at AAC 256 kb/s for apps other than Apple’s: ALAC is FairPlay-only."
         ProviderKind.SOUND_CLOUD -> "Where the artist allows downloads, Music plays the uploader’s own file instead of the stream."
         ProviderKind.NAVIDROME -> "Files play as they are, up to 24-bit, with no transcoding (format=raw)."
     }
-    if (kind == ProviderKind.APPLE_MUSIC && core.hasAppleToken) {
-        var on by remember { mutableStateOf(core.appleEnabled) }
-        Group(limits) {
-            GroupRow(first = true) {
-                Words("Use Apple Music", "Off: still signed in, and used again once turned on.")
-                Switch(on) {
-                    on = it
-                    scope.launch { core.setAppleEnabled(it) }
-                }
-            }
-        }
-        Group {
-            GroupRow(first = true, onClick = {
-                close()
-                onSignIn()
-            }) { Words("Sign In Again", colour = roles.tint) }
-            GroupRow(first = false, onClick = {
-                close()
-                actions?.sheet = SheetSpec.Confirm(
-                    "Sign Out of Apple Music?",
-                    "Your token goes from this phone. Your library stays on Apple Music.",
-                    "Sign Out",
-                ) { core.signOutOfApple() }
-            }) { Words("Sign Out", colour = roles.red) }
-        }
-    } else {
+    val signedIn = core.signedIn(kind)
+    if (signedIn) {
+        var on by remember { mutableStateOf(core.enabled(kind)) }
         Group(limits) {
             GroupRow(first = true) {
                 Words("Use ${kind.label()}", "Off: still signed in, and used again once turned on.")
-                Box(Modifier.alpha(0.4f)) { Switch(false) {} }
+                Switch(on) {
+                    on = it
+                    scope.launch { core.setEnabled(kind, it) }
+                }
+            }
+            if (kind == ProviderKind.SOUND_CLOUD) {
+                GroupRow(first = false) {
+                    Words("Play the uploader’s own file")
+                    Switch(settings.soundcloudOriginals) { settings.soundcloudOriginals = it }
+                }
             }
         }
-        Group("Signing in to ${kind.label()} comes with the next step.") {
-            GroupRow(first = true) { Words("Sign In…", colour = roles.tint.copy(alpha = 0.4f)) }
+    }
+    Group(if (signedIn) null else limits) {
+        GroupRow(first = true, onClick = {
+            close()
+            onSignIn(kind)
+        }) { Words(if (signedIn) "Sign In Again" else "Sign In…", colour = roles.tint) }
+        if (signedIn) {
+            GroupRow(first = false, onClick = {
+                close()
+                actions?.sheet = SheetSpec.Confirm(
+                    "Sign Out of ${kind.label()}?",
+                    if (kind == ProviderKind.NAVIDROME) {
+                        "The server’s address and token go from this phone. Your files stay on the server."
+                    } else {
+                        "Your sign-in goes from this phone. Your library stays on ${kind.label()}."
+                    },
+                    "Sign Out",
+                ) {
+                    core.signOut(kind)
+                    io.github.honeyslatt.music.ui.connect.forgetCookies(kind)
+                }
+            }) { Words("Sign Out", colour = roles.red) }
         }
     }
 }

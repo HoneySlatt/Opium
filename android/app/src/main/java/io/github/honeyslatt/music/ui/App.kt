@@ -75,11 +75,11 @@ import io.github.honeyslatt.music.ui.theme.roles
 
 /** The app: the page of the current tab, under the bottom chrome. */
 @Composable
-fun App(core: Core, library: Library, playback: io.github.honeyslatt.music.playback.Playback, settings: Settings, onSignIn: () -> Unit) {
+fun App(core: Core, library: Library, playback: io.github.honeyslatt.music.playback.Playback, settings: Settings, connecting: io.github.honeyslatt.music.ui.connect.Connecting) {
     val nav = remember { Navigator() }
-    val apple by core.apple.collectAsStateWithLifecycle()
     val lists by library.lists.collectAsStateWithLifecycle()
-    val services = listOfNotNull(ProviderKind.APPLE_MUSIC.takeIf { apple is Connection.Connected })
+    // The services connected, for the source chips.
+    val services = ProviderKind.entries.filter { core.connection(it).collectAsStateWithLifecycle().value is Connection.Connected }
     var settingsOpen by remember { mutableStateOf(false) }
     val account: @Composable () -> Unit = { Avatar("H") { settingsOpen = true } }
     val now by playback.now.collectAsStateWithLifecycle()
@@ -151,7 +151,7 @@ fun App(core: Core, library: Library, playback: io.github.honeyslatt.music.playb
         ) {
             SwipeDown({ npOpen = false }) { NowPlaying(playback, npActions) }
         }
-        io.github.honeyslatt.music.ui.settings.SettingsSheet(settingsOpen, core, settings, onSignIn) { settingsOpen = false }
+        io.github.honeyslatt.music.ui.settings.SettingsSheet(settingsOpen, core, settings, connecting::start) { settingsOpen = false }
         ActionSheets(actions)
         MenuHost(menus)
         HudHost(hud)

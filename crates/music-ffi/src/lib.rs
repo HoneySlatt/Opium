@@ -227,6 +227,59 @@ impl Session {
         .await
     }
 
+    /// Sign in to SoundCloud with the web player's tokens; the user's name.
+    /// `keeper` is told the tokens each time they are renewed.
+    pub async fn connect_soundcloud(
+        self: Arc<Self>,
+        oauth: String,
+        refresh: Option<String>,
+        keeper: Arc<dyn TokenKeeper>,
+    ) -> Result<String, MusicError> {
+        off(async move {
+            let on_tokens: soundcloud::OnTokens = Box::new(move |t: &soundcloud::Tokens| {
+                keeper.keep(t.oauth.clone(), t.refresh.clone());
+            });
+            let tokens = soundcloud::Tokens { oauth, refresh };
+            let sc = Arc::new(soundcloud::SoundCloud::connect(tokens, on_tokens).await?);
+            let user = sc.username().to_owned();
+            self.update(|s| s.soundcloud = Some(sc));
+            Ok(user)
+        })
+        .await
+    }
+
+    /// Where a SoundCloud track plays from: the uploader's file when
+    /// `original` and they allow it, else the best stream.
+    pub async fn soundcloud_stream(
+        self: Arc<Self>,
+        track: ItemId,
+        original: bool,
+    ) -> Result<Arc<SoundCloudStream>, MusicError> {
+        off(async move {
+            let sc = self
+                .services()
+                .soundcloud
+                .ok_or_else(|| MusicError::Failed {
+                    reason: "SoundCloud isn't connected".into(),
+                })?;
+            let playable = sc.playable(&track, original).await?;
+            Ok(Arc::new(SoundCloudStream { sc, playable }))
+        })
+        .await
+    }
+
+    /// Where a Navidrome song's file streams from, as it is on the server.
+    /// Signed with the account's token: never shown or logged.
+    pub fn navidrome_stream_url(&self, track: ItemId) -> Result<String, MusicError> {
+        let server = self
+            .services()
+            .navidrome
+            .ok_or_else(|| MusicError::Failed {
+                reason: "Navidrome isn't connected".into(),
+            })?;
+        Ok(server.stream_url(&track))
+    }
+
     /// Stop using a service; its sign-in stays where the app keeps it.
     pub fn disconnect(&self, kind: ProviderKind) {
         self.update(|s| match kind {
@@ -640,6 +693,59 @@ impl Session {
                 init,
                 key_uri,
             }))
+        })
+        .await
+    }
+}
+
+/// Told SoundCloud's tokens each time they are renewed, to keep them.
+#[uniffi::export(with_foreign)]
+pub trait TokenKeeper: Send + Sync {
+    fn keep(&self, oauth: String, refresh: Option<String>);
+}
+
+/// A SoundCloud track as Android's player plays it: an HLS playlist or the
+/// uploader's file, and an encrypted stream's licences.
+#[derive(uniffi::Object)]
+pub struct SoundCloudStream {
+    sc: Arc<soundcloud::SoundCloud>,
+    playable: soundcloud::Playable,
+}
+
+#[uniffi::export(async_runtime = "tokio")]
+impl SoundCloudStream {
+    pub fn url(&self) -> String {
+        self.playable.url.clone()
+    }
+
+    /// An HLS playlist; else the uploader's file, whole.
+    pub fn hls(&self) -> bool {
+        self.playable.hls
+    }
+
+    pub fn encrypted(&self) -> bool {
+        self.playable.license_token.is_some()
+    }
+
+    pub fn original(&self) -> bool {
+        self.playable.original
+    }
+
+    pub fn quality(&self) -> Option<music_core::model::AudioQuality> {
+        self.playable.quality.clone()
+    }
+
+    /// A Widevine licence for `challenge`.
+    pub async fn license(self: Arc<Self>, challenge: Vec<u8>) -> Result<Vec<u8>, MusicError> {
+        off(async move {
+            let token = self
+                .playable
+                .license_token
+                .clone()
+                .ok_or_else(|| MusicError::Failed {
+                    reason: "the stream isn't encrypted".into(),
+                })?;
+            Ok(self.sc.widevine_license(&token, challenge).await?)
         })
         .await
     }
