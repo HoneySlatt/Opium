@@ -89,8 +89,8 @@ fun SearchPage(c: LibraryContext) {
     var query by rememberSaveable { mutableStateOf("") }
     var library by remember { mutableStateOf(c.core.setting("search-scope") == "library") }
     var source by io.github.honeyslatt.music.ui.components.rememberSource(c.core, "search")
-    // Open at first when a source is kept, so that it shows; folded at will.
-    var sources by rememberSaveable { mutableStateOf(source != null) }
+    // Folded at first, the source kept still applying; opened at will.
+    var sources by rememberSaveable { mutableStateOf(false) }
     // The sections whose title showed all they found: Songs, Albums, Artists.
     var unfolded by remember { mutableStateOf(emptySet<String>()) }
     var recent by remember { mutableStateOf(keptSearched(c.core.searched)) }

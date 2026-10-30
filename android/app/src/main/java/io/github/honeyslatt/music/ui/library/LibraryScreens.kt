@@ -91,8 +91,8 @@ private const val RECENT_SHOWN = 66
 @Composable
 fun LibraryRoot(c: LibraryContext) {
     var source by io.github.honeyslatt.music.ui.components.rememberSource(c.core, "recently-added")
-    // Open at first when a source is kept, so that it shows; folded at will.
-    var sources by rememberSaveable { mutableStateOf(source != null) }
+    // Folded at first, the source kept still applying; opened at will.
+    var sources by rememberSaveable { mutableStateOf(false) }
     val added = remember(c.lists.recentlyAdded.items, source) {
         newestFirst(c.lists.recentlyAdded.items).filter { source == null || it.provider() == source }.take(RECENT_SHOWN)
     }
@@ -263,8 +263,8 @@ fun songs(n: Int) = if (n == 1) "1 song" else "$n songs"
 @Composable
 fun Albums(c: LibraryContext) {
     var source by io.github.honeyslatt.music.ui.components.rememberSource(c.core, "albums")
-    // Open at first when a source is kept, so that it shows; folded at will.
-    var sources by rememberSaveable { mutableStateOf(source != null) }
+    // Folded at first, the source kept still applying; opened at will.
+    var sources by rememberSaveable { mutableStateOf(false) }
     var searching by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
     var order by remember { mutableStateOf(c.core.setting("albums-sort")?.let { runCatching { AlbumSort.valueOf(it) }.getOrNull() } ?: AlbumSort.Added) }
@@ -344,8 +344,8 @@ fun Artists(c: LibraryContext) {
 @Composable
 fun Songs(c: LibraryContext) {
     var source by io.github.honeyslatt.music.ui.components.rememberSource(c.core, "songs")
-    // Open at first when a source is kept, so that it shows; folded at will.
-    var sources by rememberSaveable { mutableStateOf(source != null) }
+    // Folded at first, the source kept still applying; opened at will.
+    var sources by rememberSaveable { mutableStateOf(false) }
     var searching by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
     var order by remember { mutableStateOf(c.core.setting("songs-sort")?.let { runCatching { SongSort.valueOf(it) }.getOrNull() } ?: SongSort.Name) }
