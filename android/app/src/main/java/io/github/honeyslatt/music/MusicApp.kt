@@ -44,13 +44,27 @@ class MusicApp : Application() {
         getSystemService(android.net.ConnectivityManager::class.java).registerDefaultNetworkCallback(
             object : android.net.ConnectivityManager.NetworkCallback() {
                 override fun onAvailable(network: android.net.Network) {
-                    scope.launch {
-                        playback.online()
-                        core.retryFailed()
-                    }
+                    scope.launch { retry() }
+                }
+
+                // Asleep (Doze), the app is kept off the network it has: woken, it is let back on.
+                override fun onBlockedStatusChanged(network: android.net.Network, blocked: Boolean) {
+                    if (!blocked) scope.launch { retry() }
                 }
             },
         )
+    }
+
+    /**
+     * What the network kept out, tried again: a song it stopped, the
+     * services, the library's lists. When it comes back, and when the app
+     * shows again.
+     */
+    suspend fun retry() {
+        if (!started) return
+        playback.online()
+        library.retryFailed()
+        core.retryFailed()
     }
 
     private var started = false

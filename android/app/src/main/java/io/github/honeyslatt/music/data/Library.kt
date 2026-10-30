@@ -47,6 +47,30 @@ class Library(private val core: Core, private val scope: CoroutineScope) {
 
     private val providers = mutableSetOf<ProviderKind>()
 
+    /** Services a list of which couldn't load (the network gone, the phone asleep): loaded again once it is back. */
+    private val unloaded = mutableSetOf<ProviderKind>()
+
+    /** The network is back, or the app shows again: what couldn't load is loaded again. */
+    fun retryFailed() {
+        val again = unloaded.toList()
+        if (again.isEmpty()) return
+        unloaded.clear()
+        _lists.update {
+            it.copy(
+                playlists = it.playlists.copy(error = null),
+                albums = it.albums.copy(error = null),
+                artists = it.artists.copy(error = null),
+                songs = it.songs.copy(error = null),
+                recentlyAdded = it.recentlyAdded.copy(error = null),
+                newestSongs = it.newestSongs.copy(error = null),
+            )
+        }
+        again.filter { it in providers }.forEach {
+            providers -= it
+            load(it)
+        }
+    }
+
     /** By file, whether what was kept of a list shows (once read). */
     private val shown = mutableMapOf<String, Deferred<Boolean>>()
 
@@ -147,6 +171,7 @@ class Library(private val core: Core, private val scope: CoroutineScope) {
         scope.launch {
             val fresh = mutableListOf<Collection>()
             pages({ session.recentlyAdded(provider, it).let { p -> p.items to p.next } }, limit = 3) { items, done, error ->
+                if (error != null) unloaded += provider
                 fresh += items
                 _lists.update { l ->
                     l.copy(
@@ -228,7 +253,10 @@ class Library(private val core: Core, private val scope: CoroutineScope) {
                     if (stepwise) set { l -> l.copy(items = l.items.with(provider, fresh.toList(), of), done = done, error = error ?: l.error) }
                 }
             }
-            if (failed != null) return@launch
+            if (failed != null) {
+                unloaded += provider
+                return@launch
+            }
             if (!stepwise) set { l -> l.copy(items = l.items.with(provider, fresh, of), done = true) }
             loaded += file
             withContext(Dispatchers.IO) { keep(file, fresh) }

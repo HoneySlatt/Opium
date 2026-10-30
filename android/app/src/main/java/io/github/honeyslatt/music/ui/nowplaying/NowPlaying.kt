@@ -7,7 +7,6 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -275,14 +274,16 @@ private fun Wash(track: Track, playing: Boolean) {
     val colours by produceState(listOf(roles.accent, roles.mauve, roles.accent), url, light) {
         url?.let { CoverColours.wash(it, light) }?.let { value = it }
     }
-    val wash = remember { androidx.compose.animation.core.Animatable(0f) }
+    // There and back over 40 s, moved on 15 times a second: a few pixels a
+    // second needn't redraw the screen at every frame.
+    val wash = remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
     var rising by remember { mutableStateOf(true) }
     LaunchedEffect(playing) {
         while (playing) {
-            val to = if (rising) 1f else 0f
-            val left = (kotlin.math.abs(to - wash.value) * 40_000).toInt().coerceAtLeast(1)
-            wash.animateTo(to, tween(left, easing = LinearEasing))
-            rising = !rising
+            kotlinx.coroutines.delay(66)
+            val next = wash.floatValue + if (rising) 66f / 40_000 else -66f / 40_000
+            if (next !in 0f..1f) rising = !rising
+            wash.floatValue = next.coerceIn(0f, 1f)
         }
     }
     val (c1, c2, c3) = colours
@@ -292,7 +293,7 @@ private fun Wash(track: Track, playing: Boolean) {
             drawRect(fill)
             val w = size.width
             val h = size.height
-            val d = (wash.value - 0.5f) * 0.12f
+            val d = (wash.floatValue - 0.5f) * 0.12f
             fun blob(x: Float, y: Float, r: Float, c: Color) = drawCircle(
                 Brush.radialGradient(listOf(c, c.copy(alpha = 0f)), Offset(w * x, h * y), r),
                 radius = r,
@@ -388,11 +389,14 @@ fun clock(ms: Long): String {
  */
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
-fun rememberPosition(playback: Playback, playing: Boolean): State<Long> {
+fun rememberPosition(playback: Playback, playing: Boolean, everyMs: Long = 0): State<Long> {
     val position = remember { mutableLongStateOf(playback.position) }
     LaunchedEffect(playing) {
         position.longValue = playback.position
         while (playing) {
+            // At every frame, or as often as asked: a bar that moves a few
+            // pixels a second needn't redraw the screen 120 times a second.
+            if (everyMs > 0) kotlinx.coroutines.delay(everyMs)
             withFrameMillis { position.longValue = playback.position }
         }
     }
@@ -443,7 +447,7 @@ private fun LiveControls() {
 @Composable
 private fun Scrubber(playback: Playback, t: Track, playing: Boolean, onSignal: () -> Unit) {
     val np = LocalNp.current
-    val position = rememberPosition(playback, playing)
+    val position = rememberPosition(playback, playing, everyMs = 33)
     val duration = playback.duration ?: 0L
     var dragging by remember { mutableStateOf<Float?>(null) }
     // Where the bar is, read as it is drawn; the times, once a second.

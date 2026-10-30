@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
 import io.github.honeyslatt.music.ui.theme.MusicTheme
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private var controller: ListenableFuture<MediaController>? = null
@@ -38,6 +39,8 @@ class MainActivity : ComponentActivity() {
         // Being connected to it is what keeps the session service running.
         controller = MediaController.Builder(this, SessionToken(this, ComponentName(this, PlaybackService::class.java))).buildAsync()
         (application as MusicApp).devices.looking(true)
+        val app = application as MusicApp
+        app.scope.launch { app.retry() }
     }
 
     @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
