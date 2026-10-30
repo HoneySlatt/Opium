@@ -23,6 +23,7 @@ import io.github.honeyslatt.music.ui.theme.roles
 import io.github.honeyslatt.music.core.AlbumDetail
 import io.github.honeyslatt.music.core.model.Album
 import io.github.honeyslatt.music.core.model.ItemId
+import io.github.honeyslatt.music.core.model.Track
 import io.github.honeyslatt.music.core.model.ProviderKind
 import io.github.honeyslatt.music.ui.Icons
 import io.github.honeyslatt.music.ui.components.BarAction
@@ -65,7 +66,17 @@ fun AlbumPage(c: LibraryContext, id: ItemId) {
     val loaded by produceState<Loading<AlbumDetail>>(Loading.Pending, id) { value = load { c.core.session.album(id) } }
     val detail = (loaded as? Loading.Ready)?.value
     val album = detail?.album
-    val tracks = detail?.tracks.orEmpty()
+    // Whole from its copies on the library's other services: the songs one
+    // lacks come from another, as on the desktop.
+    val others = c.lists.albums.items
+    val whole by produceState<List<Track>?>(null, detail, others.size) {
+        val d = detail ?: return@produceState
+        val twins = io.github.honeyslatt.music.core.albumTwins(d.album, others).map { others[it.toInt()].id }
+        if (twins.isEmpty()) return@produceState
+        val copies = listOf(d.tracks) + twins.mapNotNull { runCatching { c.core.session.album(it).tracks }.getOrNull() }
+        if (copies.size > 1) value = io.github.honeyslatt.music.core.wholeAlbum(copies)
+    }
+    val tracks = whole ?: detail?.tracks.orEmpty()
     // More by the artist, from the catalog.
     val more by produceState<List<Album>>(emptyList(), album?.artistId) {
         val artist = album?.artistId?.takeIf { it.provider == ProviderKind.APPLE_MUSIC } ?: return@produceState

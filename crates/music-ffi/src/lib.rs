@@ -928,6 +928,29 @@ pub fn kept_searched(path: String) -> Vec<RecentlySearched> {
     kept(&path)
 }
 
+/// Which of `others` are copies of `album` on other services, by their
+/// title and artist: their indices.
+#[uniffi::export]
+pub fn album_twins(album: Album, others: Vec<Album>) -> Vec<u32> {
+    let key = music_core::dedupe::album_key(&album);
+    others
+        .iter()
+        .enumerate()
+        .filter(|(_, a)| {
+            a.id.provider != album.id.provider && music_core::dedupe::album_key(a) == key
+        })
+        .map(|(i, _)| i as u32)
+        .collect()
+}
+
+/// An album whole from its copies: each song from the best copy that has
+/// it (the server's first), the others filling in what it lacks.
+#[uniffi::export]
+pub fn whole_album(copies: Vec<Vec<Track>>) -> Vec<Track> {
+    let slices: Vec<&[Track]> = copies.iter().map(Vec::as_slice).collect();
+    music_core::dedupe::album_tracks(&slices)
+}
+
 /// Keep what played when the app closed: the queue and where it was.
 #[uniffi::export]
 pub fn keep_session(path: String, session: connect::Handoff) {
