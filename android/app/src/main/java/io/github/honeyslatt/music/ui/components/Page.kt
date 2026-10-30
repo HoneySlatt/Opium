@@ -65,6 +65,7 @@ fun ListPage(
     actions: List<BarAction> = emptyList(),
     account: (@Composable () -> Unit)? = null,
     largeTitle: Boolean = true,
+    fold: Fold? = null,
     state: LazyListState = rememberLazyListState(),
     content: LazyListScope.() -> Unit,
 ) {
@@ -77,7 +78,7 @@ fun ListPage(
             item { Spacer(Modifier.windowInsetsTopHeight(WindowInsets.statusBars)) }
             // A pushed page's title sits under the bar and its back button.
             if (nav.canPop) item { Spacer(Modifier.height(52.dp)) }
-            if (largeTitle) item { LargeTitle(title) }
+            if (largeTitle) item { LargeTitle(title, fold = fold) }
             content()
             item { Spacer(Modifier.height(Under)) }
         }
@@ -92,6 +93,7 @@ fun GridPage(
     title: String,
     actions: List<BarAction> = emptyList(),
     account: (@Composable () -> Unit)? = null,
+    fold: Fold? = null,
     state: LazyGridState = rememberLazyGridState(),
     content: LazyGridScope.() -> Unit,
 ) {
@@ -109,7 +111,7 @@ fun GridPage(
         ) {
             full { Spacer(Modifier.windowInsetsTopHeight(WindowInsets.statusBars)) }
             if (nav.canPop) full { Spacer(Modifier.height(52.dp)) }
-            full { LargeTitle(title) }
+            full { LargeTitle(title, fold = fold) }
             content()
             full { Spacer(Modifier.height(Under)) }
         }

@@ -1,5 +1,11 @@
 package io.github.honeyslatt.music.ui.components
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -22,7 +28,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Rect
 import io.github.honeyslatt.music.core.model.Playlist
 import io.github.honeyslatt.music.ui.actions.LocalActions
@@ -46,24 +54,48 @@ import io.github.honeyslatt.music.ui.theme.roles
 
 /** A root page's 32 sp title, level with the bar's buttons. */
 @Composable
-fun LargeTitle(text: String, modifier: Modifier = Modifier, inset: androidx.compose.ui.unit.Dp = 20.dp) {
+fun LargeTitle(text: String, modifier: Modifier = Modifier, inset: androidx.compose.ui.unit.Dp = 20.dp, fold: Fold? = null) {
     Box(modifier.fillMaxWidth().height(52.dp).padding(horizontal = inset), contentAlignment = Alignment.CenterStart) {
-        Line(text, geist(32.sp, FontWeight.Bold, -0.02f).copy(color = roles.text))
+        Row(
+            if (fold != null) Modifier.press(onClick = fold.toggle) else Modifier,
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Line(text, geist(32.sp, FontWeight.Bold, -0.02f).copy(color = roles.text))
+            if (fold != null) FoldMark(fold.open, 24.dp)
+        }
     }
 }
 
-/** A section's 21 sp title, with a chevron when it opens the whole of it. */
+/** A title that shows or hides what is under it: the source chips. */
+class Fold(val open: Boolean, val toggle: () -> Unit)
+
+/** A chevron pointing right when folded, down when open. */
 @Composable
-fun SectionHeader(title: String, onOpen: (() -> Unit)? = null) {
+private fun FoldMark(open: Boolean, size: androidx.compose.ui.unit.Dp) {
+    val turn by androidx.compose.animation.core.animateFloatAsState(if (open) 0f else -90f, label = "fold")
+    Glyph(Icons.Down, roles.muted, size, Modifier.graphicsLayer { rotationZ = turn })
+}
+
+/**
+ * A section's 21 sp title, with a chevron when it opens the whole of it,
+ * or when it folds what is under it.
+ */
+@Composable
+fun SectionHeader(title: String, fold: Fold? = null, onOpen: (() -> Unit)? = null) {
+    val tap = fold?.toggle ?: onOpen
     Row(
         Modifier
             .padding(start = 20.dp, end = 20.dp, top = 26.dp, bottom = 12.dp)
-            .then(if (onOpen != null) Modifier.press(onClick = onOpen) else Modifier),
+            .then(if (tap != null) Modifier.press(onClick = tap) else Modifier),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         Line(title, geist(21.sp, FontWeight.Bold, -0.01f).copy(color = roles.text))
-        if (onOpen != null) Glyph(Icons.Right, roles.muted, 20.dp)
+        when {
+            fold != null -> FoldMark(fold.open, 20.dp)
+            onOpen != null -> Glyph(Icons.Right, roles.muted, 20.dp)
+        }
     }
 }
 
@@ -89,17 +121,26 @@ fun ProviderKind.label() = when (this) {
     ProviderKind.NAVIDROME -> "Navidrome"
 }
 
-/** The source filter: All, then each service. `null` is All. */
+/**
+ * The source filter: All, then each service. `null` is All. Folded away
+ * until its title is tapped, and kept open while a service is chosen.
+ */
 @Composable
-fun SourceChips(selected: ProviderKind?, services: List<ProviderKind>, onSelect: (ProviderKind?) -> Unit) {
-    Row(
-        Modifier
-            .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+fun SourceChips(open: Boolean, selected: ProviderKind?, services: List<ProviderKind>, onSelect: (ProviderKind?) -> Unit) {
+    AnimatedVisibility(
+        open || selected != null,
+        enter = expandVertically(tween(250)) + fadeIn(tween(250)),
+        exit = shrinkVertically(tween(250)) + fadeOut(tween(200)),
     ) {
-        Chip("All", null, selected == null) { onSelect(null) }
-        services.forEach { kind -> Chip(kind.label(), kind, selected == kind) { onSelect(kind) } }
+        Row(
+            Modifier
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Chip("All", null, selected == null) { onSelect(null) }
+            services.forEach { kind -> Chip(kind.label(), kind, selected == kind) { onSelect(kind) } }
+        }
     }
 }
 

@@ -24,7 +24,6 @@ sealed interface Route {
     data object Albums : Route
     data object Artists : Route
     data object Songs : Route
-    data object RecentlyAdded : Route
     data class Album(val id: ItemId) : Route
     /** A shelf of Home, New or Radio, whole. */
     data class Shelf(val shelf: io.github.honeyslatt.music.core.model.Shelf) : Route

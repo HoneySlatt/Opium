@@ -66,7 +66,6 @@ import io.github.honeyslatt.music.ui.library.Artists
 import io.github.honeyslatt.music.ui.library.LibraryContext
 import io.github.honeyslatt.music.ui.library.LibraryRoot
 import io.github.honeyslatt.music.ui.library.Playlists
-import io.github.honeyslatt.music.ui.library.RecentlyAdded
 import io.github.honeyslatt.music.ui.library.Songs
 import io.github.honeyslatt.music.ui.nav.Navigator
 import io.github.honeyslatt.music.ui.nav.Route
@@ -184,7 +183,6 @@ private fun Page(tab: Tab, page: Route, c: LibraryContext, account: @Composable 
         Route.Albums -> Albums(c)
         Route.Artists -> Artists(c)
         Route.Songs -> Songs(c)
-        Route.RecentlyAdded -> RecentlyAdded(c)
         is Route.Album -> AlbumPage(c, page.id)
         is Route.Playlist -> PlaylistPage(c, page.id, page.known)
         is Route.LibraryArtist -> LibraryArtistPage(c, page.artist)

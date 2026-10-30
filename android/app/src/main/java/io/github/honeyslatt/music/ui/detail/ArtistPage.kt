@@ -176,7 +176,7 @@ private fun Latest(album: Album, onClick: () -> Unit) {
 /** Songs in columns of four that page sideways: Top Songs, Best New Songs. */
 fun LazyListScope.songColumns(title: String, tracks: List<Track>, onOpen: (() -> Unit)? = null, play: (Int) -> Unit) {
     if (tracks.isEmpty()) return
-    item { SectionHeader(title, onOpen) }
+    item { SectionHeader(title, onOpen = onOpen) }
     item {
         val state = rememberLazyListState()
         BoxWithConstraints(Modifier.fillMaxWidth()) {

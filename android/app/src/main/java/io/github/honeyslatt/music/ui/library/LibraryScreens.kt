@@ -49,6 +49,7 @@ import io.github.honeyslatt.music.ui.components.Line
 import io.github.honeyslatt.music.ui.components.ListPage
 import io.github.honeyslatt.music.ui.components.SectionHeader
 import io.github.honeyslatt.music.ui.components.SourceChips
+import io.github.honeyslatt.music.ui.components.Fold
 import io.github.honeyslatt.music.ui.components.TrackRow
 import io.github.honeyslatt.music.ui.components.byline
 import io.github.honeyslatt.music.ui.components.full
@@ -90,6 +91,7 @@ private const val RECENT_SHOWN = 66
 @Composable
 fun LibraryRoot(c: LibraryContext) {
     var source by rememberSaveable { mutableStateOf<ProviderKind?>(null) }
+    var sources by rememberSaveable { mutableStateOf(false) }
     val added = remember(c.lists.recentlyAdded.items, source) {
         newestFirst(c.lists.recentlyAdded.items).filter { source == null || it.provider() == source }.take(RECENT_SHOWN)
     }
@@ -106,22 +108,9 @@ fun LibraryRoot(c: LibraryContext) {
                 }
             }
         }
-        full { SectionHeader("Recently Added") { c.nav.push(Route.RecentlyAdded) } }
-        full { SourceChips(source, c.services) { source = it } }
+        full { SectionHeader("Recently Added", fold = Fold(sources) { sources = !sources }) }
+        full { SourceChips(sources, source, c.services) { source = it } }
         full { Spacer(Modifier.height(8.dp)) }
-        collections(c, added, c.lists.recentlyAdded)
-    }
-}
-
-@Composable
-fun RecentlyAdded(c: LibraryContext) {
-    var source by rememberSaveable { mutableStateOf<ProviderKind?>(null) }
-    val added = remember(c.lists.recentlyAdded.items, source) {
-        newestFirst(c.lists.recentlyAdded.items).filter { source == null || it.provider() == source }
-    }
-    GridPage(c.nav, "Recently Added") {
-        full { SourceChips(source, c.services) { source = it } }
-        full { Spacer(Modifier.height(10.dp)) }
         collections(c, added, c.lists.recentlyAdded)
     }
 }
@@ -271,6 +260,7 @@ fun songs(n: Int) = if (n == 1) "1 song" else "$n songs"
 @Composable
 fun Albums(c: LibraryContext) {
     var source by rememberSaveable { mutableStateOf<ProviderKind?>(null) }
+    var sources by rememberSaveable { mutableStateOf(false) }
     var searching by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
     var order by remember { mutableStateOf(c.core.setting("albums-sort")?.let { runCatching { AlbumSort.valueOf(it) }.getOrNull() } ?: AlbumSort.Added) }
@@ -304,9 +294,10 @@ fun Albums(c: LibraryContext) {
                 }
             },
         ),
+        fold = Fold(sources) { sources = !sources },
     ) {
         full { SearchReveal(searching, query, "Search Albums") { query = it } }
-        full { SourceChips(source, c.services) { source = it } }
+        full { SourceChips(sources, source, c.services) { source = it } }
         full { Spacer(Modifier.height(10.dp)) }
         if (shown.isEmpty()) {
             full { Empty(c.lists.albums, "No albums here", "Nothing matches this source.") }
@@ -347,6 +338,7 @@ fun Artists(c: LibraryContext) {
 @Composable
 fun Songs(c: LibraryContext) {
     var source by rememberSaveable { mutableStateOf<ProviderKind?>(null) }
+    var sources by rememberSaveable { mutableStateOf(false) }
     var searching by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
     var order by remember { mutableStateOf(c.core.setting("songs-sort")?.let { runCatching { SongSort.valueOf(it) }.getOrNull() } ?: SongSort.Name) }
@@ -385,9 +377,10 @@ fun Songs(c: LibraryContext) {
                 }
             },
         ),
+        fold = Fold(sources) { sources = !sources },
     ) {
         item { SearchReveal(searching, query, "Search Songs") { query = it } }
-        item { SourceChips(source, c.services) { source = it } }
+        item { SourceChips(sources, source, c.services) { source = it } }
         item { PlayShuffle(shown.isNotEmpty(), { c.playback.play(shown, 0) }, { c.playback.shuffle(shown) }) }
         if (shown.isEmpty()) item { Empty(listing, "No songs here", "Nothing matches this source.") }
         itemsIndexed(shown, key = { _, t -> t.id.provider.name + t.id.id }) { i, track -> TrackRow(track) { c.playback.play(shown, i) } }

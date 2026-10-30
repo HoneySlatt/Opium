@@ -264,7 +264,7 @@ fun LazyListScope.shelf(
     onOpen: (() -> Unit)? = null,
 ) {
     if (covers.isEmpty()) return
-    item { SectionHeader(title, onOpen) }
+    item { SectionHeader(title, onOpen = onOpen) }
     item {
         LazyRow(
             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 20.dp),

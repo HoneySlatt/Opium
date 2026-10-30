@@ -185,7 +185,7 @@ class Library(private val core: Core, private val scope: CoroutineScope) {
             val shownKept = shown.getOrPut(file) {
                 scope.async {
                     val old = withContext(Dispatchers.IO) { kept(file) }
-                    if (old.isNotEmpty()) set { it.copy(items = it.items + old, done = true) }
+                    if (old.isNotEmpty()) set { it.copy(items = it.items.with(provider, old, of), done = true) }
                     old.isNotEmpty()
                 }
             }.await()
@@ -198,18 +198,31 @@ class Library(private val core: Core, private val scope: CoroutineScope) {
                 } catch (e: MusicException) {
                     failed = e.message ?: e.toString()
                 }
-                if (!shownKept) set { it.more(fresh, true, failed) }
+                if (!shownKept) set { l -> l.copy(items = l.items.with(provider, fresh, of), done = true, error = failed ?: l.error) }
             } else {
                 pages(page) { items, done, error ->
                     fresh += items
                     failed = error
-                    if (!shownKept) set { it.more(items, done, error) }
+                    if (!shownKept) {
+                        set { l -> l.copy(items = l.items.with(provider, l.items.filter { of(it) == provider } + items, of), done = done, error = error ?: l.error) }
+                    }
                 }
             }
             if (failed != null) return@launch
-            if (shownKept) set { l -> l.copy(items = l.items.filter { of(it) != provider } + fresh, done = true) }
+            if (shownKept) set { l -> l.copy(items = l.items.with(provider, fresh, of), done = true) }
             withContext(Dispatchers.IO) { keep(file, fresh) }
         }
+    }
+
+    /**
+     * The list with `provider`'s items now `group`: each service's together,
+     * in the same order every time (Apple Music, SoundCloud, Navidrome), so
+     * that a list read again doesn't move.
+     */
+    private fun <T> List<T>.with(provider: ProviderKind, group: List<T>, of: (T) -> ProviderKind): List<T> {
+        val rest = filter { of(it) != provider }
+        val at = rest.indexOfFirst { of(it).ordinal > provider.ordinal }.takeIf { it >= 0 } ?: rest.size
+        return rest.take(at) + group + rest.drop(at)
     }
 
     private fun <T> Listing<T>.more(items: List<T>, done: Boolean, error: String?) =

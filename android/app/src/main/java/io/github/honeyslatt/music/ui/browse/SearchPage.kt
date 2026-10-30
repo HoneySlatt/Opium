@@ -34,6 +34,7 @@ import io.github.honeyslatt.music.core.model.ProviderKind
 import io.github.honeyslatt.music.core.model.SearchResults
 import io.github.honeyslatt.music.ui.Icons
 import io.github.honeyslatt.music.ui.actions.LocalActions
+import io.github.honeyslatt.music.ui.components.Fold
 import io.github.honeyslatt.music.ui.components.CoverCard
 import io.github.honeyslatt.music.ui.components.Glyph
 import io.github.honeyslatt.music.ui.components.ItemRow
@@ -67,6 +68,7 @@ fun SearchPage(c: LibraryContext) {
     var query by rememberSaveable { mutableStateOf("") }
     var library by remember { mutableStateOf(c.core.setting("search-scope") == "library") }
     var source by rememberSaveable { mutableStateOf<ProviderKind?>(null) }
+    var sources by rememberSaveable { mutableStateOf(false) }
     var recent by remember { mutableStateOf(c.core.setting("recent-searches")?.split('\n')?.filter { it.isNotBlank() }.orEmpty()) }
     val words = query.trim()
     val results by produceState<Loading<SearchResults>?>(null, words, library) {
@@ -84,7 +86,8 @@ fun SearchPage(c: LibraryContext) {
         recent = (listOf(words) + recent.filter { !it.equals(words, ignoreCase = true) }).take(RECENT)
         c.core.setSetting("recent-searches", recent.joinToString("\n"))
     }
-    ListPage(c.nav, "Search") {
+    // In the library, the title folds the source chips.
+    ListPage(c.nav, "Search", fold = if (library) Fold(sources) { sources = !sources } else null) {
         item { SearchReveal(true, query, if (library) "Your Library" else "Artists, Songs, Lyrics and More", focusOnOpen = false) { query = it } }
         item {
             Segmented(listOf("Apple Music", "Your Library"), if (library) 1 else 0) {
@@ -92,7 +95,7 @@ fun SearchPage(c: LibraryContext) {
                 c.core.setSetting("search-scope", if (library) "library" else "catalog")
             }
         }
-        if (library) item { SourceChips(source, c.services) { source = it } }
+        if (library) item { SourceChips(sources, source, c.services) { source = it } }
         val r = results
         when {
             r == null -> recentSearches(recent, onPick = { query = it }) {
