@@ -107,7 +107,7 @@ pub fn backdrop(app: &mut App) -> Option<[Color32; 3]> {
     };
     let light = app.theme.light;
     app.palette(&url)
-        .map(|p| p.map(|c| crate::palette::fit(c, light)))
+        .map(|p| p.map(|c| crate::palette::fit_header(c, light)))
 }
 
 /// The page under the top bar; returns how far it is scrolled.
@@ -823,15 +823,15 @@ pub struct Blob {
 
 /// Blobs over `base` as a coarse mesh, with per-vertex colours. With
 /// `fade_to_base`, a vertical gradient then dissolves them into `base`: clear to
-/// 18 %, `base` at 55 % opacity by 55 %, solid at the bottom.
+/// 30 %, `base` at 45 % opacity by 62 %, solid at the bottom.
 pub fn wash(ui: &Ui, rect: Rect, base: Color32, blobs: &[Blob], fade_to_base: bool) {
     let veil = |f: Vec2| {
-        if !fade_to_base || f.y < 0.18 {
+        if !fade_to_base || f.y < 0.30 {
             0.0
-        } else if f.y < 0.55 {
-            0.55 * (f.y - 0.18) / (0.55 - 0.18)
+        } else if f.y < 0.62 {
+            0.45 * (f.y - 0.30) / (0.62 - 0.30)
         } else {
-            0.55 + 0.45 * (f.y - 0.55) / 0.45
+            0.45 + 0.55 * (f.y - 0.62) / 0.38
         }
     };
     wash_with(ui, rect, base, blobs, veil);

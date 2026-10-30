@@ -19,3 +19,17 @@ pub fn fit(c: Color32, light: bool) -> Color32 {
     let [r, g, b, _] = c.to_srgba_unmultiplied();
     color(music_core::palette::fit([r, g, b], light))
 }
+
+/// Pull a colour into the band of a page header's wash: on a dark theme,
+/// brighter and more colourful than [`fit`] allows, for a wash that shows.
+pub fn fit_header(c: Color32, light: bool) -> Color32 {
+    if light {
+        return fit(c, true);
+    }
+    let [r, g, b, _] = c.to_srgba_unmultiplied();
+    let band = music_core::palette::Band {
+        lightness: (0.42, 0.66),
+        chroma: 0.24,
+    };
+    color(music_core::palette::fit_in([r, g, b], band))
+}

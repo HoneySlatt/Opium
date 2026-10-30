@@ -721,30 +721,30 @@ fn hero(
 }
 
 /// Three radial blobs of the cover's colours behind the header, fading into
-/// `base`: colour 1 top left behind the artwork at 92 %, colour 2 top centre at
-/// 72 %, colour 3 on the right at 62 %.
+/// `base`: colour 1 top left behind the artwork at full strength, colour 2 top
+/// centre at 90 %, colour 3 on the right at 82 %.
 pub(super) fn cover_wash(ui: &Ui, theme: &Theme, rect: Rect, [c1, c2, c3]: [Color32; 3]) {
     let blobs = [
         Blob {
             center: vec2(0.10, 0.04),
-            radii: vec2(0.48, 0.78),
+            radii: vec2(0.56, 0.90),
             color: c1,
-            alpha: 0.92,
-            fade: 0.72,
+            alpha: 1.0,
+            fade: 0.82,
         },
         Blob {
             center: vec2(0.58, -0.06),
-            radii: vec2(0.46, 0.70),
+            radii: vec2(0.54, 0.82),
             color: c2,
-            alpha: 0.72,
-            fade: 0.74,
+            alpha: 0.90,
+            fade: 0.82,
         },
         Blob {
             center: vec2(1.0, 0.26),
-            radii: vec2(0.40, 0.70),
+            radii: vec2(0.48, 0.82),
             color: c3,
-            alpha: 0.62,
-            fade: 0.72,
+            alpha: 0.82,
+            fade: 0.82,
         },
     ];
     wash(ui, rect, theme.base, &blobs, true);
