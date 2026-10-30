@@ -12,9 +12,8 @@
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
-use music_core::model::{Album, Artist, ProviderKind, Track};
-
-use crate::app::fold;
+use crate::model::{Album, Artist, ProviderKind, Track};
+use crate::text::fold;
 
 /// How much songs' lengths may differ and still be one song.
 const SAME_LENGTH: Duration = Duration::from_secs(3);
@@ -172,7 +171,7 @@ pub fn artists(artists: &[Artist]) -> HashSet<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use music_core::model::ItemId;
+    use crate::model::ItemId;
 
     fn track(provider: ProviderKind, title: &str, artist: &str, secs: u64) -> Track {
         Track {

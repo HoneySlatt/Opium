@@ -140,24 +140,7 @@ struct Searched {
     numbers: Arc<Vec<u32>>,
 }
 
-/// Lower case, with the accents French and its neighbours use taken off, so
-/// that `cafe` finds `Café`.
-pub fn fold(s: &str) -> String {
-    s.to_lowercase()
-        .chars()
-        .map(|c| match c {
-            'à' | 'á' | 'â' | 'ã' | 'ä' | 'å' => 'a',
-            'ç' => 'c',
-            'è' | 'é' | 'ê' | 'ë' => 'e',
-            'ì' | 'í' | 'î' | 'ï' => 'i',
-            'ñ' => 'n',
-            'ò' | 'ó' | 'ô' | 'õ' | 'ö' => 'o',
-            'ù' | 'ú' | 'û' | 'ü' => 'u',
-            'ý' | 'ÿ' => 'y',
-            c => c,
-        })
-        .collect()
-}
+pub use music_core::text::fold;
 
 /// An animated cover playing: its video and size, the decoder, and the
 /// texture its latest frame went into.
@@ -1690,12 +1673,12 @@ impl App {
         let Some(Loaded::Ready((album, _))) = self.albums.get(id) else {
             return Vec::new();
         };
-        let key = crate::dedupe::album_key(album);
+        let key = music_core::dedupe::album_key(album);
         let twins: Vec<ItemId> = self
             .library_albums
             .items
             .iter()
-            .filter(|a| a.id.provider != id.provider && crate::dedupe::album_key(a) == key)
+            .filter(|a| a.id.provider != id.provider && music_core::dedupe::album_key(a) == key)
             .map(|a| a.id.clone())
             .collect();
         self.twins.insert(id.clone(), (version, twins.clone()));
@@ -1729,7 +1712,7 @@ impl App {
             return Some(whole.clone());
         }
         let slices: Vec<&[Track]> = copies.iter().map(|c| c.as_slice()).collect();
-        let whole = Arc::new(crate::dedupe::album_tracks(&slices));
+        let whole = Arc::new(music_core::dedupe::album_tracks(&slices));
         self.whole_albums
             .insert(id.clone(), (copies.len(), whole.clone()));
         Some(whole)
@@ -1749,8 +1732,8 @@ impl App {
             return copies.clone();
         }
         let copies = Arc::new(match list {
-            0 => crate::dedupe::albums(&self.library_albums.items),
-            1 => crate::dedupe::artists(&self.library_artists.items),
+            0 => music_core::dedupe::albums(&self.library_albums.items),
+            1 => music_core::dedupe::artists(&self.library_artists.items),
             _ => {
                 // The albums among them, as albums.
                 let (at, albums): (Vec<usize>, Vec<Album>) = self
@@ -1763,7 +1746,7 @@ impl App {
                         _ => None,
                     })
                     .unzip();
-                crate::dedupe::albums(&albums)
+                music_core::dedupe::albums(&albums)
                     .into_iter()
                     .map(|k| at[k])
                     .collect()
@@ -2022,7 +2005,7 @@ impl App {
                 .filter(|t| t.id.provider == ProviderKind::Navidrome)
             {
                 index
-                    .entry(crate::dedupe::song_key(song))
+                    .entry(music_core::dedupe::song_key(song))
                     .or_default()
                     .push(song.clone());
             }
@@ -2030,9 +2013,9 @@ impl App {
         }
         let (_, index) = self.server_songs.as_ref()?;
         index
-            .get(&crate::dedupe::song_key(track))?
+            .get(&music_core::dedupe::song_key(track))?
             .iter()
-            .find(|copy| crate::dedupe::same_song(copy, track))
+            .find(|copy| music_core::dedupe::same_song(copy, track))
             .cloned()
     }
 

@@ -226,7 +226,7 @@ fn rebuild_order(app: &mut App) {
     };
     // Across services, one copy of a song; within one, all of its own.
     let copies = if view.source.is_none() {
-        crate::dedupe::songs(songs)
+        music_core::dedupe::songs(songs)
     } else {
         Default::default()
     };

@@ -5,7 +5,6 @@ mod backend;
 mod cache;
 mod color;
 mod covers;
-mod dedupe;
 mod fonts;
 mod icons;
 mod mpris;

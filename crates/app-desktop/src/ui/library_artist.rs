@@ -38,7 +38,7 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
         }
     }
     let albums = gathered.map(|all| {
-        let copies = crate::dedupe::albums(&all);
+        let copies = music_core::dedupe::albums(&all);
         let kept: Vec<Album> = all
             .into_iter()
             .enumerate()

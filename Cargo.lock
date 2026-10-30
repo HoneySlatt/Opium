@@ -2726,6 +2726,7 @@ name = "music-core"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "image",
  "rand 0.10.3",
  "serde",
  "thiserror 2.0.21",

@@ -1794,8 +1794,8 @@ async fn search(
         .flat_map(|r| r.albums.clone())
         .collect();
     let (worse_tracks, worse_albums) = (
-        crate::dedupe::songs(&tracks),
-        crate::dedupe::albums(&albums),
+        music_core::dedupe::songs(&tracks),
+        music_core::dedupe::albums(&albums),
     );
     let (mut t, mut a) = (0, 0);
     let [nd, apple, sc] = sides.map(|side| {
