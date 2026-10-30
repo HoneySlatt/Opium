@@ -913,6 +913,23 @@ impl App {
         !self.settings.services_off.contains(&provider)
     }
 
+    /// The services signed in and on: those the source filters offer.
+    pub fn services_in_use(&self) -> Vec<ProviderKind> {
+        let signed_in = |provider| match provider {
+            ProviderKind::AppleMusic => !matches!(self.connection, Connection::NotSignedIn),
+            ProviderKind::SoundCloud => !matches!(self.soundcloud, SoundCloudState::NotSignedIn),
+            ProviderKind::Navidrome => !matches!(self.navidrome, SoundCloudState::NotSignedIn),
+        };
+        [
+            ProviderKind::AppleMusic,
+            ProviderKind::SoundCloud,
+            ProviderKind::Navidrome,
+        ]
+        .into_iter()
+        .filter(|&p| self.service_on(p) && signed_in(p))
+        .collect()
+    }
+
     /// Turn a service on, loading its library again, or off: its songs,
     /// albums, artists and playlists leave the library, and it is asked
     /// nothing more, its sign-in kept.
@@ -920,6 +937,17 @@ impl App {
         self.settings.services_off.retain(|p| *p != provider);
         if !on {
             self.settings.services_off.push(provider);
+            // A page narrowed to it shows them all again.
+            let was = Some(provider);
+            if self.grid_source == was {
+                self.set_grid_source(None);
+            }
+            if self.songs_view.source == was {
+                self.set_songs_source(None);
+            }
+            if self.search_source == was {
+                self.set_search_source(None);
+            }
         }
         self.settings.save();
         self.backend.send(Request::SetService { provider, on });

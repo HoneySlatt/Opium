@@ -170,6 +170,7 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, query: &str) -> f32 {
                     left + width,
                     content.top() + 73.0,
                     app.search_source,
+                    &app.services_in_use(),
                 )
             {
                 app.set_search_source(source);

@@ -138,6 +138,7 @@ fn header(app: &mut App, ui: &mut Ui, theme: &Theme, top: f32, left: f32, width:
             search.left - 10.0,
             top + 73.0,
             app.songs_view.source,
+            &app.services_in_use(),
         )
     {
         app.set_songs_source(source);
@@ -299,17 +300,19 @@ pub(super) fn sources_shown(ui: &Ui, theme: &Theme, id: Id, title: Rect) -> (boo
     (shown, end)
 }
 
-/// The source filter chips (All · Apple Music · SoundCloud · Navidrome), ending
-/// at `right`. Returns the source clicked.
+/// The source filter chips (All · Apple Music · SoundCloud · Navidrome), the
+/// services of `services` only, ending at `right`. Returns the source
+/// clicked.
 pub(super) fn source_chips(
     ui: &Ui,
     theme: &Theme,
     right: f32,
     top: f32,
     current: Option<ProviderKind>,
+    services: &[ProviderKind],
 ) -> Option<Option<ProviderKind>> {
     let mut clicked = None;
-    let chips: [(Option<ProviderKind>, Option<Icon>, &str); 4] = [
+    let mut chips: Vec<(Option<ProviderKind>, Option<Icon>, &str)> = vec![
         (None, None, "All"),
         (
             Some(ProviderKind::AppleMusic),
@@ -327,6 +330,7 @@ pub(super) fn source_chips(
             "Navidrome",
         ),
     ];
+    chips.retain(|(source, _, _)| source.is_none_or(|s| services.contains(&s)));
     let font_chip = font(13.0, Weight::Regular);
     let widths: Vec<f32> = chips
         .iter()

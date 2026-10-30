@@ -669,6 +669,7 @@ fn page(app: &mut App, ui: &mut Ui, pad: f32, kind: Kind) -> f32 {
                     chips_right,
                     content.top() + TITLE_Y - 14.0,
                     app.grid_source,
+                    &app.services_in_use(),
                 )
             {
                 app.set_grid_source(source);
