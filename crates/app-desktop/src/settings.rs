@@ -131,8 +131,10 @@ impl Settings {
         if let Some(dir) = path.parent() {
             let _ = std::fs::create_dir_all(dir);
         }
+        // Written aside, then moved over: a crash midway leaves the last.
         if let Ok(s) = toml::to_string(self) {
-            let _ = std::fs::write(path, s);
+            let partial = path.with_extension("toml.part");
+            let _ = std::fs::write(&partial, s).and_then(|()| std::fs::rename(&partial, &path));
         }
     }
 }

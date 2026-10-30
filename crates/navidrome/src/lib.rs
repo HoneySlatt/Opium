@@ -31,13 +31,23 @@ const STATION: &str = "similar:";
 
 /// How the app signs in to a server: its address, the user, and a salted
 /// token in place of the password.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Credentials {
     /// `http://0.0.0.0:4533`, without the trailing slash.
     pub url: String,
     pub user: String,
     pub salt: String,
     pub token: String,
+}
+
+/// The token and salt sign in as the password does: never printed.
+impl std::fmt::Debug for Credentials {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Credentials")
+            .field("url", &self.url)
+            .field("user", &self.user)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Credentials {
@@ -158,6 +168,10 @@ impl Navidrome {
     /// Sign in to the server; a wrong password or user is `NotSignedIn`.
     pub async fn connect(credentials: Credentials) -> Result<Self> {
         let http = reqwest::Client::builder()
+            // A server out of reach, or a download that stalls, fails rather
+            // than hang what waits on it.
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .read_timeout(std::time::Duration::from_secs(30))
             .build()
             .map_err(|e| Error::Network(e.to_string()))?;
         let urls = Urls {
@@ -190,7 +204,7 @@ impl Navidrome {
             .query(query)
             .send()
             .await
-            .map_err(|e| Error::Network(format!("Navidrome {view}: {e}")))?;
+            .map_err(|e| Error::Network(format!("Navidrome {view}: {}", e.without_url())))?;
         if !resp.status().is_success() {
             return Err(Error::Protocol(format!(
                 "Navidrome {view}: HTTP {}",
@@ -200,7 +214,7 @@ impl Navidrome {
         let envelope: types::Envelope<types::Body> = resp
             .json()
             .await
-            .map_err(|e| Error::Protocol(format!("Navidrome {view}: {e}")))?;
+            .map_err(|e| Error::Protocol(format!("Navidrome {view}: {}", e.without_url())))?;
         let response = envelope.response;
         if response.status != "ok" {
             let error = response.error.unwrap_or(types::ApiError {
@@ -224,7 +238,8 @@ impl Navidrome {
             encode(&track.id),
             self.urls.auth
         );
-        let failed = |e: reqwest::Error| Error::Network(format!("Navidrome stream: {e}"));
+        let failed =
+            |e: reqwest::Error| Error::Network(format!("Navidrome stream: {}", e.without_url()));
         let mut resp = self.http.get(&url).send().await.map_err(failed)?;
         if !resp.status().is_success() {
             return Err(Error::Playback(format!(
@@ -261,7 +276,7 @@ impl Navidrome {
                     Ok(Some(bytes)) if !feed.push(&bytes) => return,
                     Ok(Some(_)) => {}
                     Ok(None) => return feed.end(None),
-                    Err(e) => return feed.end(Some(e.to_string())),
+                    Err(e) => return feed.end(Some(e.without_url().to_string())),
                 }
             }
         });

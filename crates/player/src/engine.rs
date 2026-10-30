@@ -273,10 +273,15 @@ impl Engine {
             Ok(actual) => actual,
             Err(e) => {
                 let token = front.item.token;
+                let decoded_all = front.decoded_all;
                 self.emit(Event::Error {
                     token: Some(token),
                     message: e.to_string(),
                 });
+                // The track decoded to its end: what was parked follows it again.
+                if decoded_all {
+                    self.queue_next();
+                }
                 return;
             }
         };
@@ -382,12 +387,14 @@ impl Engine {
                     self.queue_next();
                 }
                 Err(e) => {
+                    // The track ends where it broke, and the next one follows.
                     segment.decoded_all = true;
                     let token = segment.item.token;
                     self.emit(Event::Error {
                         token: Some(token),
                         message: e.to_string(),
                     });
+                    self.queue_next();
                 }
             }
         }

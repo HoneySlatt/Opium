@@ -263,7 +263,12 @@ fn find_cookies(reply: &serde_json::Value, site: Site<'_>) -> HashMap<String, St
         .filter(|c| {
             c["domain"]
                 .as_str()
-                .is_some_and(|d| d.trim_start_matches('.').ends_with(site.domain))
+                .map(|d| d.trim_start_matches('.'))
+                .is_some_and(|d| {
+                    d == site.domain
+                        || d.strip_suffix(site.domain)
+                            .is_some_and(|sub| sub.ends_with('.'))
+                })
         })
         .filter_map(|c| Some((c["name"].as_str()?, c["value"].as_str()?)))
         .filter(|(name, value)| {

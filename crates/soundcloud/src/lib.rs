@@ -37,10 +37,17 @@ const IDS_AT_ONCE: usize = 50;
 const PLAYLIST_MAX: usize = 500;
 
 /// The user's tokens, as the browser keeps them.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Clone, Default, PartialEq, Eq)]
 pub struct Tokens {
     pub oauth: String,
     pub refresh: Option<String>,
+}
+
+/// Never printed.
+impl std::fmt::Debug for Tokens {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Tokens").finish_non_exhaustive()
+    }
 }
 
 /// Told the tokens each time they are renewed, to keep them.
@@ -51,6 +58,10 @@ pub struct SoundCloud {
     client_id: RwLock<String>,
     tokens: Mutex<Tokens>,
     on_tokens: OnTokens,
+    /// Held while the tokens are renewed, and the client id read again: a
+    /// refresh token serves once, so requests refused together renew once.
+    renewing: tokio::sync::Mutex<()>,
+    rescraping: tokio::sync::Mutex<()>,
     /// The signed-in user.
     me: types::User,
     /// What each station has played, so that it goes on without repeating.
@@ -72,6 +83,10 @@ impl SoundCloud {
     pub async fn connect(tokens: Tokens, on_tokens: OnTokens) -> Result<Self> {
         let http = reqwest::Client::builder()
             .user_agent(USER_AGENT)
+            // A server out of reach, or a download that stalls, fails rather
+            // than hang what waits on it.
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .read_timeout(std::time::Duration::from_secs(30))
             .build()
             .map_err(|e| Error::Network(e.to_string()))?;
         let client_id = client_id::scrape(&http).await?;
@@ -80,6 +95,8 @@ impl SoundCloud {
             client_id: RwLock::new(client_id),
             tokens: Mutex::new(tokens),
             on_tokens,
+            renewing: tokio::sync::Mutex::new(()),
+            rescraping: tokio::sync::Mutex::new(()),
             me: types::User::default(),
             stations: Mutex::default(),
         };
@@ -145,14 +162,22 @@ impl SoundCloud {
         } else {
             format!("{API}{path}")
         };
+        // The token goes to SoundCloud's API only, not wherever a URL it
+        // handed back points.
+        let ours = reqwest::Url::parse(&url).is_ok_and(|u| {
+            u.scheme() == "https"
+                && u.host_str()
+                    .is_some_and(|h| h == "soundcloud.com" || h.ends_with(".soundcloud.com"))
+        });
         let (mut renewed, mut rescraped) = (false, false);
         loop {
+            let client_id = self.client_id();
             let mut request = self
                 .http
                 .request(method.clone(), &url)
-                .query(&[("client_id", self.client_id().as_str())])
+                .query(&[("client_id", client_id.as_str())])
                 .query(query);
-            let token = self.token();
+            let token = if ours { self.token() } else { String::new() };
             if !token.is_empty() {
                 request = request.header("Authorization", format!("OAuth {token}"));
             }
@@ -164,17 +189,21 @@ impl SoundCloud {
                 .header("Referer", format!("{WEB}/"))
                 .send()
                 .await
-                .map_err(|e| Error::Network(format!("{url}: {e}")))?;
+                .map_err(|e| Error::Network(format!("{url}: {}", e.without_url())))?;
             match resp.status().as_u16() {
-                401 if !renewed => {
+                401 if !renewed && !token.is_empty() => {
                     renewed = true;
-                    self.renew().await?;
+                    self.renew(&token).await?;
                 }
                 401 => return Err(Error::NotSignedIn),
                 403 if !rescraped => {
                     rescraped = true;
-                    let id = client_id::scrape(&self.http).await?;
-                    *self.client_id.write().unwrap_or_else(|e| e.into_inner()) = id;
+                    let _scraping = self.rescraping.lock().await;
+                    // Read again meanwhile, for another request refused.
+                    if self.client_id() == client_id {
+                        let id = client_id::scrape(&self.http).await?;
+                        *self.client_id.write().unwrap_or_else(|e| e.into_inner()) = id;
+                    }
                 }
                 429 => {
                     return Err(Error::Protocol(
@@ -197,8 +226,13 @@ impl SoundCloud {
     /// Renew the token with the refresh token, as the web player's server
     /// does: OAuth's `refresh_token` grant, for the app the token was issued
     /// to (its `client_id` claim). A refresh token serves once; both come
-    /// back new.
-    async fn renew(&self) -> Result<()> {
+    /// back new. `refused` is the token refused: one renewed meanwhile, for
+    /// another request, is taken as it is.
+    async fn renew(&self, refused: &str) -> Result<()> {
+        let _renewing = self.renewing.lock().await;
+        if self.token() != refused {
+            return Ok(());
+        }
         let tokens = self
             .tokens
             .lock()

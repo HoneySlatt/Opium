@@ -1,7 +1,7 @@
 //! Provider and network work on a tokio runtime, off the UI thread. The UI sends
 //! [`Request`]s and picks up [`Reply`]s each frame; every reply wakes it up.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::mpsc;
 
@@ -222,6 +222,8 @@ pub enum Reply {
     },
     NotSignedIn,
     Failed(String),
+    /// Apple Music couldn't be reached.
+    CouldntConnect(String),
     /// A page of a service's songs, or with `whole` all of them, to replace
     /// those of it shown: the list kept from last time, or the fresh one
     /// that follows it.
@@ -341,22 +343,43 @@ fn soundcloud_dir() -> PathBuf {
     apple_music_dir().with_file_name("soundcloud")
 }
 
-/// Keep SoundCloud's tokens, readable by the user only.
-fn keep_soundcloud_tokens(tokens: &soundcloud::Tokens) {
+/// A directory only the user can open, made if missing.
+fn private_dir(dir: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+    std::fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(dir)?;
+    std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))
+}
+
+/// Write a secret readable by the user only: aside, then moved over, so
+/// that a crash midway leaves the last one whole.
+fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
     use std::os::unix::fs::OpenOptionsExt;
-    let dir = soundcloud_dir();
-    let _ = std::fs::create_dir_all(&dir);
-    let json = serde_json::json!({ "oauth": tokens.oauth, "refresh": tokens.refresh });
-    if let Ok(mut file) = std::fs::OpenOptions::new()
+    if let Some(dir) = path.parent() {
+        private_dir(dir)?;
+    }
+    let partial = path.with_extension("part");
+    let mut file = std::fs::OpenOptions::new()
         .write(true)
         .create(true)
         .truncate(true)
         .mode(0o600)
-        .open(dir.join("tokens.json"))
-    {
-        let _ = file.write_all(json.to_string().as_bytes());
-    }
+        .open(&partial)?;
+    file.write_all(bytes)?;
+    file.sync_all()?;
+    std::fs::rename(&partial, path)
+}
+
+/// Keep SoundCloud's tokens, readable by the user only.
+fn keep_soundcloud_tokens(tokens: &soundcloud::Tokens) {
+    let json = serde_json::json!({ "oauth": tokens.oauth, "refresh": tokens.refresh });
+    let _ = write_private(
+        &soundcloud_dir().join("tokens.json"),
+        json.to_string().as_bytes(),
+    );
 }
 
 fn kept_soundcloud_tokens() -> Option<soundcloud::Tokens> {
@@ -377,21 +400,8 @@ fn navidrome_file() -> PathBuf {
 
 /// Keep the server's sign-in, readable by the user only.
 fn keep_navidrome(credentials: &navidrome::Credentials) -> Result<(), String> {
-    use std::io::Write;
-    use std::os::unix::fs::OpenOptionsExt;
-    let path = navidrome_file();
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    }
     let json = serde_json::to_string(credentials).map_err(|e| e.to_string())?;
-    let mut file = std::fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(path)
-        .map_err(|e| e.to_string())?;
-    file.write_all(json.as_bytes()).map_err(|e| e.to_string())
+    write_private(&navidrome_file(), json.as_bytes()).map_err(|e| e.to_string())
 }
 
 /// Connect to the Navidrome server kept, telling the UI how it went.
@@ -445,7 +455,7 @@ async fn connect_soundcloud(replies: &Replies) -> Option<Arc<SoundCloud>> {
 /// in and close it, and keep the tokens.
 async fn sign_in_soundcloud() -> Result<(), String> {
     let profile = soundcloud_dir().join("browser-profile");
-    std::fs::create_dir_all(&profile).map_err(|e| e.to_string())?;
+    private_dir(&profile).map_err(|e| e.to_string())?;
     let browser = sign_in_browser();
     let tokens = soundcloud::signin::sign_in(
         browser.as_ref(),
@@ -500,9 +510,29 @@ impl Backend {
     }
 }
 
-/// The browser the sign-in opens: `MUSIC_BROWSER`, else Brave Origin.
+/// The browser the sign-in opens: `MUSIC_BROWSER`, else the first
+/// Chromium-family browser on the `PATH`.
 fn sign_in_browser() -> std::ffi::OsString {
-    std::env::var_os("MUSIC_BROWSER").unwrap_or_else(|| "brave-origin".into())
+    const BROWSERS: [&str; 9] = [
+        "brave-origin",
+        "brave",
+        "brave-browser",
+        "chromium",
+        "chromium-browser",
+        "google-chrome-stable",
+        "google-chrome",
+        "vivaldi",
+        "microsoft-edge",
+    ];
+    if let Some(browser) = std::env::var_os("MUSIC_BROWSER") {
+        return browser;
+    }
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    BROWSERS
+        .iter()
+        .find(|b| std::env::split_paths(&path).any(|dir| dir.join(b).is_file()))
+        .unwrap_or(&"chromium")
+        .into()
 }
 
 /// Connect with the saved token, telling the UI how it went.
@@ -523,7 +553,7 @@ async fn connect(replies: &Replies) -> Option<Arc<AppleMusic>> {
             None
         }
         Err(e) => {
-            replies.send(Reply::Failed(e.to_string()));
+            replies.send(Reply::CouldntConnect(e.to_string()));
             None
         }
     }
@@ -532,11 +562,9 @@ async fn connect(replies: &Replies) -> Option<Arc<AppleMusic>> {
 /// Open the browser on Apple's sign-in page, wait for the user, and save the
 /// token readable by the user only, where the `am` example keeps it too.
 async fn sign_in() -> Result<(), String> {
-    use std::io::Write;
-    use std::os::unix::fs::OpenOptionsExt;
     let dir = apple_music_dir();
     let profile = dir.join("browser-profile");
-    std::fs::create_dir_all(&profile).map_err(|e| e.to_string())?;
+    private_dir(&profile).map_err(|e| e.to_string())?;
     let browser = sign_in_browser();
     let token = apple_music::signin::sign_in(
         browser.as_ref(),
@@ -545,14 +573,7 @@ async fn sign_in() -> Result<(), String> {
     )
     .await
     .map_err(|e| e.to_string())?;
-    let mut file = std::fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(dir.join("media-user-token"))
-        .map_err(|e| e.to_string())?;
-    file.write_all(token.as_bytes()).map_err(|e| e.to_string())
+    write_private(&dir.join("media-user-token"), token.as_bytes()).map_err(|e| e.to_string())
 }
 
 async fn run(
@@ -562,24 +583,34 @@ async fn run(
     off: Vec<ProviderKind>,
 ) {
     let on = |p| !off.contains(&p);
-    let mut apple = match on(ProviderKind::AppleMusic) {
-        true => connect(&replies).await,
-        false => None,
-    };
-    let mut sc = match on(ProviderKind::SoundCloud) {
-        true => connect_soundcloud(&replies).await,
-        false => None,
-    };
-    let mut nd = match on(ProviderKind::Navidrome) {
-        true => connect_navidrome(&replies).await,
-        false => None,
-    };
+    // All at once: a server out of reach holds up none of the others.
+    let (mut apple, mut sc, mut nd) = tokio::join!(
+        async {
+            match on(ProviderKind::AppleMusic) {
+                true => connect(&replies).await,
+                false => None,
+            }
+        },
+        async {
+            match on(ProviderKind::SoundCloud) {
+                true => connect_soundcloud(&replies).await,
+                false => None,
+            }
+        },
+        async {
+            match on(ProviderKind::Navidrome) {
+                true => connect_navidrome(&replies).await,
+                false => None,
+            }
+        },
+    );
     let cdm = widevine::locate()
         .ok_or_else(|| "no Widevine module found: install Brave, Chrome or Firefox".to_owned())
         .and_then(|path| widevine::Cdm::open(&path).map_err(|e| e.to_string()));
 
     let http = reqwest::Client::new();
     let finder = Arc::new(lyrics::Finder::new());
+    let mut loading = Loading::default();
     let mut warming: Option<tokio::task::JoinHandle<()>> = None;
     while let Some(request) = requests.recv().await {
         let replies = replies.clone();
@@ -604,25 +635,40 @@ async fn run(
             }
             Request::SetService { provider, on } => {
                 match (provider, on) {
-                    (ProviderKind::AppleMusic, false) => apple = None,
-                    (ProviderKind::SoundCloud, false) => sc = None,
-                    (ProviderKind::Navidrome, false) => nd = None,
+                    (ProviderKind::AppleMusic, false) => {
+                        apple = None;
+                        loading.stop(provider);
+                    }
+                    (ProviderKind::SoundCloud, false) => {
+                        sc = None;
+                        loading.stop(provider);
+                    }
+                    (ProviderKind::Navidrome, false) => {
+                        nd = None;
+                        loading.stop(provider);
+                    }
                     (ProviderKind::AppleMusic, true) => {
                         apple = connect(&replies).await;
                         if let Some(am) = apple.clone() {
-                            tokio::spawn(load_library(am, replies));
+                            loading.start(ProviderKind::AppleMusic, load_library(am, replies));
                         }
                     }
                     (ProviderKind::SoundCloud, true) => {
                         sc = connect_soundcloud(&replies).await;
                         if let Some(sc) = sc.clone() {
-                            tokio::spawn(load_soundcloud_library(sc, replies));
+                            loading.start(
+                                ProviderKind::SoundCloud,
+                                load_soundcloud_library(sc, replies),
+                            );
                         }
                     }
                     (ProviderKind::Navidrome, true) => {
                         nd = connect_navidrome(&replies).await;
                         if let Some(nd) = nd.clone() {
-                            tokio::spawn(load_navidrome_library(nd, replies));
+                            loading.start(
+                                ProviderKind::Navidrome,
+                                load_navidrome_library(nd, replies),
+                            );
                         }
                     }
                 }
@@ -643,7 +689,10 @@ async fn run(
             Request::ReconnectSoundCloud => {
                 sc = connect_soundcloud(&replies).await;
                 if let Some(sc) = sc.clone() {
-                    tokio::spawn(load_soundcloud_library(sc, replies));
+                    loading.start(
+                        ProviderKind::SoundCloud,
+                        load_soundcloud_library(sc, replies),
+                    );
                 }
                 continue;
             }
@@ -668,7 +717,10 @@ async fn run(
                         replies.send(Reply::Navidrome(Ok(Some(server.user().to_owned()))));
                         let server = Arc::new(server);
                         nd = Some(server.clone());
-                        tokio::spawn(load_navidrome_library(server, replies));
+                        loading.start(
+                            ProviderKind::Navidrome,
+                            load_navidrome_library(server, replies),
+                        );
                     }
                     Err(Error::NotSignedIn) => replies.send(Reply::SignedInNavidrome(Err(
                         "the server didn't take this user and password".into(),
@@ -680,13 +732,16 @@ async fn run(
             // Every service at once.
             Request::Library => {
                 if let Some(am) = apple.clone() {
-                    tokio::spawn(load_library(am, replies.clone()));
+                    loading.start(ProviderKind::AppleMusic, load_library(am, replies.clone()));
                 }
                 if let Some(sc) = sc.clone() {
-                    tokio::spawn(load_soundcloud_library(sc, replies.clone()));
+                    loading.start(
+                        ProviderKind::SoundCloud,
+                        load_soundcloud_library(sc, replies.clone()),
+                    );
                 }
                 if let Some(nd) = nd.clone() {
-                    tokio::spawn(load_navidrome_library(nd, replies));
+                    loading.start(ProviderKind::Navidrome, load_navidrome_library(nd, replies));
                 }
                 continue;
             }
@@ -770,14 +825,7 @@ async fn run(
         if target(&request) == Some(ProviderKind::Navidrome) {
             match nd.clone() {
                 Some(nd) => navidrome_request(nd, request, replies, &mut warming),
-                None => {
-                    if let Request::Fetch { token, .. } | Request::Warm { token, .. } = request {
-                        replies.send(Reply::Fetched {
-                            token,
-                            result: Err("Navidrome isn't connected".into()),
-                        });
-                    }
-                }
+                None => unanswered(request, "Navidrome", &replies),
             }
             continue;
         }
@@ -787,26 +835,14 @@ async fn run(
                 Some(sc) => {
                     soundcloud_request(sc, request, replies, &mut warming, cdm.clone().ok());
                 }
-                None => {
-                    if let Request::Fetch { token, .. } | Request::Warm { token, .. } = request {
-                        replies.send(Reply::Fetched {
-                            token,
-                            result: Err("SoundCloud isn't connected".into()),
-                        });
-                    }
-                }
+                None => unanswered(request, "SoundCloud", &replies),
             }
             continue;
         }
-        // Without a connection there is nothing to ask; a track to play
-        // still hears why.
+        // Without a connection there is nothing to ask; what waits for an
+        // answer still hears why.
         let Some(am) = apple.clone() else {
-            if let Request::Fetch { token, .. } | Request::Warm { token, .. } = request {
-                replies.send(Reply::Fetched {
-                    token,
-                    result: Err("Apple Music isn't connected".into()),
-                });
-            }
+            unanswered(request, "Apple Music", &replies);
             continue;
         };
         let Some(request) = shared_request(am.clone(), request, replies.clone()) else {
@@ -1285,13 +1321,66 @@ fn shared_request(p: Arc<dyn Provider>, request: Request, replies: Replies) -> O
 /// The first of a song's artists, as services join several in one name.
 fn first_artist(artists: &[String]) -> String {
     let first = artists.first().map_or("", String::as_str);
-    let lower = first.to_lowercase();
+    // ASCII lowercasing keeps the byte offsets of the name's own.
+    let lower = first.to_ascii_lowercase();
     let cut = [" & ", ", ", " feat", " ft.", " x "]
         .iter()
         .filter_map(|sep| lower.find(sep))
         .min()
         .unwrap_or(first.len());
     first[..cut].trim().to_owned()
+}
+
+/// Each service's library as it loads: one load at a time, the newer one
+/// (after a sign-in, or turned back on) calling off the last, so that two
+/// never add the same songs.
+#[derive(Default)]
+struct Loading(std::collections::HashMap<ProviderKind, tokio::task::AbortHandle>);
+
+impl Loading {
+    fn start(
+        &mut self,
+        provider: ProviderKind,
+        load: impl std::future::Future<Output = ()> + Send + 'static,
+    ) {
+        self.stop(provider);
+        self.0.insert(provider, tokio::spawn(load).abort_handle());
+    }
+
+    fn stop(&mut self, provider: ProviderKind) {
+        if let Some(load) = self.0.remove(&provider) {
+            load.abort();
+        }
+    }
+}
+
+/// Tell what waits on `request` that `service` isn't there to answer it, so
+/// that it shows why rather than load for ever.
+fn unanswered(request: Request, service: &str, replies: &Replies) {
+    let e = format!("{service} isn't connected");
+    let reply = match request {
+        Request::Fetch { token, .. } | Request::Warm { token, .. } => Reply::Fetched {
+            token,
+            result: Err(e),
+        },
+        Request::Album(id) => Reply::Album { id, result: Err(e) },
+        Request::Artist(id) => Reply::Artist { id, result: Err(e) },
+        Request::Playlist(id) => Reply::PlaylistTracks {
+            id,
+            result: Err(e),
+            done: true,
+            whole: true,
+        },
+        Request::Lyrics(id) => Reply::Lyrics { id, result: Err(e) },
+        Request::AlbumExtras(id) => Reply::AlbumExtras { id, result: Err(e) },
+        Request::LibraryArtistAlbums(id) => Reply::LibraryArtistAlbums { id, result: Err(e) },
+        Request::StationTracks(id) => Reply::StationTracks { id, result: Err(e) },
+        Request::Home => Reply::Home(Err(e)),
+        Request::Radio => Reply::Radio(Err(e)),
+        Request::NewMusic => Reply::NewMusic(Err(e)),
+        _ => return,
+    };
+    replies.send(reply);
 }
 
 /// Which service a request is for, when it names an item.
@@ -1691,28 +1780,37 @@ async fn search(
     };
     let (apple, sc, nd) = (ok(a), ok(b), ok(n));
     let any = apple.is_some() || sc.is_some() || nd.is_some();
-    // What several have is the best one's: the server's own file, then
-    // Apple Music's AAC 256, then SoundCloud's.
-    let mut seen_songs = std::collections::HashSet::new();
-    let mut seen_albums = std::collections::HashSet::new();
-    let key = |title: &str, artists: &[String]| {
-        (
-            crate::app::fold(title),
-            crate::app::fold(artists.first().map_or("", String::as_str)),
-        )
-    };
-    let mut best_first = |side: Option<SearchResults>| {
+    // What several have is the best copy's, as in the library: the
+    // server's own file, then Apple Music's AAC 256, then SoundCloud's.
+    let sides = [nd, apple, sc];
+    let tracks: Vec<Track> = sides
+        .iter()
+        .flatten()
+        .flat_map(|r| r.tracks.clone())
+        .collect();
+    let albums: Vec<Album> = sides
+        .iter()
+        .flatten()
+        .flat_map(|r| r.albums.clone())
+        .collect();
+    let (worse_tracks, worse_albums) = (
+        crate::dedupe::songs(&tracks),
+        crate::dedupe::albums(&albums),
+    );
+    let (mut t, mut a) = (0, 0);
+    let [nd, apple, sc] = sides.map(|side| {
         side.map(|mut r| {
-            r.tracks
-                .retain(|t| seen_songs.insert(key(&t.title, &t.artists)));
-            r.albums
-                .retain(|a| seen_albums.insert(key(&a.title, &a.artists)));
+            r.tracks.retain(|_| {
+                t += 1;
+                !worse_tracks.contains(&(t - 1))
+            });
+            r.albums.retain(|_| {
+                a += 1;
+                !worse_albums.contains(&(a - 1))
+            });
             r
         })
-    };
-    let nd = best_first(nd);
-    let apple = best_first(apple);
-    let sc = best_first(sc);
+    });
     // Taken in turns, Apple Music's first: the first rows show them all.
     let mut merged = SearchResults::default();
     for side in [apple, nd, sc].into_iter().flatten() {

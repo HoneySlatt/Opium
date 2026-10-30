@@ -13,7 +13,7 @@ use mpris_server::{
     Server, Signal, Time, TrackId, Volume,
 };
 use music_core::Repeat;
-use music_core::model::Track;
+use music_core::model::{ProviderKind, Track};
 
 /// What a controller asked for.
 #[derive(Debug, Clone, PartialEq)]
@@ -78,6 +78,9 @@ fn lock(shared: &Mutex<Shared>) -> MutexGuard<'_, Shared> {
 struct Change {
     changed: Vec<Property>,
     seeked: Option<Duration>,
+    /// A cover to have kept on disk before the metadata naming its file goes
+    /// out.
+    cover: Option<String>,
 }
 
 /// The app's side: hands the state over, takes the actions.
@@ -118,6 +121,13 @@ impl Mpris {
                         }
                     };
                     while let Some(change) = changes_rx.recv().await {
+                        if let Some(url) = &change.cover
+                            && crate::covers::read(url).is_none()
+                            && let Ok(resp) = ehttp::fetch_blocking(&ehttp::Request::get(url))
+                            && resp.ok
+                        {
+                            crate::covers::write(url, &resp.bytes);
+                        }
                         if !change.changed.is_empty() {
                             let _ = server.properties_changed(change.changed).await;
                         }
@@ -148,10 +158,12 @@ impl Mpris {
         let now = Instant::now();
         let mut changed = Vec::new();
         let mut seeked = None;
+        let mut cover = None;
         {
             let mut shared = lock(&self.shared);
             let old = &shared.state;
             if old.track != state.track || old.length != state.length {
+                cover = state.track.as_ref().and_then(private_cover);
                 changed.push(Property::Metadata(metadata(&state)));
                 changed.push(Property::CanSeek(state.length.is_some()));
             } else if state.track.is_some()
@@ -175,7 +187,11 @@ impl Mpris {
             shared.at = now;
         }
         if !changed.is_empty() || seeked.is_some() {
-            let _ = self.changes.send(Change { changed, seeked });
+            let _ = self.changes.send(Change {
+                changed,
+                seeked,
+                cover,
+            });
         }
     }
 }
@@ -222,8 +238,12 @@ fn metadata(state: &State) -> Metadata {
     if let Some(length) = state.length {
         m = m.length(time(length));
     }
-    if let Some(art) = &track.artwork {
-        m = m.art_url(art.url(600));
+    if let Some(url) = private_cover(track) {
+        if let Some(file) = crate::covers::file(&url) {
+            m = m.art_url(format!("file://{}", file.display()));
+        }
+    } else if let Some(art) = &track.artwork {
+        m = m.art_url(art.url(ART_SIZE));
     }
     if let Some(n) = track.track_number {
         m = m.track_number(n as i32);
@@ -232,6 +252,16 @@ fn metadata(state: &State) -> Metadata {
         m = m.disc_number(n as i32);
     }
     m.build()
+}
+
+const ART_SIZE: u32 = 600;
+
+/// The cover of a Navidrome song: its URL carries the sign-in, which the bus
+/// mustn't see, so its controllers get the file it is kept in.
+fn private_cover(track: &Track) -> Option<String> {
+    (track.id.provider == ProviderKind::Navidrome)
+        .then(|| track.artwork.as_ref().map(|a| a.url(ART_SIZE)))
+        .flatten()
 }
 
 /// The bus's side, answering from the state shared.

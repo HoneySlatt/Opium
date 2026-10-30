@@ -264,11 +264,20 @@ impl AppleMusic {
     }
 
     pub(crate) async fn download(&self, url: &str) -> Result<Vec<u8>> {
-        let resp = self
-            .http
-            .get(url)
-            .header("x-apple-music-user-token", &self.user_token)
-            .header("Cookie", format!("media-user-token={}", self.user_token))
+        let mut request = self.http.get(url);
+        // The user's token goes to Apple only: a radio station's segments
+        // may be a broadcaster's.
+        let apple = reqwest::Url::parse(url).is_ok_and(|u| {
+            u.scheme() == "https"
+                && u.host_str()
+                    .is_some_and(|h| h == "apple.com" || h.ends_with(".apple.com"))
+        });
+        if apple {
+            request = request
+                .header("x-apple-music-user-token", &self.user_token)
+                .header("Cookie", format!("media-user-token={}", self.user_token));
+        }
+        let resp = request
             .send()
             .await
             .map_err(|e| Error::Network(format!("asset download: {e}")))?;

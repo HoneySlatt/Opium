@@ -52,9 +52,11 @@ impl Query {
     /// The title without what sites leave out of it: `(feat. …)`, `[…]`.
     fn bare_title(&self) -> &str {
         let t = self.title.as_str();
+        // ASCII lowercasing keeps the byte offsets of the title's own.
+        let lower = t.to_ascii_lowercase();
         let cut = ["(feat", "(ft.", "[feat", "(with ", " - feat"]
             .iter()
-            .filter_map(|m| t.to_lowercase().find(m))
+            .filter_map(|m| lower.find(m))
             .min()
             .unwrap_or(t.len());
         t[..cut].trim()
@@ -75,10 +77,57 @@ fn norm(s: &str) -> String {
         .collect()
 }
 
-/// Whether a title found is the song's.
+/// A title up to its first `(…)`, `[…]` or ` - …`: what sites agree on
+/// when they tag versions and features differently.
+fn core(title: &str) -> &str {
+    let cut = title
+        .find(['(', '['])
+        .into_iter()
+        .chain(title.find(" - "))
+        .min();
+    match cut.map(|at| title[..at].trim()) {
+        Some(core) if !core.is_empty() => core,
+        _ => title,
+    }
+}
+
+/// Versions whose lyrics or timing differ from the song's.
+const VERSIONS: [&str; 7] = [
+    "remix",
+    "live",
+    "acoustic",
+    "instrumental",
+    "sped up",
+    "slowed",
+    "a cappella",
+];
+
+/// Whether a title found is the song's: the same, or the same up to its
+/// tags, as long as neither is a version the other isn't.
 fn same_title(query: &Query, found: &str) -> bool {
     let (want, got) = (norm(query.bare_title()), norm(found));
-    !want.is_empty() && (got == want || got.starts_with(&want) || want.starts_with(&got))
+    if want.is_empty() || got.is_empty() {
+        return false;
+    }
+    if got == want {
+        return true;
+    }
+    // Whole words, so that "Alive" isn't live.
+    let words = |t: &str| {
+        format!(
+            " {} ",
+            t.to_lowercase()
+                .replace(|c: char| !c.is_alphanumeric(), " ")
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+        )
+    };
+    let (a, b) = (words(&query.title), words(found));
+    VERSIONS.iter().all(|v| {
+        let v = format!(" {v} ");
+        a.contains(&v) == b.contains(&v)
+    }) && norm(core(query.bare_title())) == norm(core(found))
 }
 
 pub struct Finder {
@@ -154,9 +203,10 @@ impl Finder {
             .await?;
         let entries = found.as_array()?;
         let fits = |e: &&serde_json::Value| {
-            e["duration"]
-                .as_f64()
-                .is_none_or(|d| query.same_length(Duration::from_secs_f64(d.max(0.0))))
+            same_title(query, e["trackName"].as_str().unwrap_or_default())
+                && e["duration"]
+                    .as_f64()
+                    .is_none_or(|d| query.same_length(Duration::from_secs_f64(d.max(0.0))))
         };
         // Synced first, else the first that fits.
         entries
@@ -280,6 +330,11 @@ mod tests {
         let q = query("Hold On, We're Going Home", 227);
         assert!(same_title(&q, "Hold On We’re Going Home"));
         assert!(!same_title(&q, "Started From the Bottom"));
+        assert!(same_title(&q, "Hold On, We're Going Home (Album Version)"));
+        assert!(!same_title(&q, "Hold On, We're Going Home (Remix)"));
+        assert!(!same_title(&query("Intro", 60), ""));
+        assert!(!same_title(&query("Hold", 60), "Hold On"));
+        assert!(same_title(&query("Alive", 60), "Alive"));
         assert!(q.same_length(Duration::from_millis(228_918)));
         assert!(!q.same_length(Duration::from_secs(154)));
     }

@@ -122,8 +122,23 @@ impl Queue {
 
     /// Take every upcoming track out, keeping what has played.
     pub fn clear_upcoming(&mut self) {
-        while self.upcoming_len() > 0 {
-            self.remove_upcoming(self.upcoming_len() - 1);
+        self.order.truncate(self.pos + 1);
+        let mut kept = vec![false; self.tracks.len()];
+        for &i in &self.order {
+            kept[i] = true;
+        }
+        // Each track's index once those not kept are gone.
+        let new_index: Vec<usize> = kept
+            .iter()
+            .scan(0, |n, &k| {
+                *n += usize::from(k);
+                Some(*n - usize::from(k))
+            })
+            .collect();
+        let mut keep = kept.iter();
+        self.tracks.retain(|_| *keep.next().unwrap_or(&false));
+        for i in &mut self.order {
+            *i = new_index[*i];
         }
     }
 

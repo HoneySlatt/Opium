@@ -36,7 +36,10 @@ fn millis(tag: &str) -> Option<i64> {
         2 => frac.parse::<i64>().ok()? * 10,
         _ => frac.get(..3)?.parse().ok()?,
     };
-    Some(minutes * 60_000 + seconds * 1000 + frac_ms)
+    minutes
+        .checked_mul(60_000)?
+        .checked_add(seconds.checked_mul(1000)?)?
+        .checked_add(frac_ms)
 }
 
 /// A line of enhanced LRC, `<mm:ss.xx>` before each word: its text without
@@ -59,7 +62,8 @@ fn enhanced(text: &str, line_end: Option<Duration>, shift: i64) -> (String, Vec<
         };
         let Some(at) = at else {
             // Text before the first tag, or a stray `<`: the line's own.
-            let cut = rest[1..].find('<').map_or(rest.len(), |i| i + 1);
+            let first = rest.chars().next().map_or(0, char::len_utf8);
+            let cut = rest[first..].find('<').map_or(rest.len(), |i| i + first);
             plain.push_str(&rest[..cut]);
             if let Some((_, word)) = starts_texts.last_mut() {
                 word.push_str(&rest[..cut]);
@@ -247,6 +251,14 @@ mod tests {
             [(10_000, 10_500, "Hello "), (10_500, 12_000, "world")]
         );
         assert!(l.lines[1].words.is_empty());
+    }
+
+    #[test]
+    fn odd_lines_dont_break_the_parse() {
+        let text = "[00:10.00]你<00:11.00>好\n[00:12.00]¡Hola <3\n[99999999999999:00]x\n";
+        let l = parse(text, "x").unwrap();
+        assert_eq!(l.lines[0].text, "你好");
+        assert_eq!(l.lines[1].text, "¡Hola <3");
     }
 
     #[test]

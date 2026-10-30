@@ -336,6 +336,8 @@ const STATION_REFILL: usize = 5;
 /// How many tracks in a row may fail to start, and be skipped, before the
 /// app stops trying.
 const MAX_SKIPS: usize = 5;
+/// Searches kept for going back to them, before starting over.
+const SEARCHES_KEPT: usize = 64;
 
 /// How long typing pauses before the search runs, in seconds.
 const SEARCH_PAUSE: f64 = 0.16;
@@ -489,6 +491,9 @@ pub struct App {
     waiting: Option<(Waiting, Enqueue)>,
     /// Tracks that failed to start one after the other, skipped.
     failed_in_row: usize,
+    /// The track handed to the player to play at once, until it starts: an
+    /// error before then means it can't play at all.
+    playing: Option<Token>,
     /// The page the queue was played from, to go back to.
     playing_from: Option<Page>,
     /// The track that is audible, or was last.
@@ -529,7 +534,11 @@ impl App {
             backend,
             player: Player::new(),
             mpris: crate::mpris::Mpris::start(cc.egui_ctx.clone()),
-            connection: Connection::Connecting,
+            connection: if settings.services_off.contains(&ProviderKind::AppleMusic) {
+                Connection::NotSignedIn
+            } else {
+                Connection::Connecting
+            },
             storefront: None,
             signing_in: false,
             soundcloud: SoundCloudState::Connecting,
@@ -616,6 +625,7 @@ impl App {
             resting: None,
             waiting: None,
             failed_in_row: 0,
+            playing: None,
             playing_from: None,
             now: None,
             status: Status::default(),
@@ -2069,13 +2079,75 @@ impl App {
         let token = self.next_token;
         self.next_token += 1;
         let track = self.plays_as(token, track);
+        self.fetch(token, &track);
+        token
+    }
+
+    /// Fetch `track` itself, not the server's copy of it.
+    fn fetch_as_is(&mut self, track: Track) -> Token {
+        let token = self.next_token;
+        self.next_token += 1;
+        self.fetch(token, &track);
+        self.tracks.insert(token, track);
+        token
+    }
+
+    fn fetch(&self, token: Token, track: &Track) {
         self.backend.send(Request::Fetch {
             token,
             track: track.id.clone(),
             fallback: track.library_id.clone(),
             original: self.soundcloud_originals(),
         });
+    }
+
+    fn play_now(&mut self, token: Token, stream: Playable) {
+        self.playing = Some(token);
+        self.player.play(token, Self::source(stream));
+    }
+
+    fn now_title(&self, token: Option<Token>) -> String {
         token
+            .and_then(|t| self.tracks.get(&t))
+            .map(|t| t.title.clone())
+            .unwrap_or_default()
+    }
+
+    /// A track that couldn't play is skipped (gone from the catalog, not in
+    /// this country, a broken file), as Apple Music does; a run of failures
+    /// stops, in case nothing plays.
+    fn skip_failed(&mut self, title: &str, error: &str, now: f64) {
+        self.failed_in_row += 1;
+        if self.failed_in_row <= MAX_SKIPS && self.queue.skip_next().is_some() {
+            self.notify(format!("Skipped “{title}”: {error}"), now);
+            self.start_current();
+        } else {
+            self.notify(format!("Couldn't play “{title}”: {error}"), now);
+        }
+    }
+
+    /// The player ran out with nothing lined up behind the track: the next
+    /// one follows as soon as it can.
+    fn played_out(&mut self) {
+        if self.pending_play.is_some() {
+            return;
+        }
+        match self.queued_next {
+            // Ready, but too late to join the track: it starts now, and its
+            // Started moves the queue on.
+            Some(_) if self.next_ready => self.player.skip_to_next(),
+            // Still on its way: it plays when it comes.
+            Some(token) => {
+                self.queued_next = None;
+                self.queue.track_finished();
+                self.pending_play = Some(token);
+            }
+            None => {
+                if self.queue.track_finished().is_some() {
+                    self.start_current();
+                }
+            }
+        }
     }
 
     fn start_current(&mut self) {
@@ -2091,7 +2163,7 @@ impl App {
                 match warm.ready {
                     Some(stream) => {
                         self.pending_play = None;
-                        self.player.play(warm.token, Self::source(stream));
+                        self.play_now(warm.token, stream);
                     }
                     None => self.pending_play = Some(warm.token),
                 }
@@ -2231,7 +2303,11 @@ impl App {
     }
 
     pub fn set_volume(&mut self, volume: f32) {
-        self.volume = volume.clamp(0.0, 1.0);
+        if !volume.is_finite() {
+            return;
+        }
+        // Next to full is full: the samples then go out untouched.
+        self.volume = if volume >= 0.99 { 1.0 } else { volume.max(0.0) };
         self.muted = false;
         self.player.set_volume(self.volume);
         self.volume_changed = Some(std::time::Instant::now());
@@ -2613,12 +2689,11 @@ impl App {
                         Err(e) => self.notify(format!("Sign-in didn't finish: {e}"), now),
                     }
                 }
-                Reply::Failed(e) => {
-                    if self.connection != Connection::Connected {
-                        self.connection = Connection::Failed(e.clone());
-                    }
+                Reply::CouldntConnect(e) => {
+                    self.connection = Connection::Failed(e.clone());
                     self.notify(e, now);
                 }
+                Reply::Failed(e) => self.notify(e, now),
                 // A service turned off since says nothing more.
                 Reply::Songs { provider, .. }
                 | Reply::Playlists { provider, .. }
@@ -2985,9 +3060,22 @@ impl App {
                     result,
                 } => {
                     let loaded = match result {
-                        Ok(results) => Loaded::Ready(Arc::new(results)),
+                        Ok(mut results) => {
+                            // Asked before a service was turned off.
+                            let on =
+                                |id: &ItemId| !self.settings.services_off.contains(&id.provider);
+                            results.tracks.retain(|t| on(&t.id));
+                            results.albums.retain(|a| on(&a.id));
+                            results.artists.retain(|a| on(&a.id));
+                            results.playlists.retain(|p| on(&p.id));
+                            Loaded::Ready(Arc::new(results))
+                        }
                         Err(e) => Loaded::Failed(e),
                     };
+                    // Only the last few searches are kept.
+                    if self.searches.len() >= SEARCHES_KEPT {
+                        self.searches.clear();
+                    }
                     self.searches.insert((scope, query), loaded);
                 }
                 Reply::Fetched { token, result } => {
@@ -3015,7 +3103,7 @@ impl App {
                     match result {
                         Ok(stream) if self.pending_play == Some(token) => {
                             self.pending_play = None;
-                            self.player.play(token, Self::source(stream));
+                            self.play_now(token, stream);
                         }
                         Ok(stream) if self.queued_next == Some(token) => {
                             self.player.set_next(token, Self::source(stream));
@@ -3043,22 +3131,19 @@ impl App {
                             // does; a run of failures stops, in case nothing plays.
                             if self.pending_play == Some(token) {
                                 self.pending_play = None;
-                                self.failed_in_row += 1;
-                                if self.failed_in_row <= MAX_SKIPS
-                                    && self.queue.skip_next().is_some()
+                                // The server's copy out of reach: the song as listed.
+                                if let Some(listed) = self.stands_for.remove(&token)
+                                    && let Some(track) = self.queue.current().cloned()
+                                    && track.id == listed
                                 {
-                                    self.notify(format!("Skipped “{title}”: {e}"), now);
-                                    self.start_current();
+                                    self.pending_play = Some(self.fetch_as_is(track));
                                 } else {
-                                    self.notify(format!("Couldn't play “{title}”: {e}"), now);
+                                    self.skip_failed(&title, &e, now);
                                 }
                             } else if self.queued_next == Some(token) {
-                                // The next track can't follow: take it out and line up
-                                // the one after.
+                                // The next track can't follow: it is tried again,
+                                // and skipped if need be, when its turn comes.
                                 self.queued_next = None;
-                                self.queue.remove_upcoming(0);
-                                self.prefetch_next();
-                                self.notify(format!("Left out “{title}”: {e}"), now);
                             }
                         }
                     }
@@ -3069,6 +3154,9 @@ impl App {
         while let Ok(event) = self.player.events().try_recv() {
             match event {
                 Event::Started { token, .. } => {
+                    if self.playing == Some(token) {
+                        self.playing = None;
+                    }
                     if self.queued_next == Some(token) {
                         self.queue.track_finished();
                         self.queued_next = None;
@@ -3100,14 +3188,21 @@ impl App {
                         self.backend.send(Request::StationTracks(station.clone()));
                     }
                 }
-                Event::Finished => {}
+                Event::Finished => self.played_out(),
                 Event::Error { token, message } => {
                     // A next track the player couldn't open: Next fetches anew.
                     if token.is_some() && token == self.queued_next {
                         self.queued_next = None;
                         self.next_ready = false;
+                        self.notify(message, now);
+                    } else if token.is_some() && token == self.playing {
+                        // What was to play now can't: the queue goes on.
+                        self.playing = None;
+                        let title = self.now_title(token);
+                        self.skip_failed(&title, &message, now);
+                    } else {
+                        self.notify(message, now);
                     }
-                    self.notify(message, now);
                 }
             }
         }
@@ -3245,27 +3340,29 @@ impl eframe::App for App {
             self.now_playing = std::env::var_os("MUSIC_SCREENSHOT_NP").is_some();
         }
         // Play a row of the open playlist, or of Songs, once it has loaded.
-        let shown: Vec<Track> = match &self.page {
-            Page::Playlist(id) => self
-                .playlist_tracks
-                .get(id)
-                .filter(|p| p.done)
-                .map(|p| p.tracks.to_vec())
-                .unwrap_or_default(),
-            _ => self
-                .songs_view
-                .order
-                .iter()
-                .map(|&i| self.songs[i].clone())
-                .collect(),
-        };
-        if let Some(row) = self
-            .screenshot
-            .as_mut()
-            .and_then(|s| s.play_row(!shown.is_empty()))
-            .filter(|&row| row < shown.len())
-        {
-            self.play_list(shown, row);
+        if self.screenshot.is_some() {
+            let shown: Vec<Track> = match &self.page {
+                Page::Playlist(id) => self
+                    .playlist_tracks
+                    .get(id)
+                    .filter(|p| p.done)
+                    .map(|p| p.tracks.to_vec())
+                    .unwrap_or_default(),
+                _ => self
+                    .songs_view
+                    .order
+                    .iter()
+                    .filter_map(|&i| self.songs.get(i).cloned())
+                    .collect(),
+            };
+            if let Some(row) = self
+                .screenshot
+                .as_mut()
+                .and_then(|s| s.play_row(!shown.is_empty()))
+                .filter(|&row| row < shown.len())
+            {
+                self.play_list(shown, row);
+            }
         }
         let connected = self.connection == Connection::Connected;
         if let Some(id) = self.screenshot.as_mut().and_then(|s| s.station(connected)) {

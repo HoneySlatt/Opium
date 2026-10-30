@@ -33,7 +33,8 @@ fn hash(url: &str) -> u64 {
     })
 }
 
-fn file(url: &str) -> Option<PathBuf> {
+/// Where the cover from `url` is kept.
+pub fn file(url: &str) -> Option<PathBuf> {
     Some(dir()?.join(format!("{:016x}", hash(url))))
 }
 

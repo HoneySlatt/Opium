@@ -173,6 +173,10 @@ impl AppleMusic {
     pub async fn connect(user_token: impl Into<String>) -> Result<Self> {
         let http = reqwest::Client::builder()
             .user_agent(USER_AGENT)
+            // A server out of reach, or a download that stalls, fails rather
+            // than hang what waits on it.
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .read_timeout(std::time::Duration::from_secs(30))
             .build()
             .map_err(|e| Error::Network(e.to_string()))?;
         let developer_token = auth::developer_token(&http).await?;
