@@ -1,4 +1,4 @@
-package io.github.honeyslatt.music
+package io.github.honeyslatt.music.playback
 
 import android.net.Uri
 import androidx.media3.common.Format

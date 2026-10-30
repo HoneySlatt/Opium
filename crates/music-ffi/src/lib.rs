@@ -380,6 +380,29 @@ impl Session {
     }
 }
 
+/// The positions of `songs` to leave out of a list of every service's: the
+/// copies of a song another service has a better copy of.
+#[uniffi::export]
+pub fn songs_left_out(songs: Vec<Track>) -> Vec<u32> {
+    sorted(music_core::dedupe::songs(&songs))
+}
+
+#[uniffi::export]
+pub fn albums_left_out(albums: Vec<Album>) -> Vec<u32> {
+    sorted(music_core::dedupe::albums(&albums))
+}
+
+#[uniffi::export]
+pub fn artists_left_out(artists: Vec<Artist>) -> Vec<u32> {
+    sorted(music_core::dedupe::artists(&artists))
+}
+
+fn sorted(set: std::collections::HashSet<usize>) -> Vec<u32> {
+    let mut v: Vec<u32> = set.into_iter().map(|i| i as u32).collect();
+    v.sort_unstable();
+    v
+}
+
 /// A cover's three colours, best first, as `0xrrggbb`, from its encoded
 /// image.
 #[uniffi::export]
