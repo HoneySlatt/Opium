@@ -350,30 +350,50 @@ class CarLibrary(private val app: MusicApp, private val scope: CoroutineScope) :
     fun buttons(): List<CommandButton> {
         val track = playback.now.value
         val favourite = track?.let(::isFavourite) == true
-        val repeatIcon = when (playback.repeat.value) {
-            QueueRepeat.OFF -> CommandButton.ICON_REPEAT_OFF
-            QueueRepeat.ALL -> CommandButton.ICON_REPEAT_ALL
-            QueueRepeat.ONE -> CommandButton.ICON_REPEAT_ONE
+        // As Apple Music's: white when on, grey when off, without a box.
+        val (repeatIcon, repeatDrawn) = when (playback.repeat.value) {
+            QueueRepeat.OFF -> CommandButton.ICON_REPEAT_OFF to R.drawable.car_repeat_off
+            QueueRepeat.ALL -> CommandButton.ICON_REPEAT_ALL to R.drawable.car_repeat_all
+            QueueRepeat.ONE -> CommandButton.ICON_REPEAT_ONE to R.drawable.car_repeat_one
+        }
+        val shuffle = playback.shuffleOn.value
+        // Last, so it goes in the "⋮" with what doesn't fit.
+        val library = track?.takeIf { it.id.provider == ProviderKind.APPLE_MUSIC && playback.remote.value == null }?.let { t ->
+            when {
+                !inLibrary(t) -> button(CommandButton.ICON_PLAYLIST_ADD, "Add to Library", LIBRARY_ADD)
+                t.libraryId != null -> button(CommandButton.ICON_PLAYLIST_REMOVE, "Remove from Library", LIBRARY_REMOVE)
+                else -> null
+            }
         }
         return listOfNotNull(
             track?.takeIf { it.id.provider != ProviderKind.NAVIDROME }?.let {
                 button(if (favourite) CommandButton.ICON_STAR_FILLED else CommandButton.ICON_STAR_UNFILLED, if (favourite) "Unfavourite" else "Favourite", FAVOURITE)
             },
-            button(if (playback.shuffleOn.value) CommandButton.ICON_SHUFFLE_ON else CommandButton.ICON_SHUFFLE_OFF, "Shuffle", SHUFFLE_MODE),
-            button(repeatIcon, "Repeat", REPEAT_MODE),
+            button(if (shuffle) CommandButton.ICON_SHUFFLE_ON else CommandButton.ICON_SHUFFLE_OFF, if (shuffle) "Shuffle On" else "Shuffle Off", SHUFFLE_MODE, if (shuffle) R.drawable.car_shuffle_on else R.drawable.car_shuffle_off),
+            button(repeatIcon, "Repeat", REPEAT_MODE, repeatDrawn),
+            library,
         )
     }
 
-    private fun button(icon: Int, name: String, command: String) =
-        CommandButton.Builder(icon).setDisplayName(name).setSessionCommand(SessionCommand(command, Bundle.EMPTY)).build()
+    private fun button(icon: Int, name: String, command: String, drawn: Int? = null) =
+        CommandButton.Builder(icon).setDisplayName(name).setSessionCommand(SessionCommand(command, Bundle.EMPTY))
+            .apply { if (drawn != null) setCustomIconResId(drawn) }
+            .build()
 
-    val commands = listOf(FAVOURITE, SHUFFLE_MODE, REPEAT_MODE).map { SessionCommand(it, Bundle.EMPTY) }
+    /** Songs added to, or taken from, the library in the car since the app started. */
+    private val inLibraryNow = mutableMapOf<ItemId, Boolean>()
+
+    private fun inLibrary(track: Track) = inLibraryNow[track.id] ?: track.inLibrary
+
+    val commands = listOf(FAVOURITE, SHUFFLE_MODE, REPEAT_MODE, LIBRARY_ADD, LIBRARY_REMOVE).map { SessionCommand(it, Bundle.EMPTY) }
 
     override fun onCustomCommand(session: MediaSession, controller: MediaSession.ControllerInfo, customCommand: SessionCommand, args: Bundle): ListenableFuture<SessionResult> {
         when (customCommand.customAction) {
             FAVOURITE -> playback.now.value?.let(::toggleFavourite)
             SHUFFLE_MODE -> playback.setShuffle(!playback.shuffleOn.value)
             REPEAT_MODE -> playback.cycleRepeat()
+            LIBRARY_ADD -> playback.now.value?.let { libraryChange(it, true) }
+            LIBRARY_REMOVE -> playback.now.value?.let { libraryChange(it, false) }
             else -> return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
         }
         refresh()
@@ -392,6 +412,20 @@ class CarLibrary(private val app: MusicApp, private val scope: CoroutineScope) :
                 }
             }.onFailure {
                 favourites[track.id] = !on
+                refresh()
+            }
+        }
+    }
+
+    /** Add the song to the library, or take it out (by its library id). */
+    private fun libraryChange(track: Track, add: Boolean) {
+        val id = if (add) track.id else track.libraryId ?: return
+        inLibraryNow[track.id] = add
+        scope.launch {
+            runCatching {
+                if (add) session.addToLibrary(FavouriteKind.SONG, id) else session.removeFromLibrary(id)
+            }.onFailure {
+                inLibraryNow.remove(track.id)
                 refresh()
             }
         }
@@ -427,5 +461,7 @@ class CarLibrary(private val app: MusicApp, private val scope: CoroutineScope) :
         const val FAVOURITE = "favourite"
         const val SHUFFLE_MODE = "shuffle"
         const val REPEAT_MODE = "repeat"
+        const val LIBRARY_ADD = "library-add"
+        const val LIBRARY_REMOVE = "library-remove"
     }
 }

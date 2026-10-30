@@ -43,6 +43,12 @@ class RemotePlayer(private val playback: Playback) : SimpleBasePlayer(Looper.get
             Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,
             Player.COMMAND_SEEK_TO_PREVIOUS,
             Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM,
+            Player.COMMAND_SEEK_TO_MEDIA_ITEM,
+            // What the car picks goes to the device by the app's queue
+            // (CarLibrary): taken here and left be.
+            Player.COMMAND_SET_MEDIA_ITEM,
+            Player.COMMAND_CHANGE_MEDIA_ITEMS,
+            Player.COMMAND_PREPARE,
         )
         if (seekable) commands.add(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)
         val state = State.Builder().setAvailableCommands(commands.build())
@@ -60,9 +66,19 @@ class RemotePlayer(private val playback: Playback) : SimpleBasePlayer(Looper.get
             .setDurationUs(p.durationMs?.let { it.toLong() * 1000 } ?: C.TIME_UNSET)
             .setIsSeekable(seekable)
             .build()
+        // What comes there, for the car's Queue.
+        val upcoming = playback.remote.value?.upcoming.orEmpty().mapIndexed { k, u ->
+            val uid = "${u.id.provider}:${u.id.id}"
+            val m = MediaMetadata.Builder().setTitle(u.title).setArtist(u.artists.joinToString(", ")).setAlbumTitle(u.album).build()
+            MediaItemData.Builder("queue-$k-$uid")
+                .setMediaItem(MediaItem.Builder().setMediaId(uid).setMediaMetadata(m).build())
+                .setMediaMetadata(m)
+                .setDurationUs(u.duration?.toMillis()?.let { it * 1000 } ?: C.TIME_UNSET)
+                .build()
+        }
         val position = playback.position
         return state
-            .setPlaylist(listOf(item))
+            .setPlaylist(listOf(item) + upcoming)
             .setCurrentMediaItemIndex(0)
             .setPlaybackState(Player.STATE_READY)
             .setPlayWhenReady(p.playing, Player.PLAY_WHEN_READY_CHANGE_REASON_REMOTE)
@@ -80,7 +96,14 @@ class RemotePlayer(private val playback: Playback) : SimpleBasePlayer(Looper.get
         when (seekCommand) {
             Player.COMMAND_SEEK_TO_NEXT, Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM -> Command.Next
             Player.COMMAND_SEEK_TO_PREVIOUS, Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM -> Command.Previous
-            else -> Command.Seek(positionMs.coerceAtLeast(0).toULong())
+            // A song picked further down the queue.
+            else -> if (mediaItemIndex > 0) Command.Jump((mediaItemIndex - 1).toUInt()) else Command.Seek(positionMs.coerceAtLeast(0).toULong())
         },
     )
+
+    override fun handlePrepare(): ListenableFuture<*> = Futures.immediateVoidFuture()
+
+    override fun handleSetMediaItems(mediaItems: MutableList<MediaItem>, startIndex: Int, startPositionMs: Long): ListenableFuture<*> = Futures.immediateVoidFuture()
+
+    override fun handleAddMediaItems(index: Int, mediaItems: MutableList<MediaItem>): ListenableFuture<*> = Futures.immediateVoidFuture()
 }

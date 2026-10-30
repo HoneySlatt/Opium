@@ -2,9 +2,6 @@ package io.github.honeyslatt.music.playback
 
 import android.app.PendingIntent
 import android.content.Intent
-import androidx.media3.common.ForwardingPlayer
-import androidx.media3.common.MediaItem
-import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
@@ -29,9 +26,8 @@ class PlaybackService : MediaLibraryService() {
     override fun onCreate() {
         super.onCreate()
         val playback = (application as MusicApp).playback
-        val here = queued(playback, playback.player)
+        val here = QueuePlayer(playback, this, scope)
         val far = RemotePlayer(playback)
-        val there = queued(playback, far)
         val open = PendingIntent.getActivity(
             this,
             0,
@@ -56,72 +52,11 @@ class PlaybackService : MediaLibraryService() {
         scope.launch {
             playback.remote.collect { remote ->
                 far.changed()
-                val wanted = if (remote != null) there else here
+                val wanted = if (remote != null) far else here
                 if (session.player !== wanted) session.player = wanted
             }
         }
     }
-
-    /** `player`, its next and previous going through the app's queue. */
-    private fun queued(playback: io.github.honeyslatt.music.playback.Playback, player: Player): Player =
-        object : ForwardingPlayer(player) {
-            private val queueCommands = listOf(
-                Player.COMMAND_SEEK_TO_NEXT,
-                Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,
-                Player.COMMAND_SEEK_TO_PREVIOUS,
-                Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM,
-                // What the car picks: played by the library (CarLibrary) before
-                // it comes here, so it is taken and left be.
-                Player.COMMAND_SET_MEDIA_ITEM,
-                Player.COMMAND_CHANGE_MEDIA_ITEMS,
-                Player.COMMAND_PREPARE,
-            )
-
-            override fun getAvailableCommands(): Player.Commands =
-                super.getAvailableCommands().buildUpon().addAll(*queueCommands.toIntArray()).build()
-
-            override fun isCommandAvailable(command: Int) = command in queueCommands || super.isCommandAvailable(command)
-
-            override fun seekToNext() = playback.next()
-
-            override fun seekToNextMediaItem() = playback.next()
-
-            override fun seekToPrevious() = playback.previous()
-
-            override fun seekToPreviousMediaItem() = playback.previous()
-
-            // Play from the earbuds, the lock screen or the car with nothing
-            // made playable yet (the app just opened on what played last),
-            // or at the queue's end: the app's own Play, which sees to it.
-            override fun setMediaItem(mediaItem: MediaItem) {}
-
-            override fun setMediaItem(mediaItem: MediaItem, startPositionMs: Long) {}
-
-            override fun setMediaItem(mediaItem: MediaItem, resetPosition: Boolean) {}
-
-            override fun setMediaItems(mediaItems: MutableList<MediaItem>) {}
-
-            override fun setMediaItems(mediaItems: MutableList<MediaItem>, resetPosition: Boolean) {}
-
-            override fun setMediaItems(mediaItems: MutableList<MediaItem>, startIndex: Int, startPositionMs: Long) {}
-
-            override fun play() {
-                // A song picked is on its way, and plays when it comes.
-                if (playback.loading.value) return
-                if (player === playback.player && player.playbackState.let { it == Player.STATE_IDLE || it == Player.STATE_ENDED }) {
-                    playback.toggle()
-                } else {
-                    super.play()
-                }
-            }
-
-            override fun setPlayWhenReady(playWhenReady: Boolean) = if (playWhenReady) play() else super.setPlayWhenReady(false)
-
-            // Media3 prepares an idle player before Play; the app does that its own way.
-            override fun prepare() {
-                if (player !== playback.player || player.mediaItemCount > 0) super.prepare()
-            }
-        }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = session
 
