@@ -34,6 +34,11 @@ impl Store {
             .ok()
             .and_then(|b| serde_json::from_slice::<Saved>(&b).ok())
             .filter(|s| !s.id.is_empty());
+        // There but unreadable: put aside rather than written over, its
+        // pairings being worth more than a fresh start.
+        if saved.is_none() && path.exists() {
+            let _ = std::fs::rename(&path, path.with_extension("json.bad"));
+        }
         let store = Self {
             saved: saved.unwrap_or_else(|| Saved {
                 id: hex::encode(random::<8>()),
@@ -101,7 +106,11 @@ impl Store {
             options.write(true).create(true).truncate(true);
             #[cfg(unix)]
             std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
-            options.open(&partial).and_then(|mut f| f.write_all(&bytes))
+            // On disk before it replaces the last: a power cut midway leaves
+            // one or the other whole.
+            options
+                .open(&partial)
+                .and_then(|mut f| f.write_all(&bytes).and_then(|()| f.sync_all()))
         };
         if written.is_ok() {
             let _ = std::fs::rename(&partial, &self.path);

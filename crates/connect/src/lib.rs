@@ -50,6 +50,8 @@ const PAIRING: Duration = Duration::from_secs(120);
 /// A paired device in sight is reached again this often, and less as it
 /// keeps not answering.
 const REDIAL: Duration = Duration::from_secs(5);
+/// How long pairing is refused after a wrong code.
+const PAIRING_PAUSE: Duration = Duration::from_secs(30);
 /// A position this far from where it should be by now is told again.
 const DRIFT_MS: u64 = 1500;
 
@@ -226,6 +228,9 @@ struct Seen {
     addrs: Vec<SocketAddr>,
     /// Its name on the network, which says when it leaves.
     fullname: Option<String>,
+    /// It answers on the network now. When it stops (a phone in Doze, its
+    /// Wi-Fi gone a moment), its last addresses are kept to dial again.
+    announced: bool,
     link: Option<Link>,
     /// A task is reaching it, or talking with it.
     dialing: bool,
@@ -241,6 +246,7 @@ impl Seen {
             device,
             addrs: Vec::new(),
             fullname: None,
+            announced: false,
             link: None,
             dialing: false,
             failures: 0,
@@ -256,6 +262,16 @@ struct Link {
     /// The device that made the connection.
     dialer: String,
     tx: mpsc::UnboundedSender<Arc<[u8]>>,
+    /// When the device last said something on it: pinged every
+    /// [`PING`], a link silent longer is likely dead (the other end
+    /// suspended, or gone from the Wi-Fi) though not timed out yet.
+    heard: Instant,
+}
+
+impl Link {
+    fn alive(&self) -> bool {
+        self.heard.elapsed() < PING + Duration::from_secs(5)
+    }
 }
 
 /// What this device last told the others.
@@ -274,6 +290,9 @@ struct Inner {
     asking: Mutex<Option<oneshot::Sender<String>>>,
     /// Showing a code: dropped, it calls pairing off.
     showing: Mutex<Option<oneshot::Sender<()>>>,
+    /// After a wrong code, no pairing until then: a code can't be guessed
+    /// by trying them all.
+    pairing_pause: Mutex<Option<Instant>>,
     events: Box<dyn Fn(Event) + Send + Sync>,
     serial: AtomicU64,
     rt: tokio::runtime::Handle,
@@ -340,6 +359,7 @@ impl Node {
             local: Mutex::default(),
             asking: Mutex::default(),
             showing: Mutex::default(),
+            pairing_pause: Mutex::default(),
             events,
             serial: AtomicU64::new(0),
             rt: rt.handle().clone(),
@@ -397,7 +417,7 @@ impl Node {
                 device: s.device.clone(),
                 paired: paired.iter().any(|d| d.id == s.device.id),
                 connected: s.link.is_some(),
-                nearby: s.link.is_some() || !s.addrs.is_empty(),
+                nearby: s.link.is_some() || (s.announced && !s.addrs.is_empty()),
                 playing: s.playing.as_ref().map(|(p, at)| Playing {
                     position_ms: p.at(*at, now),
                     ..p.clone()
@@ -500,6 +520,8 @@ impl Node {
         lock(&self.inner.store).forget(id);
         if let Some(seen) = lock(&self.inner.seen).get_mut(id) {
             seen.link = None;
+            seen.playing = None;
+            seen.upcoming.clear();
         }
         (self.inner.events)(Event::Changed);
     }
@@ -540,7 +562,13 @@ impl Inner {
 
     fn send(&self, to: &str, message: &Message) -> bool {
         let seen = lock(&self.seen);
-        let Some(link) = seen.get(to).and_then(|s| s.link.as_ref()) else {
+        // A link gone silent may be dead: what is sent may be lost, and the
+        // caller is told so (a hand-over then doesn't stop the music here).
+        let Some(link) = seen
+            .get(to)
+            .and_then(|s| s.link.as_ref())
+            .filter(|l| l.alive())
+        else {
             return false;
         };
         link.tx.send(Self::encode(message)).is_ok()
@@ -646,9 +674,11 @@ impl Inner {
             s.device = peer.clone();
             // Both dialed at once: each keeps the connection the device
             // with the smaller id made, so they keep the same one.
+            // A silent one is likely dead, though: the new one takes over.
             if let Some(old) = &s.link
                 && old.dialer != dialer
                 && old.dialer == *self.me.id.as_str().min(peer.id.as_str())
+                && old.alive()
             {
                 return Ok(());
             }
@@ -656,6 +686,7 @@ impl Inner {
                 serial,
                 dialer,
                 tx: tx.clone(),
+                heard: Instant::now(),
             });
             s.failures = 0;
         }
@@ -724,6 +755,9 @@ impl Inner {
     }
 
     fn heard(&self, from: &str, message: Message) {
+        if let Some(link) = lock(&self.seen).get_mut(from).and_then(|s| s.link.as_mut()) {
+            link.heard = Instant::now();
+        }
         match message {
             Message::Playing(playing) => {
                 if let Some(s) = lock(&self.seen).get_mut(from) {
@@ -801,6 +835,9 @@ impl Inner {
 
     /// `peer` asks to pair: show a code, and pair if it is typed in there.
     async fn show_code(self: Arc<Self>, mut stream: TcpStream, peer: Device) -> io::Result<()> {
+        if lock(&self.pairing_pause).is_some_and(|until| Instant::now() < until) {
+            return Err(failed("a wrong code was typed: try again in a moment"));
+        }
         let (tx, mut called_off) = oneshot::channel::<()>();
         {
             let mut showing = lock(&self.showing);
@@ -836,6 +873,7 @@ impl Inner {
                 _ => false,
             };
             if !proved {
+                *lock(&self.pairing_pause) = Some(Instant::now() + PAIRING_PAUSE);
                 let _ = wire::write_json(&mut stream, &pair::Step::Refused).await;
                 return Err(failed("wrong code"));
             }
@@ -889,6 +927,7 @@ impl Inner {
                         .or_insert_with(|| Seen::new(device.clone()));
                     s.device = device;
                     s.addrs = addrs;
+                    s.announced = true;
                     s.fullname = Some(info.fullname.clone());
                     // Back in sight: worth trying at once.
                     s.retry_at = Instant::now();
@@ -897,11 +936,17 @@ impl Inner {
                 self.reach(&id);
             }
             mdns_sd::ServiceEvent::ServiceRemoved(_, fullname) => {
-                for s in lock(&self.seen).values_mut() {
+                let store = lock(&self.store);
+                let mut seen = lock(&self.seen);
+                for s in seen.values_mut() {
                     if s.fullname.as_deref() == Some(&fullname) {
-                        s.addrs.clear();
+                        s.announced = false;
                     }
                 }
+                // Strangers gone are forgotten; paired ones are dialed
+                // again where they were.
+                seen.retain(|id, s| s.announced || s.link.is_some() || store.key(id).is_some());
+                drop((seen, store));
                 (self.events)(Event::Changed);
             }
             _ => {}
