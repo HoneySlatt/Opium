@@ -110,7 +110,48 @@ fun appleSource(
  */
 @UnstableApi
 fun liveSource(station: io.github.honeyslatt.music.core.LiveStation, item: MediaItem.Builder): HlsMediaSource {
-    val factory = HlsMediaSource.Factory(Http.sources)
+    val init = station.initUri()?.let(Uri::parse)
+    val http = Http.sources
+    // The init segment goes through the core, which names the key an
+    // episode's leaves out; the rest comes from Apple as it is.
+    val sources = DataSource.Factory {
+        object : DataSource {
+            private var inner: DataSource? = null
+            private val listeners = mutableListOf<TransferListener>()
+
+            override fun addTransferListener(listener: TransferListener) {
+                listeners += listener
+            }
+
+            override fun open(spec: DataSpec): Long {
+                val source = if (init != null && spec.uri == init) {
+                    val fetched = http.createDataSource()
+                    val bytes = try {
+                        fetched.open(spec.buildUpon().setPosition(0).setLength(C.LENGTH_UNSET.toLong()).build())
+                        androidx.media3.datasource.DataSourceUtil.readToEnd(fetched)
+                    } finally {
+                        fetched.close()
+                    }
+                    ByteArrayDataSource(station.fixInit(bytes))
+                } else {
+                    http.createDataSource()
+                }
+                listeners.forEach(source::addTransferListener)
+                inner = source
+                return source.open(spec)
+            }
+
+            override fun read(buffer: ByteArray, offset: Int, length: Int) = inner!!.read(buffer, offset, length)
+
+            override fun getUri(): Uri? = inner?.uri
+
+            override fun close() {
+                inner?.close()
+                inner = null
+            }
+        }
+    }
+    val factory = HlsMediaSource.Factory(sources)
     if (station.encrypted()) {
         val licences = object : MediaDrmCallback {
             override fun executeProvisionRequest(uuid: UUID, request: ExoMediaDrm.ProvisionRequest) =

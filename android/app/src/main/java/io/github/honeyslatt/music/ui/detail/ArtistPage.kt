@@ -90,10 +90,7 @@ fun ArtistPage(c: LibraryContext, id: ItemId) {
         songColumns("Top Songs", d.topSongs) { i -> c.playback.play(d.topSongs, i) }
         albumShelf(c, "Albums", d.albums)
         albumShelf(c, "Singles & EPs", d.singles)
-        shelf(
-            "Music Videos",
-            d.videos.map { ShelfCover(it.thumbnail?.let { t -> io.github.honeyslatt.music.core.model.Artwork(t, null) }, it.title, it.artists.joinToString(", "), it.explicit) {} },
-        )
+        videoShelf("Music Videos", d.videos)
         albumShelf(c, "Appears On", d.appearsOn)
         shelf("Artist Playlists", d.playlists.map { ShelfCover(it.artwork, it.name, it.curator) { c.nav.push(Route.Playlist(it.id)) } })
         albumShelf(c, "Essential Albums", d.essentials)
@@ -177,9 +174,9 @@ private fun Latest(album: Album, onClick: () -> Unit) {
 }
 
 /** Songs in columns of four that page sideways: Top Songs, Best New Songs. */
-fun LazyListScope.songColumns(title: String, tracks: List<Track>, play: (Int) -> Unit) {
+fun LazyListScope.songColumns(title: String, tracks: List<Track>, onOpen: (() -> Unit)? = null, play: (Int) -> Unit) {
     if (tracks.isEmpty()) return
-    item { SectionHeader(title) }
+    item { SectionHeader(title, onOpen) }
     item {
         val state = rememberLazyListState()
         BoxWithConstraints(Modifier.fillMaxWidth()) {

@@ -103,7 +103,7 @@ private fun AddToPlaylists(actions: Actions, spec: SheetSpec.AddToPlaylists, ope
             val has = already(p)
             val on = p in chosen
             GroupRow(first = i == 0, inset = 72.dp, onClick = if (has) null else ({ if (on) chosen.remove(p) else chosen.add(p) })) {
-                Cover(p.artwork, 44.dp, RoundedCornerShape(7.dp), Modifier.size(44.dp))
+                io.github.honeyslatt.music.ui.components.PlaylistCover(p, 44.dp, RoundedCornerShape(7.dp), Modifier.size(44.dp))
                 Column(Modifier.weight(1f)) {
                     Line(p.name, geist(16.sp).copy(color = roles.text))
                     if (has) Line("Already in playlist", geist(13.sp).copy(color = roles.sub))

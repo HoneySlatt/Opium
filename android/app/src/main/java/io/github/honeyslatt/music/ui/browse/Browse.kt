@@ -50,6 +50,7 @@ import io.github.honeyslatt.music.ui.components.Line
 import io.github.honeyslatt.music.ui.components.ListPage
 import io.github.honeyslatt.music.ui.components.SectionHeader
 import io.github.honeyslatt.music.ui.components.at
+import io.github.honeyslatt.music.ui.components.gridCell
 import io.github.honeyslatt.music.ui.components.press
 import io.github.honeyslatt.music.ui.detail.Loading
 import io.github.honeyslatt.music.ui.detail.listing
@@ -132,7 +133,7 @@ private fun LazyListScope.shelves(c: LibraryContext, loading: Loading<List<Shelf
     }
     for (shelf in shelves) {
         when {
-            shelf.songs.isNotEmpty() -> songColumns(shelf.title, shelf.songs) { i -> c.playback.play(shelf.songs, i) }
+            shelf.songs.isNotEmpty() -> songColumns(shelf.title, shelf.songs, { c.nav.push(Route.Shelf(shelf)) }) { i -> c.playback.play(shelf.songs, i) }
             shelf.hero && hero == Hero.Stations -> {
                 if (shelf.title.isNotBlank()) item { SectionHeader(shelf.title) }
                 items(shelf.items.filterIsInstance<Collection.Station>()) { StationCard(c, it.v1) }
@@ -142,7 +143,7 @@ private fun LazyListScope.shelves(c: LibraryContext, loading: Loading<List<Shelf
                 item { HeroRow(c, shelf, hero) }
             }
             else -> {
-                item { SectionHeader(shelf.title) }
+                item { SectionHeader(shelf.title) { c.nav.push(Route.Shelf(shelf)) } }
                 item { CoverRow(c, shelf.items) }
             }
         }
@@ -323,3 +324,42 @@ private fun LiveBadge(modifier: Modifier = Modifier) {
 }
 
 private fun Modifier.clipRounded(radius: Int) = clip(RoundedCornerShape(radius.dp))
+
+/** A shelf whole: its songs in a list, or its covers in a grid. */
+@androidx.annotation.OptIn(UnstableApi::class)
+@Composable
+fun ShelfPage(c: LibraryContext, shelf: Shelf) {
+    if (shelf.songs.isNotEmpty()) {
+        ListPage(c.nav, shelf.title) {
+            item {
+                io.github.honeyslatt.music.ui.library.PlayShuffle(true, { c.playback.play(shelf.songs, 0) }, { c.playback.shuffle(shelf.songs) })
+            }
+            items(shelf.songs.size) { i -> io.github.honeyslatt.music.ui.components.TrackRow(shelf.songs[i]) { c.playback.play(shelf.songs, i) } }
+        }
+        return
+    }
+    val actions = LocalActions.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    io.github.honeyslatt.music.ui.components.GridPage(c.nav, shelf.title) {
+        items(shelf.items.size) { i ->
+            val item = shelf.items[i]
+            val (artwork, title, subtitle) = when (item) {
+                is Collection.Album -> Triple(item.v1.artwork, item.v1.title, item.v1.artists.joinToString(", "))
+                is Collection.Playlist -> Triple(item.v1.artwork, item.v1.name, item.v1.curator ?: "Playlist")
+                is Collection.Station -> Triple(item.v1.artwork, item.v1.name, item.v1.description ?: kindLabel(item.v1.kind))
+            }
+            CoverCard(
+                artwork,
+                title,
+                subtitle,
+                explicit = (item as? Collection.Album)?.v1?.explicit == true,
+                modifier = Modifier.gridCell(),
+                onMenu = when (item) {
+                    is Collection.Album -> { r -> actions?.albumMenu(item.v1, r) }
+                    is Collection.Playlist -> { r -> actions?.playlistMenu(item.v1, r) }
+                    is Collection.Station -> null
+                },
+            ) { open(c, item, scope) { actions?.hud?.show("Couldn't tune in", io.github.honeyslatt.music.ui.Icons.Alert) } }
+        }
+    }
+}

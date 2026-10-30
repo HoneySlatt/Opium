@@ -4,6 +4,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import io.github.honeyslatt.music.core.model.AlbumExtras
 import io.github.honeyslatt.music.ui.actions.LocalActions
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
@@ -73,7 +77,27 @@ fun AlbumPage(c: LibraryContext, id: ItemId) {
     val page = rememberPageColour(album?.artwork)
     val quality = tracks.firstNotNullOfOrNull { it.quality }
     val actions = LocalActions.current
-    DetailPage(c.nav, album?.title.orEmpty(), page, listOf(BarAction(Icons.More, "More") { rect -> album?.let { actions?.albumMenu(it, rect) } })) {
+    // Its other editions and its songs' videos, when Apple has them.
+    val extras by produceState<AlbumExtras?>(null, id) {
+        if (id.provider == ProviderKind.APPLE_MUSIC) value = runCatching { c.core.session.albumExtras(id) }.getOrNull()
+    }
+    // A catalogue album gets a + that adds it to the library.
+    var added by remember(id) { mutableStateOf(false) }
+    val saved = album == null || album.added != null || album.id.id.startsWith("l.") || album.id.provider != ProviderKind.APPLE_MUSIC
+    val bar = listOfNotNull(
+        if (!saved) {
+            BarAction(if (added) Icons.Check else Icons.Plus, "Add to Library") {
+                if (!added) {
+                    added = true
+                    actions?.addAlbumToLibrary(album!!)
+                }
+            }
+        } else {
+            null
+        },
+        BarAction(Icons.More, "More") { rect -> album?.let { actions?.albumMenu(it, rect) } },
+    )
+    DetailPage(c.nav, album?.title.orEmpty(), page, bar) {
         item {
             DetailHeader(
                 artwork = album?.artwork,
@@ -101,6 +125,10 @@ fun AlbumPage(c: LibraryContext, id: ItemId) {
             item {
                 Foot(listOfNotNull(releaseDate(album.released)?.let { "Released $it" }, countAndLength(tracks), album.copyright))
             }
+        }
+        extras?.let { e ->
+            shelf("Other Versions", e.otherVersions.map { ShelfCover(it.artwork, it.title, it.byline(), it.explicit) { c.nav.push(Route.Album(it.id)) } })
+            videoShelf("Music Videos", e.videos)
         }
         shelf(
             "More by ${album?.artists?.firstOrNull().orEmpty()}",

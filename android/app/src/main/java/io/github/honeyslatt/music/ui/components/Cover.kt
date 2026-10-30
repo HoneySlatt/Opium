@@ -5,6 +5,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Shape
@@ -44,3 +46,34 @@ fun Cover(artwork: Artwork?, size: Dp, shape: Shape, modifier: Modifier = Modifi
 }
 
 fun corners(radius: Dp) = RoundedCornerShape(radius)
+
+/**
+ * A playlist's cover; one without, the covers of its first four albums in
+ * a square (one cover alone when it has fewer).
+ */
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+@Composable
+fun PlaylistCover(playlist: io.github.honeyslatt.music.core.model.Playlist, size: Dp, shape: Shape, modifier: Modifier = Modifier) {
+    if (playlist.artwork != null) return Cover(playlist.artwork, size, shape, modifier)
+    val actions = io.github.honeyslatt.music.ui.actions.LocalActions.current
+    val covers by androidx.compose.runtime.produceState(emptyList<Artwork>(), playlist.id) {
+        value = actions?.mosaic(playlist.id).orEmpty()
+    }
+    if (covers.size < 4) return Cover(covers.firstOrNull(), size, shape, modifier)
+    Box(modifier.clip(shape).background(roles.surface).border(1.dp, roles.line, shape)) {
+        androidx.compose.foundation.layout.Column(Modifier.matchParentSize()) {
+            covers.chunked(2).forEach { row ->
+                androidx.compose.foundation.layout.Row(Modifier.weight(1f)) {
+                    row.forEach { art ->
+                        AsyncImage(
+                            model = art.at(with(LocalDensity.current) { (size / 2).roundToPx() }),
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}

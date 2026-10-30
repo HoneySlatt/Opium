@@ -280,6 +280,27 @@ fn pssh_key_id(key_uri: &str) -> Option<[u8; 16]> {
     data.get(at + 2..at + 18)?.try_into().ok()
 }
 
+/// An episode's init segment leaves its key id zero, the playlist's PSSH
+/// naming the key: put it in, for a player that decrypts with the init
+/// segment's key id. Says whether it did.
+pub fn name_the_key(init: &mut [u8], key_uri: &str) -> bool {
+    let Some(key_id) = pssh_key_id(key_uri) else {
+        return false;
+    };
+    if cenc::tenc(init).is_none_or(|t| t.key_id != [0; 16]) {
+        return false;
+    }
+    // The key id sits 8 bytes into the box's body, after its type.
+    let Some(at) = init.windows(4).position(|w| w == b"tenc") else {
+        return false;
+    };
+    let Some(slot) = init.get_mut(at + 12..at + 28) else {
+        return false;
+    };
+    slot.copy_from_slice(&key_id);
+    true
+}
+
 /// How a station's segments become AAC frames.
 enum Segments {
     /// CMAF: an init segment, then fragments, encrypted `cbcs` (Apple's own
@@ -481,14 +502,21 @@ impl AppleMusic {
     /// The Widevine key the stream uses now: its `data:` URI, which names
     /// the key to the key server.
     pub async fn live_key_uri(&self, master: &str) -> Result<Option<String>> {
+        Ok(self.live_parts(master).await?.1)
+    }
+
+    /// The stream's init segment, resolved, and its key's `data:` URI.
+    pub async fn live_parts(&self, master: &str) -> Result<(Option<String>, Option<String>)> {
         let text = self.text(master).await?;
         let variant = match best_variant(&text) {
             Some(v) => resolve(master, &v),
             None => master.to_owned(),
         };
-        Ok(media_playlist(&self.text(&variant).await?)
-            .key
-            .map(|(uri, _)| uri))
+        let playlist = media_playlist(&self.text(&variant).await?);
+        Ok((
+            playlist.map.map(|map| resolve(&variant, &map)),
+            playlist.key.map(|(uri, _)| uri),
+        ))
     }
 
     /// A licence for `challenge`, a Widevine CDM's request for the key at
@@ -677,6 +705,25 @@ https://a.example/index_2.m3u8\n";
         let uri = "data:text/plain;v=v1;base64,AAAAOHBzc2gAAAAA7e+LqXnWSs6jyCfc1R0h7QAAABgSELLrrJ7y0k0vsCOpUfshHKxI88aJmwY=";
         let kid = pssh_key_id(uri).unwrap();
         assert_eq!(kid[..4], [0xb2, 0xeb, 0xac, 0x9e]);
+    }
+
+    #[test]
+    fn an_episode_gets_its_key_id() {
+        let uri = "data:text/plain;v=v1;base64,AAAAOHBzc2gAAAAA7e+LqXnWSs6jyCfc1R0h7QAAABgSELLrrJ7y0k0vsCOpUfshHKxI88aJmwY=";
+        // A tenc box, version 0: is protected, IV size 0, key id zero, then a constant IV.
+        let mut tenc = vec![0, 0, 0, 0, 0, 0, 1, 0];
+        tenc.extend_from_slice(&[0; 16]);
+        tenc.extend_from_slice(&[16; 17]);
+        let mut init = ((tenc.len() + 8) as u32).to_be_bytes().to_vec();
+        init.extend_from_slice(b"tenc");
+        init.extend_from_slice(&tenc);
+        assert!(name_the_key(&mut init, uri));
+        assert_eq!(
+            cenc::tenc(&init).unwrap().key_id[..4],
+            [0xb2, 0xeb, 0xac, 0x9e]
+        );
+        // Named already: left as it is.
+        assert!(!name_the_key(&mut init, uri));
     }
 
     #[test]

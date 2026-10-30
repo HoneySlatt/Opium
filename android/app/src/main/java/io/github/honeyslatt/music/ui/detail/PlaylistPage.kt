@@ -105,6 +105,8 @@ fun PlaylistPage(c: LibraryContext, id: ItemId, known: Playlist? = null) {
                             contentAlignment = Alignment.Center,
                         ) { Glyph(Icons.Starf, roles.onAccent, 110.dp) }
                     }
+                } else if (playlist != null && playlist.artwork == null) {
+                    { io.github.honeyslatt.music.ui.components.PlaylistCover(playlist, 264.dp, RoundedCornerShape(12.dp), Modifier.fillMaxSize()) }
                 } else {
                     null
                 },

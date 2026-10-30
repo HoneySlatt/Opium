@@ -39,6 +39,9 @@ data class Signal(
     val output: AudioSink.AudioTrackConfig? = null,
 )
 
+/** How many songs of a station are asked for at once. */
+private const val STATION_SONGS = 20u
+
 /** How many songs in a row may fail to play before playback stops. */
 private const val MAX_SKIPS = 5
 
@@ -146,11 +149,34 @@ class Playback(context: Context, private val core: Core, private val scope: Coro
         _history.value = emptyList()
     }
 
+    /** The station of songs playing, which goes on as the queue runs out. */
+    private var station: io.github.honeyslatt.music.core.model.ItemId? = null
+    private var refilling = false
+
     /** The queue's state, as the screens show it. */
     private fun changed() {
         _upcoming.value = queue.upcoming()
         _shuffle.value = queue.shuffle()
         _repeat.value = queue.repeat()
+        refill()
+    }
+
+    /** A few songs left of a station: its next ones join the queue. */
+    private fun refill() {
+        val s = station ?: return
+        if (refilling || _upcoming.value.size > 3) return
+        refilling = true
+        scope.launch {
+            runCatching { core.session.stationTracks(s, STATION_SONGS) }.onSuccess { more ->
+                if (station == s && more.isNotEmpty()) {
+                    more.forEach(queue::addLast)
+                    refilling = false
+                    changed()
+                    lineUpNext()
+                }
+            }
+            refilling = false
+        }
     }
 
     private fun played(track: Track) {
@@ -218,6 +244,7 @@ class Playback(context: Context, private val core: Core, private val scope: Coro
     /** Play `tracks` from `start`. */
     fun play(tracks: List<Track>, start: Int) {
         if (tracks.isEmpty()) return
+        station = null
         queue.replace(tracks, start.toUInt())
         startCurrent()
     }
@@ -230,10 +257,7 @@ class Playback(context: Context, private val core: Core, private val scope: Coro
      * plays its stream as the queue's one song.
      */
     suspend fun playStation(station: io.github.honeyslatt.music.core.model.Station) {
-        if (station.kind == io.github.honeyslatt.music.core.model.StationKind.TRACKS) {
-            play(core.session.stationTracks(station.id, 25u), 0)
-            return
-        }
+        if (station.kind == io.github.honeyslatt.music.core.model.StationKind.TRACKS) return playStation(station.id)
         stations[station.id.id] = station
         val song = Track(
             id = station.id,
@@ -251,6 +275,12 @@ class Playback(context: Context, private val core: Core, private val scope: Coro
             libraryId = null,
         )
         play(listOf(song), 0)
+    }
+
+    /** A station of songs, going on for as long as it plays. */
+    suspend fun playStation(id: io.github.honeyslatt.music.core.model.ItemId) {
+        play(core.session.stationTracks(id, STATION_SONGS), 0)
+        station = id
     }
 
     /** Whether `track` stands for a station's stream, rather than a song. */

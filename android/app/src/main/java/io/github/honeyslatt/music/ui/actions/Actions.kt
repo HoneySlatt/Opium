@@ -45,9 +45,6 @@ sealed interface SheetSpec {
 
 val LocalActions = staticCompositionLocalOf<Actions?> { null }
 
-/** How many songs a station plays at once. */
-private const val STATION_SONGS = 25u
-
 /**
  * What the menus offer, and doing it: the queue at once, the services'
  * changes shown at once and taken back if the service refuses.
@@ -256,6 +253,19 @@ class Actions(
         }
     }
 
+    private val mosaics = java.util.concurrent.ConcurrentHashMap<ItemId, List<Artwork>>()
+
+    /** The covers of a playlist's first four albums, for one without a cover of its own. */
+    suspend fun mosaic(playlist: ItemId): List<Artwork> {
+        mosaics[playlist]?.let { return it }
+        val covers = runCatching { session.playlistTracks(playlist, null).items }.getOrNull().orEmpty()
+            .distinctBy { it.albumId ?: it.id }
+            .mapNotNull { it.artwork }
+            .take(4)
+        mosaics[playlist] = covers
+        return covers
+    }
+
     // ---- The queue ----
 
     // With nothing playing, they just play: no word needed.
@@ -315,8 +325,7 @@ class Actions(
         scope.launch {
             try {
                 val station = session.songLinks(track.id).station ?: return@launch hud.show("No station for this song", Icons.Alert)
-                val tracks = session.stationTracks(station, STATION_SONGS)
-                playback.play(tracks, 0)
+                playback.playStation(station)
                 hud.show("${track.title} Station", Icons.Radio)
             } catch (e: MusicException) {
                 hud.show("Couldn't start the station", Icons.Alert)
@@ -340,7 +349,7 @@ class Actions(
         }
     }
 
-    private fun addAlbumToLibrary(album: Album) {
+    fun addAlbumToLibrary(album: Album) {
         hud.show("Added to Library")
         change("Couldn't add to the library") { session.addToLibrary(FavouriteKind.ALBUM, album.catalogId ?: album.id) }
     }

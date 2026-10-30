@@ -33,6 +33,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import io.github.honeyslatt.music.ui.components.ExplicitBadge
+import androidx.compose.ui.draw.clip
 import io.github.honeyslatt.music.ui.components.anchor
 import io.github.honeyslatt.music.ui.components.rememberAnchor
 import androidx.compose.ui.draw.alpha
@@ -283,3 +285,45 @@ data class ShelfCover(
     val round: Boolean = false,
     val onClick: () -> Unit,
 )
+
+/** Music videos, 16:9: a tap opens the video's page on the service's website, where it plays. */
+fun LazyListScope.videoShelf(title: String, videos: List<io.github.honeyslatt.music.core.model.MusicVideo>) {
+    if (videos.isEmpty()) return
+    item { SectionHeader(title) }
+    item {
+        val context = androidx.compose.ui.platform.LocalContext.current
+        LazyRow(
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 20.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            items(videos) { v ->
+                Column(
+                    Modifier.width(240.dp).press(shrink = 0.97f) {
+                        v.url?.let { url ->
+                            runCatching {
+                                context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)))
+                            }
+                        }
+                    },
+                ) {
+                    androidx.compose.foundation.layout.Box(
+                        Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(roles.surface, RoundedCornerShape(10.dp)).clip(RoundedCornerShape(10.dp)),
+                    ) {
+                        coil3.compose.AsyncImage(
+                            v.thumbnail,
+                            contentDescription = null,
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                    androidx.compose.foundation.layout.Spacer(Modifier.height(7.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Line(v.title, geist(14.sp, FontWeight.Medium).copy(color = roles.text), Modifier.weight(1f, fill = false))
+                        if (v.explicit) ExplicitBadge()
+                    }
+                    Line(v.artists.joinToString(", "), geist(13.sp).copy(color = roles.sub))
+                }
+            }
+        }
+    }
+}

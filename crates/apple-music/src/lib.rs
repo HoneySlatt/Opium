@@ -15,7 +15,7 @@ mod types;
 
 pub use cenc::AudioStream;
 pub use playback::{ASSET_HOST, PRIMING, Protected};
-pub use radio::{LiveAsset, LiveStream};
+pub use radio::{LiveAsset, LiveStream, name_the_key};
 
 use async_trait::async_trait;
 use music_core::model::{

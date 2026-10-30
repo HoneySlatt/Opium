@@ -23,6 +23,18 @@ pub enum MusicError {
     Failed { reason: String },
 }
 
+/// Run `work` on the runtime's threads. A future runs where it is polled,
+/// and Kotlin polls where it waits, often Android's main thread: the TLS
+/// (whose certificate check may go to the network) and the parsing belong
+/// elsewhere.
+async fn off<T: Send + 'static>(
+    work: impl std::future::Future<Output = Result<T, MusicError>> + Send + 'static,
+) -> Result<T, MusicError> {
+    tokio::spawn(work).await.map_err(|e| MusicError::Failed {
+        reason: e.to_string(),
+    })?
+}
+
 impl From<music_core::Error> for MusicError {
     fn from(e: music_core::Error) -> Self {
         match e {
@@ -169,13 +181,16 @@ impl Session {
 
     /// Sign in to Apple Music with the `media-user-token` its sign-in page
     /// left; its storefront, as `fr`.
-    pub async fn connect_apple(&self, user_token: String) -> Result<String, MusicError> {
-        let apple = Arc::new(AppleMusic::connect(&user_token).await?);
-        let storefront = apple.storefront().to_owned();
-        let warming = apple.clone();
-        tokio::spawn(async move { warming.warm().await });
-        self.update(|s| s.apple = Some(apple));
-        Ok(storefront)
+    pub async fn connect_apple(self: Arc<Self>, user_token: String) -> Result<String, MusicError> {
+        off(async move {
+            let apple = Arc::new(AppleMusic::connect(&user_token).await?);
+            let storefront = apple.storefront().to_owned();
+            let warming = apple.clone();
+            tokio::spawn(async move { warming.warm().await });
+            self.update(|s| s.apple = Some(apple));
+            Ok(storefront)
+        })
+        .await
     }
 
     /// What the app keeps to sign in to a Navidrome server again: the
@@ -195,15 +210,21 @@ impl Session {
 
     /// Sign in to the server with what `navidrome_credentials` made; the
     /// user's name.
-    pub async fn connect_navidrome(&self, credentials: String) -> Result<String, MusicError> {
-        let credentials: navidrome::Credentials =
-            serde_json::from_str(&credentials).map_err(|e| MusicError::Failed {
-                reason: e.to_string(),
-            })?;
-        let server = Arc::new(Navidrome::connect(credentials).await?);
-        let user = server.user().to_owned();
-        self.update(|s| s.navidrome = Some(server));
-        Ok(user)
+    pub async fn connect_navidrome(
+        self: Arc<Self>,
+        credentials: String,
+    ) -> Result<String, MusicError> {
+        off(async move {
+            let credentials: navidrome::Credentials =
+                serde_json::from_str(&credentials).map_err(|e| MusicError::Failed {
+                    reason: e.to_string(),
+                })?;
+            let server = Arc::new(Navidrome::connect(credentials).await?);
+            let user = server.user().to_owned();
+            self.update(|s| s.navidrome = Some(server));
+            Ok(user)
+        })
+        .await
     }
 
     /// Stop using a service; its sign-in stays where the app keeps it.
@@ -217,321 +238,410 @@ impl Session {
 
     /// Every connected service's results, each song and album once.
     pub async fn search(
-        &self,
+        self: Arc<Self>,
         scope: SearchScope,
         query: String,
     ) -> Result<SearchResults, MusicError> {
-        let scope = match scope {
-            SearchScope::Catalog => services::Scope::Catalog,
-            SearchScope::Library => services::Scope::Library,
-        };
-        self.services()
-            .search(scope, &query)
-            .await
-            .map_err(|reason| MusicError::Failed { reason })
+        off(async move {
+            let scope = match scope {
+                SearchScope::Catalog => services::Scope::Catalog,
+                SearchScope::Library => services::Scope::Library,
+            };
+            self.services()
+                .search(scope, &query)
+                .await
+                .map_err(|reason| MusicError::Failed { reason })
+        })
+        .await
     }
 
     pub async fn library_tracks(
-        &self,
+        self: Arc<Self>,
         kind: ProviderKind,
         page: Option<String>,
     ) -> Result<TrackPage, MusicError> {
-        let page = self
-            .provider(kind)?
-            .library_tracks(cursor(page).as_ref())
-            .await?;
-        Ok(TrackPage {
-            items: page.items,
-            next: next(page.next),
+        off(async move {
+            let page = self
+                .provider(kind)?
+                .library_tracks(cursor(page).as_ref())
+                .await?;
+            Ok(TrackPage {
+                items: page.items,
+                next: next(page.next),
+            })
         })
+        .await
     }
 
     /// The saved songs, the latest added first.
     pub async fn library_tracks_newest(
-        &self,
+        self: Arc<Self>,
         kind: ProviderKind,
         page: Option<String>,
     ) -> Result<TrackPage, MusicError> {
-        let page = self
-            .provider(kind)?
-            .library_tracks_newest(cursor(page).as_ref())
-            .await?;
-        Ok(TrackPage {
-            items: page.items,
-            next: next(page.next),
+        off(async move {
+            let page = self
+                .provider(kind)?
+                .library_tracks_newest(cursor(page).as_ref())
+                .await?;
+            Ok(TrackPage {
+                items: page.items,
+                next: next(page.next),
+            })
         })
+        .await
     }
 
     pub async fn library_albums(
-        &self,
+        self: Arc<Self>,
         kind: ProviderKind,
         page: Option<String>,
     ) -> Result<AlbumPage, MusicError> {
-        let page = self
-            .provider(kind)?
-            .library_albums(cursor(page).as_ref())
-            .await?;
-        Ok(AlbumPage {
-            items: page.items,
-            next: next(page.next),
+        off(async move {
+            let page = self
+                .provider(kind)?
+                .library_albums(cursor(page).as_ref())
+                .await?;
+            Ok(AlbumPage {
+                items: page.items,
+                next: next(page.next),
+            })
         })
+        .await
     }
 
     pub async fn library_artists(
-        &self,
+        self: Arc<Self>,
         kind: ProviderKind,
         page: Option<String>,
     ) -> Result<ArtistPage, MusicError> {
-        let page = self
-            .provider(kind)?
-            .library_artists(cursor(page).as_ref())
-            .await?;
-        Ok(ArtistPage {
-            items: page.items,
-            next: next(page.next),
+        off(async move {
+            let page = self
+                .provider(kind)?
+                .library_artists(cursor(page).as_ref())
+                .await?;
+            Ok(ArtistPage {
+                items: page.items,
+                next: next(page.next),
+            })
         })
+        .await
     }
 
     pub async fn library_playlists(
-        &self,
+        self: Arc<Self>,
         kind: ProviderKind,
         page: Option<String>,
     ) -> Result<PlaylistPage, MusicError> {
-        let page = self
-            .provider(kind)?
-            .library_playlists(cursor(page).as_ref())
-            .await?;
-        Ok(PlaylistPage {
-            items: page.items,
-            next: next(page.next),
+        off(async move {
+            let page = self
+                .provider(kind)?
+                .library_playlists(cursor(page).as_ref())
+                .await?;
+            Ok(PlaylistPage {
+                items: page.items,
+                next: next(page.next),
+            })
         })
+        .await
     }
 
     pub async fn recently_added(
-        &self,
+        self: Arc<Self>,
         kind: ProviderKind,
         page: Option<String>,
     ) -> Result<CollectionPage, MusicError> {
-        let page = self
-            .provider(kind)?
-            .recently_added(cursor(page).as_ref())
-            .await?;
-        Ok(CollectionPage {
-            items: page.items,
-            next: next(page.next),
+        off(async move {
+            let page = self
+                .provider(kind)?
+                .recently_added(cursor(page).as_ref())
+                .await?;
+            Ok(CollectionPage {
+                items: page.items,
+                next: next(page.next),
+            })
         })
+        .await
     }
 
-    pub async fn album(&self, id: ItemId) -> Result<AlbumDetail, MusicError> {
-        let provider = self.provider(id.provider)?;
-        let (album, tracks) = tokio::try_join!(provider.album(&id), provider.album_tracks(&id))?;
-        Ok(AlbumDetail { album, tracks })
+    pub async fn album(self: Arc<Self>, id: ItemId) -> Result<AlbumDetail, MusicError> {
+        off(async move {
+            let provider = self.provider(id.provider)?;
+            let (album, tracks) =
+                tokio::try_join!(provider.album(&id), provider.album_tracks(&id))?;
+            Ok(AlbumDetail { album, tracks })
+        })
+        .await
     }
 
     /// The album's animated cover, without its songs: Now Playing's
     /// background.
-    pub async fn album_motion(&self, id: ItemId) -> Result<Option<String>, MusicError> {
-        Ok(self.provider(id.provider)?.album(&id).await?.motion)
+    pub async fn album_motion(self: Arc<Self>, id: ItemId) -> Result<Option<String>, MusicError> {
+        off(async move { Ok(self.provider(id.provider)?.album(&id).await?.motion) }).await
     }
 
-    pub async fn artist(&self, id: ItemId) -> Result<ArtistDetail, MusicError> {
-        Ok(self.provider(id.provider)?.artist(&id).await?)
+    pub async fn artist(self: Arc<Self>, id: ItemId) -> Result<ArtistDetail, MusicError> {
+        off(async move { Ok(self.provider(id.provider)?.artist(&id).await?) }).await
     }
 
     pub async fn playlist_tracks(
-        &self,
+        self: Arc<Self>,
         id: ItemId,
         page: Option<String>,
     ) -> Result<TrackPage, MusicError> {
-        let page = self
-            .provider(id.provider)?
-            .playlist_tracks(&id, cursor(page).as_ref())
-            .await?;
-        Ok(TrackPage {
-            items: page.items,
-            next: next(page.next),
+        off(async move {
+            let page = self
+                .provider(id.provider)?
+                .playlist_tracks(&id, cursor(page).as_ref())
+                .await?;
+            Ok(TrackPage {
+                items: page.items,
+                next: next(page.next),
+            })
         })
+        .await
     }
 
     /// Add to the favourites, or take out. `id` names the catalog item.
     pub async fn set_favourite(
-        &self,
+        self: Arc<Self>,
         kind: FavouriteKind,
         id: ItemId,
         on: bool,
     ) -> Result<(), MusicError> {
-        Ok(self
-            .provider(id.provider)?
-            .set_favourite(kind, &id, on)
-            .await?)
+        off(async move {
+            Ok(self
+                .provider(id.provider)?
+                .set_favourite(kind, &id, on)
+                .await?)
+        })
+        .await
     }
 
     /// Whether `id` is a favourite, when the service can say.
     pub async fn is_favourite(
-        &self,
+        self: Arc<Self>,
         kind: FavouriteKind,
         id: ItemId,
     ) -> Result<Option<bool>, MusicError> {
-        Ok(self.provider(id.provider)?.is_favourite(kind, &id).await?)
+        off(async move { Ok(self.provider(id.provider)?.is_favourite(kind, &id).await?) }).await
     }
 
-    pub async fn add_to_library(&self, kind: FavouriteKind, id: ItemId) -> Result<(), MusicError> {
-        Ok(self
-            .provider(id.provider)?
-            .add_to_library(kind, &id)
-            .await?)
+    pub async fn add_to_library(
+        self: Arc<Self>,
+        kind: FavouriteKind,
+        id: ItemId,
+    ) -> Result<(), MusicError> {
+        off(async move {
+            Ok(self
+                .provider(id.provider)?
+                .add_to_library(kind, &id)
+                .await?)
+        })
+        .await
     }
 
     /// Take a song out of the library, by its library id.
-    pub async fn remove_from_library(&self, library_id: ItemId) -> Result<(), MusicError> {
-        Ok(self
-            .provider(library_id.provider)?
-            .remove_from_library(&library_id)
-            .await?)
+    pub async fn remove_from_library(
+        self: Arc<Self>,
+        library_id: ItemId,
+    ) -> Result<(), MusicError> {
+        off(async move {
+            Ok(self
+                .provider(library_id.provider)?
+                .remove_from_library(&library_id)
+                .await?)
+        })
+        .await
     }
 
     pub async fn create_playlist(
-        &self,
+        self: Arc<Self>,
         kind: ProviderKind,
         name: String,
         description: String,
         tracks: Vec<ItemId>,
     ) -> Result<Playlist, MusicError> {
-        Ok(self
-            .provider(kind)?
-            .create_playlist(&name, &description, &tracks)
-            .await?)
+        off(async move {
+            Ok(self
+                .provider(kind)?
+                .create_playlist(&name, &description, &tracks)
+                .await?)
+        })
+        .await
     }
 
     pub async fn edit_playlist(
-        &self,
+        self: Arc<Self>,
         playlist: ItemId,
         name: String,
         description: String,
     ) -> Result<(), MusicError> {
-        Ok(self
-            .provider(playlist.provider)?
-            .edit_playlist(&playlist, &name, &description)
-            .await?)
+        off(async move {
+            Ok(self
+                .provider(playlist.provider)?
+                .edit_playlist(&playlist, &name, &description)
+                .await?)
+        })
+        .await
     }
 
-    pub async fn delete_playlist(&self, playlist: ItemId) -> Result<(), MusicError> {
-        Ok(self
-            .provider(playlist.provider)?
-            .delete_playlist(&playlist)
-            .await?)
+    pub async fn delete_playlist(self: Arc<Self>, playlist: ItemId) -> Result<(), MusicError> {
+        off(async move {
+            Ok(self
+                .provider(playlist.provider)?
+                .delete_playlist(&playlist)
+                .await?)
+        })
+        .await
     }
 
     /// Take a song out of a playlist, by its row's id there.
     pub async fn remove_from_playlist(
-        &self,
+        self: Arc<Self>,
         playlist: ItemId,
         entry: ItemId,
     ) -> Result<(), MusicError> {
-        Ok(self
-            .provider(playlist.provider)?
-            .remove_from_playlist(&playlist, &entry)
-            .await?)
+        off(async move {
+            Ok(self
+                .provider(playlist.provider)?
+                .remove_from_playlist(&playlist, &entry)
+                .await?)
+        })
+        .await
     }
 
     pub async fn add_to_playlist(
-        &self,
+        self: Arc<Self>,
         playlist: ItemId,
         tracks: Vec<ItemId>,
     ) -> Result<(), MusicError> {
-        Ok(self
-            .provider(playlist.provider)?
-            .add_to_playlist(&playlist, &tracks)
-            .await?)
+        off(async move {
+            Ok(self
+                .provider(playlist.provider)?
+                .add_to_playlist(&playlist, &tracks)
+                .await?)
+        })
+        .await
     }
 
     /// The next `count` songs of a station.
     pub async fn station_tracks(
-        &self,
+        self: Arc<Self>,
         station: ItemId,
         count: u32,
     ) -> Result<Vec<Track>, MusicError> {
-        Ok(self
-            .provider(station.provider)?
-            .station_tracks(&station, count as usize)
-            .await?)
+        off(async move {
+            Ok(self
+                .provider(station.provider)?
+                .station_tracks(&station, count as usize)
+                .await?)
+        })
+        .await
     }
 
     /// A song's artist and station, to open from it.
-    pub async fn song_links(&self, song: ItemId) -> Result<SongLinks, MusicError> {
-        Ok(self.provider(song.provider)?.song_links(&song).await?)
+    pub async fn song_links(self: Arc<Self>, song: ItemId) -> Result<SongLinks, MusicError> {
+        off(async move { Ok(self.provider(song.provider)?.song_links(&song).await?) }).await
     }
 
     /// A library artist's releases in the library: Apple Music's from its
     /// library, the other services' from their artist pages.
-    pub async fn library_artist_albums(&self, id: ItemId) -> Result<Vec<Album>, MusicError> {
-        if id.provider == ProviderKind::AppleMusic {
-            return Ok(self.apple()?.library_artist_albums(&id).await?);
-        }
-        let artist = self.provider(id.provider)?.artist(&id).await?;
-        Ok([artist.albums, artist.singles, artist.compilations].concat())
+    pub async fn library_artist_albums(
+        self: Arc<Self>,
+        id: ItemId,
+    ) -> Result<Vec<Album>, MusicError> {
+        off(async move {
+            if id.provider == ProviderKind::AppleMusic {
+                return Ok(self.apple()?.library_artist_albums(&id).await?);
+            }
+            let artist = self.provider(id.provider)?.artist(&id).await?;
+            Ok([artist.albums, artist.singles, artist.compilations].concat())
+        })
+        .await
     }
 
     /// A catalog album's other editions and its songs' music videos.
-    pub async fn album_extras(&self, id: ItemId) -> Result<AlbumExtras, MusicError> {
-        Ok(self.apple()?.album_extras(&id).await?)
+    pub async fn album_extras(self: Arc<Self>, id: ItemId) -> Result<AlbumExtras, MusicError> {
+        off(async move { Ok(self.apple()?.album_extras(&id).await?) }).await
     }
 
     /// Apple Music's Home, New and Radio pages, shelf by shelf.
-    pub async fn home(&self) -> Result<Vec<Shelf>, MusicError> {
-        Ok(self.apple()?.home().await?)
+    pub async fn home(self: Arc<Self>) -> Result<Vec<Shelf>, MusicError> {
+        off(async move { Ok(self.apple()?.home().await?) }).await
     }
 
-    pub async fn new_music(&self) -> Result<Vec<Shelf>, MusicError> {
-        Ok(self.apple()?.new_music().await?)
+    pub async fn new_music(self: Arc<Self>) -> Result<Vec<Shelf>, MusicError> {
+        off(async move { Ok(self.apple()?.new_music().await?) }).await
     }
 
-    pub async fn radio(&self) -> Result<Vec<Shelf>, MusicError> {
-        Ok(self.apple()?.radio().await?)
+    pub async fn radio(self: Arc<Self>) -> Result<Vec<Shelf>, MusicError> {
+        off(async move { Ok(self.apple()?.radio().await?) }).await
     }
 
     /// A song's synced lyrics: its service's, else the sites', in `sites`
     /// order (or the sites first, when `sites_first`). Synced lyrics from
     /// either beat plain ones from the other.
     pub async fn lyrics(
-        &self,
+        self: Arc<Self>,
         track: Track,
         sites: Vec<LyricsSite>,
         sites_first: bool,
     ) -> Result<Option<Lyrics>, MusicError> {
-        let first = if sites_first {
-            self.site_lyrics(&track, &sites).await
-        } else {
-            self.service_lyrics(&track).await
-        };
-        if first.as_ref().is_some_and(|l| l.synced) {
-            return Ok(first);
-        }
-        let second = if sites_first {
-            self.service_lyrics(&track).await
-        } else {
-            self.site_lyrics(&track, &sites).await
-        };
-        Ok(match (first, second) {
-            (_, Some(s)) if s.synced => Some(s),
-            (f, s) => f.or(s),
+        off(async move {
+            let first = if sites_first {
+                self.site_lyrics(&track, &sites).await
+            } else {
+                self.service_lyrics(&track).await
+            };
+            if first.as_ref().is_some_and(|l| l.synced) {
+                return Ok(first);
+            }
+            let second = if sites_first {
+                self.service_lyrics(&track).await
+            } else {
+                self.site_lyrics(&track, &sites).await
+            };
+            Ok(match (first, second) {
+                (_, Some(s)) if s.synced => Some(s),
+                (f, s) => f.or(s),
+            })
         })
+        .await
     }
 
     /// An Apple song's encrypted file, for the player's own CDM.
-    pub async fn protected(&self, song: ItemId) -> Result<Option<Arc<ProtectedTrack>>, MusicError> {
-        let apple = self.apple()?;
-        Ok(apple
-            .protected(&song)
-            .await?
-            .map(|protected| ProtectedTrack::new(apple.clone(), protected)))
+    pub async fn protected(
+        self: Arc<Self>,
+        song: ItemId,
+    ) -> Result<Option<Arc<ProtectedTrack>>, MusicError> {
+        off(async move {
+            let apple = self.apple()?;
+            Ok(apple
+                .protected(&song)
+                .await?
+                .map(|protected| ProtectedTrack::new(apple.clone(), protected)))
+        })
+        .await
     }
 
     /// A station that streams (on air, or an episode), to tune in to.
-    pub async fn live_station(&self, station: ItemId) -> Result<Arc<LiveStation>, MusicError> {
-        let apple = self.apple()?;
-        let asset = apple.live_asset(&station).await?;
-        Ok(Arc::new(LiveStation { apple, asset }))
+    pub async fn live_station(
+        self: Arc<Self>,
+        station: ItemId,
+    ) -> Result<Arc<LiveStation>, MusicError> {
+        off(async move {
+            let apple = self.apple()?;
+            let asset = apple.live_asset(&station).await?;
+            let (init, key_uri) = apple.live_parts(&asset.master).await?;
+            Ok(Arc::new(LiveStation {
+                apple,
+                asset,
+                init,
+                key_uri,
+            }))
+        })
+        .await
     }
 }
 
@@ -541,12 +651,29 @@ impl Session {
 pub struct LiveStation {
     apple: Arc<AppleMusic>,
     asset: apple_music::LiveAsset,
+    /// Its init segment, and its key's line, as it started.
+    init: Option<String>,
+    key_uri: Option<String>,
 }
 
 #[uniffi::export(async_runtime = "tokio")]
 impl LiveStation {
     pub fn master(&self) -> String {
         self.asset.master.clone()
+    }
+
+    /// Its init segment's address, which `fix_init` reads.
+    pub fn init_uri(&self) -> Option<String> {
+        self.init.clone()
+    }
+
+    /// The init segment, with the key id an episode leaves out put in.
+    pub fn fix_init(&self, init: Vec<u8>) -> Vec<u8> {
+        let mut init = init;
+        if let Some(uri) = &self.key_uri {
+            apple_music::name_the_key(&mut init, uri);
+        }
+        init
     }
 
     /// Whether its segments are encrypted (Apple's own stations are).
@@ -557,25 +684,28 @@ impl LiveStation {
     /// A licence for `challenge`, for the key the stream uses now: the key
     /// server names keys by the playlist's key line, which a challenge
     /// doesn't carry.
-    pub async fn license(&self, challenge: Vec<u8>) -> Result<Vec<u8>, MusicError> {
-        let key_server = self
-            .asset
-            .key_server
-            .as_deref()
-            .ok_or_else(|| MusicError::Failed {
-                reason: "the station isn't encrypted".into(),
-            })?;
-        let key_uri = self
-            .apple
-            .live_key_uri(&self.asset.master)
-            .await?
-            .ok_or_else(|| MusicError::Failed {
-                reason: "the station's playlist names no key".into(),
-            })?;
-        Ok(self
-            .apple
-            .live_license(key_server, &key_uri, &challenge)
-            .await?)
+    pub async fn license(self: Arc<Self>, challenge: Vec<u8>) -> Result<Vec<u8>, MusicError> {
+        off(async move {
+            let key_server =
+                self.asset
+                    .key_server
+                    .as_deref()
+                    .ok_or_else(|| MusicError::Failed {
+                        reason: "the station isn't encrypted".into(),
+                    })?;
+            let key_uri = self
+                .apple
+                .live_key_uri(&self.asset.master)
+                .await?
+                .ok_or_else(|| MusicError::Failed {
+                    reason: "the station's playlist names no key".into(),
+                })?;
+            Ok(self
+                .apple
+                .live_license(key_server, &key_uri, &challenge)
+                .await?)
+        })
+        .await
     }
 }
 
@@ -757,9 +887,12 @@ pub struct Apple(Arc<AppleMusic>);
 impl Apple {
     #[uniffi::constructor]
     pub async fn connect(user_token: String) -> Result<Arc<Self>, MusicError> {
-        Ok(Arc::new(Self(Arc::new(
-            AppleMusic::connect(&user_token).await?,
-        ))))
+        off(async move {
+            Ok(Arc::new(Self(Arc::new(
+                AppleMusic::connect(&user_token).await?,
+            ))))
+        })
+        .await
     }
 
     pub fn storefront(&self) -> String {
@@ -767,13 +900,19 @@ impl Apple {
     }
 
     /// A catalog song's encrypted file and its key; `None` for an upload.
-    pub async fn protected(&self, song: String) -> Result<Option<Arc<ProtectedTrack>>, MusicError> {
-        let id = ItemId::new(ProviderKind::AppleMusic, song);
-        Ok(self
-            .0
-            .protected(&id)
-            .await?
-            .map(|protected| ProtectedTrack::new(self.0.clone(), protected)))
+    pub async fn protected(
+        self: Arc<Self>,
+        song: String,
+    ) -> Result<Option<Arc<ProtectedTrack>>, MusicError> {
+        off(async move {
+            let id = ItemId::new(ProviderKind::AppleMusic, song);
+            Ok(self
+                .0
+                .protected(&id)
+                .await?
+                .map(|protected| ProtectedTrack::new(self.0.clone(), protected)))
+        })
+        .await
     }
 }
 
@@ -832,6 +971,7 @@ impl ProtectedTrack {
     /// The frames after the music in the last frame, to leave out: read
     /// in the background from the start, as the song needn't wait for it.
     pub async fn padding(&self) -> u32 {
+        // Its work runs in a task of its own already.
         let task = self
             .padding
             .lock()
@@ -847,8 +987,8 @@ impl ProtectedTrack {
     }
 
     /// The licence, in answer to the CDM's challenge.
-    pub async fn license(&self, challenge: Vec<u8>) -> Result<Vec<u8>, MusicError> {
-        Ok(self.apple.license(&self.protected, &challenge).await?)
+    pub async fn license(self: Arc<Self>, challenge: Vec<u8>) -> Result<Vec<u8>, MusicError> {
+        off(async move { Ok(self.apple.license(&self.protected, &challenge).await?) }).await
     }
 }
 

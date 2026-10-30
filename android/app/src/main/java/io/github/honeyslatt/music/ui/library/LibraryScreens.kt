@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -233,6 +234,11 @@ fun Playlists(c: LibraryContext) {
                 subtitle = p.trackCount?.let { songs(it.toInt()) } ?: p.curator,
                 logo = p.id.provider.takeIf { it != ProviderKind.APPLE_MUSIC },
                 star = actions?.isFavourite(p) ?: (p.inFavourites == true),
+                leading = if (p.artwork == null) {
+                    { io.github.honeyslatt.music.ui.components.PlaylistCover(p, 56.dp, RoundedCornerShape(8.dp), Modifier.size(56.dp)) }
+                } else {
+                    null
+                },
                 onMenu = { actions?.playlistMenu(p, it) },
             ) { c.nav.push(Route.Playlist(p.id)) }
         }
