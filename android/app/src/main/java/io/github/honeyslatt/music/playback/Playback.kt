@@ -285,6 +285,13 @@ class Playback(private val context: Context, private val core: Core, private val
         station = id
     }
 
+    /** What a SoundCloud song plays from, once known: the uploader's file, or an encrypted stream. */
+    enum class Source { Original, Encrypted }
+
+    private val sources = androidx.compose.runtime.mutableStateMapOf<String, Source>()
+
+    fun source(track: Track): Source? = sources[track.id.id]
+
     /** Whether `track` stands for a station's stream, rather than a song. */
     fun isStation(track: Track) = track.id.id in stations
 
@@ -415,7 +422,12 @@ class Playback(private val context: Context, private val core: Core, private val
             }
             ProviderKind.SOUND_CLOUD -> {
                 val settings = (context.applicationContext as io.github.honeyslatt.music.MusicApp).settings
-                soundCloudSource(core.session.soundcloudStream(track.id, settings.soundcloudOriginals), item)
+                val stream = core.session.soundcloudStream(track.id, settings.soundcloudOriginals)
+                when {
+                    stream.original() -> sources[track.id.id] = Source.Original
+                    stream.encrypted() -> sources[track.id.id] = Source.Encrypted
+                }
+                soundCloudSource(stream, item)
             }
             ProviderKind.NAVIDROME -> navidromeSource(core.session.navidromeStreamUrl(track.id), item)
         }

@@ -464,13 +464,15 @@ private fun Scrubber(playback: Playback, t: Track, playing: Boolean, onSignal: (
     Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         val times = geist(12.sp, FontWeight.Medium).tabular().copy(color = np.sub)
         BasicText(clock(shown), Modifier.weight(1f), style = times)
-        t.quality?.let { q ->
+        // The uploader's own file: its quality is the file's, told in the signal path.
+        val original = playback.source(t) == Playback.Source.Original
+        (if (original) "Original" else t.quality?.label())?.let { label ->
             val chip = RoundedCornerShape(6.dp)
             Box(
                 Modifier.height(22.dp).press(chip, shrink = 0.94f, onClick = onSignal).background(np.button, chip).padding(horizontal = 9.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                BasicText(q.label(), style = geist(11.5.sp, FontWeight.SemiBold, 0.02f).copy(color = np.fg))
+                BasicText(label, style = geist(11.5.sp, FontWeight.SemiBold, 0.02f).copy(color = np.fg))
             }
         }
         BasicText(

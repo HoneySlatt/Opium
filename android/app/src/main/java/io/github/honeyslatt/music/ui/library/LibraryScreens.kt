@@ -90,7 +90,9 @@ private const val RECENT_SHOWN = 66
 @Composable
 fun LibraryRoot(c: LibraryContext) {
     var source by rememberSaveable { mutableStateOf<ProviderKind?>(null) }
-    val added = c.lists.recentlyAdded.items.filter { source == null || it.provider() == source }.take(RECENT_SHOWN)
+    val added = remember(c.lists.recentlyAdded.items, source) {
+        newestFirst(c.lists.recentlyAdded.items).filter { source == null || it.provider() == source }.take(RECENT_SHOWN)
+    }
     GridPage(c.nav, "Library", account = c.account) {
         full {
             androidx.compose.foundation.layout.Column(Modifier.padding(top = 6.dp)) {
@@ -114,7 +116,9 @@ fun LibraryRoot(c: LibraryContext) {
 @Composable
 fun RecentlyAdded(c: LibraryContext) {
     var source by rememberSaveable { mutableStateOf<ProviderKind?>(null) }
-    val added = c.lists.recentlyAdded.items.filter { source == null || it.provider() == source }
+    val added = remember(c.lists.recentlyAdded.items, source) {
+        newestFirst(c.lists.recentlyAdded.items).filter { source == null || it.provider() == source }
+    }
     GridPage(c.nav, "Recently Added") {
         full { SourceChips(source, c.services) { source = it } }
         full { Spacer(Modifier.height(10.dp)) }
@@ -126,6 +130,23 @@ private fun Collection.provider() = when (this) {
     is Collection.Album -> v1.id.provider
     is Collection.Playlist -> v1.id.provider
     is Collection.Station -> v1.id.provider
+}
+
+/**
+ * Every service's recent additions, newest first. Each service lists its
+ * own newest first; a playlist, which says no date, keeps the date of what
+ * comes before it in its service's list.
+ */
+private fun newestFirst(items: List<Collection>): List<Collection> {
+    val last = mutableMapOf<ProviderKind, String>()
+    val dated = items.map { item ->
+        val own = (item as? Collection.Album)?.v1?.added
+        // Before any dated one: as new as can be.
+        val date = own ?: last[item.provider()] ?: "9999"
+        last[item.provider()] = date
+        item to date
+    }
+    return dated.sortedByDescending { it.second }.map { it.first }
 }
 
 private fun androidx.compose.foundation.lazy.grid.LazyGridScope.collections(

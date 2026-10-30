@@ -95,18 +95,25 @@ fun SignalPath(playback: Playback, track: Track) {
             "still sounds better than a stream, but it is not bit-perfect.",
     ) {
         val provider = track.id.provider
+        val source = playback.source(track)
+        val original = source == Playback.Source.Original
+        // An original's quality is the file's: what the service listed is its stream's.
+        val listed = track.quality.takeIf { !original }
         val format = listOfNotNull(
-            codec(input?.sampleMimeType) ?: track.quality?.label(),
+            codec(input?.sampleMimeType) ?: listed?.label(),
             rate?.let(::khz),
             channels?.let { if (it == 1) "mono" else "$it ch" },
-            (track.quality?.bitrateKbps?.toInt()?.times(1000) ?: input?.averageBitrate?.takeIf { it > 0 })?.let { "${it / 1000} kb/s" },
+            (listed?.bitrateKbps?.toInt()?.times(1000) ?: input?.averageBitrate?.takeIf { it > 0 })?.let { "${it / 1000} kb/s" },
         ).joinToString(" · ")
-        val transport = when (provider) {
-            ProviderKind.APPLE_MUSIC -> "Streamed over HLS, decrypted by Widevine"
-            ProviderKind.SOUND_CLOUD -> "Streamed over HLS"
-            ProviderKind.NAVIDROME -> "Your server's file, as it is"
+        val transport = when {
+            provider == ProviderKind.APPLE_MUSIC -> "Streamed over HLS, decrypted by Widevine"
+            original -> "The uploader's own file, as it is"
+            source == Playback.Source.Encrypted -> "Streamed over HLS, decrypted by Widevine"
+            provider == ProviderKind.SOUND_CLOUD -> "Streamed over HLS"
+            else -> "Your server's file, as it is"
         }
-        Link({ ServiceLogo(provider, 20.dp) }, "${provider.label()} · ${track.quality?.label() ?: codec(input?.sampleMimeType) ?: ""}", "$format\n$transport", first = true)
+        val name = if (original) "Original" else listed?.label() ?: codec(input?.sampleMimeType) ?: ""
+        Link({ ServiceLogo(provider, 20.dp) }, "${provider.label()} · $name", "$format\n$transport", first = true)
 
         val out = signal.output
         val decoded = listOfNotNull(
