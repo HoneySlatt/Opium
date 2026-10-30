@@ -50,11 +50,15 @@ class Library(private val core: Core, private val scope: CoroutineScope) {
     /** By file, whether what was kept of a list shows (once read). */
     private val shown = mutableMapOf<String, Deferred<Boolean>>()
 
+    /** The lists (by file) the services have answered whole since the start. */
+    private val loaded = mutableSetOf<String>()
+
     /** A service turned off or signed out of: its items go from the lists. */
     fun forget(provider: ProviderKind) {
         providers -= provider
         showing -= provider
         shown.keys.filter { it.endsWith("-${provider.name}.json") }.forEach { shown.remove(it)?.cancel() }
+        loaded.removeAll { it.endsWith("-${provider.name}.json") }
         _lists.update { l ->
             l.copy(
                 playlists = l.playlists.copy(items = l.playlists.items.filter { it.id.provider != provider }),
@@ -134,10 +138,21 @@ class Library(private val core: Core, private val scope: CoroutineScope) {
             { session.libraryTracks(provider, it).let { p -> p.items to p.next } },
         ) { f -> _lists.update { it.copy(songs = f(it.songs)) } }
         if (!ask) return
-        // Apple gives 25 at a time: three pages fill Library's 66.
+        // Apple gives 25 at a time: three pages fill Library's 66. Loaded
+        // again (the screen made anew), they take the place of the last ones.
         scope.launch {
+            val fresh = mutableListOf<Collection>()
             pages({ session.recentlyAdded(provider, it).let { p -> p.items to p.next } }, limit = 3) { items, done, error ->
-                _lists.update { it.copy(recentlyAdded = it.recentlyAdded.more(items, done, error)) }
+                fresh += items
+                _lists.update { l ->
+                    l.copy(
+                        recentlyAdded = l.recentlyAdded.copy(
+                            items = l.recentlyAdded.items.with(provider, fresh.toList()) { it.provider() },
+                            done = done,
+                            error = error ?: l.recentlyAdded.error,
+                        ),
+                    )
+                }
             }
         }
     }
@@ -190,6 +205,9 @@ class Library(private val core: Core, private val scope: CoroutineScope) {
                 }
             }.await()
             if (!ask) return@launch
+            // The first time with nothing kept, the pages show as they come;
+            // after, the list shown stays until the new one is all there.
+            val stepwise = !shownKept && file !in loaded
             val fresh = mutableListOf<T>()
             var failed: String? = null
             if (whole != null) {
@@ -198,18 +216,17 @@ class Library(private val core: Core, private val scope: CoroutineScope) {
                 } catch (e: MusicException) {
                     failed = e.message ?: e.toString()
                 }
-                if (!shownKept) set { l -> l.copy(items = l.items.with(provider, fresh, of), done = true, error = failed ?: l.error) }
+                if (stepwise) set { l -> l.copy(items = if (failed == null) l.items.with(provider, fresh, of) else l.items, done = true, error = failed ?: l.error) }
             } else {
                 pages(page) { items, done, error ->
                     fresh += items
                     failed = error
-                    if (!shownKept) {
-                        set { l -> l.copy(items = l.items.with(provider, l.items.filter { of(it) == provider } + items, of), done = done, error = error ?: l.error) }
-                    }
+                    if (stepwise) set { l -> l.copy(items = l.items.with(provider, fresh.toList(), of), done = done, error = error ?: l.error) }
                 }
             }
             if (failed != null) return@launch
-            if (shownKept) set { l -> l.copy(items = l.items.with(provider, fresh, of), done = true) }
+            if (!stepwise) set { l -> l.copy(items = l.items.with(provider, fresh, of), done = true) }
+            loaded += file
             withContext(Dispatchers.IO) { keep(file, fresh) }
         }
     }
@@ -225,8 +242,11 @@ class Library(private val core: Core, private val scope: CoroutineScope) {
         return rest.take(at) + group + rest.drop(at)
     }
 
-    private fun <T> Listing<T>.more(items: List<T>, done: Boolean, error: String?) =
-        copy(items = this.items + items, done = done, error = error ?: this.error)
+    private fun Collection.provider() = when (this) {
+        is Collection.Album -> v1.id.provider
+        is Collection.Playlist -> v1.id.provider
+        is Collection.Station -> v1.id.provider
+    }
 
     /** Every page from the first, each handed over as it comes. */
     private suspend fun <T> pages(
