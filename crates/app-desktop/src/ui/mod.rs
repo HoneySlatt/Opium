@@ -42,6 +42,7 @@ pub const TOP_BAR: f32 = 52.0;
 pub fn show(app: &mut App, ui: &mut Ui) {
     // Before the pages, so that their arrow keys don't see these too.
     player_shortcuts(app, ui);
+    mouse_navigation(app, ui);
     if app.now_playing {
         egui::CentralPanel::no_frame().show(ui, |ui| {
             let full = ui.max_rect();
@@ -384,6 +385,23 @@ fn shortcuts(app: &mut App, ui: &mut Ui) {
         } else {
             app.drawer_open = false;
         }
+    }
+}
+
+/// The mouse's back and forward buttons go back and forward between pages,
+/// as in a browser.
+fn mouse_navigation(app: &mut App, ui: &Ui) {
+    let (back, forward) = ui.input(|i| {
+        (
+            i.pointer.button_pressed(egui::PointerButton::Extra1),
+            i.pointer.button_pressed(egui::PointerButton::Extra2),
+        )
+    });
+    if back {
+        app.go_back();
+    }
+    if forward {
+        app.go_forward();
     }
 }
 
