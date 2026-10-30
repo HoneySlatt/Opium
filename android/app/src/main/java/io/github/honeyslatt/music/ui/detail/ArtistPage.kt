@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.honeyslatt.music.core.model.Album
 import io.github.honeyslatt.music.core.model.Artist
+import io.github.honeyslatt.music.core.model.Artwork
 import io.github.honeyslatt.music.core.model.ArtistDetail
 import io.github.honeyslatt.music.core.model.ItemId
 import io.github.honeyslatt.music.core.model.Track
@@ -67,7 +68,11 @@ import io.github.honeyslatt.music.ui.theme.roles
 fun ArtistPage(c: LibraryContext, id: ItemId) {
     val loaded by produceState<Loading<ArtistDetail>>(Loading.Pending, id) { value = load { c.core.session.artist(id) } }
     val d = (loaded as? Loading.Ready)?.value
-    val page = rememberPageColour(d?.artist?.artwork)
+    val motion = d?.motion?.takeIf { c.animatedArtwork }
+    // Under a video, the page takes the video's colours, so that it fades
+    // into the page as Apple Music's does; else the photo's.
+    val frame = d?.banner?.takeIf { motion != null }?.let { Artwork(it.replace("2400x1350", "{size}x{size}"), null) }
+    val page = rememberPageColour(frame ?: d?.artist?.artwork)
     val actions = LocalActions.current
     val artist = d?.artist
     val favourite = artist != null && actions?.isFavourite(artist) == true
@@ -75,21 +80,23 @@ fun ArtistPage(c: LibraryContext, id: ItemId) {
         c.nav,
         artist?.name.orEmpty(),
         page,
-        listOfNotNull(
-            if (artist?.id?.provider == ProviderKind.APPLE_MUSIC) {
-                BarAction(if (favourite) Icons.Starf else Icons.Star, "Favourite") { actions?.toggleFavourite(artist) }
-            } else {
-                null
-            },
-            BarAction(Icons.More, "More") { rect -> d?.takeIf { it.topSongs.isNotEmpty() }?.let { actions?.artistMenu(it, rect) } },
-        ),
+        listOf(BarAction(Icons.More, "More") { rect -> d?.takeIf { it.topSongs.isNotEmpty() }?.let { actions?.artistMenu(it, rect) } }),
     ) {
-        item { Hero(d?.artist, d?.motion?.takeIf { c.animatedArtwork }) { d?.topSongs?.let { c.playback.shuffle(it) } } }
+        item {
+            Hero(
+                artist,
+                motion,
+                favourite = favourite.takeIf { artist?.id?.provider == ProviderKind.APPLE_MUSIC },
+                onFavourite = { artist?.let { actions?.toggleFavourite(it) } },
+                onShuffle = { d?.topSongs?.takeIf { it.isNotEmpty() }?.let { c.playback.shuffle(it) } },
+                onPlay = { d?.topSongs?.takeIf { it.isNotEmpty() }?.let { c.playback.play(it, 0) } },
+            )
+        }
         if (d == null) {
             item { Empty(loaded.listing(), "", "") }
             return@DetailPage
         }
-        d.latest?.let { latest -> item { SectionHeader("Latest Release") }; item { Latest(latest) { c.nav.push(Route.Album(latest.id)) } } }
+        d.latest?.let { latest -> item { Latest(latest, onAdd = { actions?.addAlbumToLibrary(latest) }) { c.nav.push(Route.Album(latest.id)) } } }
         songColumns("Top Songs", d.topSongs) { i -> c.playback.play(d.topSongs, i) }
         albumShelf(c, "Albums", d.albums)
         albumShelf(c, "Singles & EPs", d.singles)
@@ -120,60 +127,112 @@ private fun LazyListScope.artistShelf(c: LibraryContext, title: String, artists:
     }
 }
 
-/** The 420 dp picture, or video, with the name over it and the shuffle button. */
+/**
+ * The artist's video, or photo, the page's width across and fading into
+ * the page; their name centred over its foot, and under it Shuffle, Play
+ * and Favourite, as Apple Music has them.
+ */
 @Composable
-private fun Hero(artist: Artist?, motion: String?, onShuffle: () -> Unit) {
+private fun Hero(
+    artist: Artist?,
+    motion: String?,
+    favourite: Boolean?,
+    onFavourite: () -> Unit,
+    onShuffle: () -> Unit,
+    onPlay: () -> Unit,
+) {
     val page = roles.base
-    Box(Modifier.fillMaxWidth().height(420.dp)) {
-        BoxWithConstraints(
-            Modifier.matchParentSize().drawWithContent {
-                drawContent()
-                drawRect(
-                    Brush.verticalGradient(
-                        0f to Color.Black.copy(alpha = 0.25f),
-                        0.3f to Color.Transparent,
-                        0.5f to Color.Transparent,
-                        0.86f to Color.Black.copy(alpha = 0.6f),
-                        1f to page,
-                    ),
-                )
-            },
-        ) {
-            Cover(artist?.artwork, maxWidth, RectangleShape, Modifier.fillMaxSize())
-            if (motion != null) MotionArtwork(motion, Modifier.fillMaxSize())
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        // A video stands taller than a photo, cropped to its middle.
+        val width = maxWidth
+        val height = if (motion != null) width * 1.3f else 420.dp
+        Box(Modifier.fillMaxWidth().height(height)) {
+            Box(
+                Modifier.matchParentSize().drawWithContent {
+                    drawContent()
+                    drawRect(
+                        Brush.verticalGradient(
+                            0f to Color.Black.copy(alpha = 0.22f),
+                            0.22f to Color.Transparent,
+                            0.5f to Color.Transparent,
+                            0.78f to page.copy(alpha = 0.55f),
+                            0.93f to page,
+                            1f to page,
+                        ),
+                    )
+                },
+            ) {
+                Cover(artist?.artwork, width, RectangleShape, Modifier.fillMaxSize())
+                if (motion != null) MotionArtwork(motion, Modifier.fillMaxSize(), crop = true)
+            }
+            Column(
+                Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 6.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Line(artist?.name.orEmpty(), geist(40.sp, FontWeight.Bold, -0.025f).copy(color = roles.text))
+                Row(
+                    Modifier.padding(top = 18.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(26.dp),
+                ) {
+                    Round(Icons.Shuffle, 54.dp, roles.text.copy(alpha = 0.14f), roles.text, 22.dp, onShuffle)
+                    Round(Icons.Play, 78.dp, Color.White, Color.Black, 34.dp, onPlay)
+                    if (favourite != null) {
+                        Round(if (favourite) Icons.Starf else Icons.Star, 54.dp, roles.text.copy(alpha = 0.14f), roles.text, 22.dp, onFavourite)
+                    } else {
+                        Spacer(Modifier.size(54.dp))
+                    }
+                }
+            }
         }
-        Line(
-            artist?.name.orEmpty(),
-            geist(38.sp, FontWeight.Bold, -0.025f).copy(color = Color.White),
-            Modifier.align(Alignment.BottomStart).padding(start = 20.dp, end = 96.dp, bottom = 22.dp),
-        )
-        Box(
-            Modifier
-                .align(Alignment.BottomEnd)
-                .padding(end = 20.dp, bottom = 14.dp)
-                .size(60.dp)
-                .shadow(10.dp, CircleShape)
-                .press(CircleShape, shrink = 0.92f, onClick = onShuffle)
-                .background(roles.accent, CircleShape),
-            contentAlignment = Alignment.Center,
-        ) { Glyph(Icons.Shuffle, Color.White, 26.dp) }
     }
 }
 
+/** A round button: `icon` on `fill`. */
 @Composable
-private fun Latest(album: Album, onClick: () -> Unit) {
+private fun Round(icon: androidx.compose.ui.graphics.vector.ImageVector, size: androidx.compose.ui.unit.Dp, fill: Color, tint: Color, glyph: androidx.compose.ui.unit.Dp, onClick: () -> Unit) {
+    Box(
+        Modifier.size(size).press(CircleShape, shrink = 0.92f, onClick = onClick).background(fill, CircleShape),
+        contentAlignment = Alignment.Center,
+    ) { Glyph(icon, tint, glyph) }
+}
+
+/** The latest release in a card: its date, title and size, and + to add it. */
+@Composable
+private fun Latest(album: Album, onAdd: () -> Unit, onClick: () -> Unit) {
+    val card = RoundedCornerShape(18.dp)
     Row(
-        Modifier.fillMaxWidth().press(onClick = onClick).padding(horizontal = 20.dp),
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp)
+            .padding(top = 22.dp)
+            .press(card, shrink = 0.98f, onClick = onClick)
+            .background(roles.text.copy(alpha = 0.07f), card)
+            .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Cover(album.artwork, 104.dp, RoundedCornerShape(10.dp), Modifier.size(104.dp))
-        Column {
-            BasicText(releaseDate(album.released)?.uppercase() ?: album.year?.toString().orEmpty(), style = geist(12.sp, FontWeight.SemiBold, 0.04f).copy(color = roles.sub))
-            Line(album.title, geist(16.sp, FontWeight.SemiBold).copy(color = roles.text), Modifier.padding(vertical = 2.dp))
-            Line(listOfNotNull(album.kind(), album.trackCount?.let { songs(it.toInt()) }).joinToString(" · "), geist(13.5.sp).copy(color = roles.sub))
+        Cover(album.artwork, 100.dp, RoundedCornerShape(10.dp), Modifier.size(100.dp))
+        Column(Modifier.weight(1f)) {
+            BasicText(shortDate(album.released) ?: album.year?.toString().orEmpty(), style = geist(13.sp, FontWeight.Medium).copy(color = roles.sub))
+            BasicText(
+                album.title,
+                Modifier.padding(vertical = 2.dp),
+                style = geist(16.5.sp, FontWeight.SemiBold).copy(color = roles.text),
+                maxLines = 2,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            )
+            Line(album.trackCount?.let { songs(it.toInt()) } ?: album.kind(), geist(13.5.sp).copy(color = roles.sub))
         }
+        Round(Icons.Plus, 38.dp, roles.text.copy(alpha = 0.12f), roles.text, 18.dp, onAdd)
     }
+}
+
+/** `8 Jul 2026`, as Apple Music dates a release on an artist's page. */
+private fun shortDate(released: String?): String? = released?.let {
+    runCatching {
+        java.time.LocalDate.parse(it).format(java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy", java.util.Locale.ENGLISH))
+    }.getOrNull()
 }
 
 /** Songs in columns of four that page sideways: Top Songs, Best New Songs. */
