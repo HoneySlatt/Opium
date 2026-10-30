@@ -95,10 +95,14 @@ class Core(context: Context) {
         }
     }
 
-    /** Forget the account: its sign-in goes from the phone. */
+    /** The library's lists as last read, by service: see [Library]. */
+    val kept = File(context.cacheDir, "library").apply { mkdirs() }
+
+    /** Forget the account: its sign-in goes from the phone, and its library as kept. */
     fun signOut(kind: ProviderKind) {
         session.disconnect(kind)
         vault.delete(kind.vaultName)
+        kept.listFiles { f -> f.name.endsWith("-${kind.name}.json") }?.forEach { it.delete() }
         connections.getValue(kind).value = Connection.Off
     }
 

@@ -386,6 +386,16 @@ impl AppleMusic {
             .await
     }
 
+    /// Every library song, the latest added first, as
+    /// [`each_library_track`](Self::each_library_track).
+    pub async fn each_newest_library_track(
+        &self,
+        each: impl FnMut(Vec<Track>, bool),
+    ) -> Result<()> {
+        self.each_page(&newest_songs_path(), convert::track, usize::MAX, each)
+            .await
+    }
+
     /// Every song of a playlist, as [`each_library_track`](Self::each_library_track).
     pub async fn each_playlist_track(
         &self,

@@ -60,12 +60,17 @@ class MainActivity : ComponentActivity() {
             val connecting = remember { Connecting() }
             var welcomed by remember { mutableStateOf(app.core.welcomed) }
             LaunchedEffect(Unit) { app.core.start() }
-            // Each service's library loads once it answers, and goes when it is off.
+            // Each service's library shows as kept while it connects (or can't),
+            // loads once it answers, and goes when it is off.
             ProviderKind.entries.forEach { kind ->
                 key(kind) {
                     val state by app.core.connection(kind).collectAsStateWithLifecycle()
-                    LaunchedEffect(state is Connection.Connected) {
-                        if (state is Connection.Connected) app.library.load(kind) else app.library.forget(kind)
+                    LaunchedEffect(state is Connection.Connected, state is Connection.Off) {
+                        when (state) {
+                            is Connection.Connected -> app.library.load(kind)
+                            Connection.Off -> app.library.forget(kind)
+                            else -> app.library.showKept(kind)
+                        }
                     }
                 }
             }

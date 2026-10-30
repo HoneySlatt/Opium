@@ -308,6 +308,55 @@ impl Session {
         .await
     }
 
+    /// Every Apple Music library song at once: its pages are asked for many
+    /// at a time, where one after another takes half a minute.
+    pub async fn apple_library_tracks(self: Arc<Self>) -> Result<Vec<Track>, MusicError> {
+        off(async move {
+            let mut all = Vec::new();
+            self.apple()?
+                .each_library_track(|page, _| all.extend(page))
+                .await?;
+            Ok(all)
+        })
+        .await
+    }
+
+    /// Every Apple Music library song at once, the latest added first.
+    pub async fn apple_library_tracks_newest(self: Arc<Self>) -> Result<Vec<Track>, MusicError> {
+        off(async move {
+            let mut all = Vec::new();
+            self.apple()?
+                .each_newest_library_track(|page, _| all.extend(page))
+                .await?;
+            Ok(all)
+        })
+        .await
+    }
+
+    /// Every Apple Music library album at once, as [`Self::apple_library_tracks`].
+    pub async fn apple_library_albums(self: Arc<Self>) -> Result<Vec<Album>, MusicError> {
+        off(async move {
+            let mut all = Vec::new();
+            self.apple()?
+                .each_library_album(|page, _| all.extend(page))
+                .await?;
+            Ok(all)
+        })
+        .await
+    }
+
+    /// Every Apple Music library artist at once, as [`Self::apple_library_tracks`].
+    pub async fn apple_library_artists(self: Arc<Self>) -> Result<Vec<Artist>, MusicError> {
+        off(async move {
+            let mut all = Vec::new();
+            self.apple()?
+                .each_library_artist(|page, _| all.extend(page))
+                .await?;
+            Ok(all)
+        })
+        .await
+    }
+
     pub async fn library_tracks(
         self: Arc<Self>,
         kind: ProviderKind,
@@ -830,6 +879,65 @@ pub fn albums_left_out(albums: Vec<Album>) -> Vec<u32> {
 #[uniffi::export]
 pub fn artists_left_out(artists: Vec<Artist>) -> Vec<u32> {
     sorted(music_core::dedupe::artists(&artists))
+}
+
+/// The library's lists as last read, kept in the app's files: shown at once
+/// at the next launch while the services are asked again. Written aside,
+/// then moved over the old one.
+fn keep<T: serde::Serialize>(path: &str, items: &[T]) {
+    let Ok(bytes) = serde_json::to_vec(items) else {
+        return;
+    };
+    let partial = format!("{path}.part");
+    let _ = std::fs::write(&partial, bytes).and_then(|()| std::fs::rename(&partial, path));
+}
+
+/// What was kept at `path`: nothing if nothing readable was.
+fn kept<T: serde::de::DeserializeOwned>(path: &str) -> Vec<T> {
+    std::fs::read(path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_default()
+}
+
+#[uniffi::export]
+pub fn keep_tracks(path: String, items: Vec<Track>) {
+    keep(&path, &items);
+}
+
+#[uniffi::export]
+pub fn kept_tracks(path: String) -> Vec<Track> {
+    kept(&path)
+}
+
+#[uniffi::export]
+pub fn keep_albums(path: String, items: Vec<Album>) {
+    keep(&path, &items);
+}
+
+#[uniffi::export]
+pub fn kept_albums(path: String) -> Vec<Album> {
+    kept(&path)
+}
+
+#[uniffi::export]
+pub fn keep_artists(path: String, items: Vec<Artist>) {
+    keep(&path, &items);
+}
+
+#[uniffi::export]
+pub fn kept_artists(path: String) -> Vec<Artist> {
+    kept(&path)
+}
+
+#[uniffi::export]
+pub fn keep_playlists(path: String, items: Vec<Playlist>) {
+    keep(&path, &items);
+}
+
+#[uniffi::export]
+pub fn kept_playlists(path: String) -> Vec<Playlist> {
+    kept(&path)
 }
 
 fn sorted(set: std::collections::HashSet<usize>) -> Vec<u32> {

@@ -1,18 +1,31 @@
 package io.github.honeyslatt.music.data
 
 import io.github.honeyslatt.music.core.MusicException
+import io.github.honeyslatt.music.core.keepAlbums
+import io.github.honeyslatt.music.core.keepArtists
+import io.github.honeyslatt.music.core.keepPlaylists
+import io.github.honeyslatt.music.core.keepTracks
+import io.github.honeyslatt.music.core.keptAlbums
+import io.github.honeyslatt.music.core.keptArtists
+import io.github.honeyslatt.music.core.keptPlaylists
+import io.github.honeyslatt.music.core.keptTracks
 import io.github.honeyslatt.music.core.model.Album
 import io.github.honeyslatt.music.core.model.Artist
 import io.github.honeyslatt.music.core.model.Collection
 import io.github.honeyslatt.music.core.model.Playlist
 import io.github.honeyslatt.music.core.model.ProviderKind
 import io.github.honeyslatt.music.core.model.Track
+import java.io.File
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** A list of the library, as it loads. */
 data class Listing<T>(val items: List<T> = emptyList(), val done: Boolean = false, val error: String? = null)
@@ -34,9 +47,14 @@ class Library(private val core: Core, private val scope: CoroutineScope) {
 
     private val providers = mutableSetOf<ProviderKind>()
 
+    /** By file, whether what was kept of a list shows (once read). */
+    private val shown = mutableMapOf<String, Deferred<Boolean>>()
+
     /** A service turned off or signed out of: its items go from the lists. */
     fun forget(provider: ProviderKind) {
         providers -= provider
+        showing -= provider
+        shown.keys.filter { it.endsWith("-${provider.name}.json") }.forEach { shown.remove(it)?.cancel() }
         _lists.update { l ->
             l.copy(
                 playlists = l.playlists.copy(items = l.playlists.items.filter { it.id.provider != provider }),
@@ -58,46 +76,64 @@ class Library(private val core: Core, private val scope: CoroutineScope) {
     }
     private var newestAsked = false
 
-    /** Load the songs newest first, of every service loaded. */
+    /** The services whose kept lists show, though they may not answer yet. */
+    private val showing = mutableSetOf<ProviderKind>()
+
+    /** Load the songs newest first, of every service shown. */
     fun loadNewestSongs() {
         if (newestAsked) return
         newestAsked = true
-        providers.toList().forEach(::loadNewest)
+        showing.forEach { newest(it, ask = it in providers) }
     }
 
-    private fun loadNewest(provider: ProviderKind) {
-        scope.launch {
-            pages({ core.session.libraryTracksNewest(provider, it).let { p -> p.items to p.next } }) { items, done, error ->
-                _lists.update { it.copy(newestSongs = it.newestSongs.more(items, done, error)) }
-            }
-        }
+    private fun newest(provider: ProviderKind, ask: Boolean) {
+        val session = core.session
+        list(
+            provider, ask, "newest", ::keepTracks, ::keptTracks, { it.id.provider },
+            if (provider == ProviderKind.APPLE_MUSIC) session::appleLibraryTracksNewest else null,
+            { session.libraryTracksNewest(provider, it).let { p -> p.items to p.next } },
+        ) { f -> _lists.update { it.copy(newestSongs = f(it.newestSongs)) } }
+    }
+
+    /** `provider`'s lists as kept last time, while it connects or can't. */
+    fun showKept(provider: ProviderKind) {
+        showing += provider
+        if (newestAsked) newest(provider, ask = false)
+        lists(provider, ask = false)
     }
 
     /** Load `provider`'s lists, adding to those of the others. */
     fun load(provider: ProviderKind) {
         providers += provider
-        if (newestAsked) loadNewest(provider)
+        showing += provider
+        if (newestAsked) newest(provider, ask = true)
+        lists(provider, ask = true)
+    }
+
+    private fun lists(provider: ProviderKind, ask: Boolean) {
         val session = core.session
-        scope.launch {
-            pages({ session.libraryPlaylists(provider, it).let { p -> p.items to p.next } }) { items, done, error ->
-                _lists.update { it.copy(playlists = it.playlists.more(items, done, error)) }
-            }
-        }
-        scope.launch {
-            pages({ session.libraryAlbums(provider, it).let { p -> p.items to p.next } }) { items, done, error ->
-                _lists.update { it.copy(albums = it.albums.more(items, done, error)) }
-            }
-        }
-        scope.launch {
-            pages({ session.libraryArtists(provider, it).let { p -> p.items to p.next } }) { items, done, error ->
-                _lists.update { it.copy(artists = it.artists.more(items, done, error)) }
-            }
-        }
-        scope.launch {
-            pages({ session.libraryTracks(provider, it).let { p -> p.items to p.next } }) { items, done, error ->
-                _lists.update { it.copy(songs = it.songs.more(items, done, error)) }
-            }
-        }
+        // Apple's lists come whole, many pages asked for at once.
+        val apple = provider == ProviderKind.APPLE_MUSIC
+        list(
+            provider, ask, "playlists", ::keepPlaylists, ::keptPlaylists, { it.id.provider }, null,
+            { session.libraryPlaylists(provider, it).let { p -> p.items to p.next } },
+        ) { f -> _lists.update { it.copy(playlists = f(it.playlists)) } }
+        list(
+            provider, ask, "albums", ::keepAlbums, ::keptAlbums, { it.id.provider },
+            if (apple) session::appleLibraryAlbums else null,
+            { session.libraryAlbums(provider, it).let { p -> p.items to p.next } },
+        ) { f -> _lists.update { it.copy(albums = f(it.albums)) } }
+        list(
+            provider, ask, "artists", ::keepArtists, ::keptArtists, { it.id.provider },
+            if (apple) session::appleLibraryArtists else null,
+            { session.libraryArtists(provider, it).let { p -> p.items to p.next } },
+        ) { f -> _lists.update { it.copy(artists = f(it.artists)) } }
+        list(
+            provider, ask, "songs", ::keepTracks, ::keptTracks, { it.id.provider },
+            if (apple) session::appleLibraryTracks else null,
+            { session.libraryTracks(provider, it).let { p -> p.items to p.next } },
+        ) { f -> _lists.update { it.copy(songs = f(it.songs)) } }
+        if (!ask) return
         // Apple gives 25 at a time: three pages fill Library's 66.
         scope.launch {
             pages({ session.recentlyAdded(provider, it).let { p -> p.items to p.next } }, limit = 3) { items, done, error ->
@@ -123,6 +159,57 @@ class Library(private val core: Core, private val scope: CoroutineScope) {
 
     fun playlistDeleted(id: io.github.honeyslatt.music.core.model.ItemId) {
         _lists.update { l -> l.copy(playlists = l.playlists.copy(items = l.playlists.items.filter { it.id != id })) }
+    }
+
+    /**
+     * `provider`'s part of a list: as it was kept last time, at once, then as
+     * the service has it now, kept for next time. What was kept stays until
+     * the new list is all there; with nothing kept, its pages show as they
+     * come. `whole` gets the list in one go, else it comes by `page`. Only
+     * what was kept shows unless `ask`: the service isn't there yet.
+     */
+    private fun <T> list(
+        provider: ProviderKind,
+        ask: Boolean,
+        name: String,
+        keep: (String, List<T>) -> Unit,
+        kept: (String) -> List<T>,
+        of: (T) -> ProviderKind,
+        whole: (suspend () -> List<T>)?,
+        page: suspend (String?) -> Pair<List<T>, String?>,
+        set: ((Listing<T>) -> Listing<T>) -> Unit,
+    ) {
+        val file = File(core.kept, "$name-${provider.name}.json").path
+        scope.launch {
+            // Shown once, whether the service answers yet or not.
+            val shownKept = shown.getOrPut(file) {
+                scope.async {
+                    val old = withContext(Dispatchers.IO) { kept(file) }
+                    if (old.isNotEmpty()) set { it.copy(items = it.items + old, done = true) }
+                    old.isNotEmpty()
+                }
+            }.await()
+            if (!ask) return@launch
+            val fresh = mutableListOf<T>()
+            var failed: String? = null
+            if (whole != null) {
+                try {
+                    fresh += whole()
+                } catch (e: MusicException) {
+                    failed = e.message ?: e.toString()
+                }
+                if (!shownKept) set { it.more(fresh, true, failed) }
+            } else {
+                pages(page) { items, done, error ->
+                    fresh += items
+                    failed = error
+                    if (!shownKept) set { it.more(items, done, error) }
+                }
+            }
+            if (failed != null) return@launch
+            if (shownKept) set { l -> l.copy(items = l.items.filter { of(it) != provider } + fresh, done = true) }
+            withContext(Dispatchers.IO) { keep(file, fresh) }
+        }
     }
 
     private fun <T> Listing<T>.more(items: List<T>, done: Boolean, error: String?) =
