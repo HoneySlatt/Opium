@@ -672,9 +672,11 @@ class Playback(private val context: Context, private val core: Core, private val
     private fun resumeSession() {
         val h = io.github.honeyslatt.music.core.keptSession(sessionFile) ?: return
         adopt(h)
-        val t = queue.current() ?: return
-        _now.value = t
-        resume = "${t.id.provider}:${t.id.id}" to h.positionMs.toLong()
+        queue.current()?.let { t ->
+            _now.value = t
+            resume = "${t.id.provider}:${t.id.id}" to h.positionMs.toLong()
+        }
+        // Shuffle and repeat show as they were, even with nothing queued.
         changed()
     }
 
