@@ -380,13 +380,12 @@ fn now_playing(app: &mut App, ui: &mut Ui, theme: &Theme, lcd: Rect) {
             vec2(20.0, 20.0),
         );
         let hover = ui.interact(mark, Id::unique("player-atmos"), Sense::hover());
-        ui.painter().rect_filled(mark, 5.0, theme.hover());
         let color = if hover.hovered() {
             theme.text
         } else {
             theme.subtext0
         };
-        super::dolby_logo(ui, mark.center(), 9.0, color);
+        super::dolby_logo(ui, mark.center(), 11.0, color);
         hover.on_hover_text("Dolby Atmos");
     }
     let album = track.album.clone().unwrap_or_default();
