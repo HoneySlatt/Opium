@@ -2,6 +2,7 @@
 
 mod artist;
 mod detail;
+mod devices;
 mod drawer;
 mod grid;
 mod home;
@@ -9,8 +10,8 @@ mod library_artist;
 mod lyrics;
 mod menu;
 mod now_playing;
-mod player_bar;
 mod pairing;
+mod player_bar;
 mod playlist_dialog;
 mod search;
 mod settings;
@@ -431,7 +432,12 @@ fn player_shortcuts(app: &mut App, ui: &mut Ui) {
     }
     if louder || quieter {
         let step = if louder { VOLUME_STEP } else { -VOLUME_STEP };
-        let from = if app.muted { 0.0 } else { app.volume };
+        let shown = app.shown();
+        let from = if shown.muted {
+            0.0
+        } else {
+            shown.volume.unwrap_or(app.volume)
+        };
         app.set_volume(from + step);
     }
     if mute {
@@ -451,9 +457,9 @@ fn player_shortcuts(app: &mut App, ui: &mut Ui) {
     }
     // A live stream has no length, and doesn't move.
     if (ahead || back)
-        && let Some(length) = app.duration()
+        && let Some(length) = app.shown().duration
     {
-        let at = app.status.position;
+        let at = app.shown().position;
         let to = if ahead {
             at + SEEK_STEP
         } else {

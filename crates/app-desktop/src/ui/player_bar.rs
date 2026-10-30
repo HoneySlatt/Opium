@@ -71,13 +71,10 @@ fn transport(app: &mut App, ui: &mut Ui, theme: &Theme, inner: Rect) -> f32 {
             .layout(egui::Layout::left_to_right(egui::Align::Center)),
     );
     row.spacing_mut().item_spacing.x = 0.0;
-    let has_track = app.queue.current().is_some();
+    let shown = app.shown();
+    let has_track = shown.has_track;
 
-    let shuffle_color = if app.queue.shuffle() {
-        theme.accent
-    } else {
-        dim
-    };
+    let shuffle_color = if shown.shuffle { theme.accent } else { dim };
     if icon_button(
         &mut row,
         theme,
@@ -106,12 +103,12 @@ fn transport(app: &mut App, ui: &mut Ui, theme: &Theme, inner: Rect) -> f32 {
     {
         app.previous();
     }
-    let (icon, tip) = if app.is_playing() {
+    let (icon, tip) = if shown.playing {
         (icons::PAUSE_FILL, "Pause")
     } else {
         (icons::PLAY_FILL, "Play")
     };
-    if app.loading().is_some() {
+    if shown.loading.is_some() {
         // In the play button's place while the track is on its way.
         let (rect, _) = row.allocate_exact_size(vec2(32.0, 32.0), Sense::hover());
         let mut child = row.new_child(egui::UiBuilder::new().max_rect(rect));
@@ -141,7 +138,7 @@ fn transport(app: &mut App, ui: &mut Ui, theme: &Theme, inner: Rect) -> f32 {
     {
         app.next();
     }
-    let (repeat_icon, repeat_color) = match app.queue.repeat() {
+    let (repeat_icon, repeat_color) = match shown.repeat {
         music_core::Repeat::Off => (icons::REPEAT, dim),
         music_core::Repeat::All => (icons::REPEAT, theme.accent),
         music_core::Repeat::One => (icons::REPEAT_ONE, theme.accent),
@@ -154,15 +151,15 @@ fn transport(app: &mut App, ui: &mut Ui, theme: &Theme, inner: Rect) -> f32 {
     }
 
     let position = shown_position(app, ui);
-    let time = match app.duration() {
-        _ if app.loading().is_some() => "Loading…".into(),
-        Some(total) if app.now.is_some() => format!(
+    let time = match shown.duration {
+        _ if shown.loading.is_some() => "Loading…".into(),
+        Some(total) if shown.track.is_some() => format!(
             "{} / -{}",
             format_time(position),
             format_time(total.saturating_sub(position))
         ),
         // A station on air has no end.
-        None if app.is_playing() => format!("{} · LIVE", format_time(position)),
+        None if shown.playing => format!("{} · LIVE", format_time(position)),
         _ => "0:00 / -0:00".into(),
     };
     row.add_space(10.0);
@@ -201,7 +198,8 @@ fn transport(app: &mut App, ui: &mut Ui, theme: &Theme, inner: Rect) -> f32 {
     rect.right() + 4.0
 }
 
-/// Mute, volume, queue and Now Playing. Returns its left edge.
+/// Mute, volume, the devices to play on and Now Playing. Returns its left
+/// edge.
 fn right_side(app: &mut App, ui: &mut Ui, theme: &Theme, inner: Rect) -> f32 {
     let dim = theme.text_a(0.82);
     let width = 30.0 + 6.0 + 84.0 + 8.0 + 30.0 + 30.0;
@@ -212,31 +210,30 @@ fn right_side(app: &mut App, ui: &mut Ui, theme: &Theme, inner: Rect) -> f32 {
             .layout(egui::Layout::left_to_right(egui::Align::Center)),
     );
     row.spacing_mut().item_spacing.x = 0.0;
-    let mute_icon = if app.muted || app.volume == 0.0 {
+    let shown = app.shown();
+    let mute_icon = if shown.muted || shown.volume == Some(0.0) {
         icons::VOL_MUTE
     } else {
         icons::VOL
     };
-    if icon_button(&mut row, theme, mute_icon, 30.0, 16.0, dim, true)
-        .on_hover_text(if app.muted { "Unmute" } else { "Mute" })
-        .clicked()
+    if icon_button(
+        &mut row,
+        theme,
+        mute_icon,
+        30.0,
+        16.0,
+        dim,
+        shown.volume.is_some(),
+    )
+    .on_hover_text(if shown.muted { "Unmute" } else { "Mute" })
+    .clicked()
     {
         app.toggle_mute();
     }
     row.add_space(6.0);
-    volume_slider(app, &mut row, theme);
+    volume_slider(app, &mut row, theme, &shown);
     row.add_space(8.0);
-    let queue_color = if app.drawer_shows(false) {
-        theme.accent
-    } else {
-        dim
-    };
-    if icon_button(&mut row, theme, icons::QUEUE, 30.0, 16.0, queue_color, true)
-        .on_hover_text("Playing next")
-        .clicked()
-    {
-        app.toggle_drawer(false);
-    }
+    super::devices::button(app, &mut row, theme, &shown);
     if icon_button(&mut row, theme, icons::EXPAND, 30.0, 15.0, dim, true)
         .on_hover_text("Now Playing")
         .clicked()
@@ -246,19 +243,33 @@ fn right_side(app: &mut App, ui: &mut Ui, theme: &Theme, inner: Rect) -> f32 {
     area.left()
 }
 
-fn volume_slider(app: &mut App, ui: &mut Ui, theme: &Theme) {
-    let (rect, response) = ui.allocate_exact_size(vec2(84.0, 14.0), Sense::click_and_drag());
+fn volume_slider(app: &mut App, ui: &mut Ui, theme: &Theme, shown: &crate::app::Shown) {
+    // A device whose volume isn't to be set from here: its own knob sets it.
+    let sense = if shown.volume.is_some() {
+        Sense::click_and_drag()
+    } else {
+        Sense::hover()
+    };
+    let (rect, response) = ui.allocate_exact_size(vec2(84.0, 14.0), sense);
     if let Some(pointer) = response.interact_pointer_pos()
         && (response.dragged() || response.clicked())
     {
         app.set_volume((pointer.x - rect.left()) / rect.width());
     }
-    let level = if app.muted { 0.0 } else { app.volume };
+    let level = if shown.muted {
+        0.0
+    } else {
+        shown.volume.unwrap_or(0.0)
+    };
     let rail = Rect::from_center_size(rect.center(), vec2(rect.width(), 3.0));
     let painter = ui.painter();
     painter.rect_filled(rail, 3.0, theme.text_a(0.14));
     let fill = Rect::from_min_size(rail.min, vec2(rail.width() * level, rail.height()));
     painter.rect_filled(fill, 3.0, theme.text_a(0.55));
+    if shown.volume.is_none() {
+        response.on_hover_text("Its volume is set on the device itself");
+        return;
+    }
     let knob = if response.hovered() || response.dragged() {
         theme.text
     } else {
@@ -269,21 +280,26 @@ fn volume_slider(app: &mut App, ui: &mut Ui, theme: &Theme) {
         5.5,
         knob,
     );
+    let tip = match &shown.on {
+        Some(device) => format!("Volume on {} {:.0} %", device.name, level * 100.0),
+        None => format!("Volume {:.0} %", level * 100.0),
+    };
     response
         .on_hover_cursor(egui::CursorIcon::PointingHand)
-        .on_hover_text(format!("Volume {:.0} %", level * 100.0));
+        .on_hover_text(tip);
 }
 
 /// The playing position, or where the seek hairline is being dragged to.
 fn shown_position(app: &App, ui: &Ui) -> Duration {
     ui.ctx()
         .data(|d| d.get_temp::<Duration>(Id::unique("seek-preview")))
-        .unwrap_or(app.status.position)
+        .unwrap_or(app.shown().position)
 }
 
 fn now_playing(app: &mut App, ui: &mut Ui, theme: &Theme, lcd: Rect) {
     // The track picked shows at once, while it loads.
-    let Some(track) = app.loading().cloned().or_else(|| app.now.clone()) else {
+    let shown = app.shown();
+    let Some(track) = shown.loading.or(shown.track) else {
         return;
     };
     let art = Rect::from_min_size(
@@ -358,11 +374,14 @@ fn now_playing(app: &mut App, ui: &mut Ui, theme: &Theme, lcd: Rect) {
         explicit_badge(ui, theme, pos2(title_end + 5.0 + 6.0, lcd.center().y - 7.0));
     }
     let album = track.album.clone().unwrap_or_default();
-    let subtitle = if album.is_empty() {
+    let mut subtitle = if album.is_empty() {
         track.artists.join(", ")
     } else {
         format!("{album} - {}", track.artists.join(", "))
     };
+    if let Some(device) = &shown.on {
+        subtitle = format!("On {} · {subtitle}", device.name);
+    }
     let galley = text(
         ui,
         &subtitle,
@@ -402,7 +421,7 @@ fn now_playing(app: &mut App, ui: &mut Ui, theme: &Theme, lcd: Rect) {
 /// The position as a hairline along the LCD's bottom: 2 px, 4 px with a knob
 /// and in the accent on hover. Click or drag to seek.
 fn seek_hairline(app: &mut App, ui: &mut Ui, theme: &Theme, lcd: Rect) {
-    let Some(total) = app.duration().filter(|d| !d.is_zero()) else {
+    let Some(total) = app.shown().duration.filter(|d| !d.is_zero()) else {
         return;
     };
     let hit = Rect::from_min_max(

@@ -30,7 +30,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     ui.painter().rect_filled(full, 0.0, theme.base);
     backdrop(app, ui, &theme, full);
 
-    let Some(track) = app.now.clone() else {
+    let Some(track) = app.shown().track else {
         let g = text(
             ui,
             "Nothing playing",
@@ -78,7 +78,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     let card = Rect::from_center_size(pos2(card_x, full.bottom() - 30.0 - size.y / 2.0), size);
 
     // Hidden while the lyrics run and the pointer rests away from the card.
-    let running = lyrics.is_some_and(|l| l.synced) && app.is_playing();
+    let running = lyrics.is_some_and(|l| l.synced) && app.shown().playing;
     let idle = ui.input(|i| i.pointer.time_since_last_movement()) > IDLE;
     let on_card = ui.rect_contains_pointer(card.expand(8.0));
     let reveal = ui.ctx().animate_bool_with_time(
@@ -98,7 +98,8 @@ pub fn show(app: &mut App, ui: &mut Ui) {
 /// slowly, under a vignette of the background.
 fn backdrop(app: &mut App, ui: &Ui, theme: &Theme, full: Rect) {
     let colors = app
-        .now
+        .shown()
+        .track
         .as_ref()
         .and_then(|t| t.artwork.as_ref())
         .map(|a| a.url(96))
@@ -128,7 +129,7 @@ fn backdrop(app: &mut App, ui: &Ui, theme: &Theme, full: Rect) {
     };
     wash_with(ui, full, theme.base, &blobs, vignette);
     // It drifts while the music plays.
-    if app.is_playing() {
+    if app.shown().playing {
         ui.ctx().request_repaint_after(Duration::from_millis(50));
     }
 }
@@ -273,7 +274,7 @@ fn controls(app: &mut App, ui: &mut Ui, theme: &Theme, track: &Track, card: Rect
 
     let station = track.id.id.starts_with("ra.");
     let favourite = app.is_favourite(FavouriteKind::Song, &track.id);
-    let has_track = app.queue.current().is_some();
+    let has_track = app.shown().has_track;
     let button = |ui: &mut Ui, rect: Rect| ui.new_child(egui::UiBuilder::new().max_rect(rect));
     if !station {
         let (icon, color) = if favourite {
@@ -298,7 +299,7 @@ fn controls(app: &mut App, ui: &mut Ui, theme: &Theme, track: &Track, card: Rect
         (next, icons::FORWARD_FILL, 20.0),
     ];
     for (k, (rect, icon, glyph)) in transport.into_iter().enumerate() {
-        let icon = if k == 1 && app.is_playing() {
+        let icon = if k == 1 && app.shown().playing {
             icons::PAUSE_FILL
         } else {
             icon
@@ -374,7 +375,7 @@ fn controls(app: &mut App, ui: &mut Ui, theme: &Theme, track: &Track, card: Rect
 /// The position as a hairline along the card's foot, which seeks when
 /// clicked or dragged.
 fn position(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect) {
-    let Some(total) = app.duration().filter(|d| !d.is_zero()) else {
+    let Some(total) = app.shown().duration.filter(|d| !d.is_zero()) else {
         return;
     };
     let rail = Rect::from_min_max(
@@ -383,7 +384,7 @@ fn position(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect) {
     );
     let hit = rail.expand2(vec2(0.0, 5.0));
     let response = ui.interact(hit, Id::unique("np-seek"), Sense::click_and_drag());
-    let mut at = app.status.position;
+    let mut at = app.shown().position;
     if let Some(pointer) = response.interact_pointer_pos() {
         at = total.mul_f32(((pointer.x - rail.left()) / rail.width()).clamp(0.0, 1.0));
         if response.drag_stopped() || response.clicked() {

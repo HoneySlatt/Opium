@@ -277,3 +277,19 @@ pub const BACK_FILL: Icon = Icon {
     name: "back_fill",
     svg: r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white"><g transform="translate(24 0) scale(-1 1)"><path d="M2.5 6.3v11.4a.8.8 0 0 0 1.25.66L11.5 13v4.7a.8.8 0 0 0 1.25.66l8.5-5.7a.8.8 0 0 0 0-1.32l-8.5-5.7a.8.8 0 0 0-1.25.66V11L3.75 5.64a.8.8 0 0 0-1.25.66z"/></g></svg>"##,
 };
+
+/// Lucide "monitor-speaker": the devices to play on.
+pub const DEVICES: Icon = Icon {
+    name: "devices",
+    svg: r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 20H8"/><path d="M17 9h.01"/><rect width="10" height="16" x="12" y="4" rx="2"/><path d="M8 6H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h4"/><circle cx="17" cy="15" r="1"/></svg>"##,
+};
+
+pub const MONITOR: Icon = Icon {
+    name: "monitor",
+    svg: r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>"##,
+};
+
+pub const PHONE: Icon = Icon {
+    name: "phone",
+    svg: r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="20" x="5" y="2" rx="2"/><path d="M12 18h.01"/></svg>"##,
+};

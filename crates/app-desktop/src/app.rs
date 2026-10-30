@@ -325,6 +325,25 @@ const SEARCHES_KEPT: usize = 64;
 /// How long typing pauses before the search runs, in seconds.
 const SEARCH_PAUSE: f64 = 0.16;
 
+/// What plays, as shown: on this computer, or on the device played on.
+pub struct Shown {
+    pub track: Option<Track>,
+    /// The queue has a song: the transport has something to act on.
+    pub has_track: bool,
+    /// The song picked, on its way.
+    pub loading: Option<Track>,
+    pub playing: bool,
+    pub position: Duration,
+    pub duration: Option<Duration>,
+    pub shuffle: bool,
+    pub repeat: Repeat,
+    /// `None` where it can't be set from here.
+    pub volume: Option<f32>,
+    pub muted: bool,
+    /// The device played on, when it isn't this computer.
+    pub on: Option<connect::Device>,
+}
+
 pub struct App {
     pub theme: Theme,
     backend: Backend,
@@ -333,6 +352,16 @@ pub struct App {
     mpris: crate::mpris::Mpris,
     /// The user's other devices, on the network.
     pub devices: crate::devices::Devices,
+    /// The device chosen to play on, when it isn't this computer: its id.
+    pub remote: Option<String>,
+    /// Carrying out what another device asked: for this computer's player,
+    /// whatever device is chosen.
+    obeying: bool,
+    /// Which devices played, to follow one that starts while this
+    /// computer is quiet.
+    far_playing: HashMap<String, bool>,
+    /// The volume of the device played on before it was muted from here.
+    far_unmuted: Option<f32>,
     pub connection: Connection,
     /// The Apple Music storefront (country) of the account, once connected.
     pub storefront: Option<String>,
@@ -530,6 +559,10 @@ impl App {
             player: Player::new(),
             mpris: crate::mpris::Mpris::start(cc.egui_ctx.clone()),
             devices: crate::devices::Devices::start(cc.egui_ctx.clone()),
+            remote: None,
+            obeying: false,
+            far_playing: HashMap::new(),
+            far_unmuted: None,
             connection: if settings.services_off.contains(&ProviderKind::AppleMusic) {
                 Connection::NotSignedIn
             } else {
@@ -974,6 +1007,15 @@ impl App {
     /// Play a station: what airs (or an episode) as one endless track, a
     /// station of songs as a queue that tops itself up.
     pub fn play_station(&mut self, station: &Station) {
+        if let Some(id) = self.far_id() {
+            self.devices.node.send(
+                &id,
+                connect::Command::PlayStation {
+                    station: station.clone(),
+                },
+            );
+            return;
+        }
         match station.kind {
             StationKind::Live | StationKind::Episode => {
                 let track = Track {
@@ -2090,7 +2132,11 @@ impl App {
         if tracks.is_empty() {
             return;
         }
-        if self.queue.shuffle() != shuffle {
+        if let Some(id) = self.far_id() {
+            self.devices
+                .node
+                .send(&id, connect::Command::SetShuffle { on: shuffle });
+        } else if self.queue.shuffle() != shuffle {
             self.queue.set_shuffle(shuffle);
         }
         let start = if shuffle {
@@ -2103,6 +2149,13 @@ impl App {
 
     /// Replace the queue with `tracks` and play from `start`.
     pub fn play_list(&mut self, tracks: Vec<Track>, start: usize) {
+        if let Some(id) = self.far_id() {
+            let start = start as u32;
+            self.devices
+                .node
+                .send(&id, connect::Command::PlayList { tracks, start });
+            return;
+        }
         // Whatever plays now is no longer a station of songs.
         self.station = None;
         self.queue.replace(tracks, start);
@@ -2311,6 +2364,9 @@ impl App {
     }
 
     pub fn toggle_play(&mut self) {
+        if self.ask_far(connect::Command::Toggle) {
+            return;
+        }
         if self.status.token.is_none() {
             if self.pending_play.is_none() {
                 self.start_current();
@@ -2323,6 +2379,9 @@ impl App {
     }
 
     pub fn next(&mut self) {
+        if self.ask_far(connect::Command::Next) {
+            return;
+        }
         // The track lined up to follow is the one Next moves to, unless the
         // current one repeats: play what was fetched for it rather than fetch
         // it again.
@@ -2353,6 +2412,9 @@ impl App {
 
     /// Back to the start of the track, or to the previous one when already there.
     pub fn previous(&mut self) {
+        if self.ask_far(connect::Command::Previous) {
+            return;
+        }
         if self.status.position > Duration::from_secs(3) {
             self.player.seek(Duration::ZERO);
         } else {
@@ -2362,11 +2424,20 @@ impl App {
     }
 
     pub fn seek(&mut self, to: Duration) {
+        let position_ms = to.as_millis() as u64;
+        if self.ask_far(connect::Command::Seek { position_ms }) {
+            return;
+        }
         self.player.seek(to);
     }
 
     /// Jump to `to` and play from there.
     pub fn play_from(&mut self, to: Duration) {
+        let position_ms = to.as_millis() as u64;
+        if self.ask_far(connect::Command::Seek { position_ms }) {
+            self.ask_far(connect::Command::Play);
+            return;
+        }
         self.player.seek(to);
         if self.status.paused {
             self.player.resume();
@@ -2377,6 +2448,15 @@ impl App {
         if !volume.is_finite() {
             return;
         }
+        if self
+            .far()
+            .is_some_and(|p| p.playing.as_ref().is_some_and(|p| p.volume.is_some()))
+        {
+            self.far_unmuted = None;
+            let volume = volume.clamp(0.0, 1.0);
+            self.ask_far(connect::Command::SetVolume { volume });
+            return;
+        }
         // Next to full is full: the samples then go out untouched.
         self.volume = if volume >= 0.99 { 1.0 } else { volume.max(0.0) };
         self.muted = false;
@@ -2385,6 +2465,23 @@ impl App {
     }
 
     pub fn toggle_mute(&mut self) {
+        if let Some(volume) = self
+            .far()
+            .map(|p| p.playing.as_ref().and_then(|p| p.volume))
+        {
+            // Muted from here: back to where it was; it can't be set: as it is.
+            if let Some(volume) = volume {
+                let to = match self.far_unmuted.take() {
+                    Some(before) => before,
+                    None => {
+                        self.far_unmuted = Some(volume);
+                        0.0
+                    }
+                };
+                self.ask_far(connect::Command::SetVolume { volume: to });
+            }
+            return;
+        }
         self.muted = !self.muted;
         self.player
             .set_volume(if self.muted { 0.0 } else { self.volume });
@@ -2416,6 +2513,16 @@ impl App {
             return;
         };
         let count = tracks.len();
+        if let Some(id) = self.far_id()
+            && how != Enqueue::Now
+        {
+            let command = match how {
+                Enqueue::Next => connect::Command::PlayNext { tracks },
+                _ => connect::Command::AddToQueue { tracks },
+            };
+            self.devices.node.send(&id, command);
+            return;
+        }
         if how == Enqueue::Now || self.queue.current().is_none() {
             self.play_list(tracks, 0);
             return;
@@ -2594,6 +2701,9 @@ impl App {
 
     /// Play the `k`-th upcoming track now.
     pub fn jump_to(&mut self, k: usize) {
+        if self.ask_far(connect::Command::Jump { k: k as u32 }) {
+            return;
+        }
         if k < self.queue.upcoming_len() {
             self.queue.jump(k);
             self.start_current();
@@ -2601,6 +2711,9 @@ impl App {
     }
 
     pub fn remove_upcoming(&mut self, k: usize) {
+        if self.ask_far(connect::Command::RemoveUpcoming { k: k as u32 }) {
+            return;
+        }
         self.queue.remove_upcoming(k);
         if k == 0 {
             self.prefetch_next();
@@ -2608,11 +2721,18 @@ impl App {
     }
 
     pub fn clear_upcoming(&mut self) {
+        if self.ask_far(connect::Command::ClearUpcoming) {
+            return;
+        }
         self.queue.clear_upcoming();
         self.prefetch_next();
     }
 
     pub fn toggle_shuffle(&mut self) {
+        let on = !self.shown().shuffle;
+        if self.ask_far(connect::Command::SetShuffle { on }) {
+            return;
+        }
         self.queue.set_shuffle(!self.queue.shuffle());
         self.prefetch_next();
         self.settings.shuffle = Some(self.queue.shuffle());
@@ -2620,7 +2740,7 @@ impl App {
     }
 
     pub fn cycle_repeat(&mut self) {
-        self.set_repeat(match self.queue.repeat() {
+        self.set_repeat(match self.shown().repeat {
             Repeat::Off => Repeat::All,
             Repeat::All => Repeat::One,
             Repeat::One => Repeat::Off,
@@ -2628,6 +2748,9 @@ impl App {
     }
 
     pub fn set_repeat(&mut self, repeat: Repeat) {
+        if self.ask_far(connect::Command::SetRepeat { repeat }) {
+            return;
+        }
         self.queue.set_repeat(repeat);
         self.prefetch_next();
         self.settings.repeat = Some(self.queue.repeat().into());
@@ -3352,15 +3475,19 @@ impl App {
 
     /// Do what the other devices asked of this one.
     fn other_devices(&mut self, now: f64) {
-        use connect::{Command, Event};
+        use connect::Event;
         while let Some(event) = self.devices.next_event() {
             match event {
-                Event::Changed => self.devices.peers = self.devices.node.peers(),
+                Event::Changed => {
+                    self.devices.read();
+                    self.follow();
+                }
+                Event::AskCode { device } => self.devices.asking = Some((device, String::new())),
                 Event::ShowCode { device, code } => self.devices.pairing = Some((device, code)),
-                Event::AskCode { .. } => {}
                 Event::Paired { device, error } => {
                     self.devices.pairing = None;
-                    self.devices.peers = self.devices.node.peers();
+                    self.devices.asking = None;
+                    self.devices.read();
                     match error {
                         None => self.notify(format!("Paired with {}", device.name), now),
                         Some(e) => {
@@ -3369,46 +3496,198 @@ impl App {
                     }
                 }
                 Event::Handed { from, handoff } => {
+                    self.remote = None;
                     let name = self.device_name(&from);
                     self.take_over(handoff);
                     self.notify(format!("Playing here, from {name}"), now);
                 }
-                Event::Asked { from, command } => match command {
-                    Command::Play if !self.is_playing() => self.toggle_play(),
-                    Command::Pause if self.is_playing() => self.player.pause(),
-                    Command::Play | Command::Pause => {}
-                    Command::Toggle => self.toggle_play(),
-                    Command::Next => self.next(),
-                    Command::Previous => self.previous(),
-                    Command::Seek { position_ms } => {
-                        self.seek(Duration::from_millis(position_ms));
-                    }
-                    Command::SetVolume { volume } => self.set_volume(volume),
-                    Command::SetShuffle { on } => {
-                        if on != self.queue.shuffle() {
-                            self.toggle_shuffle();
-                        }
-                    }
-                    Command::SetRepeat { repeat } => self.set_repeat(repeat),
-                    Command::Jump { k } => self.jump_to(k as usize),
-                    Command::RemoveUpcoming { k } => self.remove_upcoming(k as usize),
-                    Command::ClearUpcoming => self.clear_upcoming(),
-                    Command::PlayList { tracks, start } => {
-                        self.play_list(tracks, start as usize);
-                        // Played from the phone's page, not this one's.
-                        self.playing_from = None;
-                    }
-                    Command::PlayNext { tracks } => self.enqueue(tracks, Enqueue::Next, now),
-                    Command::AddToQueue { tracks } => self.enqueue(tracks, Enqueue::Last, now),
-                    Command::PlayStation { station } => self.play_station(&station),
-                    Command::HandOver => {
-                        let handoff = self.handoff();
-                        if self.devices.node.hand_off(&from, handoff) {
-                            self.player.pause();
-                        }
-                    }
-                },
+                Event::Asked { from, command } => {
+                    self.obeying = true;
+                    self.obey(from, command, now);
+                    self.obeying = false;
+                }
             }
+        }
+    }
+
+    /// Do what another device asked of this computer's player.
+    fn obey(&mut self, from: String, command: connect::Command, now: f64) {
+        use connect::Command;
+        match command {
+            Command::Play if !self.is_playing() => self.toggle_play(),
+            Command::Pause if self.is_playing() => self.player.pause(),
+            Command::Play | Command::Pause => {}
+            Command::Toggle => self.toggle_play(),
+            Command::Next => self.next(),
+            Command::Previous => self.previous(),
+            Command::Seek { position_ms } => {
+                self.seek(Duration::from_millis(position_ms));
+            }
+            Command::SetVolume { volume } => self.set_volume(volume),
+            Command::SetShuffle { on } => {
+                if on != self.queue.shuffle() {
+                    self.toggle_shuffle();
+                }
+            }
+            Command::SetRepeat { repeat } => self.set_repeat(repeat),
+            Command::Jump { k } => self.jump_to(k as usize),
+            Command::RemoveUpcoming { k } => self.remove_upcoming(k as usize),
+            Command::ClearUpcoming => self.clear_upcoming(),
+            Command::PlayList { tracks, start } => {
+                self.play_list(tracks, start as usize);
+                // Played from the phone's page, not this one's.
+                self.playing_from = None;
+            }
+            Command::PlayNext { tracks } => self.enqueue(tracks, Enqueue::Next, now),
+            Command::AddToQueue { tracks } => self.enqueue(tracks, Enqueue::Last, now),
+            Command::PlayStation { station } => self.play_station(&station),
+            Command::HandOver => {
+                let handoff = self.handoff();
+                if self.devices.node.hand_off(&from, handoff) {
+                    self.player.pause();
+                }
+            }
+        }
+    }
+
+    /// The device played on, when it isn't this computer, as last heard.
+    pub fn far(&self) -> Option<&connect::Peer> {
+        let id = self.remote.as_ref()?;
+        self.devices
+            .peers
+            .iter()
+            .find(|p| &p.device.id == id && p.connected)
+    }
+
+    /// The device what is asked goes to, if not this computer's player.
+    fn far_id(&self) -> Option<String> {
+        if self.obeying {
+            return None;
+        }
+        self.far().map(|p| p.device.id.clone())
+    }
+
+    /// Ask the device played on; false if this computer's player is to do it.
+    fn ask_far(&self, command: connect::Command) -> bool {
+        match self.far_id() {
+            Some(id) => {
+                self.devices.node.send(&id, command);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Play on the device `id`, or on this computer when `None`: what plays
+    /// here moves there, or what plays there comes here, as with Spotify's
+    /// devices. A device that plays while this computer doesn't is only
+    /// controlled from here.
+    pub fn play_on(&mut self, id: Option<String>) {
+        let from = self.far().map(|p| p.device.id.clone());
+        if id == from {
+            return;
+        }
+        match &id {
+            None => {
+                if let Some(from) = &from {
+                    self.devices.node.send(from, connect::Command::HandOver);
+                }
+            }
+            Some(to) => {
+                if from.is_none()
+                    && self.is_playing()
+                    && self.devices.node.hand_off(to, self.handoff())
+                {
+                    self.player.pause();
+                }
+            }
+        }
+        self.far_unmuted = None;
+        self.remote = id;
+    }
+
+    /// A device starting to play while this computer is quiet is shown and
+    /// controlled here; one that left is no longer.
+    fn follow(&mut self) {
+        for p in &self.devices.peers {
+            let on = p.connected && p.playing.as_ref().is_some_and(|p| p.playing);
+            let before = self
+                .far_playing
+                .insert(p.device.id.clone(), on)
+                .unwrap_or(false);
+            if on
+                && !before
+                && self.remote.is_none()
+                && !self.is_playing()
+                && self.pending_play.is_none()
+            {
+                self.remote = Some(p.device.id.clone());
+            }
+        }
+        if let Some(id) = &self.remote
+            && !self
+                .devices
+                .peers
+                .iter()
+                .any(|p| &p.device.id == id && p.connected)
+        {
+            self.remote = None;
+        }
+    }
+
+    /// What the player bar and Now Playing show: this computer's player,
+    /// or the device played on.
+    pub fn shown(&self) -> Shown {
+        if let Some(peer) = self.far() {
+            let p = peer.playing.clone().unwrap_or_default();
+            let mut position = p.position_ms;
+            if p.playing {
+                position += self.devices.read_at.elapsed().as_millis() as u64;
+            }
+            if let Some(d) = p.duration_ms {
+                position = position.min(d);
+            }
+            return Shown {
+                has_track: p.track.is_some(),
+                track: p.track,
+                loading: None,
+                playing: p.playing,
+                position: Duration::from_millis(position),
+                duration: p.duration_ms.map(Duration::from_millis),
+                shuffle: p.shuffle,
+                repeat: p.repeat,
+                volume: p.volume,
+                muted: p.volume == Some(0.0),
+                on: Some(peer.device.clone()),
+            };
+        }
+        Shown {
+            track: self.now.clone(),
+            has_track: self.queue.current().is_some(),
+            loading: self.loading().cloned(),
+            playing: self.is_playing(),
+            position: self.status.position,
+            duration: self.duration(),
+            shuffle: self.queue.shuffle(),
+            repeat: self.queue.repeat(),
+            volume: Some(self.volume),
+            muted: self.muted,
+            on: None,
+        }
+    }
+
+    /// What comes up, here or on the device played on.
+    pub fn upcoming_shown(&self) -> Box<dyn Iterator<Item = &Track> + '_> {
+        match self.far() {
+            Some(peer) => Box::new(peer.upcoming.iter()),
+            None => Box::new(self.queue.upcoming()),
+        }
+    }
+
+    pub fn upcoming_len_shown(&self) -> usize {
+        match self.far() {
+            Some(peer) => peer.upcoming.len(),
+            None => self.queue.upcoming_len(),
         }
     }
 
@@ -3594,7 +3873,12 @@ impl eframe::App for App {
         if let Some(screenshot) = &mut self.screenshot {
             screenshot.update(ui.ctx());
         }
-        if self.is_playing() {
+        if self.is_playing()
+            || self
+                .far()
+                .and_then(|p| p.playing.as_ref())
+                .is_some_and(|p| p.playing)
+        {
             ui.ctx().request_repaint_after(Duration::from_millis(250));
         }
         self.mpris.update(self.media_state());

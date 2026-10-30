@@ -9,8 +9,11 @@ use connect::{Device, DeviceKind, Event, Node, Peer};
 pub struct Devices {
     pub node: Node,
     events: Receiver<Event>,
-    /// The devices seen or paired, as last told.
+    /// The devices seen or paired, as last told, and when that was.
     pub peers: Vec<Peer>,
+    pub read_at: std::time::Instant,
+    /// Pairing with a device that shows a code: it, and the code typed so far.
+    pub asking: Option<(Device, String)>,
     /// A device asking to pair, and the code to show it.
     pub pairing: Option<(Device, String)>,
     /// The queue's revision last told, so it goes out once it changes.
@@ -41,9 +44,16 @@ impl Devices {
             node,
             events,
             peers,
+            read_at: std::time::Instant::now(),
+            asking: None,
             pairing: None,
             upcoming_told: None,
         }
+    }
+
+    pub fn read(&mut self) {
+        self.peers = self.node.peers();
+        self.read_at = std::time::Instant::now();
     }
 
     pub fn next_event(&self) -> Option<Event> {

@@ -32,7 +32,7 @@ struct Scroll {
 
 /// The lyrics once they have loaded, for the column to widen around them.
 pub fn ready(app: &mut App) -> Option<Arc<Lyrics>> {
-    let track = app.now.clone()?;
+    let track = app.shown().track?;
     match app.lyrics(&track) {
         Loaded::Ready(lyrics) => lyrics.clone(),
         _ => None,
@@ -50,7 +50,7 @@ pub fn show(
     reach: f32,
     salt: &str,
 ) {
-    let Some(track) = app.now.clone() else {
+    let Some(track) = app.shown().track else {
         return;
     };
     let lyrics = match app.lyrics(&track) {
@@ -97,7 +97,7 @@ pub fn show(
     }
     let max_offset = (y + pad_bottom - list.height()).max(0.0);
 
-    let position = app.status.position;
+    let position = app.shown().position;
     let current = lyrics.current(position);
     let scroll_id = Id::unique((salt, "scroll"));
     let mut scroll: Scroll = ui.ctx().data(|d| d.get_temp(scroll_id)).unwrap_or_default();
@@ -172,7 +172,7 @@ pub fn show(
                 let galley = sung(ui, line, position, size, wrap, scale, theme, fade);
                 let top = rect.center().y - galley.size().y / 2.0;
                 painter.galley(pos2(rect.left() + PAD.x, top), galley, color);
-                if app.is_playing() {
+                if app.shown().playing {
                     ui.ctx().request_repaint();
                 }
             }

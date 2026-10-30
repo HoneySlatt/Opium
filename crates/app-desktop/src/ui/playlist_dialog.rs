@@ -682,7 +682,14 @@ fn row(app: &mut App, ui: &mut Ui, theme: &Theme, playlist: &Playlist, salt: &st
 }
 
 /// A 40 px rounded button: the accent for the action, a faint fill otherwise.
-pub(super) fn pill(ui: &mut Ui, theme: &Theme, rect: Rect, label: &str, primary: bool, enabled: bool) -> bool {
+pub(super) fn pill(
+    ui: &mut Ui,
+    theme: &Theme,
+    rect: Rect,
+    label: &str,
+    primary: bool,
+    enabled: bool,
+) -> bool {
     let response = ui.interact(
         rect,
         Id::unique(("playlist-dialog-pill", label)),

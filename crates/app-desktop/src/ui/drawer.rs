@@ -255,13 +255,14 @@ fn label(
 
 fn playing_next(app: &App, ui: &mut Ui, theme: &Theme) -> Action {
     let mut action = Action::None;
-    if let Some(now) = &app.now {
+    let shown_now = app.shown();
+    if let Some(now) = &shown_now.track {
         label(ui, theme, "NOW PLAYING", &[]);
         row(ui, theme, now, RowKind::Current, "now");
     }
 
-    let upcoming_len = app.queue.upcoming_len();
-    let repeat_icon = if app.queue.repeat() == Repeat::One {
+    let upcoming_len = app.upcoming_len_shown();
+    let repeat_icon = if shown_now.repeat == Repeat::One {
         icons::REPEAT_ONE
     } else {
         icons::REPEAT
@@ -272,8 +273,8 @@ fn playing_next(app: &App, ui: &mut Ui, theme: &Theme) -> Action {
         theme,
         &caption,
         &[
-            (icons::SHUFFLE, app.queue.shuffle(), "Shuffle"),
-            (repeat_icon, app.queue.repeat() != Repeat::Off, "Repeat"),
+            (icons::SHUFFLE, shown_now.shuffle, "Shuffle"),
+            (repeat_icon, shown_now.repeat != Repeat::Off, "Repeat"),
             (icons::TRASH, false, "Clear queue"),
         ],
     ) {
@@ -292,7 +293,7 @@ fn playing_next(app: &App, ui: &mut Ui, theme: &Theme) -> Action {
         (((visible.min - ui.cursor().top()) / ROW).floor().max(0.0) as usize).min(upcoming_len);
     let shown = ((visible.span() / ROW).ceil() as usize + 1).min(upcoming_len - first);
     ui.allocate_space(vec2(ui.available_width(), first as f32 * ROW));
-    for (k, track) in app.queue.upcoming().enumerate().skip(first).take(shown) {
+    for (k, track) in app.upcoming_shown().enumerate().skip(first).take(shown) {
         match row(ui, theme, track, RowKind::Upcoming, &format!("next-{k}")) {
             RowAction::Open => action = Action::Jump(k),
             RowAction::Remove => action = Action::Remove(k),
@@ -303,7 +304,11 @@ fn playing_next(app: &App, ui: &mut Ui, theme: &Theme) -> Action {
     ui.allocate_space(vec2(ui.available_width(), after as f32 * ROW));
 
     // Whether the next track will join without a gap.
-    if let (Some(next), Some(source)) = (app.queue.upcoming().next(), &app.status.source) {
+    if let (Some(next), Some(source), None) = (
+        app.queue.upcoming().next(),
+        &app.status.source,
+        &shown_now.on,
+    ) {
         let next_rate = next.quality.as_ref().and_then(|q| q.sample_rate);
         if let Some(next_rate) = next_rate {
             let (icon, message) = if next_rate == source.sample_rate {
