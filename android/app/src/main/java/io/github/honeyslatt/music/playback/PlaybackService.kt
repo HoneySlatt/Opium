@@ -9,20 +9,46 @@ import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import io.github.honeyslatt.music.MainActivity
 import io.github.honeyslatt.music.MusicApp
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 /**
  * The media session Android draws the notification, the lock screen and
  * the car from. Next and previous go through the app's queue: the player
- * itself only holds the current song and the next.
+ * itself only holds the current song and the next. While another device
+ * is played on, the session shows and controls that one instead.
  */
 @UnstableApi
 class PlaybackService : MediaSessionService() {
     private var session: MediaSession? = null
+    private val scope = kotlinx.coroutines.MainScope()
 
     override fun onCreate() {
         super.onCreate()
         val playback = (application as MusicApp).playback
-        val player = object : ForwardingPlayer(playback.player) {
+        val here = queued(playback, playback.player)
+        val far = RemotePlayer(playback)
+        val there = queued(playback, far)
+        val open = PendingIntent.getActivity(
+            this,
+            0,
+            Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        val session = MediaSession.Builder(this, here).setSessionActivity(open).build()
+        this.session = session
+        scope.launch {
+            playback.remote.collect { remote ->
+                far.changed()
+                val wanted = if (remote != null) there else here
+                if (session.player !== wanted) session.player = wanted
+            }
+        }
+    }
+
+    /** `player`, its next and previous going through the app's queue. */
+    private fun queued(playback: io.github.honeyslatt.music.playback.Playback, player: Player): Player =
+        object : ForwardingPlayer(player) {
             private val queueCommands = listOf(
                 Player.COMMAND_SEEK_TO_NEXT,
                 Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,
@@ -43,14 +69,6 @@ class PlaybackService : MediaSessionService() {
 
             override fun seekToPreviousMediaItem() = playback.previous()
         }
-        val open = PendingIntent.getActivity(
-            this,
-            0,
-            Intent(this, MainActivity::class.java),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
-        session = MediaSession.Builder(this, player).setSessionActivity(open).build()
-    }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo) = session
 
@@ -61,6 +79,7 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        scope.cancel()
         session?.release()
         session = null
         super.onDestroy()
