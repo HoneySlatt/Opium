@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Music
+GenericName=Music Player
+Comment=Apple Music, SoundCloud and Navidrome in one player
+Exec=music
+Icon=music
+Terminal=false
+Categories=AudioVideo;Audio;Player;
+Keywords=apple music;soundcloud;navidrome;subsonic;lyrics;
+StartupWMClass=music
