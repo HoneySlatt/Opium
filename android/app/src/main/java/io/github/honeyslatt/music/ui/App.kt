@@ -25,6 +25,10 @@ import io.github.honeyslatt.music.core.model.ProviderKind
 import io.github.honeyslatt.music.ui.chrome.BottomChrome
 import io.github.honeyslatt.music.ui.chrome.Standard
 import io.github.honeyslatt.music.ui.components.Avatar
+import io.github.honeyslatt.music.ui.detail.AlbumPage
+import io.github.honeyslatt.music.ui.detail.ArtistPage
+import io.github.honeyslatt.music.ui.detail.LibraryArtistPage
+import io.github.honeyslatt.music.ui.detail.PlaylistPage
 import io.github.honeyslatt.music.ui.library.Albums
 import io.github.honeyslatt.music.ui.library.Artists
 import io.github.honeyslatt.music.ui.library.Coming
@@ -46,7 +50,7 @@ fun App(core: Core, library: Library) {
     val lists by library.lists.collectAsStateWithLifecycle()
     val services = listOfNotNull(ProviderKind.APPLE_MUSIC.takeIf { apple is Connection.Connected })
     val account: @Composable () -> Unit = { Avatar("H") {} }
-    val context = LibraryContext(nav, lists, services, account)
+    val context = LibraryContext(core, nav, lists, services, account)
 
     BackHandler(enabled = nav.canPop) { nav.pop() }
     Box(Modifier.fillMaxSize().background(roles.base)) {
@@ -84,9 +88,9 @@ private fun Page(tab: Tab, page: Route, c: LibraryContext, account: @Composable 
         Route.Artists -> Artists(c)
         Route.Songs -> Songs(c)
         Route.RecentlyAdded -> RecentlyAdded(c)
-        is Route.Album -> Coming(c.nav, "Album")
-        is Route.Playlist -> Coming(c.nav, "Playlist")
-        is Route.LibraryArtist -> Coming(c.nav, page.artist.name)
-        is Route.Artist -> Coming(c.nav, "Artist")
+        is Route.Album -> AlbumPage(c, page.id)
+        is Route.Playlist -> PlaylistPage(c, page.id)
+        is Route.LibraryArtist -> LibraryArtistPage(c, page.artist)
+        is Route.Artist -> ArtistPage(c, page.id)
     }
 }

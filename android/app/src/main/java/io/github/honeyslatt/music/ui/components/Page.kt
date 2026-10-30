@@ -63,6 +63,7 @@ fun ListPage(
     title: String,
     actions: List<BarAction> = emptyList(),
     account: (@Composable () -> Unit)? = null,
+    largeTitle: Boolean = true,
     state: LazyListState = rememberLazyListState(),
     content: LazyListScope.() -> Unit,
 ) {
@@ -75,7 +76,7 @@ fun ListPage(
             item { Spacer(Modifier.windowInsetsTopHeight(WindowInsets.statusBars)) }
             // A pushed page's title sits under the bar and its back button.
             if (nav.canPop) item { Spacer(Modifier.height(52.dp)) }
-            item { LargeTitle(title) }
+            if (largeTitle) item { LargeTitle(title) }
             content()
             item { Spacer(Modifier.height(Under)) }
         }

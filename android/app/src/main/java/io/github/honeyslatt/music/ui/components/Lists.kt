@@ -238,7 +238,7 @@ fun TrackRow(track: Track, onLongClick: (() -> Unit)? = null, onClick: () -> Uni
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Cover(track.artwork, 44.dp, RoundedCornerShape(7.dp), Modifier.size(44.dp))
+        Cover(track.artwork, 48.dp, RoundedCornerShape(7.dp), Modifier.size(48.dp))
         Row(
             Modifier.weight(1f).fillMaxHeight().underline(roles.line).padding(end = 12.dp),
             verticalAlignment = Alignment.CenterVertically,

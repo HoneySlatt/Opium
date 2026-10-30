@@ -59,10 +59,13 @@ import kotlinx.coroutines.withContext
 
 /** What the library pages need besides the lists. */
 class LibraryContext(
+    val core: io.github.honeyslatt.music.data.Core,
     val nav: Navigator,
     val lists: LibraryLists,
     val services: List<ProviderKind>,
     val account: @Composable () -> Unit,
+    /** Settings → Artwork → Animated artwork. */
+    val animatedArtwork: Boolean = true,
 )
 
 /** Library: the four lists, then Recently Added. */

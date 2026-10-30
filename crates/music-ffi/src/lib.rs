@@ -6,8 +6,8 @@ use std::sync::{Arc, RwLock};
 use apple_music::{AppleMusic, Protected};
 use music_core::Provider;
 use music_core::model::{
-    Album, Artist, ArtistDetail, Collection, Cursor, ItemId, Lyrics, Playlist, ProviderKind,
-    SearchResults, Shelf, Track,
+    Album, AlbumExtras, Artist, ArtistDetail, Collection, Cursor, ItemId, Lyrics, Playlist,
+    ProviderKind, SearchResults, Shelf, Track,
 };
 use navidrome::Navidrome;
 use services::Services;
@@ -329,6 +329,21 @@ impl Session {
         })
     }
 
+    /// A library artist's releases in the library: Apple Music's from its
+    /// library, the other services' from their artist pages.
+    pub async fn library_artist_albums(&self, id: ItemId) -> Result<Vec<Album>, MusicError> {
+        if id.provider == ProviderKind::AppleMusic {
+            return Ok(self.apple()?.library_artist_albums(&id).await?);
+        }
+        let artist = self.provider(id.provider)?.artist(&id).await?;
+        Ok([artist.albums, artist.singles, artist.compilations].concat())
+    }
+
+    /// A catalog album's other editions and its songs' music videos.
+    pub async fn album_extras(&self, id: ItemId) -> Result<AlbumExtras, MusicError> {
+        Ok(self.apple()?.album_extras(&id).await?)
+    }
+
     /// Apple Music's Home, New and Radio pages, shelf by shelf.
     pub async fn home(&self) -> Result<Vec<Shelf>, MusicError> {
         Ok(self.apple()?.home().await?)
@@ -409,6 +424,22 @@ fn sorted(set: std::collections::HashSet<usize>) -> Vec<u32> {
 pub fn cover_palette(image: Vec<u8>) -> Option<Vec<u32>> {
     let rgb = |[r, g, b]: [u8; 3]| u32::from(r) << 16 | u32::from(g) << 8 | u32::from(b);
     music_core::palette::from_image(&image).map(|p| p.iter().copied().map(rgb).collect())
+}
+
+/// The colour of a page tinted by a cover from top to bottom: the most
+/// colourful of the cover's three, dim enough on dark (bright enough on
+/// light) for text to keep its contrast. As `0xrrggbb`.
+#[uniffi::export]
+pub fn page_colour(image: Vec<u8>, light: bool) -> Option<u32> {
+    use music_core::palette::{Band, fit_in, from_image, most_colourful};
+    let palette = from_image(&image)?;
+    let band = if light {
+        Band::LIGHT_PAGE
+    } else {
+        Band::DARK_PAGE
+    };
+    let [r, g, b] = fit_in(most_colourful(&palette), band);
+    Some(u32::from(r) << 16 | u32::from(g) << 8 | u32::from(b))
 }
 
 /// Apple Music, signed in with the user's `media-user-token`.
