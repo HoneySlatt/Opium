@@ -75,11 +75,12 @@ fun SearchPage(c: LibraryContext) {
     var library by remember { mutableStateOf(c.core.setting("search-scope") == "library") }
     var source by rememberSaveable { mutableStateOf<ProviderKind?>(null) }
     var sources by rememberSaveable { mutableStateOf(false) }
-    var allSongs by remember { mutableStateOf(false) }
+    // The sections whose title showed all they found: Songs, Albums, Artists.
+    var unfolded by remember { mutableStateOf(emptySet<String>()) }
     var recent by remember { mutableStateOf(c.core.setting("recent-searches")?.split('\n')?.filter { it.isNotBlank() }.orEmpty()) }
     val words = query.trim()
-    // Each search starts with its first songs only.
-    androidx.compose.runtime.LaunchedEffect(words, library, source) { allSongs = false }
+    // Each search starts with its first results only.
+    androidx.compose.runtime.LaunchedEffect(words, library, source) { unfolded = emptySet() }
     // A service chosen is asked alone: its own copies of what others have too.
     val results by produceState<Loading<SearchResults>?>(null, words, library, source) {
         if (words.isEmpty()) {
@@ -117,7 +118,7 @@ fun SearchPage(c: LibraryContext) {
                 c.core.setSetting("recent-searches", "")
             }
             r !is Loading.Ready -> item { Empty(r.listing(), "", "") }
-            else -> results(c, r.value, library, words, Fold(allSongs) { allSongs = !allSongs }, keep)
+            else -> results(c, r.value, library, words, { name -> Fold(name in unfolded) { unfolded = if (name in unfolded) unfolded - name else unfolded + name } }, keep)
         }
     }
 }
@@ -172,7 +173,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.results(
     r: SearchResults,
     library: Boolean,
     words: String,
-    allSongs: Fold,
+    fold: (String) -> Fold,
     keep: () -> Unit,
 ) {
     if (r.tracks.isEmpty() && r.albums.isEmpty() && r.artists.isEmpty() && r.playlists.isEmpty()) {
@@ -197,8 +198,9 @@ private fun androidx.compose.foundation.lazy.LazyListScope.results(
     }
     if (r.tracks.isNotEmpty()) {
         // The first six; the title shows the others, when there are.
-        item { SectionHeader("Songs", fold = allSongs.takeIf { r.tracks.size > SONGS }) }
-        val songs = if (allSongs.open) r.tracks else r.tracks.take(SONGS)
+        val all = fold("Songs")
+        item { SectionHeader("Songs", fold = all.takeIf { r.tracks.size > SONGS }) }
+        val songs = if (all.open) r.tracks else r.tracks.take(SONGS)
         items(songs.size) { i ->
             TrackRow(songs[i]) {
                 keep()
@@ -207,22 +209,37 @@ private fun androidx.compose.foundation.lazy.LazyListScope.results(
         }
     }
     if (r.albums.isNotEmpty()) {
-        item { SectionHeader("Albums") }
-        item {
+        // A row to scroll; the title lays them all out in two columns.
+        val all = fold("Albums")
+        item { SectionHeader("Albums", fold = all.takeIf { r.albums.size > 2 }) }
+        @Composable
+        fun card(a: io.github.honeyslatt.music.core.model.Album, modifier: Modifier) {
             val actions = LocalActions.current
-            LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                items(r.albums) { a ->
-                    CoverCard(a.artwork, a.title, a.artists.joinToString(", "), a.explicit, modifier = Modifier.width(164.dp), onMenu = { actions?.albumMenu(a, it) }) {
-                        keep()
-                        c.nav.push(Route.Album(a.id))
-                    }
+            CoverCard(a.artwork, a.title, a.artists.joinToString(", "), a.explicit, modifier = modifier, onMenu = { actions?.albumMenu(a, it) }) {
+                keep()
+                c.nav.push(Route.Album(a.id))
+            }
+        }
+        if (all.open) {
+            items(r.albums.chunked(2)) { pair ->
+                Row(Modifier.padding(horizontal = 20.dp).padding(bottom = 20.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    pair.forEach { card(it, Modifier.weight(1f)) }
+                    if (pair.size == 1) androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+                }
+            }
+        } else {
+            item {
+                LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    items(r.albums) { a -> card(a, Modifier.width(164.dp)) }
                 }
             }
         }
     }
     if (r.artists.size > 1) {
-        item { SectionHeader("Artists") }
-        val more = r.artists.drop(1).take(5)
+        // Five after the top result; the title shows the others.
+        val all = fold("Artists")
+        item { SectionHeader("Artists", fold = all.takeIf { r.artists.size > 6 }) }
+        val more = r.artists.drop(1).let { if (all.open) it else it.take(5) }
         items(more.size) { i ->
             ItemRow(more[i].artwork, more[i].name, "Artist", round = true) {
                 keep()
