@@ -67,7 +67,7 @@ fun ListPage(
     state: LazyListState = rememberLazyListState(),
     content: LazyListScope.() -> Unit,
 ) {
-    Folding(nav, state.position())
+    Folding(nav) { state.firstVisibleItemIndex to state.firstVisibleItemScrollOffset }
     ScrollsToTop(nav) { state.animateScrollToItem(0) }
     val titleAt = if (nav.canPop) 2 else 1
     val scrolled by remember(titleAt) { derivedStateOf { state.firstVisibleItemIndex > titleAt } }
@@ -94,7 +94,7 @@ fun GridPage(
     state: LazyGridState = rememberLazyGridState(),
     content: LazyGridScope.() -> Unit,
 ) {
-    Folding(nav, state.firstVisibleItemIndex to state.firstVisibleItemScrollOffset)
+    Folding(nav) { state.firstVisibleItemIndex to state.firstVisibleItemScrollOffset }
     ScrollsToTop(nav) { state.animateScrollToItem(0) }
     val titleAt = if (nav.canPop) 2 else 1
     val scrolled by remember(titleAt) { derivedStateOf { state.firstVisibleItemIndex > titleAt } }
@@ -137,21 +137,25 @@ fun Modifier.bleed(by: androidx.compose.ui.unit.Dp) = layout { measurable, const
     layout(placeable.width - extra, placeable.height) { placeable.place(-extra / 2, 0) }
 }
 
-private fun LazyListState.position() = firstVisibleItemIndex to firstVisibleItemScrollOffset
-
-/** Fold the bottom bar while the page scrolls down past 80 dp, unfold it going up. */
+/**
+ * Fold the bottom bar while the page scrolls down past 80 dp, unfold it
+ * going up. The position is read in a flow, not in composition: reading it
+ * there would recompose the whole page at every frame of a scroll.
+ */
 @Composable
-private fun Folding(nav: Navigator, position: Pair<Int, Int>) {
+fun Folding(nav: Navigator, position: () -> Pair<Int, Int>) {
     val threshold = with(LocalDensity.current) { 80.dp.roundToPx() }
-    val state = remember { object { var last = 0 to 0 } }
-    LaunchedEffect(position) {
-        val (index, offset) = position
-        val (lastIndex, lastOffset) = state.last
-        val down = index > lastIndex || (index == lastIndex && offset > lastOffset + 4)
-        val up = index < lastIndex || (index == lastIndex && offset < lastOffset - 4)
-        if (down && (index > 0 || offset > threshold)) nav.folded = true
-        if (up) nav.folded = false
-        state.last = position
+    LaunchedEffect(nav) {
+        var last = 0 to 0
+        snapshotFlow(position).collect { now ->
+            val (index, offset) = now
+            val (lastIndex, lastOffset) = last
+            val down = index > lastIndex || (index == lastIndex && offset > lastOffset + 4)
+            val up = index < lastIndex || (index == lastIndex && offset < lastOffset - 4)
+            if (down && (index > 0 || offset > threshold) && !nav.folded) nav.folded = true
+            if (up && nav.folded) nav.folded = false
+            last = now
+        }
     }
 }
 

@@ -79,7 +79,7 @@ fun DetailPage(
     Tinted(page) {
         val state = rememberLazyListState()
         val solid by remember { derivedStateOf { state.firstVisibleItemIndex > 0 } }
-        Folding(nav, state.firstVisibleItemIndex, state.firstVisibleItemScrollOffset)
+        io.github.honeyslatt.music.ui.components.Folding(nav) { state.firstVisibleItemIndex to state.firstVisibleItemScrollOffset }
         Box(Modifier.fillMaxSize().background(roles.base)) {
             LazyColumn(Modifier.fillMaxSize(), state = state) {
                 content()
@@ -87,20 +87,6 @@ fun DetailPage(
             }
             Bar(nav, title, solid, actions)
         }
-    }
-}
-
-@Composable
-private fun Folding(nav: Navigator, index: Int, offset: Int) {
-    val threshold = with(LocalDensity.current) { 80.dp.roundToPx() }
-    val last = remember { intArrayOf(0, 0) }
-    LaunchedEffect(index, offset) {
-        val down = index > last[0] || (index == last[0] && offset > last[1] + 4)
-        val up = index < last[0] || (index == last[0] && offset < last[1] - 4)
-        if (down && (index > 0 || offset > threshold)) nav.folded = true
-        if (up) nav.folded = false
-        last[0] = index
-        last[1] = offset
     }
 }
 

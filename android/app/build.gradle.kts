@@ -18,6 +18,16 @@ android {
         ndk { abiFilters += "arm64-v8a" }
     }
 
+    buildTypes {
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // The debug key until the app has its own.
+            signingConfig = signingConfigs.getByName("debug")
+        }
+    }
+
     buildFeatures { compose = true }
 
     compileOptions {
