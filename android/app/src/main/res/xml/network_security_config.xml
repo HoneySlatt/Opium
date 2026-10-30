@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  A Navidrome server at home often has a plain http:// address on the local
+  network, which Android refuses by default. Apple Music's and SoundCloud's
+  addresses are all https:// in the app; only the address the user types
+  for their server can be http://.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
