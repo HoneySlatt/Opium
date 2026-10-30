@@ -32,22 +32,22 @@ const fn rgb(v: u32) -> Color32 {
 }
 
 impl Theme {
-    /// Near-black with a slight violet cast, Pluto's violet as the accent.
+    /// Carbonfox's black and neutral greys, Apple Music's pink as the accent.
     pub const STOCK: Theme = Theme {
         light: false,
-        base: rgb(0x0b0a0f),
-        mantle: rgb(0x15131b),
-        crust: rgb(0x070609),
-        surface0: rgb(0x1a1822),
-        surface1: rgb(0x25222f),
-        surface2: rgb(0x322e3d),
-        overlay0: rgb(0x5f5a6e),
-        overlay1: rgb(0x8f8a9e),
-        text: rgb(0xf5f3ff),
-        subtext0: rgb(0xaaa5ba),
-        accent: rgb(0x7c3aed),
-        mauve: rgb(0xa78bfa),
-        red: rgb(0xf43f5e),
+        base: rgb(0x161616),
+        mantle: rgb(0x1e1e1e),
+        crust: rgb(0x101010),
+        surface0: rgb(0x242424),
+        surface1: rgb(0x2e2e2e),
+        surface2: rgb(0x3a3a3a),
+        overlay0: rgb(0x6e7074),
+        overlay1: rgb(0x9a9ca0),
+        text: rgb(0xf2f4f8),
+        subtext0: rgb(0xb6b8bb),
+        accent: rgb(0xfa2d48),
+        mauve: rgb(0xfb5c74),
+        red: rgb(0xff453a),
         green: rgb(0x4ade80),
         yellow: rgb(0xfbbf24),
     };
@@ -114,8 +114,10 @@ impl Theme {
     }
 
     /// Text and glyphs on an accent fill: black on a light accent, else white.
+    /// White holds up to a quarter of white's luminance, as on Apple Music's
+    /// pink; past that, black.
     pub fn on_accent(&self) -> Color32 {
-        if luminance(self.accent) > 0.179 {
+        if luminance(self.accent) > 0.25 {
             Color32::BLACK
         } else {
             Color32::WHITE

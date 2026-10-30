@@ -674,7 +674,7 @@ fn appearance(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect) {
         (
             Appearance::Stock,
             "Stock",
-            "Black and violet, from Pluto.",
+            "Carbonfox's black and Apple Music's pink.",
             Some(Theme::STOCK),
         ),
         (

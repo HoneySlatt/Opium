@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Appearance {
-    /// Near-black with Pluto's violet.
+    /// Carbonfox's black with Apple Music's pink.
     Stock,
     /// Whatever Amane's theme switch last wrote to `~/.config/music/theme.toml`.
     Amane,

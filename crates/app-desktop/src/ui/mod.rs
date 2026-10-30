@@ -869,7 +869,7 @@ pub fn wash_with(ui: &Ui, rect: Rect, base: Color32, blobs: &[Blob], veil: impl 
     ui.painter().add(mesh);
 }
 
-/// The violet glow at the top of pages without a cover: two radial gradients
+/// The accent's glow at the top of pages without a cover: two radial gradients
 /// (accent at 26 % from the top left, mauve at 20 % from the top centre).
 pub fn glow(ui: &Ui, theme: &Theme, rect: Rect) {
     let blobs = [
