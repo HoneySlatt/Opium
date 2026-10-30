@@ -2,21 +2,24 @@
 //! web player keeps the user's tokens in.
 //!
 //! Sign-in pages are web flows (with 2FA, captchas), so the user goes through
-//! them in a Chromium-family browser running on its own profile. The browser is
-//! started with the DevTools protocol enabled and asked for its cookies until
-//! the token shows up — reading them live avoids decrypting Chromium's on-disk
-//! cookie store, whose format and key storage keep changing.
+//! them in a Chromium-family browser running on its own profile. The browser's
+//! DevTools are asked for its cookies until the token shows up — reading them
+//! live avoids decrypting Chromium's on-disk cookie store, whose format and key
+//! storage keep changing. They are reached over two pipes only the browser and
+//! we hold (`--remote-debugging-pipe`), not a port any program on the machine
+//! could connect to while the sign-in lasts.
 //!
 //! The profile is kept between sign-ins: when a token expires, a browser that
 //! is still signed in hands over a fresh one without any typing.
 
 use std::collections::HashMap;
+use std::os::fd::{AsRawFd, OwnedFd};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use futures_util::{SinkExt, StreamExt};
-use tokio::process::Command;
-use tokio_tungstenite::tungstenite::Message;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::net::unix::pipe;
+use tokio::process::{Child, Command};
 
 /// Where to sign in, and which cookies to bring back.
 #[derive(Debug, Clone, Copy)]
@@ -30,16 +33,14 @@ pub struct Site<'a> {
     /// Other cookies of the domain to bring back with it, when set.
     pub also: &'a [&'a str],
 }
+
+/// How often the browser is asked for its cookies, and looked at.
 const POLL: Duration = Duration::from_millis(500);
-/// Polls (of [`POLL`]) without an answering browser before giving up on it.
-const GIVE_UP_AFTER: u32 = 10;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SignInError {
     #[error("could not start the browser `{0}`: {1}")]
     Launch(PathBuf, std::io::Error),
-    #[error("the browser was closed before sign-in finished")]
-    BrowserClosed,
     #[error("sign-in did not finish within {0:?}")]
     TimedOut(Duration),
     #[error("DevTools connection failed: {0}")]
@@ -53,66 +54,46 @@ pub enum SignInError {
 ///
 /// `profile` is the browser profile dedicated to this; it is created if missing.
 ///
-/// The process we spawn is not a reliable signal: Chromium restarts itself on a
-/// fresh profile, and hands off to an instance already running on the same
-/// profile. So the browser is followed through `DevToolsActivePort`, reconnecting
-/// whenever it moves, and only counts as closed once our process is gone and
-/// nothing answers there any more.
+/// The browser closes itself once the token is there. Chromium may also carry
+/// on in another process (it restarts on a fresh profile, and hands off to an
+/// instance already running on the profile), which ends our pipes: then the
+/// cookies are read once that browser is closed.
 pub async fn sign_in(
     browser: &Path,
     profile: &Path,
     site: Site<'_>,
     timeout: Duration,
 ) -> Result<HashMap<String, String>, SignInError> {
-    let port_file = profile.join("DevToolsActivePort");
-    let mut child = Command::new(browser)
-        .arg(format!("--user-data-dir={}", profile.display()))
-        .args([
+    let deadline = Instant::now() + timeout;
+    let mut devtools = DevTools::launch(
+        browser,
+        profile,
+        &[
             "--no-first-run",
             "--no-default-browser-check",
-            "--remote-debugging-port=0",
-        ])
-        .arg(format!("--app={}", site.url))
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .kill_on_drop(true)
-        .spawn()
-        .map_err(|e| SignInError::Launch(browser.to_owned(), e))?;
-
-    let deadline = Instant::now() + timeout;
-    let mut unreachable_after_exit = 0;
-    loop {
-        if let Some(endpoint) = read_port_file(&port_file).await
-            && let Ok((mut ws, _)) = tokio_tungstenite::connect_async(endpoint.as_str()).await
-        {
-            unreachable_after_exit = 0;
-            if let Some(cookies) = poll_cookies(&mut ws, site, deadline, timeout).await? {
-                let close = serde_json::json!({ "id": 0, "method": "Browser.close" });
-                let _ = ws.send(Message::text(close.to_string())).await;
-                return Ok(cookies);
-            }
+            &format!("--app={}", site.url),
+        ],
+    )?;
+    while let Ok(reply) = devtools.call("Storage.getCookies", None).await {
+        let cookies = find_cookies(&reply, site);
+        if cookies.contains_key(site.token) {
+            devtools.close().await;
+            return Ok(cookies);
         }
         if Instant::now() > deadline {
             return Err(SignInError::TimedOut(timeout));
         }
-        if let Ok(Some(_)) = child.try_wait() {
-            unreachable_after_exit += 1;
-            if unreachable_after_exit > GIVE_UP_AFTER {
-                return Err(SignInError::BrowserClosed);
-            }
-        }
         tokio::time::sleep(POLL).await;
     }
+    // Closed, or carried on elsewhere: its cookies say once it is done.
+    wait_until_closed(&mut devtools.child, profile, deadline, timeout).await?;
+    signed_in(read_cookies(browser, profile, site).await?, site)
 }
 
 /// The same, for sites that may turn a browser away when its DevTools are
 /// open (SoundCloud's bot guard has): the browser opens as any other, and once
 /// the user has signed in and closed it, it is started again unseen, on no
 /// page, only to hand the cookies over.
-///
-/// The process we spawn is not a reliable signal (see [`sign_in`]): the
-/// browser counts as closed once our process is gone and nothing holds the
-/// profile's lock any more.
 pub async fn sign_in_unwatched(
     browser: &Path,
     profile: &Path,
@@ -128,23 +109,40 @@ pub async fn sign_in_unwatched(
         .kill_on_drop(true)
         .spawn()
         .map_err(|e| SignInError::Launch(browser.to_owned(), e))?;
-    let deadline = Instant::now() + timeout;
-    let lock = profile.join("SingletonLock");
-    loop {
-        tokio::time::sleep(POLL).await;
-        let exited = matches!(child.try_wait(), Ok(Some(_)));
-        if exited && tokio::fs::symlink_metadata(&lock).await.is_err() {
-            break;
-        }
-        if Instant::now() > deadline {
-            return Err(SignInError::TimedOut(timeout));
-        }
-    }
-    let cookies = read_cookies(browser, profile, site).await?;
+    wait_until_closed(&mut child, profile, Instant::now() + timeout, timeout).await?;
+    signed_in(read_cookies(browser, profile, site).await?, site)
+}
+
+fn signed_in(
+    cookies: HashMap<String, String>,
+    site: Site<'_>,
+) -> Result<HashMap<String, String>, SignInError> {
     if cookies.contains_key(site.token) {
         Ok(cookies)
     } else {
         Err(SignInError::NotSignedIn)
+    }
+}
+
+/// Wait for the browser on `profile` to be closed. The process we spawn is
+/// not a reliable signal (see [`sign_in`]): it counts as closed once our
+/// process is gone and nothing holds the profile's lock any more.
+async fn wait_until_closed(
+    child: &mut Child,
+    profile: &Path,
+    deadline: Instant,
+    timeout: Duration,
+) -> Result<(), SignInError> {
+    let lock = profile.join("SingletonLock");
+    loop {
+        let exited = matches!(child.try_wait(), Ok(Some(_)));
+        if exited && tokio::fs::symlink_metadata(&lock).await.is_err() {
+            return Ok(());
+        }
+        if Instant::now() > deadline {
+            return Err(SignInError::TimedOut(timeout));
+        }
+        tokio::time::sleep(POLL).await;
     }
 }
 
@@ -155,101 +153,114 @@ async fn read_cookies(
     profile: &Path,
     site: Site<'_>,
 ) -> Result<HashMap<String, String>, SignInError> {
-    let port_file = profile.join("DevToolsActivePort");
-    // One left from an earlier run would name a port nothing answers on.
-    let _ = tokio::fs::remove_file(&port_file).await;
-    let _child = Command::new(browser)
-        .arg(format!("--user-data-dir={}", profile.display()))
-        .args([
-            "--headless=new",
-            "--no-first-run",
-            "--remote-debugging-port=0",
-            "about:blank",
-        ])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .kill_on_drop(true)
-        .spawn()
-        .map_err(|e| SignInError::Launch(browser.to_owned(), e))?;
-    let deadline = Instant::now() + Duration::from_secs(20);
-    loop {
-        if let Some(endpoint) = read_port_file(&port_file).await
-            && let Ok((mut ws, _)) = tokio_tungstenite::connect_async(endpoint.as_str()).await
-        {
-            let request = serde_json::json!({ "id": 1, "method": "Storage.getCookies" });
-            ws.send(Message::text(request.to_string()))
-                .await
-                .map_err(|e| SignInError::DevTools(e.to_string()))?;
-            while let Some(Ok(msg)) = ws.next().await {
-                let Message::Text(text) = msg else { continue };
-                let value: serde_json::Value = serde_json::from_str(&text)
+    let mut devtools = DevTools::launch(
+        browser,
+        profile,
+        &["--headless=new", "--no-first-run", "about:blank"],
+    )?;
+    let reply = devtools.call("Storage.getCookies", None).await?;
+    devtools.close().await;
+    Ok(find_cookies(&reply, site))
+}
+
+/// How long the browser may take to answer one call.
+const ANSWER_WITHIN: Duration = Duration::from_secs(20);
+
+/// A browser and its DevTools, over `--remote-debugging-pipe`: it reads
+/// calls on its descriptor 3 and writes answers on 4, each a JSON message
+/// ended by a NUL.
+struct DevTools {
+    child: Child,
+    calls: pipe::Sender,
+    answers: BufReader<pipe::Receiver>,
+    next_id: u64,
+}
+
+impl DevTools {
+    fn launch(browser: &Path, profile: &Path, args: &[&str]) -> Result<Self, SignInError> {
+        let launch = |e: std::io::Error| SignInError::Launch(browser.to_owned(), e);
+        let (their_calls, calls) = std::io::pipe().map_err(launch)?;
+        let (answers, their_answers) = std::io::pipe().map_err(launch)?;
+        let (read_fd, write_fd) = (their_calls.as_raw_fd(), their_answers.as_raw_fd());
+        let mut command = Command::new(browser);
+        command
+            .arg(format!("--user-data-dir={}", profile.display()))
+            .arg("--remote-debugging-pipe")
+            .args(args)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .kill_on_drop(true);
+        // SAFETY: only async-signal-safe calls between fork and exec. The
+        // pipes go to 3 and 4 by way of copies above both, so that neither
+        // lands on the other's place, and without close-on-exec.
+        unsafe {
+            command.pre_exec(move || {
+                let read = libc::fcntl(read_fd, libc::F_DUPFD, 10);
+                let write = libc::fcntl(write_fd, libc::F_DUPFD, 10);
+                if read < 0 || write < 0 || libc::dup2(read, 3) < 0 || libc::dup2(write, 4) < 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                libc::close(read);
+                libc::close(write);
+                Ok(())
+            });
+        }
+        let child = command.spawn().map_err(launch)?;
+        // The browser's ends are its own now.
+        drop((their_calls, their_answers));
+        let devtools = |e: std::io::Error| SignInError::DevTools(e.to_string());
+        Ok(Self {
+            child,
+            calls: pipe::Sender::from_owned_fd(OwnedFd::from(calls)).map_err(devtools)?,
+            answers: BufReader::new(
+                pipe::Receiver::from_owned_fd(OwnedFd::from(answers)).map_err(devtools)?,
+            ),
+            next_id: 1,
+        })
+    }
+
+    /// Call `method`, and wait for its answer; an error once the browser
+    /// has gone.
+    async fn call(
+        &mut self,
+        method: &str,
+        params: Option<serde_json::Value>,
+    ) -> Result<serde_json::Value, SignInError> {
+        let id = self.next_id;
+        self.next_id += 1;
+        let mut call = serde_json::json!({ "id": id, "method": method });
+        if let Some(params) = params {
+            call["params"] = params;
+        }
+        let mut message = call.to_string().into_bytes();
+        message.push(0);
+        let gone = |e: std::io::Error| SignInError::DevTools(e.to_string());
+        self.calls.write_all(&message).await.map_err(gone)?;
+        let answer = async {
+            let mut buf = Vec::new();
+            loop {
+                buf.clear();
+                if self.answers.read_until(0, &mut buf).await.map_err(gone)? == 0 {
+                    return Err(SignInError::DevTools("the browser closed".into()));
+                }
+                buf.pop_if(|b| *b == 0);
+                let value: serde_json::Value = serde_json::from_slice(&buf)
                     .map_err(|e| SignInError::DevTools(e.to_string()))?;
-                if value["id"] == 1 {
-                    let close = serde_json::json!({ "id": 2, "method": "Browser.close" });
-                    let _ = ws.send(Message::text(close.to_string())).await;
-                    return Ok(find_cookies(&value, site));
+                // Events share the pipe; only our answer matters.
+                if value["id"] == id {
+                    return Ok(value);
                 }
             }
-        }
-        if Instant::now() > deadline {
-            return Err(SignInError::DevTools(
-                "the browser didn't open its DevTools".into(),
-            ));
-        }
-        tokio::time::sleep(POLL).await;
-    }
-}
-
-/// Ask for cookies until the token appears. `Ok(None)` when the connection drops,
-/// which is the browser restarting or closing.
-async fn poll_cookies<S>(
-    ws: &mut S,
-    site: Site<'_>,
-    deadline: Instant,
-    timeout: Duration,
-) -> Result<Option<HashMap<String, String>>, SignInError>
-where
-    S: futures_util::Sink<Message>
-        + futures_util::Stream<Item = Result<Message, tokio_tungstenite::tungstenite::Error>>
-        + Unpin,
-{
-    for request_id in 1u64.. {
-        let request = serde_json::json!({ "id": request_id, "method": "Storage.getCookies" });
-        if ws.send(Message::text(request.to_string())).await.is_err() {
-            return Ok(None);
-        }
-        let reply = loop {
-            let Some(Ok(msg)) = ws.next().await else {
-                return Ok(None);
-            };
-            let Message::Text(text) = msg else { continue };
-            let value: serde_json::Value =
-                serde_json::from_str(&text).map_err(|e| SignInError::DevTools(e.to_string()))?;
-            // Events and stale replies share the socket; only ours matters.
-            if value["id"] == request_id {
-                break value;
-            }
         };
-        let cookies = find_cookies(&reply, site);
-        if cookies.contains_key(site.token) {
-            return Ok(Some(cookies));
-        }
-        if Instant::now() > deadline {
-            return Err(SignInError::TimedOut(timeout));
-        }
-        tokio::time::sleep(POLL).await;
+        tokio::time::timeout(ANSWER_WITHIN, answer)
+            .await
+            .map_err(|_| SignInError::DevTools("the browser didn't answer".into()))?
     }
-    unreachable!("request ids ran out")
-}
 
-/// `DevToolsActivePort` holds the port on its first line and the browser target's
-/// path on its second.
-async fn read_port_file(path: &Path) -> Option<String> {
-    let contents = tokio::fs::read_to_string(path).await.ok()?;
-    let mut lines = contents.lines();
-    let port = lines.next()?.trim();
-    let target = lines.next()?.trim();
-    (!port.is_empty() && !target.is_empty()).then(|| format!("ws://127.0.0.1:{port}{target}"))
+    async fn close(&mut self) {
+        let _ = self.call("Browser.close", None).await;
+        let _ = tokio::time::timeout(ANSWER_WITHIN, self.child.wait()).await;
+    }
 }
 
 /// The site's cookies among those of the reply, by name: the token and those

@@ -29,6 +29,9 @@ pub(crate) struct OutputState {
     pub volume: AtomicU32,
     /// The rate the PipeWire graph actually runs at, once known.
     pub graph_rate: AtomicU32,
+    /// Frames handed over but not heard yet: what PipeWire and the device
+    /// still hold.
+    pub latency: AtomicU64,
     /// Our stream's node in the graph, once it has one.
     node_id: AtomicU32,
     /// The device and what else plays into it, refreshed twice a second.
@@ -101,6 +104,7 @@ impl Output {
     pub fn open(
         sample_rate: u32,
         channels: u16,
+        layout: Option<u64>,
         consumer: Consumer<i32>,
         state: Arc<OutputState>,
     ) -> Result<(Self, OutputInfo)> {
@@ -109,7 +113,8 @@ impl Output {
         let thread = std::thread::Builder::new()
             .name("pipewire-out".into())
             .spawn(move || {
-                if let Err(e) = run(sample_rate, channels, consumer, state, quit_rx, &opened_tx) {
+                let format = (sample_rate, channels, layout);
+                if let Err(e) = run(format, consumer, state, quit_rx, &opened_tx) {
                     let _ = opened_tx.send(Err(Error::Output(format!("PipeWire: {e}"))));
                 }
             })
@@ -139,13 +144,75 @@ struct Feed {
     consumer: Consumer<i32>,
     state: Arc<OutputState>,
     channels: usize,
+    sample_rate: u32,
     scratch: Vec<i32>,
+}
+
+/// Each channel's speaker: as the file lays them out, else mono, stereo, or
+/// channels with no place.
+fn positions(channels: u16, layout: Option<u64>) -> [u32; spa::param::audio::MAX_CHANNELS] {
+    use spa::sys::*;
+    // Symphonia's `Position` bits, in their order, as PipeWire names them.
+    const SPEAKERS: [u32; 26] = [
+        SPA_AUDIO_CHANNEL_FL,
+        SPA_AUDIO_CHANNEL_FR,
+        SPA_AUDIO_CHANNEL_FC,
+        SPA_AUDIO_CHANNEL_LFE,
+        SPA_AUDIO_CHANNEL_RL,
+        SPA_AUDIO_CHANNEL_RR,
+        SPA_AUDIO_CHANNEL_FLC,
+        SPA_AUDIO_CHANNEL_FRC,
+        SPA_AUDIO_CHANNEL_RC,
+        SPA_AUDIO_CHANNEL_SL,
+        SPA_AUDIO_CHANNEL_SR,
+        SPA_AUDIO_CHANNEL_TC,
+        SPA_AUDIO_CHANNEL_TFL,
+        SPA_AUDIO_CHANNEL_TFC,
+        SPA_AUDIO_CHANNEL_TFR,
+        SPA_AUDIO_CHANNEL_TRL,
+        SPA_AUDIO_CHANNEL_TRC,
+        SPA_AUDIO_CHANNEL_TRR,
+        SPA_AUDIO_CHANNEL_LFE2,
+        SPA_AUDIO_CHANNEL_TSL,
+        SPA_AUDIO_CHANNEL_TSR,
+        SPA_AUDIO_CHANNEL_BC,
+        SPA_AUDIO_CHANNEL_BLC,
+        SPA_AUDIO_CHANNEL_BRC,
+        SPA_AUDIO_CHANNEL_FLW,
+        SPA_AUDIO_CHANNEL_FRW,
+    ];
+    let mut position = [0; spa::param::audio::MAX_CHANNELS];
+    let n = usize::from(channels).min(position.len());
+    let laid_out: Vec<u32> = layout
+        .map(|bits| {
+            (0..SPEAKERS.len())
+                .filter(|&bit| bits & (1 << bit) != 0)
+                .map(|bit| SPEAKERS[bit])
+                .collect()
+        })
+        .unwrap_or_default();
+    if laid_out.len() == n && n > 2 {
+        position[..n].copy_from_slice(&laid_out);
+        return position;
+    }
+    match n {
+        1 => position[0] = SPA_AUDIO_CHANNEL_MONO,
+        2 => {
+            position[0] = SPA_AUDIO_CHANNEL_FL;
+            position[1] = SPA_AUDIO_CHANNEL_FR;
+        }
+        _ => {
+            for (c, p) in position.iter_mut().take(n).enumerate() {
+                *p = SPA_AUDIO_CHANNEL_AUX0 + c as u32;
+            }
+        }
+    }
+    position
 }
 
 /// Runs on the output thread until `quit` fires.
 fn run(
-    sample_rate: u32,
-    channels: u16,
+    (sample_rate, channels, layout): (u32, u16, Option<u64>),
     consumer: Consumer<i32>,
     state: Arc<OutputState>,
     quit: pw::channel::Receiver<()>,
@@ -213,6 +280,7 @@ fn run(
         consumer,
         state,
         channels: usize::from(channels),
+        sample_rate,
         scratch: Vec::new(),
     };
     let _listener = stream
@@ -228,9 +296,17 @@ fn run(
         .process(|stream, feed| {
             feed.state.node_id.store(stream.node_id(), Ordering::Relaxed);
             if let Ok(time) = stream.time() {
-                let denom = time.rate().denom;
-                if denom > 0 {
-                    feed.state.graph_rate.store(denom, Ordering::Relaxed);
+                let rate = time.rate();
+                if rate.denom > 0 {
+                    feed.state.graph_rate.store(rate.denom, Ordering::Relaxed);
+                    // The delay is in graph ticks; the converter's in frames.
+                    let delay = u64::try_from(time.delay()).unwrap_or(0)
+                        * u64::from(rate.num)
+                        * u64::from(feed.sample_rate)
+                        / u64::from(rate.denom);
+                    feed.state
+                        .latency
+                        .store(delay + time.buffered(), Ordering::Relaxed);
                 }
             }
             let Some(mut buffer) = stream.dequeue_buffer() else {
@@ -270,20 +346,7 @@ fn run(
     info.set_format(spa::param::audio::AudioFormat::S32LE);
     info.set_rate(sample_rate);
     info.set_channels(u32::from(channels));
-    let mut position = [0; spa::param::audio::MAX_CHANNELS];
-    match channels {
-        1 => position[0] = spa::sys::SPA_AUDIO_CHANNEL_MONO,
-        2 => {
-            position[0] = spa::sys::SPA_AUDIO_CHANNEL_FL;
-            position[1] = spa::sys::SPA_AUDIO_CHANNEL_FR;
-        }
-        n => {
-            for (c, p) in position.iter_mut().take(usize::from(n)).enumerate() {
-                *p = spa::sys::SPA_AUDIO_CHANNEL_AUX0 + c as u32;
-            }
-        }
-    }
-    info.set_position(position);
+    info.set_position(positions(channels, layout));
     let format: Vec<u8> = spa::pod::serialize::PodSerializer::serialize(
         std::io::Cursor::new(Vec::new()),
         &spa::pod::Value::Object(spa::pod::Object {
@@ -308,4 +371,29 @@ fn run(
     let _ = opened.send(Ok(()));
     mainloop.run();
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use spa::sys::*;
+
+    #[test]
+    fn a_five_one_file_keeps_its_speakers() {
+        let p = positions(6, Some(0x3F));
+        assert_eq!(
+            p[..6],
+            [
+                SPA_AUDIO_CHANNEL_FL,
+                SPA_AUDIO_CHANNEL_FR,
+                SPA_AUDIO_CHANNEL_FC,
+                SPA_AUDIO_CHANNEL_LFE,
+                SPA_AUDIO_CHANNEL_RL,
+                SPA_AUDIO_CHANNEL_RR
+            ]
+        );
+        // A layout that doesn't fit the count leaves channels unplaced.
+        assert_eq!(positions(3, Some(0x3F))[2], SPA_AUDIO_CHANNEL_AUX0 + 2);
+        assert_eq!(positions(1, None)[0], SPA_AUDIO_CHANNEL_MONO);
+    }
 }

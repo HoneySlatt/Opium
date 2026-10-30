@@ -29,6 +29,8 @@ const WEB_PLAYER: &str = "https://music.apple.com";
 const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
 /// The largest page the library and catalog endpoints accept.
 const PAGE: u32 = 100;
+/// The longest wait Apple may ask for before a request is tried again.
+const MAX_RETRY_AFTER: u64 = 10;
 /// An editorial grouping's first tab (the subscriber's) as shelves: the big
 /// row first (element kind 316: the stations on air, the week's picks, each
 /// with its badge), then every titled shelf of covers (326) or of songs (327)
@@ -212,12 +214,30 @@ impl AppleMusic {
 
     /// `Ok(None)` on 404, which Apple also answers for some empty collections.
     async fn fetch<T: DeserializeOwned>(&self, path: &str) -> Result<Option<T>> {
-        let resp = self
-            .authorized(self.http.get(format!("{API}{path}")))
-            .header("Media-User-Token", &self.user_token)
-            .send()
-            .await
-            .map_err(|e| Error::Network(format!("{path}: {e}")))?;
+        let mut waited = false;
+        let resp = loop {
+            let resp = self
+                .authorized(self.http.get(format!("{API}{path}")))
+                .header("Media-User-Token", &self.user_token)
+                .send()
+                .await
+                .map_err(|e| Error::Network(format!("{path}: {e}")))?;
+            // Asked to slow down: once, after the wait it names if short.
+            if resp.status().as_u16() != 429 || waited {
+                break resp;
+            }
+            waited = true;
+            let wait = resp
+                .headers()
+                .get("retry-after")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|v| v.trim().parse::<u64>().ok())
+                .unwrap_or(1);
+            if wait > MAX_RETRY_AFTER {
+                break resp;
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(wait)).await;
+        };
         let status = resp.status();
         match status.as_u16() {
             401 | 403 => return Err(Error::NotSignedIn),

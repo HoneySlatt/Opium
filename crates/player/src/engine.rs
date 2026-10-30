@@ -53,12 +53,20 @@ struct Sink {
     state: Arc<OutputState>,
     producer: Producer<i32>,
     channels: u64,
+    layout: Option<u64>,
     sample_rate: u32,
 }
 
 impl Sink {
     fn played(&self) -> u64 {
         self.state.played.load(Ordering::Relaxed)
+    }
+
+    /// The frames heard so far: those played, less what the graph and the
+    /// device still hold.
+    fn heard(&self) -> u64 {
+        self.played()
+            .saturating_sub(self.state.latency.load(Ordering::Relaxed))
     }
 
     /// The output as it is now, with the rate the graph actually runs at.
@@ -282,7 +290,13 @@ impl Engine {
         let state = Arc::new(OutputState::new(self.volume));
         state.paused.store(self.paused, Ordering::Relaxed);
 
-        match Output::open(format.sample_rate, channels, consumer, state.clone()) {
+        match Output::open(
+            format.sample_rate,
+            channels,
+            format.layout,
+            consumer,
+            state.clone(),
+        ) {
             Ok((output, info)) => {
                 self.emit(Event::Started {
                     token: item.token,
@@ -295,6 +309,7 @@ impl Engine {
                     state,
                     producer,
                     channels: u64::from(channels),
+                    layout: format.layout,
                     sample_rate: format.sample_rate,
                 });
                 self.segments.push_back(Segment {
@@ -372,7 +387,10 @@ impl Engine {
             return;
         };
         let format = &item.decoder.info;
-        if format.sample_rate == sink.sample_rate && u64::from(format.channels) == sink.channels {
+        if format.sample_rate == sink.sample_rate
+            && u64::from(format.channels) == sink.channels
+            && format.layout == sink.layout
+        {
             self.segments.push_back(Segment {
                 item,
                 start_frame: self.written / sink.channels,
@@ -397,7 +415,8 @@ impl Engine {
         let Some(sink) = &self.sink else { return };
         let played = sink.played();
 
-        while self.segments.len() > 1 && played >= self.segments[1].start_frame {
+        // A track that follows another starts when it is heard.
+        while self.segments.len() > 1 && sink.heard() >= self.segments[1].start_frame {
             self.segments.pop_front();
             let front = &self.segments[0];
             self.emit(Event::Started {
@@ -517,7 +536,7 @@ impl Engine {
         let (Some(sink), Some(front)) = (&self.sink, self.segments.front()) else {
             return Duration::ZERO;
         };
-        let frames = sink.played().saturating_sub(front.start_frame);
+        let frames = sink.heard().saturating_sub(front.start_frame);
         front.base_time + Duration::from_secs_f64(frames as f64 / f64::from(sink.sample_rate))
     }
 

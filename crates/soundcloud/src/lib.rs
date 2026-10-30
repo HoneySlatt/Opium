@@ -36,6 +36,13 @@ const IDS_AT_ONCE: usize = 50;
 /// Tracks a playlist holds, as the web player allows.
 const PLAYLIST_MAX: usize = 500;
 
+/// The longest wait SoundCloud may ask for before a request is tried again.
+const MAX_RETRY_AFTER: u64 = 10;
+
+fn slow_down() -> Error {
+    Error::Protocol("SoundCloud asks to slow down: try again in a few minutes".into())
+}
+
 /// The user's tokens, as the browser keeps them.
 #[derive(Clone, Default, PartialEq, Eq)]
 pub struct Tokens {
@@ -169,7 +176,7 @@ impl SoundCloud {
                 && u.host_str()
                     .is_some_and(|h| h == "soundcloud.com" || h.ends_with(".soundcloud.com"))
         });
-        let (mut renewed, mut rescraped) = (false, false);
+        let (mut renewed, mut rescraped, mut waited) = (false, false, false);
         loop {
             let client_id = self.client_id();
             let mut request = self
@@ -205,11 +212,21 @@ impl SoundCloud {
                         *self.client_id.write().unwrap_or_else(|e| e.into_inner()) = id;
                     }
                 }
-                429 => {
-                    return Err(Error::Protocol(
-                        "SoundCloud asks to slow down: try again in a few minutes".into(),
-                    ));
+                // Asked to slow down: once, after the wait it names if short.
+                429 if !waited => {
+                    waited = true;
+                    let wait = resp
+                        .headers()
+                        .get("retry-after")
+                        .and_then(|v| v.to_str().ok())
+                        .and_then(|v| v.trim().parse::<u64>().ok())
+                        .unwrap_or(2);
+                    if wait > MAX_RETRY_AFTER {
+                        return Err(slow_down());
+                    }
+                    tokio::time::sleep(std::time::Duration::from_secs(wait)).await;
                 }
+                429 => return Err(slow_down()),
                 s if !(200..300).contains(&s) => {
                     return Err(Error::Protocol(format!("{url}: HTTP {s}")));
                 }

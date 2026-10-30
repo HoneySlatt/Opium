@@ -117,6 +117,10 @@ impl Decoder {
             codec: decoder.codec_info().short_name.to_uppercase(),
             sample_rate,
             channels: params.channels.as_ref().map_or(2, |c| c.count() as u16),
+            layout: match &params.channels {
+                Some(symphonia::core::audio::Channels::Positioned(p)) => Some(p.bits()),
+                _ => None,
+            },
             bits_per_sample: params.bits_per_sample,
             duration: num_frames
                 .map(|n| Duration::from_secs_f64(n as f64 / f64::from(sample_rate))),

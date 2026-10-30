@@ -150,6 +150,9 @@ pub struct SourceFormat {
     pub codec: String,
     pub sample_rate: u32,
     pub channels: u16,
+    /// Which speaker each channel is for, as Symphonia's `Position` bits
+    /// (one per channel, in order), when the file says.
+    pub layout: Option<u64>,
     /// For lossless sources; lossy codecs have no inherent bit depth.
     pub bits_per_sample: Option<u32>,
     pub duration: Option<Duration>,
