@@ -72,10 +72,16 @@ class PlaybackService : MediaSessionService() {
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo) = session
 
-    /** Swiped away while paused: nothing to keep running for. */
+    /**
+     * Swiped away from the recent apps: the music stops, as an iPhone's
+     * does, and comes back paused where it was. Another device played on
+     * plays on: only this phone's player is paused.
+     */
     override fun onTaskRemoved(rootIntent: Intent?) {
-        val player = session?.player
-        if (player == null || !player.playWhenReady || player.mediaItemCount == 0) stopSelf()
+        val playback = (application as MusicApp).playback
+        playback.player.pause()
+        playback.keepSession()
+        stopSelf()
     }
 
     override fun onDestroy() {
