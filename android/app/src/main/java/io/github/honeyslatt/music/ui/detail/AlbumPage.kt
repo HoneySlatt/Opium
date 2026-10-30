@@ -85,11 +85,11 @@ fun AlbumPage(c: LibraryContext, id: ItemId) {
                 },
             )
         }
-        item { PlayShuffle(enabled = tracks.isNotEmpty()) }
+        item { PlayShuffle(tracks.isNotEmpty(), { c.playback.play(tracks, 0) }, { c.playback.shuffle(tracks) }) }
         item { Spacer(Modifier.height(12.dp)) }
         if (tracks.isEmpty()) item { Empty(loaded.listing(), "No songs", "This album has no songs here.") }
         itemsIndexed(tracks, key = { i, t -> "$i" + t.id.id }) { i, track ->
-            AlbumTrackRow(track.trackNumber?.toInt() ?: (i + 1), track, last = i == tracks.lastIndex)
+            AlbumTrackRow(track.trackNumber?.toInt() ?: (i + 1), track, last = i == tracks.lastIndex) { c.playback.play(tracks, i) }
         }
         // A library album with only some of its songs: the catalog's whole.
         album?.catalogId?.takeIf { it != album.id }?.let { whole ->

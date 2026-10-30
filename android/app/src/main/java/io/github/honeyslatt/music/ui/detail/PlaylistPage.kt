@@ -102,10 +102,10 @@ fun PlaylistPage(c: LibraryContext, id: ItemId) {
                 }
             }
         }
-        item { PlayShuffle(enabled = tracks.isNotEmpty()) }
+        item { PlayShuffle(tracks.isNotEmpty(), { c.playback.play(tracks, 0) }, { c.playback.shuffle(tracks) }) }
         item { Spacer(Modifier.height(8.dp)) }
         if (tracks.isEmpty()) item { Empty(loaded.listing(), "No songs", "This playlist is empty.") }
-        items(tracks.withIndex().toList(), key = { (i, t) -> "$i" + t.id.id }) { (_, track) -> TrackRow(track) {} }
+        items(tracks.withIndex().toList(), key = { (i, t) -> "$i" + t.id.id }) { (i, track) -> TrackRow(track) { c.playback.play(tracks, i) } }
         // Its count and length go under the songs, once they are all in.
         if (tracks.isNotEmpty() && complete) item { Foot(listOf(countAndLength(tracks))) }
     }

@@ -16,10 +16,15 @@ class MusicApp : Application() {
     lateinit var library: Library
         private set
 
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+    lateinit var playback: io.github.honeyslatt.music.playback.Playback
+        private set
+
     override fun onCreate() {
         super.onCreate()
         Tls.init(this)
         core = Core(this)
         library = Library(core, scope)
+        playback = io.github.honeyslatt.music.playback.Playback(this, core, scope)
     }
 }

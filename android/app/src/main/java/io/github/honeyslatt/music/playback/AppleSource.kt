@@ -27,7 +27,7 @@ import kotlinx.coroutines.runBlocking
  * gap. Checked on a Pixel 10 (Widevine L1) in step 0.
  */
 @UnstableApi
-fun appleSource(track: ProtectedTrack, key: String): HlsMediaSource {
+fun appleSource(track: ProtectedTrack, key: String, item: MediaItem.Builder = MediaItem.Builder()): HlsMediaSource {
     val playlistUri = Uri.parse("music-playlist://apple/$key.m3u8")
     val playlist = track.playlist().toByteArray()
     val http = DefaultHttpDataSource.Factory()
@@ -71,5 +71,5 @@ fun appleSource(track: ProtectedTrack, key: String): HlsMediaSource {
     return HlsMediaSource.Factory(sources)
         .setExtractorFactory(Trimmed.Factory(track.priming().toInt(), track.padding().toInt()))
         .setDrmSessionManagerProvider { drm }
-        .createMediaSource(MediaItem.Builder().setUri(playlistUri).setMimeType(MimeTypes.APPLICATION_M3U8).build())
+        .createMediaSource(item.setUri(playlistUri).setMimeType(MimeTypes.APPLICATION_M3U8).build())
 }

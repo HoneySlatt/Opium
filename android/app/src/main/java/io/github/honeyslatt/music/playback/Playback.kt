@@ -1,0 +1,210 @@
+package io.github.honeyslatt.music.playback
+
+import android.content.Context
+import android.net.Uri
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.MediaSource
+import io.github.honeyslatt.music.core.PlayQueue
+import io.github.honeyslatt.music.core.QueueRepeat
+import io.github.honeyslatt.music.core.model.ProviderKind
+import io.github.honeyslatt.music.core.model.Track
+import io.github.honeyslatt.music.data.Core
+import io.github.honeyslatt.music.ui.components.at
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+
+/** How many songs in a row may fail to play before playback stops. */
+private const val MAX_SKIPS = 5
+
+/**
+ * What plays: the queue (the Rust core's, as on the desktop) and the
+ * player. The player only ever holds the current song and the next one,
+ * each made playable just before it is needed, so that the next follows
+ * without a gap while the whole queue isn't resolved at once.
+ */
+@UnstableApi
+class Playback(context: Context, private val core: Core, private val scope: CoroutineScope) {
+    val queue = PlayQueue()
+
+    val player: ExoPlayer = ExoPlayer.Builder(context)
+        .setAudioAttributes(
+            AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(),
+            true,
+        )
+        .setHandleAudioBecomingNoisy(true)
+        // Start once half a second is in, rather than the default 2.5 s.
+        .setLoadControl(DefaultLoadControl.Builder().setBufferDurationsMs(20_000, 60_000, 500, 1_500).build())
+        .build()
+
+    private val _now = MutableStateFlow<Track?>(null)
+
+    /** The song playing, or on its way. */
+    val now: StateFlow<Track?> = _now.asStateFlow()
+
+    private val _playing = MutableStateFlow(false)
+    val playing: StateFlow<Boolean> = _playing.asStateFlow()
+
+    private val _loading = MutableStateFlow(false)
+
+    /** The current song is still being made playable. */
+    val loading: StateFlow<Boolean> = _loading.asStateFlow()
+
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error.asStateFlow()
+
+    /** Bumped when the queue starts over, so late resolutions are dropped. */
+    private var generation = 0
+    private var lining: Job? = null
+    private var failedInRow = 0
+
+    init {
+        player.addListener(object : Player.Listener {
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                _playing.value = isPlaying
+            }
+
+            override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
+                // The next song followed on its own: the queue moves on.
+                if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) queue.trackFinished()
+                if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO ||
+                    reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK
+                ) {
+                    // Only the song playing stays, and the next is lined up.
+                    while (player.currentMediaItemIndex > 0) player.removeMediaItem(0)
+                    _now.value = queue.current()
+                    failedInRow = 0
+                    lineUpNext()
+                }
+            }
+
+            override fun onPlayerError(error: PlaybackException) {
+                _error.value = "Couldn't play “${_now.value?.title}”: ${error.errorCodeName}"
+                skipFailed()
+            }
+        })
+    }
+
+    /** Play `tracks` from `start`. */
+    fun play(tracks: List<Track>, start: Int) {
+        if (tracks.isEmpty()) return
+        queue.replace(tracks, start.toUInt())
+        startCurrent()
+    }
+
+    /** Play `tracks` shuffled, from a random one. */
+    fun shuffle(tracks: List<Track>) {
+        if (tracks.isEmpty()) return
+        queue.setShuffle(true)
+        play(tracks, tracks.indices.random())
+    }
+
+    fun toggle() {
+        if (player.playbackState == Player.STATE_IDLE && _now.value != null) {
+            startCurrent()
+        } else if (player.isPlaying) {
+            player.pause()
+        } else {
+            player.play()
+        }
+    }
+
+    fun next() {
+        if (player.hasNextMediaItem() && queue.repeat() != QueueRepeat.ONE) {
+            queue.skipNext()
+            player.seekToNextMediaItem()
+        } else if (queue.skipNext() != null) {
+            startCurrent()
+        }
+    }
+
+    /** Back to the song's start, or to the one before when already there. */
+    fun previous() {
+        if (player.currentPosition > 3_000) {
+            player.seekTo(0)
+        } else if (queue.skipPrevious() != null) {
+            startCurrent()
+        }
+    }
+
+    private fun skipFailed() {
+        failedInRow++
+        if (failedInRow <= MAX_SKIPS && queue.skipNext() != null) startCurrent() else player.stop()
+    }
+
+    /** Make the queue's current song playable and play it, at once. */
+    private fun startCurrent() {
+        val track = queue.current() ?: return
+        val mine = ++generation
+        lining?.cancel()
+        player.stop()
+        player.clearMediaItems()
+        _now.value = track
+        _loading.value = true
+        scope.launch {
+            val source = try {
+                playable(track, mine)
+            } catch (e: Exception) {
+                if (mine != generation) return@launch
+                _loading.value = false
+                _error.value = "Couldn't play “${track.title}”: ${e.message}"
+                skipFailed()
+                return@launch
+            }
+            if (mine != generation) return@launch
+            _loading.value = false
+            player.setMediaSource(source)
+            player.prepare()
+            player.play()
+            lineUpNext()
+        }
+    }
+
+    /** Have the song that follows in the player, so it joins without a gap. */
+    private fun lineUpNext() {
+        val next = queue.peekFinished() ?: return
+        val mine = generation
+        lining?.cancel()
+        lining = scope.launch {
+            val source = runCatching { playable(next, mine) }.getOrNull() ?: return@launch
+            // Still what follows, in the same queue.
+            if (mine != generation || queue.peekFinished()?.id != next.id) return@launch
+            while (player.mediaItemCount > player.currentMediaItemIndex + 1) player.removeMediaItem(player.mediaItemCount - 1)
+            player.addMediaSource(source)
+        }
+    }
+
+    private var keys = 0
+
+    /** A song as the player plays it, with what the lock screen shows. */
+    private suspend fun playable(track: Track, generation: Int): MediaSource {
+        val item = MediaItem.Builder()
+            .setMediaId("${track.id.provider}:${track.id.id}")
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle(track.title)
+                    .setArtist(track.artists.joinToString(", "))
+                    .setAlbumTitle(track.album)
+                    .setArtworkUri(track.artwork?.at(600)?.let(Uri::parse))
+                    .build(),
+            )
+        return when (track.id.provider) {
+            ProviderKind.APPLE_MUSIC -> {
+                val protected = core.session.protected(track.id) ?: error("a song you uploaded can't play here yet")
+                appleSource(protected, "$generation-${keys++}", item)
+            }
+            else -> error("${track.id.provider} plays once it is connected")
+        }
+    }
+}

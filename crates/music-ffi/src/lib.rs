@@ -418,6 +418,113 @@ fn sorted(set: std::collections::HashSet<usize>) -> Vec<u32> {
     v
 }
 
+/// What plays after the current song ends.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum QueueRepeat {
+    Off,
+    All,
+    One,
+}
+
+/// The play queue, the desktop's own: tracks in their order, a play order
+/// over them for shuffle, repeat.
+#[derive(uniffi::Object, Default)]
+pub struct PlayQueue(std::sync::Mutex<music_core::Queue>);
+
+impl PlayQueue {
+    fn with<T>(&self, f: impl FnOnce(&mut music_core::Queue) -> T) -> T {
+        f(&mut self.0.lock().unwrap_or_else(|e| e.into_inner()))
+    }
+}
+
+#[uniffi::export]
+impl PlayQueue {
+    #[uniffi::constructor]
+    pub fn new() -> Arc<Self> {
+        Arc::default()
+    }
+
+    /// Play `tracks`, from `start`.
+    pub fn replace(&self, tracks: Vec<Track>, start: u32) {
+        self.with(|q| q.replace(tracks, start as usize));
+    }
+
+    pub fn current(&self) -> Option<Track> {
+        self.with(|q| q.current().cloned())
+    }
+
+    /// What follows the current song, in play order.
+    pub fn upcoming(&self) -> Vec<Track> {
+        self.with(|q| q.upcoming().cloned().collect())
+    }
+
+    /// Next, as the user asks: wraps around unless repeat is off.
+    pub fn skip_next(&self) -> Option<Track> {
+        self.with(|q| q.skip_next().cloned())
+    }
+
+    pub fn skip_previous(&self) -> Option<Track> {
+        self.with(|q| q.skip_previous().cloned())
+    }
+
+    /// The current song played to its end: what plays now.
+    pub fn track_finished(&self) -> Option<Track> {
+        self.with(|q| q.track_finished().cloned())
+    }
+
+    /// What `track_finished` would move to, without moving.
+    pub fn peek_finished(&self) -> Option<Track> {
+        self.with(|q| q.peek_finished().cloned())
+    }
+
+    pub fn add_next(&self, track: Track) {
+        self.with(|q| q.add_next(track));
+    }
+
+    pub fn add_last(&self, track: Track) {
+        self.with(|q| q.add_last(track));
+    }
+
+    pub fn remove_upcoming(&self, k: u32) {
+        self.with(|q| q.remove_upcoming(k as usize));
+    }
+
+    pub fn clear_upcoming(&self) {
+        self.with(|q| q.clear_upcoming());
+    }
+
+    /// Make the `k`-th upcoming song current.
+    pub fn jump(&self, k: u32) -> Option<Track> {
+        self.with(|q| q.jump(k as usize).cloned())
+    }
+
+    pub fn shuffle(&self) -> bool {
+        self.with(|q| q.shuffle())
+    }
+
+    pub fn set_shuffle(&self, on: bool) {
+        self.with(|q| q.set_shuffle(on));
+    }
+
+    pub fn repeat(&self) -> QueueRepeat {
+        match self.with(|q| q.repeat()) {
+            music_core::Repeat::Off => QueueRepeat::Off,
+            music_core::Repeat::All => QueueRepeat::All,
+            music_core::Repeat::One => QueueRepeat::One,
+        }
+    }
+
+    pub fn set_repeat(&self, repeat: QueueRepeat) {
+        self.with(|q| {
+            q.set_repeat(match repeat {
+                QueueRepeat::Off => music_core::Repeat::Off,
+                QueueRepeat::All => music_core::Repeat::All,
+                QueueRepeat::One => music_core::Repeat::One,
+            })
+        });
+    }
+}
+
 /// A cover's three colours, best first, as `0xrrggbb`, from its encoded
 /// image.
 #[uniffi::export]

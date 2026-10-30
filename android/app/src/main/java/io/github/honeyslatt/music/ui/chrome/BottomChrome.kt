@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -61,7 +62,7 @@ fun Modifier.capsule(shape: Shape): Modifier = this
  * edge. Folded, the tab bar shrinks to the current tab.
  */
 @Composable
-fun BottomChrome(nav: Navigator, modifier: Modifier = Modifier) {
+fun BottomChrome(nav: Navigator, mini: MiniState, modifier: Modifier = Modifier) {
     val folded = nav.folded
     BoxWithConstraints(
         modifier
@@ -71,6 +72,18 @@ fun BottomChrome(nav: Navigator, modifier: Modifier = Modifier) {
     ) {
         val full = maxWidth - 64.dp - 10.dp
         val width by animateDpAsState(if (folded) 64.dp else full, tween(320, easing = Standard), label = "tabbar")
+        // Unfolded, the mini player rides 10 dp over the tab bar; folded, it
+        // slides down between the folded tab and Search.
+        val miniInset by animateDpAsState(if (folded) 74.dp else 0.dp, tween(320, easing = Standard), label = "mini-x")
+        val miniLift by animateDpAsState(if (folded) (-3).dp else 74.dp, tween(320, easing = Standard), label = "mini-y")
+        MiniPlayer(
+            mini,
+            folded,
+            Modifier
+                .padding(start = miniInset, end = miniInset)
+                .fillMaxWidth()
+                .offset(y = -miniLift),
+        )
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             val shape = RoundedCornerShape(32.dp)
             Row(

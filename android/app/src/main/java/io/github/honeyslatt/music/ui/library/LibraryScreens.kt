@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
@@ -66,6 +67,8 @@ class LibraryContext(
     val account: @Composable () -> Unit,
     /** Settings → Artwork → Animated artwork. */
     val animatedArtwork: Boolean = true,
+    @property:androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+    val playback: io.github.honeyslatt.music.playback.Playback,
 )
 
 /** Library: the four lists, then Recently Added. */
@@ -268,9 +271,9 @@ fun Songs(c: LibraryContext) {
     }
     ListPage(c.nav, "Songs", actions = listOf(BarAction(Icons.Search, "Search Songs") {}, BarAction(Icons.Sort, "Sort") {})) {
         item { SourceChips(source, c.services) { source = it } }
-        item { PlayShuffle(enabled = shown.isNotEmpty()) }
+        item { PlayShuffle(shown.isNotEmpty(), { c.playback.play(shown, 0) }, { c.playback.shuffle(shown) }) }
         if (shown.isEmpty()) item { Empty(c.lists.songs, "No songs here", "Nothing matches this source.") }
-        items(shown, key = { it.id.provider.name + it.id.id }) { track -> TrackRow(track) {} }
+        itemsIndexed(shown, key = { _, t -> t.id.provider.name + t.id.id }) { i, track -> TrackRow(track) { c.playback.play(shown, i) } }
         if (shown.isNotEmpty()) {
             item {
                 BasicText(

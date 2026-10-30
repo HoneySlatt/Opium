@@ -70,13 +70,13 @@ fun ArtistPage(c: LibraryContext, id: ItemId) {
         page,
         listOf(BarAction(if (favourite) Icons.Starf else Icons.Star, "Favourite") {}, BarAction(Icons.More, "More") {}),
     ) {
-        item { Hero(d?.artist, d?.motion?.takeIf { c.animatedArtwork }) }
+        item { Hero(d?.artist, d?.motion?.takeIf { c.animatedArtwork }) { d?.topSongs?.let { c.playback.shuffle(it) } } }
         if (d == null) {
             item { Empty(loaded.listing(), "", "") }
             return@DetailPage
         }
         d.latest?.let { latest -> item { SectionHeader("Latest Release") }; item { Latest(latest) { c.nav.push(Route.Album(latest.id)) } } }
-        topSongs(d.topSongs)
+        topSongs(d.topSongs) { i -> c.playback.play(d.topSongs, i) }
         albumShelf(c, "Albums", d.albums)
         albumShelf(c, "Singles & EPs", d.singles)
         shelf(
@@ -111,7 +111,7 @@ private fun LazyListScope.artistShelf(c: LibraryContext, title: String, artists:
 
 /** The 420 dp picture, or video, with the name over it and the shuffle button. */
 @Composable
-private fun Hero(artist: Artist?, motion: String?) {
+private fun Hero(artist: Artist?, motion: String?, onShuffle: () -> Unit) {
     val page = roles.base
     Box(Modifier.fillMaxWidth().height(420.dp)) {
         BoxWithConstraints(
@@ -142,7 +142,7 @@ private fun Hero(artist: Artist?, motion: String?) {
                 .padding(end = 20.dp, bottom = 14.dp)
                 .size(60.dp)
                 .shadow(10.dp, CircleShape)
-                .press(CircleShape, shrink = 0.92f) {}
+                .press(CircleShape, shrink = 0.92f, onClick = onShuffle)
                 .background(roles.accent, CircleShape),
             contentAlignment = Alignment.Center,
         ) { Glyph(Icons.Shuffle, Color.White, 26.dp) }
@@ -166,7 +166,7 @@ private fun Latest(album: Album, onClick: () -> Unit) {
 }
 
 /** Top Songs, in columns of four that page sideways. */
-private fun LazyListScope.topSongs(tracks: List<Track>) {
+private fun LazyListScope.topSongs(tracks: List<Track>, play: (Int) -> Unit) {
     if (tracks.isEmpty()) return
     item { SectionHeader("Top Songs") }
     item {
@@ -179,8 +179,8 @@ private fun LazyListScope.topSongs(tracks: List<Track>) {
                 contentPadding = PaddingValues(start = 0.dp, end = 20.dp),
                 horizontalArrangement = Arrangement.spacedBy(0.dp),
             ) {
-                items(tracks.chunked(4)) { four ->
-                    Column(Modifier.width(column)) { four.forEach { TrackRow(it) {} } }
+                items(tracks.withIndex().chunked(4)) { four ->
+                    Column(Modifier.width(column)) { four.forEach { (i, t) -> TrackRow(t) { play(i) } } }
                 }
             }
         }

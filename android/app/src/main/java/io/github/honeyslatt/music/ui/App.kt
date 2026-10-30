@@ -23,6 +23,7 @@ import io.github.honeyslatt.music.data.Core
 import io.github.honeyslatt.music.data.Library
 import io.github.honeyslatt.music.core.model.ProviderKind
 import io.github.honeyslatt.music.ui.chrome.BottomChrome
+import io.github.honeyslatt.music.ui.chrome.MiniState
 import io.github.honeyslatt.music.ui.chrome.Standard
 import io.github.honeyslatt.music.ui.components.Avatar
 import io.github.honeyslatt.music.ui.detail.AlbumPage
@@ -44,13 +45,17 @@ import io.github.honeyslatt.music.ui.theme.roles
 
 /** The app: the page of the current tab, under the bottom chrome. */
 @Composable
-fun App(core: Core, library: Library) {
+fun App(core: Core, library: Library, playback: io.github.honeyslatt.music.playback.Playback) {
     val nav = remember { Navigator() }
     val apple by core.apple.collectAsStateWithLifecycle()
     val lists by library.lists.collectAsStateWithLifecycle()
     val services = listOfNotNull(ProviderKind.APPLE_MUSIC.takeIf { apple is Connection.Connected })
     val account: @Composable () -> Unit = { Avatar("H") {} }
-    val context = LibraryContext(core, nav, lists, services, account)
+    val now by playback.now.collectAsStateWithLifecycle()
+    val playing by playback.playing.collectAsStateWithLifecycle()
+    val loading by playback.loading.collectAsStateWithLifecycle()
+    val context = LibraryContext(core, nav, lists, services, account, playback = playback)
+    val mini = MiniState(now, playing, loading, playback::toggle, playback::next, playback::previous, onOpen = {})
 
     BackHandler(enabled = nav.canPop) { nav.pop() }
     Box(Modifier.fillMaxSize().background(roles.base)) {
@@ -61,7 +66,7 @@ fun App(core: Core, library: Library) {
         ) { (tab, _, page) ->
             Page(tab, page, context, account)
         }
-        BottomChrome(nav, Modifier.align(Alignment.BottomCenter))
+        BottomChrome(nav, mini, Modifier.align(Alignment.BottomCenter))
     }
 }
 
