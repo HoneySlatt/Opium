@@ -11,6 +11,11 @@ pub enum Repeat {
     One,
 }
 
+/// How many songs the queue holds at most, as the history: a list longer
+/// than that plays the part around the song picked (a shuffle, that many
+/// at random), and what is added past it pushes out what played first.
+pub const LIMIT: usize = 100;
+
 /// The play queue. Tracks keep their insertion order; `order` is the play order
 /// over them, so turning shuffle off restores the original sequence.
 #[derive(Debug, Default)]
@@ -34,12 +39,56 @@ impl Queue {
     /// Replace the whole queue, starting playback at `start` (an index into `tracks`).
     pub fn replace(&mut self, tracks: Vec<Track>, start: usize) {
         self.revision += 1;
+        let (tracks, start) = self.within_limit(tracks, start);
         self.order = (0..tracks.len()).collect();
         self.pos = start.min(tracks.len().saturating_sub(1));
         self.tracks = tracks;
         if self.shuffle {
             self.shuffle_around_current();
         }
+    }
+
+    /// At most [`LIMIT`] of `tracks`, `start` among them, in their order:
+    /// those from `start` on (and before it, to make up the number), or
+    /// with shuffle on, others picked at random.
+    fn within_limit(&self, mut tracks: Vec<Track>, start: usize) -> (Vec<Track>, usize) {
+        if tracks.len() <= LIMIT {
+            return (tracks, start);
+        }
+        let start = start.min(tracks.len() - 1);
+        if self.shuffle {
+            let mut others: Vec<usize> = (0..tracks.len()).filter(|&i| i != start).collect();
+            others.shuffle(&mut rand::rng());
+            others.truncate(LIMIT - 1);
+            others.push(start);
+            others.sort_unstable();
+            let at = others.binary_search(&start).unwrap_or(0);
+            let mut keep = vec![false; tracks.len()];
+            for &i in &others {
+                keep[i] = true;
+            }
+            let mut kept = keep.iter();
+            tracks.retain(|_| *kept.next().unwrap_or(&false));
+            (tracks, at)
+        } else {
+            let from = start.min(tracks.len() - LIMIT);
+            tracks.truncate(from + LIMIT);
+            tracks.drain(..from);
+            (tracks, start - from)
+        }
+    }
+
+    /// Back within [`LIMIT`]: what played goes first, then the far end.
+    fn trim(&mut self) {
+        let excess = self.order.len().saturating_sub(LIMIT);
+        if excess == 0 {
+            return;
+        }
+        let played = excess.min(self.pos);
+        self.pos -= played;
+        self.order.drain(..played);
+        self.order.truncate(self.order.len() - (excess - played));
+        self.keep_ordered();
     }
 
     pub fn current(&self) -> Option<&Track> {
@@ -111,12 +160,14 @@ impl Queue {
         self.tracks.insert(index, track);
         let at = (self.pos + 1).min(self.order.len());
         self.order.insert(at, index);
+        self.trim();
     }
 
     pub fn add_last(&mut self, track: Track) {
         self.revision += 1;
         self.order.push(self.tracks.len());
         self.tracks.push(track);
+        self.trim();
     }
 
     /// How many tracks follow the current one.
@@ -146,6 +197,11 @@ impl Queue {
     pub fn clear_upcoming(&mut self) {
         self.revision += 1;
         self.order.truncate(self.pos + 1);
+        self.keep_ordered();
+    }
+
+    /// Drop the tracks `order` no longer refers to.
+    fn keep_ordered(&mut self) {
         let mut kept = vec![false; self.tracks.len()];
         for &i in &self.order {
             kept[i] = true;
@@ -203,6 +259,11 @@ impl Queue {
         self.pos = pos.min(self.order.len().saturating_sub(1));
         self.tracks = tracks;
         self.shuffle = shuffle;
+        // A queue kept, or handed over, from before there was a limit.
+        if self.order.len() < self.tracks.len() {
+            self.keep_ordered();
+        }
+        self.trim();
     }
 
     pub fn shuffle(&self) -> bool {
@@ -411,6 +472,69 @@ mod tests {
         q.restore((0..3).map(track).collect(), vec![0, 0, 7], 1, false);
         assert_eq!(number(q.current()), Some(1));
         assert_eq!(q.upcoming_len(), 1);
+    }
+
+    #[test]
+    fn a_long_list_keeps_the_hundred_from_the_song_picked() {
+        let mut q = queue_of(300, 20);
+        assert_eq!(number(q.current()), Some(20));
+        assert_eq!(q.upcoming_len(), LIMIT - 1);
+        assert_eq!(number(q.upcoming().last()), Some(119));
+        // Near the end, the songs before it make up the number.
+        let q = queue_of(300, 290);
+        assert_eq!(number(q.current()), Some(290));
+        assert_eq!(q.snapshot().0.len(), LIMIT);
+        assert_eq!(q.upcoming_len(), 9);
+    }
+
+    #[test]
+    fn a_long_list_shuffled_plays_a_hundred_of_it() {
+        let mut q = Queue::new();
+        q.set_shuffle(true);
+        q.replace((0..1000).map(track).collect(), 500);
+        assert_eq!(number(q.current()), Some(500));
+        assert_eq!(q.upcoming_len(), LIMIT - 1);
+        q.set_shuffle(false);
+        assert_eq!(number(q.current()), Some(500));
+        let all: Vec<u32> = q
+            .snapshot()
+            .0
+            .iter()
+            .filter_map(|t| t.track_number)
+            .collect();
+        assert!(all.windows(2).all(|w| w[0] < w[1]));
+    }
+
+    #[test]
+    fn what_is_added_past_the_limit_pushes_out_what_played() {
+        let mut q = queue_of(100, 0);
+        for _ in 0..10 {
+            q.skip_next();
+        }
+        q.add_last(track(500));
+        assert_eq!(q.snapshot().0.len(), LIMIT);
+        assert_eq!(number(q.current()), Some(10));
+        assert_eq!(number(q.upcoming().last()), Some(500));
+        // Nothing played left to push out: the far end goes.
+        let mut q = queue_of(100, 0);
+        q.add_next(track(7));
+        assert_eq!(q.snapshot().0.len(), LIMIT);
+        assert_eq!(number(q.upcoming().next()), Some(7));
+        assert_eq!(number(q.upcoming().last()), Some(98));
+    }
+
+    #[test]
+    fn a_long_queue_restored_is_cut_down() {
+        let mut q = Queue::new();
+        q.restore(
+            (0..300).map(track).collect(),
+            (0..300).collect(),
+            150,
+            false,
+        );
+        assert_eq!(number(q.current()), Some(150));
+        assert_eq!(q.snapshot().0.len(), LIMIT);
+        assert_eq!(q.upcoming_len(), 99);
     }
 
     #[test]
