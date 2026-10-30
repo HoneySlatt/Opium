@@ -43,12 +43,25 @@ impl Services {
 
     /// A search of every service: the catalog's in Apple Music and SoundCloud,
     /// the library's in Apple Music's; the server's either way, as it is the
-    /// library. One that fails leaves the others' results.
-    pub async fn search(&self, scope: Scope, query: &str) -> Result<SearchResults, String> {
+    /// library. One that fails leaves the others' results. `only` asks that
+    /// service alone, with all of its results, the copies others have too.
+    pub async fn search(
+        &self,
+        scope: Scope,
+        query: &str,
+        only: Option<ProviderKind>,
+    ) -> Result<SearchResults, String> {
+        let asked = |kind| only.is_none_or(|k| k == kind);
         let (apple, sc, nd) = (
-            self.apple.clone(),
-            self.soundcloud.clone(),
-            self.navidrome.clone(),
+            self.apple
+                .clone()
+                .filter(|_| asked(ProviderKind::AppleMusic)),
+            self.soundcloud
+                .clone()
+                .filter(|_| asked(ProviderKind::SoundCloud)),
+            self.navidrome
+                .clone()
+                .filter(|_| asked(ProviderKind::Navidrome)),
         );
         let apple_side = async {
             let am = apple?;
@@ -116,6 +129,8 @@ impl Services {
         }
         match (any, error) {
             (false, Some(e)) => Err(e),
+            // The one asked alone has nothing to search here.
+            (false, None) if only.is_some() => Ok(merged),
             (false, None) => Err("No service is connected".into()),
             _ => Ok(merged),
         }

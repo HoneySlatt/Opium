@@ -71,7 +71,8 @@ fun SearchPage(c: LibraryContext) {
     var sources by rememberSaveable { mutableStateOf(false) }
     var recent by remember { mutableStateOf(c.core.setting("recent-searches")?.split('\n')?.filter { it.isNotBlank() }.orEmpty()) }
     val words = query.trim()
-    val results by produceState<Loading<SearchResults>?>(null, words, library) {
+    // A service chosen is asked alone: its own copies of what others have too.
+    val results by produceState<Loading<SearchResults>?>(null, words, library, source) {
         if (words.isEmpty()) {
             value = null
             return@produceState
@@ -79,15 +80,15 @@ fun SearchPage(c: LibraryContext) {
         // Typed on: asked once the typing pauses.
         delay(300)
         value = Loading.Pending
-        value = load { c.core.session.search(if (library) SearchScope.LIBRARY else SearchScope.CATALOG, words) }
+        value = load { c.core.session.search(if (library) SearchScope.LIBRARY else SearchScope.CATALOG, words, source) }
     }
     // A result opened: its search is worth keeping.
     val keep = {
         recent = (listOf(words) + recent.filter { !it.equals(words, ignoreCase = true) }).take(RECENT)
         c.core.setSetting("recent-searches", recent.joinToString("\n"))
     }
-    // In the library, the title folds the source chips.
-    ListPage(c.nav, "Search", fold = if (library) Fold(sources) { sources = !sources } else null) {
+    // The title folds the source chips.
+    ListPage(c.nav, "Search", fold = Fold(sources) { sources = !sources }) {
         item { SearchReveal(true, query, if (library) "Your Library" else "Artists, Songs, Lyrics and More", focusOnOpen = false) { query = it } }
         item {
             Segmented(listOf("Apple Music", "Your Library"), if (library) 1 else 0) {
@@ -95,7 +96,7 @@ fun SearchPage(c: LibraryContext) {
                 c.core.setSetting("search-scope", if (library) "library" else "catalog")
             }
         }
-        if (library) item { SourceChips(sources, source, c.services) { source = it } }
+        item { SourceChips(sources, source, c.services) { source = it } }
         val r = results
         when {
             r == null -> recentSearches(recent, onPick = { query = it }) {
@@ -103,20 +104,9 @@ fun SearchPage(c: LibraryContext) {
                 c.core.setSetting("recent-searches", "")
             }
             r !is Loading.Ready -> item { Empty(r.listing(), "", "") }
-            else -> results(c, r.value.only(if (library) source else null), library, words, keep)
+            else -> results(c, r.value, library, words, keep)
         }
     }
-}
-
-private fun SearchResults.only(source: ProviderKind?) = if (source == null) {
-    this
-} else {
-    SearchResults(
-        tracks.filter { it.id.provider == source },
-        albums.filter { it.id.provider == source },
-        artists.filter { it.id.provider == source },
-        playlists.filter { it.id.provider == source },
-    )
 }
 
 private fun androidx.compose.foundation.lazy.LazyListScope.recentSearches(recent: List<String>, onPick: (String) -> Unit, onClear: () -> Unit) {

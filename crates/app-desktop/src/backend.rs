@@ -1736,7 +1736,7 @@ async fn search(services: Services, scope: SearchScope, query: String, replies: 
         SearchScope::AppleMusic => services::Scope::Catalog,
         SearchScope::Library => services::Scope::Library,
     };
-    let result = services.search(within, &query).await;
+    let result = services.search(within, &query, None).await;
     replies.send(Reply::Search {
         scope,
         query,

@@ -289,11 +289,13 @@ impl Session {
         });
     }
 
-    /// Every connected service's results, each song and album once.
+    /// Every connected service's results, each song and album once; or
+    /// `only` that service's, all of them.
     pub async fn search(
         self: Arc<Self>,
         scope: SearchScope,
         query: String,
+        only: Option<ProviderKind>,
     ) -> Result<SearchResults, MusicError> {
         off(async move {
             let scope = match scope {
@@ -301,7 +303,7 @@ impl Session {
                 SearchScope::Library => services::Scope::Library,
             };
             self.services()
-                .search(scope, &query)
+                .search(scope, &query, only)
                 .await
                 .map_err(|reason| MusicError::Failed { reason })
         })
