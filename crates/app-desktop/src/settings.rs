@@ -17,6 +17,11 @@ pub enum Appearance {
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
+    /// The source each page was last narrowed to: Albums and Recently
+    /// Added, Songs, Search.
+    pub grid_source: Option<music_core::model::ProviderKind>,
+    pub songs_source: Option<music_core::model::ProviderKind>,
+    pub search_source: Option<music_core::model::ProviderKind>,
     /// Unset: Amane when its theme file exists, Stock otherwise.
     pub appearance: Option<Appearance>,
     /// The interface scale, 1.0 for 100 % (which draws at [`SCALE_UNIT`]);

@@ -1,5 +1,8 @@
 package io.github.honeyslatt.music.ui.detail
 
+import androidx.compose.runtime.remember
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.async
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.snapping.SnapPosition
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
@@ -198,8 +201,23 @@ fun LazyListScope.songColumns(title: String, tracks: List<Track>, onOpen: (() ->
 /** An artist as the library has them: a round photo, their name opening their profile. */
 @Composable
 fun LibraryArtistPage(c: LibraryContext, artist: Artist) {
-    val albums by produceState<Loading<List<Album>>>(Loading.Pending, artist.id) {
-        value = load { c.core.session.libraryArtistAlbums(artist.id) }
+    // Their releases on every service the library has them on, and under
+    // each of their names there, as on the desktop: each asked by the
+    // library's own id, which Apple's library artists need.
+    val name = io.github.honeyslatt.music.ui.components.fold(artist.name.trim())
+    val twins = remember(artist, c.lists.artists.items) {
+        (listOf(artist) + c.lists.artists.items.filter { it.id == artist.id || io.github.honeyslatt.music.ui.components.fold(it.name.trim()) == name })
+            .map { it.libraryId ?: it.id }
+            .distinct()
+    }
+    val albums by produceState<Loading<List<Album>>>(Loading.Pending, twins) {
+        value = load {
+            val found = kotlinx.coroutines.coroutineScope {
+                twins.map { id -> async { runCatching { c.core.session.libraryArtistAlbums(id) }.getOrDefault(emptyList()) } }.awaitAll().flatten()
+            }
+            val out = io.github.honeyslatt.music.core.albumsLeftOut(found).toSet()
+            found.filterIndexed { i, _ -> i.toUInt() !in out }.distinctBy { it.id }
+        }
     }
     val all = (albums as? Loading.Ready)?.value.orEmpty().sortedByDescending { it.released ?: it.year?.toString() }
     val (short, long) = all.partition { it.kind() != "Album" }

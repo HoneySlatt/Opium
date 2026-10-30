@@ -90,8 +90,9 @@ private const val RECENT_SHOWN = 66
 /** Library: the four lists, then Recently Added. */
 @Composable
 fun LibraryRoot(c: LibraryContext) {
-    var source by rememberSaveable { mutableStateOf<ProviderKind?>(null) }
-    var sources by rememberSaveable { mutableStateOf(false) }
+    var source by io.github.honeyslatt.music.ui.components.rememberSource(c.core, "recently-added")
+    // Open at first when a source is kept, so that it shows; folded at will.
+    var sources by rememberSaveable { mutableStateOf(source != null) }
     val added = remember(c.lists.recentlyAdded.items, source) {
         newestFirst(c.lists.recentlyAdded.items).filter { source == null || it.provider() == source }.take(RECENT_SHOWN)
     }
@@ -259,22 +260,23 @@ fun songs(n: Int) = if (n == 1) "1 song" else "$n songs"
 
 @Composable
 fun Albums(c: LibraryContext) {
-    var source by rememberSaveable { mutableStateOf<ProviderKind?>(null) }
-    var sources by rememberSaveable { mutableStateOf(false) }
+    var source by io.github.honeyslatt.music.ui.components.rememberSource(c.core, "albums")
+    // Open at first when a source is kept, so that it shows; folded at will.
+    var sources by rememberSaveable { mutableStateOf(source != null) }
     var searching by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
     var order by remember { mutableStateOf(c.core.setting("albums-sort")?.let { runCatching { AlbumSort.valueOf(it) }.getOrNull() } ?: AlbumSort.Added) }
     val menus = LocalMenus.current
     val all = c.lists.albums.items
     // What another service has too is left out once, not at every letter typed.
-    val some by produceState(all, all, source) {
+    val some by produceState(all.distinctBy { it.id }, all, source) {
         value = withContext(Dispatchers.Default) {
             if (source != null) {
                 all.filter { it.id.provider == source }
             } else {
                 val out = albumsLeftOut(all).toSet()
                 all.filterIndexed { i, _ -> i.toUInt() !in out }
-            }
+            }.distinctBy { it.id }
         }
     }
     val shown by produceState(some, some, query, order) {
@@ -317,10 +319,12 @@ private fun AlbumCard(c: LibraryContext, album: Album) {
 @Composable
 fun Artists(c: LibraryContext) {
     val all = c.lists.artists.items
-    val shown by produceState(all, all) {
+    val shown by produceState(all.distinctBy { it.id }, all) {
         value = withContext(Dispatchers.Default) {
             val out = artistsLeftOut(all).toSet()
-            all.filterIndexed { i, _ -> i.toUInt() !in out }
+            // Two of the library's artists can be one in the catalog
+            // (one name spelt two ways): it shows once.
+            all.filterIndexed { i, _ -> i.toUInt() !in out }.distinctBy { it.id }
         }
     }
     var searching by rememberSaveable { mutableStateOf(false) }
@@ -337,8 +341,9 @@ fun Artists(c: LibraryContext) {
 
 @Composable
 fun Songs(c: LibraryContext) {
-    var source by rememberSaveable { mutableStateOf<ProviderKind?>(null) }
-    var sources by rememberSaveable { mutableStateOf(false) }
+    var source by io.github.honeyslatt.music.ui.components.rememberSource(c.core, "songs")
+    // Open at first when a source is kept, so that it shows; folded at will.
+    var sources by rememberSaveable { mutableStateOf(source != null) }
     var searching by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
     var order by remember { mutableStateOf(c.core.setting("songs-sort")?.let { runCatching { SongSort.valueOf(it) }.getOrNull() } ?: SongSort.Name) }

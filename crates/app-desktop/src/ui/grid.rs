@@ -673,7 +673,7 @@ fn page(app: &mut App, ui: &mut Ui, pad: f32, kind: Kind) -> f32 {
                     app.grid_source,
                 )
             {
-                app.grid_source = source;
+                app.set_grid_source(source);
             }
 
             let top = content.top() + GRID_TOP;

@@ -141,8 +141,7 @@ fn header(app: &mut App, ui: &mut Ui, theme: &Theme, top: f32, left: f32, width:
             app.songs_view.source,
         )
     {
-        app.songs_view.source = source;
-        app.songs_view.selected = None;
+        app.set_songs_source(source);
     }
 
     // Play and Shuffle.
@@ -268,8 +267,8 @@ fn rebuild_order(app: &mut App) {
 }
 
 /// Whether page `id` shows its source filter: hidden until its title (`title`,
-/// with a chevron after it) is clicked, and kept while a service is chosen.
-/// Returns that, and where the chevron ends.
+/// with a chevron after it) is clicked, or shown at first when a service is
+/// chosen; a click folds it again. Returns that, and where the chevron ends.
 pub(super) fn sources_shown(
     ui: &Ui,
     theme: &Theme,
@@ -278,8 +277,9 @@ pub(super) fn sources_shown(
     chosen: bool,
 ) -> (bool, f32) {
     let id = id.with("sources");
-    let open: bool = ui.ctx().data(|d| d.get_temp(id)).unwrap_or(false);
-    let shown = open || chosen;
+    // Open at first when a source is chosen, so that it shows; folded at
+    // will, whatever is chosen.
+    let shown: bool = ui.ctx().data(|d| d.get_temp(id)).unwrap_or(chosen);
     let end = title.right() + 30.0;
     let response = ui.interact(
         Rect::from_min_max(title.min, pos2(end, title.max.y)),
@@ -303,7 +303,7 @@ pub(super) fn sources_shown(
         .on_hover_cursor(egui::CursorIcon::PointingHand)
         .clicked()
     {
-        ui.ctx().data_mut(|d| d.insert_temp(id, !open));
+        ui.ctx().data_mut(|d| d.insert_temp(id, !shown));
     }
     (shown, end)
 }

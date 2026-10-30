@@ -122,13 +122,34 @@ fun ProviderKind.label() = when (this) {
 }
 
 /**
+ * A page's source, kept from one launch to the next; one turned off or
+ * signed out of since is All.
+ */
+class KeptSource(private val core: io.github.honeyslatt.music.data.Core, private val key: String) {
+    private val state = androidx.compose.runtime.mutableStateOf(
+        core.setting(key)?.let { s -> ProviderKind.entries.find { it.name == s } }?.takeIf { core.signedIn(it) && core.enabled(it) },
+    )
+
+    operator fun getValue(thisRef: Any?, property: kotlin.reflect.KProperty<*>): ProviderKind? = state.value
+
+    operator fun setValue(thisRef: Any?, property: kotlin.reflect.KProperty<*>, value: ProviderKind?) {
+        state.value = value
+        core.setSetting(key, value?.name ?: "")
+    }
+}
+
+@Composable
+fun rememberSource(core: io.github.honeyslatt.music.data.Core, page: String) = androidx.compose.runtime.remember(page) { KeptSource(core, "source-$page") }
+
+/**
  * The source filter: All, then each service. `null` is All. Folded away
- * until its title is tapped, and kept open while a service is chosen.
+ * until its title is tapped, and again when it is tapped again, whatever
+ * service is chosen.
  */
 @Composable
 fun SourceChips(open: Boolean, selected: ProviderKind?, services: List<ProviderKind>, onSelect: (ProviderKind?) -> Unit) {
     AnimatedVisibility(
-        open || selected != null,
+        open,
         enter = expandVertically(tween(250)) + fadeIn(tween(250)),
         exit = shrinkVertically(tween(250)) + fadeOut(tween(200)),
     ) {

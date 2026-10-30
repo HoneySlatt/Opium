@@ -592,13 +592,18 @@ impl App {
             focus_search: false,
             searches: HashMap::new(),
             search_scope: settings.search_scope.unwrap_or_default(),
-            search_source: None,
+            search_source: settings
+                .search_source
+                .filter(|p| !settings.services_off.contains(p)),
             other_playlists: HashMap::new(),
             songs: Vec::new(),
             songs_done: false,
             // Apple returns the library in no useful order; the Music app sorts by title.
             songs_view: SongsView {
                 sort: Some((SortKey::Title, true)),
+                source: settings
+                    .songs_source
+                    .filter(|p| !settings.services_off.contains(p)),
                 ..SongsView::default()
             },
             playlists: Vec::new(),
@@ -625,7 +630,9 @@ impl App {
             station: None,
             station_loading: false,
             home: None,
-            grid_source: None,
+            grid_source: settings
+                .grid_source
+                .filter(|p| !settings.services_off.contains(p)),
             albums: HashMap::new(),
             whole_albums: HashMap::new(),
             twins: HashMap::new(),
@@ -872,6 +879,21 @@ impl App {
     }
 
     /// Whether a service is on: signed in, it is used.
+    /// Albums' and Recently Added's source, kept for next time.
+    pub fn set_grid_source(&mut self, source: Option<ProviderKind>) {
+        self.grid_source = source;
+        self.settings.grid_source = source;
+        self.settings.save();
+    }
+
+    /// Songs' source, kept for next time.
+    pub fn set_songs_source(&mut self, source: Option<ProviderKind>) {
+        self.songs_view.source = source;
+        self.songs_view.selected = None;
+        self.settings.songs_source = source;
+        self.settings.save();
+    }
+
     pub fn service_on(&self, provider: ProviderKind) -> bool {
         !self.settings.services_off.contains(&provider)
     }
@@ -1403,6 +1425,8 @@ impl App {
     pub fn set_search_source(&mut self, source: Option<ProviderKind>) {
         if source != self.search_source {
             self.search_source = source;
+            self.settings.search_source = source;
+            self.settings.save();
             self.arrived();
         }
     }
