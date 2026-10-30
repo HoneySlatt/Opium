@@ -604,7 +604,11 @@ fn page(app: &mut App, ui: &mut Ui, pad: f32, kind: Kind) -> f32 {
             );
             let left = content.left() + pad;
             let g = text(ui, title, font(22.0, Weight::Bold), theme.text, width);
-            let title_end = left + g.size().x;
+            let title_rect = Rect::from_min_size(
+                pos2(left, content.top() + TITLE_Y - g.size().y / 2.0),
+                g.size(),
+            );
+            let mut title_end = title_rect.right();
             paint_text(
                 ui,
                 g,
@@ -613,6 +617,15 @@ fn page(app: &mut App, ui: &mut Ui, pad: f32, kind: Kind) -> f32 {
                 egui::Align::Min,
                 theme.text,
             );
+            // Albums and Recently Added show their source filter once their
+            // title is clicked.
+            let mut sources = false;
+            if kind != Kind::Artists {
+                let chosen = app.grid_source.is_some();
+                let id = Id::unique(("grid", title));
+                (sources, title_end) =
+                    super::songs::sources_shown(ui, &theme, id, title_rect, chosen);
+            }
             // Albums sort as the menu after the title says.
             if kind == Kind::Albums {
                 let button = Rect::from_center_size(
@@ -651,7 +664,7 @@ fn page(app: &mut App, ui: &mut Ui, pad: f32, kind: Kind) -> f32 {
                 let top = content.top() + TITLE_Y - 16.0;
                 super::page_search(app, ui, &theme, left + width, top, hint).left - 10.0
             };
-            if kind != Kind::Artists
+            if sources
                 && let Some(source) = source_chips(
                     ui,
                     &theme,

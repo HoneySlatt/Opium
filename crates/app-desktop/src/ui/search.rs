@@ -10,7 +10,7 @@ use crate::fonts::{Weight, font};
 use crate::theme::Theme;
 
 use super::grid::{CardClick, CoverCard, Grid, ShelfCard, cover_card, cover_shelf, round_shelf};
-use super::songs::source_chips;
+use super::songs::{source_chips, sources_shown};
 use super::tracks::{self, Columns, RowAction, RowState};
 use super::{artwork, glow, paint_icon, paint_text, text};
 use crate::icons;
@@ -148,6 +148,10 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, query: &str) -> f32 {
                 theme.text,
                 (width - 420.0).max(120.0),
             );
+            let title_rect = Rect::from_min_size(
+                pos2(left, content.top() + 70.0 + 16.5 - title.size().y / 2.0),
+                title.size(),
+            );
             paint_text(
                 ui,
                 title,
@@ -156,13 +160,17 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, query: &str) -> f32 {
                 egui::Align::Min,
                 theme.text,
             );
-            if let Some(source) = source_chips(
-                ui,
-                &theme,
-                left + width,
-                content.top() + 73.0,
-                app.search_source,
-            ) {
+            let chosen = app.search_source.is_some();
+            let (sources, _) = sources_shown(ui, &theme, Id::unique("search"), title_rect, chosen);
+            if sources
+                && let Some(source) = source_chips(
+                    ui,
+                    &theme,
+                    left + width,
+                    content.top() + 73.0,
+                    app.search_source,
+                )
+            {
                 app.set_search_source(source);
                 app.detail_selected = None;
             }

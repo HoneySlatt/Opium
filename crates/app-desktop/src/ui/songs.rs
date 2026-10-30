@@ -112,6 +112,10 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
 
 fn header(app: &mut App, ui: &mut Ui, theme: &Theme, top: f32, left: f32, width: f32) {
     let title = text(ui, "Songs", font(30.0, Weight::Bold), theme.text, width);
+    let title_rect = Rect::from_min_size(
+        pos2(left, top + 70.0 + 16.5 - title.size().y / 2.0),
+        title.size(),
+    );
     paint_text(
         ui,
         title,
@@ -120,19 +124,23 @@ fn header(app: &mut App, ui: &mut Ui, theme: &Theme, top: f32, left: f32, width:
         egui::Align::Min,
         theme.text,
     );
+    let chosen = app.songs_view.source.is_some();
+    let (sources, _) = sources_shown(ui, theme, Id::unique("songs"), title_rect, chosen);
 
     // The search, right-aligned, then the source filter left of it.
     let search = super::page_search(app, ui, theme, left + width, top + 71.0, "Search Songs");
     if search.changed {
         app.songs_view.selected = None;
     }
-    if let Some(source) = source_chips(
-        ui,
-        theme,
-        search.left - 10.0,
-        top + 73.0,
-        app.songs_view.source,
-    ) {
+    if sources
+        && let Some(source) = source_chips(
+            ui,
+            theme,
+            search.left - 10.0,
+            top + 73.0,
+            app.songs_view.source,
+        )
+    {
         app.songs_view.source = source;
         app.songs_view.selected = None;
     }
@@ -257,6 +265,47 @@ fn rebuild_order(app: &mut App) {
         view.selected = None;
     }
     view.order = order;
+}
+
+/// Whether page `id` shows its source filter: hidden until its title (`title`,
+/// with a chevron after it) is clicked, and kept while a service is chosen.
+/// Returns that, and where the chevron ends.
+pub(super) fn sources_shown(
+    ui: &Ui,
+    theme: &Theme,
+    id: Id,
+    title: Rect,
+    chosen: bool,
+) -> (bool, f32) {
+    let id = id.with("sources");
+    let open: bool = ui.ctx().data(|d| d.get_temp(id)).unwrap_or(false);
+    let shown = open || chosen;
+    let end = title.right() + 30.0;
+    let response = ui.interact(
+        Rect::from_min_max(title.min, pos2(end, title.max.y)),
+        id,
+        Sense::click(),
+    );
+    let colour = if response.hovered() {
+        theme.text
+    } else {
+        theme.muted()
+    };
+    let chevron = if shown { icons::DOWN } else { icons::RIGHT };
+    paint_icon(
+        ui,
+        chevron,
+        pos2(title.right() + 17.0, title.center().y),
+        18.0,
+        colour,
+    );
+    if response
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .clicked()
+    {
+        ui.ctx().data_mut(|d| d.insert_temp(id, !open));
+    }
+    (shown, end)
 }
 
 /// The source filter chips (All · Apple Music · SoundCloud · Navidrome), ending
