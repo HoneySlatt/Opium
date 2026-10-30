@@ -336,6 +336,8 @@ const STATION_REFILL: usize = 5;
 /// How many tracks in a row may fail to start, and be skipped, before the
 /// app stops trying.
 const MAX_SKIPS: usize = 5;
+/// The frames Apple's AAC encoder puts before the music.
+const APPLE_PRIMING: u32 = 2112;
 /// Searches kept for going back to them, before starting over.
 const SEARCHES_KEPT: usize = 64;
 
@@ -2610,7 +2612,11 @@ impl App {
                 let len = stream.len();
                 let hint = stream.seek_hint();
                 let extension = stream.extension();
-                player::Source::new(stream, len, Some(extension)).with_seek_hint(hint)
+                // Apple's encoder primes each song with 2112 frames, which
+                // its streams don't say.
+                player::Source::new(stream, len, Some(extension))
+                    .with_seek_hint(hint)
+                    .with_priming(APPLE_PRIMING)
             }
             // A station's stream is ADTS, forward only.
             Playable::Live(stream) => player::Source::stream(stream, Some("aac")),

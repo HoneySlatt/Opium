@@ -33,6 +33,9 @@ pub(crate) struct OutputState {
     node_id: AtomicU32,
     /// The device and what else plays into it, refreshed twice a second.
     pub mixing: Mutex<Mixing>,
+    /// The stream is gone: PipeWire restarted, or the stream failed. The
+    /// engine opens a new one.
+    pub lost: AtomicBool,
 }
 
 impl OutputState {
@@ -156,6 +159,20 @@ fn run(
         let mainloop = mainloop.clone();
         move |()| mainloop.quit()
     });
+    // The connection to PipeWire broke (it restarted): this loop is done.
+    let _core_listener = core
+        .add_listener_local()
+        .error({
+            let mainloop = mainloop.clone();
+            let state = state.clone();
+            move |id, _seq, _res, _message| {
+                if id == pw::core::PW_ID_CORE {
+                    state.lost.store(true, Ordering::Release);
+                    mainloop.quit();
+                }
+            }
+        })
+        .register();
 
     let rate = format!("1/{sample_rate}");
     let stream = pw::stream::StreamBox::new(
@@ -200,6 +217,14 @@ fn run(
     };
     let _listener = stream
         .add_local_listener_with_user_data(feed)
+        .state_changed(|_, feed, _, new| {
+            if matches!(
+                new,
+                pw::stream::StreamState::Error(_) | pw::stream::StreamState::Unconnected
+            ) {
+                feed.state.lost.store(true, Ordering::Release);
+            }
+        })
         .process(|stream, feed| {
             feed.state.node_id.store(stream.node_id(), Ordering::Relaxed);
             if let Ok(time) = stream.time() {

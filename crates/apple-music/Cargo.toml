@@ -23,5 +23,7 @@ url = "2.5.8"
 widevine = { version = "0.1.0", path = "../widevine" }
 
 [dev-dependencies]
+# Tracks download as they are read: the reading mustn't hold up the runtime.
+tokio = { version = "1.54.1", features = ["rt-multi-thread"] }
 player = { path = "../player" }
 widevine = { path = "../widevine" }

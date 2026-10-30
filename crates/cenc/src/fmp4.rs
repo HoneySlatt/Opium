@@ -133,6 +133,7 @@ fn find_all_children(
     result
 }
 
+#[derive(Debug, Clone)]
 struct TrackInfo {
     track_id: u32,
     default_iv_size: u8,
@@ -338,50 +339,98 @@ pub struct Fmp4Layout {
 /// Pure parsing — no CDM calls — so it's cheap (~10ms for a 7 MB track) and can
 /// run before the first byte is needed.
 pub fn index_fmp4(data: &[u8]) -> Result<Fmp4Layout, String> {
-    let mut init_end = 0usize;
-    let mut pos = 0;
-    while pos + 8 <= data.len() {
-        let (_, be, total) = match read_box(data, pos) {
-            Some(v) => v,
-            None => break,
-        };
-        if box_type(data, pos) == MOOV {
-            init_end = be;
-            break;
-        }
-        pos += total;
-    }
-    if init_end == 0 {
-        return Err("no moov".to_string());
-    }
-
-    let (track_infos, enca_positions) = extract_track_info(data, init_end)?;
+    let init = Init::read(data)?.ok_or_else(|| "no moov".to_string())?;
     let mut layout = Fmp4Layout {
-        enca_positions,
+        enca_positions: init.enca_positions.clone(),
         samples: Vec::new(),
     };
+    init.fragments(data, init.end, &mut layout.samples);
+    Ok(layout)
+}
 
-    pos = init_end;
-    while pos + 8 <= data.len() {
-        let (moof_bs, moof_be, moof_total) = match read_box(data, pos) {
-            Some(v) => v,
-            None => break,
-        };
-        if box_type(data, pos) != MOOF {
-            pos += moof_total;
-            continue;
+/// What the movie box says of the tracks, to index their fragments with.
+#[derive(Debug, Clone)]
+pub struct Init {
+    track_infos: Vec<TrackInfo>,
+    /// `enca`/`encv` box offsets, as in [`Fmp4Layout`].
+    pub enca_positions: Vec<usize>,
+    /// Where the movie box ends: the fragments follow.
+    pub end: usize,
+}
+
+impl Init {
+    /// The movie box of `data`, once it is all there: `None` until then.
+    pub fn read(data: &[u8]) -> Result<Option<Self>, String> {
+        let mut pos = 0;
+        while pos + 8 <= data.len() {
+            let Some((_, be, total)) = read_box(data, pos) else {
+                return Ok(None);
+            };
+            if box_type(data, pos) == MOOV {
+                let (track_infos, enca_positions) = extract_track_info(data, be)?;
+                return Ok(Some(Self {
+                    track_infos,
+                    enca_positions,
+                    end: be,
+                }));
+            }
+            pos += total;
         }
-        let moof_pos = pos;
+        Ok(None)
+    }
+
+    /// Index the fragments of `data` from `pos` into `samples`, each fragment
+    /// once its `moof` and `mdat` are both there; returns where the first
+    /// fragment not yet whole begins, to go on from when more has come.
+    pub fn fragments(
+        &self,
+        data: &[u8],
+        mut pos: usize,
+        samples: &mut Vec<EncryptedSample>,
+    ) -> usize {
+        while pos + 8 <= data.len() {
+            let Some((moof_bs, moof_be, moof_total)) = read_box(data, pos) else {
+                break;
+            };
+            if box_type(data, pos) != MOOF {
+                pos += moof_total;
+                continue;
+            }
+            let moof_pos = pos;
+            let mdat_pos = moof_pos + moof_total;
+            let Some((_, mdat_be, mdat_total_size)) = read_box(data, mdat_pos) else {
+                break;
+            };
+            if box_type(data, mdat_pos) != MDAT {
+                pos = moof_be;
+                continue;
+            }
+            self.fragment(
+                data,
+                moof_pos,
+                moof_bs,
+                moof_be,
+                mdat_pos,
+                mdat_total_size,
+                samples,
+            );
+            pos = mdat_be;
+        }
+        pos
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn fragment(
+        &self,
+        data: &[u8],
+        moof_pos: usize,
+        moof_bs: usize,
+        moof_be: usize,
+        mdat_pos: usize,
+        mdat_total_size: usize,
+        out: &mut Vec<EncryptedSample>,
+    ) {
         let moof_start_pos = moof_pos as u64;
-
-        let mdat_pos = moof_pos + moof_total;
-        let Some((_, _, mdat_total_size)) = read_box(data, mdat_pos) else {
-            break;
-        };
-        if box_type(data, mdat_pos) != MDAT {
-            pos = moof_be;
-            continue;
-        }
         let mdat_body_start = mdat_pos + 8;
         let mdat_payload_offset = mdat_body_start as u64;
 
@@ -397,7 +446,7 @@ pub fn index_fmp4(data: &[u8]) -> Result<Fmp4Layout, String> {
                 .map(|(s, _, _)| u32be(data, s + 4))
                 .unwrap_or(0);
 
-            let Some(ti) = track_infos.iter().find(|t| t.track_id == track_id) else {
+            let Some(ti) = self.track_infos.iter().find(|t| t.track_id == track_id) else {
                 continue;
             };
             let per_sample_iv_size = ti.default_iv_size;
@@ -450,7 +499,7 @@ pub fn index_fmp4(data: &[u8]) -> Result<Fmp4Layout, String> {
                 if offset + sz > mdat_body_len {
                     break;
                 }
-                layout.samples.push(EncryptedSample {
+                out.push(EncryptedSample {
                     fragment: moof_pos,
                     start: mdat_body_start + offset,
                     len: sz,
@@ -460,10 +509,7 @@ pub fn index_fmp4(data: &[u8]) -> Result<Fmp4Layout, String> {
                 offset += sz;
             }
         }
-
-        pos = moof_be;
     }
-    Ok(layout)
 }
 
 /// Relabel `enca`/`encv` as `mp4a` so the decoder reads the track as plain AAC.

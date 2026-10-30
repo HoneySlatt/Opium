@@ -173,8 +173,8 @@ impl AppleMusic {
         let (session, challenge) = cdm
             .start_session(&widevine::build_pssh(&key_id))
             .map_err(|e| playback_error(e.to_string()))?;
-        let (mut data, ()) = tokio::try_join!(
-            self.download(&file.url),
+        let (mut resp, ()) = tokio::try_join!(
+            self.start_download(&file.url),
             self.load_license(
                 &session,
                 &challenge,
@@ -183,14 +183,9 @@ impl AppleMusic {
                 &file
             ),
         )?;
-
-        let layout = cenc::index_fmp4(&data).map_err(playback_error)?;
-        if layout.samples.is_empty() {
-            return Err(playback_error("no encrypted samples found in the track"));
-        }
-        cenc::patch_init(&mut data, &layout);
-        // What the encode really is: a flavour's name may say less.
-        let kbps = audio_kbps(&layout.samples);
+        let len = resp
+            .content_length()
+            .ok_or_else(|| playback_error("asset download: no length"))?;
         let decrypt = Box::new(move |ciphertext: &[u8], sample: &cenc::EncryptedSample| {
             let subsamples: Vec<(u32, u32)> = sample
                 .subs
@@ -201,10 +196,38 @@ impl AppleMusic {
                 .decrypt(ciphertext, &key_id, &sample.iv, &subsamples)
                 .map_err(|e| e.to_string())
         });
-        Ok((
-            AudioStream::decrypting(data, layout.samples, AAC_FRAME, decrypt),
-            kbps,
-        ))
+        // The track plays as it downloads: from its first fragment, whose
+        // encode says the bit rate (a flavour's name may say less).
+        let (stream, feed) = AudioStream::downloading(len, AAC_FRAME, decrypt);
+        let failed = |e: reqwest::Error| format!("asset download: {}", e.without_url());
+        while feed.samples() == 0 {
+            match resp.chunk().await {
+                Ok(Some(bytes)) => {
+                    feed.push(&bytes);
+                }
+                Ok(None) => {
+                    feed.end(None);
+                    return Err(playback_error("no encrypted samples found in the track"));
+                }
+                Err(e) => return Err(playback_error(failed(e))),
+            }
+        }
+        let kbps = stream.with_samples(audio_kbps);
+        tokio::spawn(async move {
+            loop {
+                match resp.chunk().await {
+                    Ok(Some(bytes)) => {
+                        // Nobody reads it any more.
+                        if !feed.push(&bytes) {
+                            return;
+                        }
+                    }
+                    Ok(None) => return feed.end(None),
+                    Err(e) => return feed.end(Some(failed(e))),
+                }
+            }
+        });
+        Ok((stream, kbps))
     }
 
     async fn web_playback(&self, adam_id: &str) -> Result<serde_json::Value> {
@@ -264,6 +287,16 @@ impl AppleMusic {
     }
 
     pub(crate) async fn download(&self, url: &str) -> Result<Vec<u8>> {
+        self.start_download(url)
+            .await?
+            .bytes()
+            .await
+            .map(|b| b.to_vec())
+            .map_err(|e| Error::Network(format!("asset download: {}", e.without_url())))
+    }
+
+    /// A download under way, its headers in.
+    async fn start_download(&self, url: &str) -> Result<reqwest::Response> {
         let mut request = self.http.get(url);
         // The user's token goes to Apple only: a radio station's segments
         // may be a broadcaster's.
@@ -280,17 +313,14 @@ impl AppleMusic {
         let resp = request
             .send()
             .await
-            .map_err(|e| Error::Network(format!("asset download: {e}")))?;
+            .map_err(|e| Error::Network(format!("asset download: {}", e.without_url())))?;
         if !resp.status().is_success() {
             return Err(playback_error(format!(
                 "asset download: HTTP {}",
                 resp.status()
             )));
         }
-        resp.bytes()
-            .await
-            .map(|b| b.to_vec())
-            .map_err(|e| Error::Network(format!("asset download: {e}")))
+        Ok(resp)
     }
 }
 

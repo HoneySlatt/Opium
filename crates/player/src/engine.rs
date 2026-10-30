@@ -81,6 +81,17 @@ impl Sink {
     }
 }
 
+/// How often, and how long, to try for a new output after losing one.
+const RETRY_EVERY: Duration = Duration::from_millis(500);
+const RETRY_FOR: Duration = Duration::from_secs(20);
+
+struct Recovering {
+    item: Item,
+    at: Duration,
+    next_try: Instant,
+    give_up: Instant,
+}
+
 pub(crate) struct Engine {
     volume: f32,
     paused: bool,
@@ -94,6 +105,9 @@ pub(crate) struct Engine {
     skip_when_opened: bool,
     /// A next track whose format needs another output; waits for the ring to drain.
     switch: Option<Item>,
+    /// The track playing when its output was lost, to go on with where it
+    /// was once PipeWire is back.
+    recovering: Option<Recovering>,
     /// Samples pushed into the ring since the output was opened.
     written: u64,
     /// Decoded samples that didn't fit in the ring yet.
@@ -119,6 +133,7 @@ impl Engine {
             opening: None,
             skip_when_opened: false,
             switch: None,
+            recovering: None,
             written: 0,
             pending: Vec::new(),
             pending_at: 0,
@@ -157,6 +172,7 @@ impl Engine {
             Command::Play(token, source) => {
                 self.next = None;
                 self.switch = None;
+                self.recovering = None;
                 self.opening = None;
                 self.skip_when_opened = false;
                 if let Some(item) = self.open(token, source) {
@@ -200,6 +216,7 @@ impl Engine {
             Command::Resume => self.set_paused(false),
             Command::Seek(to) => self.seek(to),
             Command::Stop => {
+                self.recovering = None;
                 self.segments.clear();
                 self.opening = None;
                 self.skip_when_opened = false;
@@ -231,7 +248,19 @@ impl Engine {
     }
 
     /// Open an output for `item`'s format and play it from `at`.
-    fn start(&mut self, mut item: Item, at: Duration) {
+    fn start(&mut self, item: Item, at: Duration) {
+        if let Err(failed) = self.try_start(item, at) {
+            let (item, e) = *failed;
+            self.emit(Event::Error {
+                token: Some(item.token),
+                message: e.to_string(),
+            });
+        }
+    }
+
+    /// Open an output for `item`'s format and play it from `at`; the item
+    /// back if no output would open.
+    fn try_start(&mut self, mut item: Item, at: Duration) -> Result<(), Box<(Item, crate::Error)>> {
         self.sink = None;
         self.segments.clear();
         self.pending.clear();
@@ -274,11 +303,9 @@ impl Engine {
                     base_time,
                     decoded_all: false,
                 });
+                Ok(())
             }
-            Err(e) => self.emit(Event::Error {
-                token: Some(item.token),
-                message: e.to_string(),
-            }),
+            Err(e) => Err(Box::new((item, e))),
         }
     }
 
@@ -366,6 +393,7 @@ impl Engine {
     /// Follow the output: announce gapless track changes, and act once the ring
     /// has drained.
     fn advance(&mut self) {
+        self.recover();
         let Some(sink) = &self.sink else { return };
         let played = sink.played();
 
@@ -437,6 +465,54 @@ impl Engine {
         }
     }
 
+    /// An output lost (PipeWire restarted): the track playing waits where
+    /// it was, its followers parked, and goes on in a new output as soon as
+    /// one opens.
+    fn recover(&mut self) {
+        if self
+            .sink
+            .as_ref()
+            .is_some_and(|s| s.state.lost.load(Ordering::Acquire))
+        {
+            let at = self.position();
+            self.park_queued();
+            let front = self.segments.pop_front();
+            self.segments.clear();
+            self.sink = None;
+            self.pending.clear();
+            self.pending_at = 0;
+            let now = Instant::now();
+            self.recovering = front.map(|segment| Recovering {
+                item: segment.item,
+                at,
+                next_try: now + RETRY_EVERY,
+                give_up: now + RETRY_FOR,
+            });
+        }
+        let Some(waiting) = self.recovering.take_if(|r| Instant::now() >= r.next_try) else {
+            return;
+        };
+        let Recovering {
+            item, at, give_up, ..
+        } = waiting;
+        if let Err(failed) = self.try_start(item, at) {
+            let (item, e) = *failed;
+            if Instant::now() >= give_up {
+                self.emit(Event::Error {
+                    token: Some(item.token),
+                    message: e.to_string(),
+                });
+            } else {
+                self.recovering = Some(Recovering {
+                    item,
+                    at,
+                    next_try: Instant::now() + RETRY_EVERY,
+                    give_up,
+                });
+            }
+        }
+    }
+
     fn position(&self) -> Duration {
         let (Some(sink), Some(front)) = (&self.sink, self.segments.front()) else {
             return Duration::ZERO;
@@ -454,9 +530,19 @@ impl Engine {
                 source: Some(front.item.decoder.info.clone()),
                 output: self.sink.as_ref().map(Sink::live_info),
             },
-            None => Status {
-                paused: self.paused,
-                ..Status::default()
+            // Still the track playing, while its output comes back.
+            None => match &self.recovering {
+                Some(waiting) => Status {
+                    token: Some(waiting.item.token),
+                    position: waiting.at,
+                    paused: self.paused,
+                    source: Some(waiting.item.decoder.info.clone()),
+                    output: None,
+                },
+                None => Status {
+                    paused: self.paused,
+                    ..Status::default()
+                },
             },
         };
         *self.status.lock().unwrap_or_else(|e| e.into_inner()) = status;

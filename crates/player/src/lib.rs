@@ -8,6 +8,7 @@
 
 mod decoder;
 mod engine;
+mod gapless;
 mod graph;
 mod output;
 
@@ -38,6 +39,8 @@ pub type Token = u64;
 pub struct Source {
     reader: Box<dyn MediaSource>,
     extension: Option<String>,
+    /// An AAC encode's priming frames, when its file doesn't say.
+    priming: Option<u32>,
     seek_hint: Option<SeekHint>,
 }
 
@@ -53,6 +56,7 @@ impl Source {
         Self {
             reader: Box::new(Bytes { inner: reader, len }),
             extension: extension.map(str::to_owned),
+            priming: None,
             seek_hint: None,
         }
     }
@@ -66,8 +70,16 @@ impl Source {
         Self {
             reader: Box::new(Forward(reader)),
             extension: extension.map(str::to_owned),
+            priming: None,
             seek_hint: None,
         }
+    }
+
+    /// The frames an AAC encoder put before the music, for a file that
+    /// doesn't say (Apple Music's: 2112), to leave them out.
+    pub fn with_priming(mut self, frames: u32) -> Self {
+        self.priming = Some(frames);
+        self
     }
 
     /// Have `hint` told where a seek is headed before it happens, for sources
