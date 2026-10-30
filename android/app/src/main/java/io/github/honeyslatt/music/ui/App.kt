@@ -2,6 +2,18 @@ package io.github.honeyslatt.music.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import io.github.honeyslatt.music.core.LyricsSite
+import io.github.honeyslatt.music.ui.nowplaying.LyricsSource
+import io.github.honeyslatt.music.ui.nowplaying.NowPlaying
+import io.github.honeyslatt.music.ui.nowplaying.NpActions
+import kotlinx.coroutines.launch
 import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -11,7 +23,10 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -55,9 +70,27 @@ fun App(core: Core, library: Library, playback: io.github.honeyslatt.music.playb
     val playing by playback.playing.collectAsStateWithLifecycle()
     val loading by playback.loading.collectAsStateWithLifecycle()
     val context = LibraryContext(core, nav, lists, services, account, playback = playback)
-    val mini = MiniState(now, playing, loading, playback::toggle, playback::next, playback::previous, onOpen = {})
+    var npOpen by rememberSaveable { mutableStateOf(false) }
+    val mini = MiniState(now, playing, loading, playback::toggle, playback::next, playback::previous, onOpen = { npOpen = true })
+    val scope = rememberCoroutineScope()
+    LyricsSource.find = { track ->
+        runCatching { core.session.lyrics(track, listOf(LyricsSite.LRCLIB, LyricsSite.NET_EASE, LyricsSite.KU_GOU), false) }.getOrNull()
+    }
+    val npActions = NpActions(
+        close = { npOpen = false },
+        openAlbum = { t -> t.albumId?.let { npOpen = false; nav.push(Route.Album(it)) } },
+        openArtist = { t ->
+            scope.launch {
+                runCatching { core.session.songLinks(t.id).artist }.getOrNull()?.let {
+                    npOpen = false
+                    nav.push(Route.Artist(it))
+                }
+            }
+        },
+    )
 
-    BackHandler(enabled = nav.canPop) { nav.pop() }
+    BackHandler(enabled = nav.canPop && !npOpen) { nav.pop() }
+    BackHandler(enabled = npOpen) { npOpen = false }
     Box(Modifier.fillMaxSize().background(roles.base)) {
         AnimatedContent(
             targetState = Triple(nav.tab, nav.stack.size, nav.page),
@@ -67,6 +100,15 @@ fun App(core: Core, library: Library, playback: io.github.honeyslatt.music.playb
             Page(tab, page, context, account)
         }
         BottomChrome(nav, mini, Modifier.align(Alignment.BottomCenter))
+        // Now Playing rises from the mini player over 440 ms, and goes back
+        // down with a swipe.
+        AnimatedVisibility(
+            npOpen && now != null,
+            enter = slideInVertically(tween(440, easing = Standard)) { it },
+            exit = slideOutVertically(tween(400, easing = Standard)) { it },
+        ) {
+            SwipeDown({ npOpen = false }) { NowPlaying(playback, npActions) }
+        }
     }
 }
 
@@ -97,5 +139,29 @@ private fun Page(tab: Tab, page: Route, c: LibraryContext, account: @Composable 
         is Route.Playlist -> PlaylistPage(c, page.id)
         is Route.LibraryArtist -> LibraryArtistPage(c, page.artist)
         is Route.Artist -> ArtistPage(c, page.id)
+    }
+}
+
+/** A sheet that follows a drag down, and closes past a quarter of the screen. */
+@Composable
+private fun SwipeDown(onClose: () -> Unit, content: @Composable () -> Unit) {
+    var drag by androidx.compose.runtime.remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    val shown by androidx.compose.animation.core.animateFloatAsState(drag, label = "drag")
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
+        val limit = constraints.maxHeight / 4f
+        Box(
+            Modifier
+                .fillMaxSize()
+                .graphicsLayer { translationY = shown }
+                .pointerInput(Unit) {
+                    detectVerticalDragGestures(
+                        onDragEnd = { if (drag > limit) onClose() else drag = 0f },
+                        onDragCancel = { drag = 0f },
+                    ) { change, amount ->
+                        drag = (drag + amount).coerceAtLeast(0f)
+                        change.consume()
+                    }
+                },
+        ) { content() }
     }
 }

@@ -1,0 +1,408 @@
+package io.github.honeyslatt.music.ui.nowplaying
+
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.runtime.Composable
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.withFrameMillis
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.media3.common.util.UnstableApi
+import io.github.honeyslatt.music.core.model.Track
+import io.github.honeyslatt.music.playback.Playback
+import io.github.honeyslatt.music.ui.Icons
+import io.github.honeyslatt.music.ui.components.Cover
+import io.github.honeyslatt.music.ui.components.ExplicitBadge
+import io.github.honeyslatt.music.ui.components.Glyph
+import io.github.honeyslatt.music.ui.components.Line
+import io.github.honeyslatt.music.ui.components.at
+import io.github.honeyslatt.music.ui.components.press
+import io.github.honeyslatt.music.ui.detail.CoverColours
+import io.github.honeyslatt.music.ui.detail.label
+import io.github.honeyslatt.music.ui.theme.geist
+import io.github.honeyslatt.music.ui.theme.roles
+import io.github.honeyslatt.music.ui.theme.tabular
+
+/** Now Playing's colours: white on dark, the text colour on light. */
+data class NpColours(val fg: Color, val sub: Color, val dim: Color, val button: Color)
+
+val LocalNp = staticCompositionLocalOf { NpColours(Color.White, Color.White, Color.White, Color.White) }
+
+enum class NpMode { Artwork, Lyrics, Queue }
+
+/** What Now Playing can open, and close. */
+class NpActions(
+    val close: () -> Unit,
+    val openAlbum: (Track) -> Unit,
+    val openArtist: (Track) -> Unit,
+)
+
+/**
+ * Now Playing, full screen: the cover's colours drifting behind, then the
+ * artwork, lyrics or queue, and the controls.
+ */
+@androidx.annotation.OptIn(UnstableApi::class)
+@Composable
+fun NowPlaying(playback: Playback, actions: NpActions) {
+    val track by playback.now.collectAsStateWithLifecycle()
+    val playing by playback.playing.collectAsStateWithLifecycle()
+    val t = track ?: return
+    var mode by remember { mutableStateOf(NpMode.Artwork) }
+    val dark = roles.dark
+    val np = if (dark) {
+        NpColours(Color.White, Color.White.copy(alpha = 0.62f), Color.White.copy(alpha = 0.28f), Color.White.copy(alpha = 0.14f))
+    } else {
+        val c = roles.text
+        NpColours(c, c.copy(alpha = 0.6f), c.copy(alpha = 0.26f), c.copy(alpha = 0.08f))
+    }
+    // Lyrics: the header and the controls step aside while the song plays
+    // and nobody touches the screen; a touch brings them back.
+    var hasLyrics by remember(t.id) { mutableStateOf(false) }
+    var touches by remember { mutableIntStateOf(0) }
+    var calm by remember { mutableStateOf(false) }
+    LaunchedEffect(mode, playing, hasLyrics, touches) {
+        calm = false
+        if (mode == NpMode.Lyrics && playing && hasLyrics) {
+            kotlinx.coroutines.delay(4_000)
+            calm = true
+        }
+    }
+    CompositionLocalProvider(LocalNp provides np) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(roles.base)
+                .pointerInput(Unit) {
+                    awaitPointerEventScope {
+                        while (true) {
+                            if (awaitPointerEvent(PointerEventPass.Initial).type == PointerEventType.Press) touches++
+                        }
+                    }
+                },
+        ) {
+            Wash(t)
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .windowInsetsPadding(WindowInsets.safeDrawing)
+                    .padding(start = 28.dp, end = 28.dp, bottom = 10.dp),
+            ) {
+                // The grabber: a tap closes, as the swipe down does.
+                Box(Modifier.fillMaxWidth().height(26.dp).press(onClick = actions.close), contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(40.dp, 5.dp).background(np.fg.copy(alpha = 0.35f), RoundedCornerShape(3.dp)))
+                }
+                when (mode) {
+                    NpMode.Artwork -> {
+                        BoxWithConstraints(Modifier.fillMaxWidth().padding(top = 26.dp)) {
+                            val scale by animateFloatAsState(if (playing) 1f else 0.86f, tween(400, easing = io.github.honeyslatt.music.ui.chrome.Standard), label = "art")
+                            val shape = RoundedCornerShape(14.dp)
+                            Cover(
+                                t.artwork,
+                                maxWidth,
+                                shape,
+                                Modifier
+                                    .fillMaxWidth()
+                                    .aspectRatio(1f)
+                                    .scale(scale)
+                                    .shadow(30.dp, shape, ambientColor = Color.Black.copy(alpha = 0.38f), spotColor = Color.Black.copy(alpha = 0.38f)),
+                            )
+                        }
+                        Spacer(Modifier.weight(1f).height(12.dp))
+                        TitleRow(t, actions)
+                    }
+                    NpMode.Lyrics -> {
+                        AnimatedVisibility(!calm, enter = fadeIn(Calm) + expandVertically(tween(CALM_MS)), exit = fadeOut(Calm) + shrinkVertically(tween(CALM_MS))) {
+                            Head(t)
+                        }
+                        Box(Modifier.weight(1f).fillMaxWidth()) { Lyrics(playback, t, calm) { hasLyrics = it } }
+                    }
+                    NpMode.Queue -> {
+                        Head(t)
+                        Box(Modifier.weight(1f).fillMaxWidth().padding(top = 12.dp)) { QueueView(playback) }
+                    }
+                }
+                AnimatedVisibility(
+                    !calm,
+                    enter = fadeIn(Calm) + slideInVertically(tween(CALM_MS)) { it / 12 } + expandVertically(tween(CALM_MS)),
+                    exit = fadeOut(Calm) + slideOutVertically(tween(CALM_MS)) { it / 12 } + shrinkVertically(tween(CALM_MS)),
+                ) {
+                    Column {
+                        Controls(playback, t, playing, mode) { mode = if (mode == it) NpMode.Artwork else it }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** How long the lyrics' header and controls take to step aside. */
+internal const val CALM_MS = 350
+private val Calm = tween<Float>(CALM_MS)
+
+/** The cover's three colours as four large blobs drifting over 40 s, under a vignette. */
+@Composable
+private fun Wash(track: Track) {
+    val light = !roles.dark
+    val base = roles.base
+    val url = track.artwork?.at(120)
+    val colours by produceState(listOf(roles.accent, roles.mauve, roles.accent), url, light) {
+        url?.let { CoverColours.wash(it, light) }?.let { value = it }
+    }
+    val drift by rememberInfiniteTransition(label = "wash").animateFloat(
+        0f,
+        1f,
+        infiniteRepeatable(tween(40_000, easing = LinearEasing), RepeatMode.Reverse),
+        label = "drift",
+    )
+    val (c1, c2, c3) = colours
+    val fill = lerp(c1, Color.Black, 0.2f)
+    Box(
+        Modifier.fillMaxSize().drawBehind {
+            drawRect(fill)
+            val w = size.width
+            val h = size.height
+            val d = (drift - 0.5f) * 0.12f
+            fun blob(x: Float, y: Float, r: Float, c: Color) = drawCircle(
+                Brush.radialGradient(listOf(c, c.copy(alpha = 0f)), Offset(w * x, h * y), r),
+                radius = r,
+                center = Offset(w * x, h * y),
+            )
+            blob(0.22f + d, 0.18f - d, w * 0.95f, c1)
+            blob(0.82f - d, 0.30f + d, w * 1.0f, c2)
+            blob(0.30f + d, 0.78f, w * 1.1f, c3)
+            blob(0.85f, 0.88f - d, w * 0.9f, c1)
+            drawRect(
+                Brush.radialGradient(
+                    0.4f to Color.Transparent,
+                    1f to base.copy(alpha = 0.45f),
+                    center = Offset(w * 0.5f, h * 0.45f),
+                    radius = maxOf(w, h) * 0.8f,
+                ),
+            )
+        },
+    )
+}
+
+@Composable
+private fun RoundSmall(icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) {
+    val np = LocalNp.current
+    Box(
+        Modifier.size(34.dp).press(CircleShape, shrink = 0.92f, onClick = onClick).background(np.button, CircleShape),
+        contentAlignment = Alignment.Center,
+    ) { Glyph(icon, np.fg, 18.dp) }
+}
+
+/** Title (it opens the album) and artist (the artist), with favourite and more. */
+@Composable
+private fun TitleRow(t: Track, actions: NpActions) {
+    val np = LocalNp.current
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(Modifier.weight(1f)) {
+            Row(
+                Modifier.press { actions.openAlbum(t) },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(7.dp),
+            ) {
+                Line(t.title, geist(20.sp, FontWeight.SemiBold).copy(color = np.fg), Modifier.weight(1f, fill = false))
+                if (t.explicit) ExplicitBadge()
+            }
+            Box(Modifier.press { actions.openArtist(t) }) {
+                Line(t.artists.joinToString(", "), geist(20.sp).copy(color = np.sub))
+            }
+        }
+        RoundSmall(Icons.Star) {}
+        RoundSmall(Icons.More) {}
+    }
+}
+
+/** The small header of the lyrics and queue modes. */
+@Composable
+private fun Head(t: Track) {
+    val np = LocalNp.current
+    Row(Modifier.padding(top = 18.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        val shape = RoundedCornerShape(9.dp)
+        Cover(t.artwork, 64.dp, shape, Modifier.size(64.dp).shadow(10.dp, shape))
+        Column(Modifier.weight(1f)) {
+            Line(t.title, geist(16.sp, FontWeight.SemiBold).copy(color = np.fg))
+            Line(t.artists.joinToString(", "), geist(15.sp).copy(color = np.sub))
+        }
+        RoundSmall(Icons.Star) {}
+        RoundSmall(Icons.More) {}
+    }
+}
+
+/** Times as `m:ss`. */
+fun clock(ms: Long): String {
+    val s = (ms / 1000).coerceAtLeast(0)
+    return "${s / 60}:${(s % 60).toString().padStart(2, '0')}"
+}
+
+/** The position, read at every frame while the song plays. */
+@androidx.annotation.OptIn(UnstableApi::class)
+@Composable
+fun rememberPosition(playback: Playback, playing: Boolean): Long {
+    var position by remember { mutableLongStateOf(playback.position) }
+    LaunchedEffect(playing) {
+        position = playback.position
+        while (playing) {
+            withFrameMillis { position = playback.position }
+        }
+    }
+    return position
+}
+
+@androidx.annotation.OptIn(UnstableApi::class)
+@Composable
+private fun Controls(playback: Playback, t: Track, playing: Boolean, mode: NpMode, onMode: (NpMode) -> Unit) {
+    val np = LocalNp.current
+    val position = rememberPosition(playback, playing)
+    val duration = playback.duration ?: 0L
+    var dragging by remember { mutableStateOf<Float?>(null) }
+    val shown = dragging?.let { (it * duration).toLong() } ?: position
+    // The scrubber: 7 dp, 12 dp while dragged; it seeks on release.
+    val thickness by animateDpAsState(if (dragging != null) 12.dp else 7.dp, tween(150), label = "scrub")
+    BoxWithConstraints(Modifier.fillMaxWidth().padding(top = 22.dp).height(18.dp)) {
+        val width = constraints.maxWidth.toFloat()
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(18.dp)
+                .pointerInput(duration) {
+                    detectHorizontalDragGestures(
+                        onDragStart = { dragging = (it.x / width).coerceIn(0f, 1f) },
+                        onDragEnd = {
+                            dragging?.let { playback.seekTo((it * duration).toLong()) }
+                            dragging = null
+                        },
+                        onDragCancel = { dragging = null },
+                    ) { change, _ -> dragging = (change.position.x / width).coerceIn(0f, 1f) }
+                }
+                .pointerInput(duration) {
+                    detectTapGestures { playback.seekTo(((it.x / width).coerceIn(0f, 1f) * duration).toLong()) }
+                },
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            val fraction = if (duration > 0) (shown.toFloat() / duration).coerceIn(0f, 1f) else 0f
+            Box(Modifier.fillMaxWidth().height(thickness).background(np.dim, RoundedCornerShape(6.dp))) {
+                Box(Modifier.fillMaxWidth(fraction).height(thickness).background(np.fg.copy(alpha = 0.9f), RoundedCornerShape(6.dp)))
+            }
+        }
+    }
+    Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        val times = geist(12.sp, FontWeight.Medium).tabular().copy(color = np.sub)
+        BasicText(clock(shown), Modifier.weight(1f), style = times)
+        t.quality?.let { q ->
+            Box(Modifier.height(22.dp).background(np.button, RoundedCornerShape(6.dp)).padding(horizontal = 9.dp), contentAlignment = Alignment.Center) {
+                BasicText(q.label(), style = geist(11.5.sp, FontWeight.SemiBold, 0.02f).copy(color = np.fg))
+            }
+        }
+        BasicText(
+            "-" + clock(duration - shown),
+            Modifier.weight(1f),
+            style = times.copy(textAlign = androidx.compose.ui.text.style.TextAlign.End),
+        )
+    }
+    Row(Modifier.fillMaxWidth().padding(top = 26.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+        Transport(Icons.Rw, 36) { playback.previous() }
+        Transport(if (playing) Icons.Pause else Icons.Play, 46) { playback.toggle() }
+        Transport(Icons.Ff, 36) { playback.next() }
+    }
+    Row(Modifier.fillMaxWidth().padding(top = 30.dp), horizontalArrangement = Arrangement.SpaceAround) {
+        Bottom(Icons.Lyrics, mode == NpMode.Lyrics) { onMode(NpMode.Lyrics) }
+        Output()
+        Bottom(Icons.Queue, mode == NpMode.Queue) { onMode(NpMode.Queue) }
+    }
+}
+
+@Composable
+private fun Transport(icon: androidx.compose.ui.graphics.vector.ImageVector, size: Int, onClick: () -> Unit) {
+    Box(Modifier.size(84.dp, 72.dp).press(CircleShape, shrink = 0.86f, onClick = onClick), contentAlignment = Alignment.Center) {
+        Glyph(icon, LocalNp.current.fg, size.dp)
+    }
+}
+
+@Composable
+private fun Bottom(icon: androidx.compose.ui.graphics.vector.ImageVector, on: Boolean, onClick: () -> Unit) {
+    val np = LocalNp.current
+    val shape = RoundedCornerShape(12.dp)
+    Box(
+        Modifier.size(52.dp, 44.dp).press(shape, shrink = 0.92f, onClick = onClick).background(if (on) np.button else Color.Transparent, shape),
+        contentAlignment = Alignment.Center,
+    ) { Glyph(icon, np.fg.copy(alpha = if (on) 1f else 0.78f), 22.dp) }
+}
+
+/** The output, by the device's name; a tap opens Android's own switcher. */
+@Composable
+private fun Output() {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val np = LocalNp.current
+    val device = remember { mutableStateOf(Outputs.current(context)) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            device.value = Outputs.current(context)
+            kotlinx.coroutines.delay(2_000)
+        }
+    }
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Bottom(device.value.icon, false) { Outputs.showSwitcher(context) }
+        BasicText(device.value.name, style = geist(11.sp).copy(color = np.sub), maxLines = 1)
+    }
+}

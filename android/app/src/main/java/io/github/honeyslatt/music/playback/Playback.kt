@@ -64,6 +64,82 @@ class Playback(context: Context, private val core: Core, private val scope: Coro
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
 
+    /** What follows, in play order, and what played, most recent first. */
+    private val _upcoming = MutableStateFlow<List<Track>>(emptyList())
+    val upcoming: StateFlow<List<Track>> = _upcoming.asStateFlow()
+    private val _history = MutableStateFlow<List<Track>>(emptyList())
+    val history: StateFlow<List<Track>> = _history.asStateFlow()
+
+    private val _shuffle = MutableStateFlow(false)
+    val shuffleOn: StateFlow<Boolean> = _shuffle.asStateFlow()
+    private val _repeat = MutableStateFlow(QueueRepeat.OFF)
+    val repeat: StateFlow<QueueRepeat> = _repeat.asStateFlow()
+
+    /** Where the song is, in ms; read as often as wanted. */
+    val position: Long get() = player.currentPosition.coerceAtLeast(0)
+
+    /** How long the song is, in ms, once known. */
+    val duration: Long?
+        get() = player.duration.takeIf { it != C.TIME_UNSET && it > 0 }
+            ?: _now.value?.duration?.toMillis()
+
+    fun seekTo(ms: Long) = player.seekTo(ms)
+
+    fun setShuffle(on: Boolean) {
+        queue.setShuffle(on)
+        changed()
+        lineUpNext()
+    }
+
+    /** Off, all, one, off. */
+    fun cycleRepeat() {
+        queue.setRepeat(
+            when (queue.repeat()) {
+                QueueRepeat.OFF -> QueueRepeat.ALL
+                QueueRepeat.ALL -> QueueRepeat.ONE
+                QueueRepeat.ONE -> QueueRepeat.OFF
+            },
+        )
+        changed()
+        lineUpNext()
+    }
+
+    /** Play the `k`-th upcoming song now. */
+    fun jump(k: Int) {
+        val previous = _now.value
+        if (queue.jump(k.toUInt()) != null) {
+            previous?.let(::played)
+            startCurrent()
+        }
+    }
+
+    fun removeUpcoming(k: Int) {
+        queue.removeUpcoming(k.toUInt())
+        changed()
+        if (k == 0) lineUpNext()
+    }
+
+    fun clearUpcoming() {
+        queue.clearUpcoming()
+        changed()
+        lineUpNext()
+    }
+
+    fun clearHistory() {
+        _history.value = emptyList()
+    }
+
+    /** The queue's state, as the screens show it. */
+    private fun changed() {
+        _upcoming.value = queue.upcoming()
+        _shuffle.value = queue.shuffle()
+        _repeat.value = queue.repeat()
+    }
+
+    private fun played(track: Track) {
+        _history.value = (listOf(track) + _history.value.filter { it.id != track.id }).take(100)
+    }
+
     /** Bumped when the queue starts over, so late resolutions are dropped. */
     private var generation = 0
     private var lining: Job? = null
@@ -85,7 +161,9 @@ class Playback(context: Context, private val core: Core, private val scope: Coro
                 ) {
                     // Only the song playing stays, and the next is lined up.
                     while (player.currentMediaItemIndex > 0) player.removeMediaItem(0)
+                    _now.value?.let(::played)
                     _now.value = queue.current()
+                    changed()
                     failedInRow = 0
                     lineUpNext()
                 }
@@ -123,6 +201,7 @@ class Playback(context: Context, private val core: Core, private val scope: Coro
     }
 
     fun next() {
+        _now.value?.takeIf { !player.hasNextMediaItem() }?.let(::played)
         if (player.hasNextMediaItem() && queue.repeat() != QueueRepeat.ONE) {
             queue.skipNext()
             player.seekToNextMediaItem()
@@ -148,6 +227,7 @@ class Playback(context: Context, private val core: Core, private val scope: Coro
     /** Make the queue's current song playable and play it, at once. */
     private fun startCurrent() {
         val track = queue.current() ?: return
+        changed()
         val mine = ++generation
         lining?.cancel()
         player.stop()

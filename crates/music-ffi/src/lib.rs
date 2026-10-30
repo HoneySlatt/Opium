@@ -7,7 +7,7 @@ use apple_music::{AppleMusic, Protected};
 use music_core::Provider;
 use music_core::model::{
     Album, AlbumExtras, Artist, ArtistDetail, Collection, Cursor, ItemId, Lyrics, Playlist,
-    ProviderKind, SearchResults, Shelf, Track,
+    ProviderKind, SearchResults, Shelf, SongLinks, Track,
 };
 use navidrome::Navidrome;
 use services::Services;
@@ -331,6 +331,11 @@ impl Session {
         })
     }
 
+    /// A song's artist and station, to open from it.
+    pub async fn song_links(&self, song: ItemId) -> Result<SongLinks, MusicError> {
+        Ok(self.provider(song.provider)?.song_links(&song).await?)
+    }
+
     /// A library artist's releases in the library: Apple Music's from its
     /// library, the other services' from their artist pages.
     pub async fn library_artist_albums(&self, id: ItemId) -> Result<Vec<Album>, MusicError> {
@@ -539,6 +544,16 @@ pub fn apple_asset_host() -> String {
 pub fn cover_palette(image: Vec<u8>) -> Option<Vec<u32>> {
     let rgb = |[r, g, b]: [u8; 3]| u32::from(r) << 16 | u32::from(g) << 8 | u32::from(b);
     music_core::palette::from_image(&image).map(|p| p.iter().copied().map(rgb).collect())
+}
+
+/// The three colours of Now Playing's wash, from a cover: its palette,
+/// pulled into the theme's band so a dark cover still gives colour and a
+/// vivid one never glares. As `0xrrggbb`.
+#[uniffi::export]
+pub fn wash_colours(image: Vec<u8>, light: bool) -> Option<Vec<u32>> {
+    use music_core::palette::{fit, from_image};
+    let rgb = |[r, g, b]: [u8; 3]| u32::from(r) << 16 | u32::from(g) << 8 | u32::from(b);
+    from_image(&image).map(|p| p.iter().map(|&c| rgb(fit(c, light))).collect())
 }
 
 /// The colour of a page tinted by a cover from top to bottom: the most
