@@ -52,7 +52,10 @@ import androidx.media3.exoplayer.drm.MediaDrmCallback
 import androidx.media3.exoplayer.hls.HlsMediaSource
 import io.github.honeyslatt.music.core.Apple
 import io.github.honeyslatt.music.core.ProtectedTrack
+import io.github.honeyslatt.music.core.SearchScope
+import io.github.honeyslatt.music.core.Session
 import io.github.honeyslatt.music.core.Tls
+import io.github.honeyslatt.music.core.model.ProviderKind
 import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.delay
@@ -154,6 +157,21 @@ class MainActivity : ComponentActivity() {
                         player?.seekTo(0, 159_000)
                     } catch (e: Exception) {
                         say("Play failed: $e")
+                    }
+                }
+            }
+            Button("6. Session: search and library") {
+                scope.launch {
+                    try {
+                        val t = android.os.SystemClock.elapsedRealtime()
+                        val session = Session()
+                        say("Session · ${session.connectApple(tokenFile.readText())}")
+                        val found = session.search(SearchScope.CATALOG, "Pink Floyd Breathe")
+                        say("Search · ${found.tracks.size} songs, first ${found.tracks.firstOrNull()?.title}")
+                        val lists = session.libraryPlaylists(ProviderKind.APPLE_MUSIC, null)
+                        say("Playlists · ${lists.items.size}, more: ${lists.next != null} · ${android.os.SystemClock.elapsedRealtime() - t} ms")
+                    } catch (e: Exception) {
+                        say("Session failed: $e")
                     }
                 }
             }

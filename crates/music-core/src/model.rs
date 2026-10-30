@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 /// A music service the app can pull from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
 pub enum ProviderKind {
     AppleMusic,
     SoundCloud,
@@ -13,6 +14,7 @@ pub enum ProviderKind {
 
 /// An item within one provider. The id is opaque: only its provider knows what it means.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct ItemId {
     pub provider: ProviderKind,
     pub id: String,
@@ -38,10 +40,11 @@ impl fmt::Display for ItemId {
 /// Each service sizes art differently (Apple's `{w}x{h}`, SoundCloud's `-t500x500`,
 /// Subsonic's `size=`); providers translate theirs into this one placeholder.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct Artwork {
     pub url_template: String,
     /// The colour behind the art, when the service gives it (Apple does).
-    pub background: Option<[u8; 3]>,
+    pub background: Option<u32>,
 }
 
 impl Artwork {
@@ -51,6 +54,7 @@ impl Artwork {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
 pub enum Codec {
     Aac,
     Alac,
@@ -70,6 +74,7 @@ impl Codec {
 
 /// What a source actually delivers, as far as the provider knows before decoding.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct AudioQuality {
     pub codec: Codec,
     pub sample_rate: Option<u32>,
@@ -78,6 +83,7 @@ pub struct AudioQuality {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct Track {
     pub id: ItemId,
     pub title: String,
@@ -98,12 +104,14 @@ pub struct Track {
 
 /// Where a song leads: its artist's page and its station.
 #[derive(Debug, Clone, Default, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct SongLinks {
     pub artist: Option<ItemId>,
     pub station: Option<ItemId>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct Album {
     pub id: ItemId,
     pub title: String,
@@ -139,6 +147,7 @@ pub struct Album {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct Artist {
     pub id: ItemId,
     pub name: String,
@@ -152,6 +161,7 @@ pub struct Artist {
 
 /// What can be a favourite.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
 pub enum FavouriteKind {
     Song,
     Album,
@@ -161,6 +171,7 @@ pub enum FavouriteKind {
 
 /// An album or a playlist: what Recently Added and the home shelves list.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
 pub enum Collection {
     Album(Album),
     Playlist(Playlist),
@@ -169,6 +180,7 @@ pub enum Collection {
 
 /// A radio station.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct Station {
     pub id: ItemId,
     pub name: String,
@@ -179,6 +191,7 @@ pub struct Station {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
 pub enum StationKind {
     /// On air now (Apple Music 1, Hits…).
     Live,
@@ -191,6 +204,7 @@ pub enum StationKind {
 
 /// An artist's page: their best-known songs and their releases.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct ArtistDetail {
     pub artist: Artist,
     pub top_songs: Vec<Track>,
@@ -215,6 +229,7 @@ pub struct ArtistDetail {
 
 /// A music video, as an album's page lists them.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct MusicVideo {
     pub id: ItemId,
     pub title: String,
@@ -229,12 +244,14 @@ pub struct MusicVideo {
 /// What an album's page shows besides its songs: its other editions, and
 /// the music videos of its songs.
 #[derive(Debug, Clone, Default, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct AlbumExtras {
     pub other_versions: Vec<Album>,
     pub videos: Vec<MusicVideo>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct Playlist {
     pub id: ItemId,
     pub name: String,
@@ -255,6 +272,7 @@ pub struct Playlist {
 
 /// An editors' pick: what it is, in a word, and how they show it.
 #[derive(Debug, Clone, Default, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct Pick {
     /// `NEW ALBUM`, `UPDATED PLAYLIST`.
     pub badge: String,
@@ -266,6 +284,7 @@ pub struct Pick {
 
 /// A row of the home, radio or new music page.
 #[derive(Debug, Clone, Default, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct Shelf {
     pub title: String,
     /// Shown large: the playlists made for the user, the stations on air,
@@ -280,6 +299,7 @@ pub struct Shelf {
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct SearchResults {
     pub tracks: Vec<Track>,
     pub albums: Vec<Album>,
@@ -292,6 +312,9 @@ pub struct SearchResults {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Cursor(pub String);
 
+#[cfg(feature = "ffi")]
+uniffi::custom_newtype!(Cursor, String);
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Page<T> {
     pub items: Vec<T>,
@@ -300,6 +323,7 @@ pub struct Page<T> {
 
 /// One line of lyrics. `text` is empty for an instrumental gap.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct LyricLine {
     pub start: std::time::Duration,
     pub end: Option<std::time::Duration>,
@@ -312,6 +336,7 @@ pub struct LyricLine {
 /// A word or syllable sung from `start` to `end`. Its text keeps the space
 /// after it, if any, so that the words of a line join into its text.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct LyricWord {
     pub start: std::time::Duration,
     pub end: std::time::Duration,
@@ -319,6 +344,7 @@ pub struct LyricWord {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct Lyrics {
     pub lines: Vec<LyricLine>,
     /// Whether the lines carry times. Unsynced lyrics are shown as plain text.

@@ -14,6 +14,7 @@ apple-music = { path = "../apple-music" }
 soundcloud = { path = "../soundcloud" }
 navidrome = { path = "../navidrome" }
 lyrics = { path = "../lyrics" }
+services = { path = "../services" }
 player = { path = "../player" }
 widevine = { path = "../widevine" }
 eframe = "0.37.0"

@@ -22,9 +22,9 @@ fn artwork(art: Option<&types::Artwork>) -> Option<Artwork> {
 }
 
 /// `cb6900` → `[0xcb, 0x69, 0x00]`.
-fn hex_color(hex: &str) -> Option<[u8; 3]> {
-    let value = u32::from_str_radix(hex.get(..6)?, 16).ok()?;
-    Some([(value >> 16) as u8, (value >> 8) as u8, value as u8])
+/// `rrggbb` as `0xrrggbb`.
+fn hex_color(hex: &str) -> Option<u32> {
+    u32::from_str_radix(hex.get(..6)?, 16).ok()
 }
 
 /// What the web player's `28:ctrp256` flavour delivers, the best Apple serves us.
@@ -353,7 +353,7 @@ mod tests {
 
     #[test]
     fn background_colours_read_from_hex() {
-        assert_eq!(hex_color("cb6900"), Some([0xcb, 0x69, 0x00]));
+        assert_eq!(hex_color("cb6900"), Some(0xcb6900));
         assert_eq!(hex_color("zz"), None);
     }
 

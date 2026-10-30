@@ -355,7 +355,9 @@ fn hero_shelf(
         let rect = rect.translate(vec2(0.0, if response.hovered() { -2.0 } else { 0.0 }));
         let foot_color = art
             .and_then(|a| a.background)
-            .map_or(theme.surface1, |[r, g, b]| Color32::from_rgb(r, g, b));
+            .map_or(theme.surface1, |rgb| {
+                Color32::from_rgb((rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8)
+            });
         let painter = row_ui.painter();
         painter.rect_filled(rect, 12.0, foot_color);
         let art_rect = Rect::from_min_size(rect.min, vec2(HERO, HERO));

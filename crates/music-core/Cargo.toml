@@ -10,3 +10,8 @@ image = { version = "0.25.10", default-features = false, features = ["jpeg", "pn
 rand = "0.10.3"
 serde = { version = "1.0.229", features = ["derive"] }
 thiserror = "2.0.21"
+uniffi = { version = "0.32.2", optional = true }
+
+[features]
+# The model as the Android app's Kotlin sees it, through UniFFI.
+ffi = ["dep:uniffi"]

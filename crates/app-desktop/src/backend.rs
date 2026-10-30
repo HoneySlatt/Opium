@@ -14,6 +14,7 @@ use music_core::{Error, Provider};
 use navidrome::Navidrome;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
+use services::Services;
 use soundcloud::SoundCloud;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
@@ -795,7 +796,7 @@ async fn run(
                 let finder = finder.clone();
                 tokio::spawn(async move {
                     let query = lyrics::Query {
-                        artist: first_artist(&track.artists),
+                        artist: services::first_artist(&track.artists),
                         album: track.album.clone(),
                         duration: track.duration,
                         title: track.title.clone(),
@@ -809,14 +810,12 @@ async fn run(
                 continue;
             }
             Request::Search(scope, query) => {
-                tokio::spawn(search(
-                    apple.clone(),
-                    sc.clone(),
-                    nd.clone(),
-                    scope,
-                    query,
-                    replies,
-                ));
+                let services = Services {
+                    apple: apple.clone(),
+                    soundcloud: sc.clone(),
+                    navidrome: nd.clone(),
+                };
+                tokio::spawn(search(services, scope, query, replies));
                 continue;
             }
             _ => {}
@@ -1318,19 +1317,6 @@ fn shared_request(p: Arc<dyn Provider>, request: Request, replies: Replies) -> O
     None
 }
 
-/// The first of a song's artists, as services join several in one name.
-fn first_artist(artists: &[String]) -> String {
-    let first = artists.first().map_or("", String::as_str);
-    // ASCII lowercasing keeps the byte offsets of the name's own.
-    let lower = first.to_ascii_lowercase();
-    let cut = [" & ", ", ", " feat", " ft.", " x "]
-        .iter()
-        .filter_map(|sep| lower.find(sep))
-        .min()
-        .unwrap_or(first.len());
-    first[..cut].trim().to_owned()
-}
-
 /// Each service's library as it loads: one load at a time, the newer one
 /// (after a sign-in, or turned back on) calling off the last, so that two
 /// never add the same songs.
@@ -1744,104 +1730,18 @@ async fn load_soundcloud_library(sc: Arc<SoundCloud>, replies: Replies) {
     list.failed(&replies, result, &show);
 }
 
-/// A search of every service: the catalog's in Apple Music and SoundCloud,
-/// the library's in Apple Music's; the server's either way, as it is the
-/// library. One that fails leaves the others' results.
-async fn search(
-    apple: Option<Arc<AppleMusic>>,
-    sc: Option<Arc<SoundCloud>>,
-    nd: Option<Arc<Navidrome>>,
-    scope: SearchScope,
-    query: String,
-    replies: Replies,
-) {
-    let apple_side = async {
-        let am = apple?;
-        Some(match scope {
-            SearchScope::AppleMusic => am.search(&query).await,
-            SearchScope::Library => am.search_library(&query).await,
-        })
+/// A search of every service (see `services::Services::search`).
+async fn search(services: Services, scope: SearchScope, query: String, replies: Replies) {
+    let within = match scope {
+        SearchScope::AppleMusic => services::Scope::Catalog,
+        SearchScope::Library => services::Scope::Library,
     };
-    let sc_side = async {
-        match (sc, scope) {
-            (Some(sc), SearchScope::AppleMusic) => Some(sc.search(&query).await),
-            _ => None,
-        }
-    };
-    let nd_side = async { Some(nd?.search(&query).await) };
-    let (a, b, n) = tokio::join!(apple_side, sc_side, nd_side);
-    let mut error = None;
-    let mut ok = |side: Option<music_core::Result<SearchResults>>| match side? {
-        Ok(r) => Some(r),
-        Err(e) => {
-            error = Some(e.to_string());
-            None
-        }
-    };
-    let (apple, sc, nd) = (ok(a), ok(b), ok(n));
-    let any = apple.is_some() || sc.is_some() || nd.is_some();
-    // What several have is the best copy's, as in the library: the
-    // server's own file, then Apple Music's AAC 256, then SoundCloud's.
-    let sides = [nd, apple, sc];
-    let tracks: Vec<Track> = sides
-        .iter()
-        .flatten()
-        .flat_map(|r| r.tracks.clone())
-        .collect();
-    let albums: Vec<Album> = sides
-        .iter()
-        .flatten()
-        .flat_map(|r| r.albums.clone())
-        .collect();
-    let (worse_tracks, worse_albums) = (
-        music_core::dedupe::songs(&tracks),
-        music_core::dedupe::albums(&albums),
-    );
-    let (mut t, mut a) = (0, 0);
-    let [nd, apple, sc] = sides.map(|side| {
-        side.map(|mut r| {
-            r.tracks.retain(|_| {
-                t += 1;
-                !worse_tracks.contains(&(t - 1))
-            });
-            r.albums.retain(|_| {
-                a += 1;
-                !worse_albums.contains(&(a - 1))
-            });
-            r
-        })
-    });
-    // Taken in turns, Apple Music's first: the first rows show them all.
-    let mut merged = SearchResults::default();
-    for side in [apple, nd, sc].into_iter().flatten() {
-        merged.tracks = in_turns(merged.tracks, side.tracks);
-        merged.albums = in_turns(merged.albums, side.albums);
-        merged.artists = in_turns(merged.artists, side.artists);
-        merged.playlists = in_turns(merged.playlists, side.playlists);
-    }
-    let result = match (any, error) {
-        (false, Some(e)) => Err(e),
-        (false, None) => Err("No service is connected".into()),
-        _ => Ok(merged),
-    };
+    let result = services.search(within, &query).await;
     replies.send(Reply::Search {
         scope,
         query,
         result,
     });
-}
-
-/// `a`'s and `b`'s items in turns, starting with `a`'s; the longer one's
-/// rest after.
-fn in_turns<T>(a: Vec<T>, b: Vec<T>) -> Vec<T> {
-    let mut out = Vec::with_capacity(a.len() + b.len());
-    let (mut a, mut b) = (a.into_iter(), b.into_iter());
-    loop {
-        match (a.next(), b.next()) {
-            (None, None) => return out,
-            (x, y) => out.extend(x.into_iter().chain(y)),
-        }
-    }
 }
 
 async fn load_playlist(am: Arc<AppleMusic>, id: ItemId, replies: Replies) {
@@ -1943,16 +1843,5 @@ impl<T: Clone + Serialize + DeserializeOwned + Send + 'static> Kept<T> {
             }
             replies.send(Reply::Failed(e.to_string()));
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::in_turns;
-
-    #[test]
-    fn results_come_in_turns_then_the_rest() {
-        assert_eq!(in_turns(vec![1, 3, 5, 7], vec![2, 4]), [1, 2, 3, 4, 5, 7]);
-        assert_eq!(in_turns(Vec::new(), vec![2, 4]), [2, 4]);
     }
 }

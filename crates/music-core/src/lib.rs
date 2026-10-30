@@ -9,3 +9,6 @@ pub mod text;
 
 pub use provider::{Error, Provider, Result};
 pub use queue::{Queue, Repeat};
+
+#[cfg(feature = "ffi")]
+uniffi::setup_scaffolding!();

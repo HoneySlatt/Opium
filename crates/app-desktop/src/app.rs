@@ -245,9 +245,6 @@ struct LyricsHunt {
     error: Option<String>,
 }
 
-/// Songs by what their copies share: title and first artist.
-type SongIndex = HashMap<(String, String), Vec<Track>>;
-
 /// A playlist's tracks, filled page by page.
 #[derive(Default)]
 pub struct PlaylistTracks {
@@ -455,7 +452,7 @@ pub struct App {
     now_stands_for: Option<ItemId>,
     /// The server's songs by title and artist, and how many songs the
     /// library had when they were indexed.
-    server_songs: Option<(usize, SongIndex)>,
+    server_songs: Option<(usize, music_core::dedupe::Copies)>,
     next_token: Token,
     /// Fetching, to play as soon as it arrives.
     pending_play: Option<Token>,
@@ -1998,25 +1995,15 @@ impl App {
             .as_ref()
             .is_none_or(|(n, _)| *n != self.songs.len())
         {
-            let mut index = SongIndex::new();
-            for song in self
-                .songs
-                .iter()
-                .filter(|t| t.id.provider == ProviderKind::Navidrome)
-            {
-                index
-                    .entry(music_core::dedupe::song_key(song))
-                    .or_default()
-                    .push(song.clone());
-            }
+            let index = music_core::dedupe::Copies::of(
+                self.songs
+                    .iter()
+                    .filter(|t| t.id.provider == ProviderKind::Navidrome),
+            );
             self.server_songs = Some((self.songs.len(), index));
         }
         let (_, index) = self.server_songs.as_ref()?;
-        index
-            .get(&music_core::dedupe::song_key(track))?
-            .iter()
-            .find(|copy| music_core::dedupe::same_song(copy, track))
-            .cloned()
+        index.find(track).cloned()
     }
 
     /// What `token` is to play for `track`: the server's copy if it has

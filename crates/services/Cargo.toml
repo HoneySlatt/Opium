@@ -1,0 +1,12 @@
+[package]
+name = "services"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+apple-music = { path = "../apple-music" }
+music-core = { path = "../music-core" }
+navidrome = { path = "../navidrome" }
+soundcloud = { path = "../soundcloud" }
+tokio = { version = "1.54.1", features = ["macros"] }

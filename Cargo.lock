@@ -236,6 +236,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "services",
  "soundcloud",
  "tokio",
  "toml",
@@ -2730,6 +2731,7 @@ dependencies = [
  "rand 0.10.3",
  "serde",
  "thiserror 2.0.21",
+ "uniffi",
 ]
 
 [[package]]
@@ -2738,8 +2740,13 @@ version = "0.1.0"
 dependencies = [
  "apple-music",
  "jni",
+ "lyrics",
  "music-core",
+ "navidrome",
  "rustls-platform-verifier",
+ "serde_json",
+ "services",
+ "soundcloud",
  "thiserror 2.0.21",
  "tokio",
  "uniffi",
@@ -4311,6 +4318,17 @@ dependencies = [
  "itoa",
  "ryu",
  "serde",
+]
+
+[[package]]
+name = "services"
+version = "0.1.0"
+dependencies = [
+ "apple-music",
+ "music-core",
+ "navidrome",
+ "soundcloud",
+ "tokio",
 ]
 
 [[package]]

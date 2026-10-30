@@ -157,6 +157,29 @@ pub fn album_tracks(copies: &[&[Track]]) -> Vec<Track> {
     out
 }
 
+/// One service's songs by what copies share, to find a song's copy there:
+/// the server's file to play in place of a stream.
+#[derive(Debug, Default, Clone)]
+pub struct Copies(HashMap<(String, String), Vec<Track>>);
+
+impl Copies {
+    pub fn of<'a>(songs: impl IntoIterator<Item = &'a Track>) -> Self {
+        let mut index: HashMap<(String, String), Vec<Track>> = HashMap::new();
+        for song in songs {
+            index.entry(song_key(song)).or_default().push(song.clone());
+        }
+        Self(index)
+    }
+
+    /// The copy of `track` among them, if there is one.
+    pub fn find(&self, track: &Track) -> Option<&Track> {
+        self.0
+            .get(&song_key(track))?
+            .iter()
+            .find(|copy| same_song(copy, track))
+    }
+}
+
 /// The artists to leave out of `artists`.
 pub fn artists(artists: &[Artist]) -> HashSet<usize> {
     worse_copies(
