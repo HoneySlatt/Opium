@@ -84,6 +84,16 @@ impl ProtectedTrack {
         self.protected.kbps
     }
 
+    /// The frames the encoder put before the music, to leave out.
+    pub fn priming(&self) -> u32 {
+        apple_music::PRIMING
+    }
+
+    /// The frames after the music in the last frame, to leave out.
+    pub fn padding(&self) -> u32 {
+        self.protected.padding
+    }
+
     /// The licence, in answer to the CDM's challenge.
     pub async fn license(&self, challenge: Vec<u8>) -> Result<Vec<u8>, MusicError> {
         Ok(self.apple.license(&self.protected, &challenge).await?)

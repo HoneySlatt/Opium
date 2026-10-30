@@ -61,9 +61,13 @@ import kotlinx.coroutines.runBlocking
 
 /** Breathe (In the Air), which a gapless album follows with On the Run. */
 private const val SONG = "1065973704"
+private const val NEXT_SONG = "1065973705"
 
 class MainActivity : ComponentActivity() {
     private var player: ExoPlayer? = null
+    private var tapped = 0L
+
+    private fun since() = android.os.SystemClock.elapsedRealtime() - tapped
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -127,17 +131,32 @@ class MainActivity : ComponentActivity() {
             }
             Button("3. Play Breathe") {
                 val a = apple ?: return@Button say("Connect first")
+                tapped = android.os.SystemClock.elapsedRealtime()
                 scope.launch {
                     try {
                         val track = a.protected(SONG) ?: return@launch say("No protected asset")
-                        say("Asset · ${track.kbps()} kb/s")
-                        play(track) { say(it) }
+                        say("Asset · ${track.kbps()} kb/s · +${since()} ms")
+                        play(listOf(track)) { say(it) }
                     } catch (e: Exception) {
                         say("Play failed: $e")
                     }
                 }
             }
             Button("4. Seek +60 s") { player?.let { it.seekTo(it.currentPosition + 60_000) } }
+            Button("5. Breathe → On the Run, near the join") {
+                val a = apple ?: return@Button say("Connect first")
+                scope.launch {
+                    try {
+                        val tracks = listOf(SONG, NEXT_SONG).map { a.protected(it) ?: error("no asset") }
+                        tracks.forEach { say("Trim · ${it.priming()} before, ${it.padding()} after") }
+                        play(tracks) { say(it) }
+                        // Ten seconds before Breathe ends.
+                        player?.seekTo(0, 159_000)
+                    } catch (e: Exception) {
+                        say("Play failed: $e")
+                    }
+                }
+            }
             log.forEach { BasicText(it, style = TextStyle(Color.White, 14.sp)) }
         }
     }
@@ -178,19 +197,14 @@ class MainActivity : ComponentActivity() {
         )
     }
 
-    private fun widevine(): String = try {
-        val drm = MediaDrm(C.WIDEVINE_UUID)
-        val level = drm.getPropertyString("securityLevel")
-        val version = drm.getPropertyString(MediaDrm.PROPERTY_VERSION)
-        drm.close()
-        "$level · $version"
-    } catch (e: Exception) {
-        "unavailable: $e"
-    }
-
+    /**
+     * An Apple song as ExoPlayer plays it: its playlist from the core, its
+     * audio from Apple, its licence through the core, and its encoder's
+     * priming and padding left out so that songs follow without a gap.
+     */
     @androidx.annotation.OptIn(UnstableApi::class)
-    private fun play(track: ProtectedTrack, say: (String) -> Unit) {
-        val playlistUri = Uri.parse("music-playlist://apple/$SONG.m3u8")
+    private fun source(track: ProtectedTrack, key: String, say: (String) -> Unit): HlsMediaSource {
+        val playlistUri = Uri.parse("music-playlist://apple/$key.m3u8")
         val playlist = track.playlist().toByteArray()
         val http = DefaultHttpDataSource.Factory()
         // The playlist comes from the core; the audio from Apple's servers.
@@ -226,20 +240,38 @@ class MainActivity : ComponentActivity() {
                 HttpMediaDrmCallback(null, http).executeProvisionRequest(uuid, request)
 
             override fun executeKeyRequest(uuid: UUID, request: ExoMediaDrm.KeyRequest): MediaDrmCallback.Response {
+                runOnUiThread { say("Licence asked · +${since()} ms") }
                 val licence = runBlocking { track.license(request.data) }
-                runOnUiThread { say("Licence: ${licence.size} bytes") }
+                runOnUiThread { say("Licence: ${licence.size} bytes · +${since()} ms") }
                 return MediaDrmCallback.Response(licence)
             }
         }
         val drm = DefaultDrmSessionManager.Builder()
             .setUuidAndExoMediaDrmProvider(C.WIDEVINE_UUID, FrameworkMediaDrm.DEFAULT_PROVIDER)
             .build(licences)
-        val source = HlsMediaSource.Factory(sources)
+        return HlsMediaSource.Factory(sources)
+            .setExtractorFactory(Trimmed.Factory(track.priming().toInt(), track.padding().toInt()))
             .setDrmSessionManagerProvider { drm }
             .createMediaSource(
                 MediaItem.Builder().setUri(playlistUri).setMimeType(MimeTypes.APPLICATION_M3U8).build(),
             )
+    }
+
+    private fun widevine(): String = try {
+        val drm = MediaDrm(C.WIDEVINE_UUID)
+        val level = drm.getPropertyString("securityLevel")
+        val version = drm.getPropertyString(MediaDrm.PROPERTY_VERSION)
+        drm.close()
+        "$level · $version"
+    } catch (e: Exception) {
+        "unavailable: $e"
+    }
+
+    @androidx.annotation.OptIn(UnstableApi::class)
+    private fun play(tracks: List<ProtectedTrack>, say: (String) -> Unit) {
+        val sources = tracks.mapIndexed { i, track -> source(track, "$i", say) }
         player?.release()
+        say("Player · +${since()} ms")
         player = ExoPlayer.Builder(this).build().apply {
             addListener(object : Player.Listener {
                 override fun onPlayerError(error: PlaybackException) {
@@ -247,10 +279,10 @@ class MainActivity : ComponentActivity() {
                 }
 
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
-                    if (isPlaying) say("Playing")
+                    if (isPlaying) say("Playing · +${since()} ms")
                 }
             })
-            setMediaSource(source)
+            setMediaSources(sources)
             prepare()
             play()
         }

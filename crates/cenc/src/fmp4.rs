@@ -512,6 +512,40 @@ impl Init {
     }
 }
 
+/// How long the last sample of the fragment starting `data` lasts, in the
+/// track's timescale: its `trun` entry's, else the `tfhd` default. An AAC
+/// encode's last frame is shorter than the others by the padding after the
+/// music.
+pub fn last_sample_duration(data: &[u8]) -> Option<u32> {
+    let (moof_bs, moof_be, _) = read_box(data, 0).filter(|_| box_type(data, 0) == MOOF)?;
+    let (traf_bs, traf_be, _) = find_child(data, moof_bs, moof_be, TRAF)?;
+    let default = find_child(data, traf_bs, traf_be, TFHD).and_then(|(bs, be, _)| {
+        let flags = u32be(data, bs) & 0x00ff_ffff;
+        // Version and flags, the track id, then what the flags say is there.
+        let mut at = bs + 8;
+        if flags & 0x01 != 0 {
+            at += 8;
+        }
+        if flags & 0x02 != 0 {
+            at += 4;
+        }
+        (flags & 0x08 != 0 && at + 4 <= be).then(|| u32be(data, at))
+    });
+    let (bs, be, _) = find_child(data, traf_bs, traf_be, TRUN)?;
+    let flags = u32be(data, bs) & 0x00ff_ffff;
+    let count = u32be(data, bs + 4) as usize;
+    if flags & 0x100 == 0 || count == 0 {
+        return default;
+    }
+    let header = 8 + 4 * usize::from(flags & 0x01 != 0) + 4 * usize::from(flags & 0x04 != 0);
+    let entry = 4 * [0x100, 0x200, 0x400, 0x800]
+        .iter()
+        .filter(|&&f| flags & f != 0)
+        .count();
+    let last = bs + header + (count - 1) * entry;
+    (last + 4 <= be).then(|| u32be(data, last))
+}
+
 /// Relabel `enca`/`encv` as `mp4a` so the decoder reads the track as plain AAC.
 /// Only the 4-byte box type changes, so every offset is preserved.
 pub fn patch_init(buf: &mut [u8], layout: &Fmp4Layout) {
@@ -618,6 +652,36 @@ fn parse_trun(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_last_sample_says_how_much_the_frame_was_cut() {
+        let be = |v: u32| v.to_be_bytes();
+        // tfhd: default-base-is-moof and a default duration of 1024.
+        let tfhd = [be(0x0002_0008), be(1), be(1024)].concat();
+        // trun: a data offset, then a duration and a size per sample.
+        let trun = [
+            be(0x301),
+            be(2),
+            be(100),
+            be(1024),
+            be(300),
+            be(412),
+            be(12),
+        ]
+        .concat();
+        let traf = boxed(
+            b"traf",
+            &[boxed(b"tfhd", &tfhd), boxed(b"trun", &trun)].concat(),
+        );
+        let moof = boxed(b"moof", &traf);
+        assert_eq!(last_sample_duration(&moof), Some(412));
+        let plain = [be(0x201), be(1), be(100), be(300)].concat();
+        let traf = boxed(
+            b"traf",
+            &[boxed(b"tfhd", &tfhd), boxed(b"trun", &plain)].concat(),
+        );
+        assert_eq!(last_sample_duration(&boxed(b"moof", &traf)), Some(1024));
+    }
+
     use super::*;
 
     /// `size` counts the header, so `body` of length 0 is a legal 8-byte box.

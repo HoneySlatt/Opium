@@ -6,6 +6,7 @@ pub mod fmp4;
 mod stream;
 
 pub use fmp4::{
-    EncryptedSample, Fmp4Layout, Tenc, audio_specific_config, index_fmp4, patch_init, tenc,
+    EncryptedSample, Fmp4Layout, Tenc, audio_specific_config, index_fmp4, last_sample_duration,
+    patch_init, tenc,
 };
 pub use stream::{AudioStream, Decrypt};

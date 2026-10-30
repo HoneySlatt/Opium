@@ -22,6 +22,11 @@ const LICENSE: &str =
 /// FairPlay): `28:ctrp256` as a rule, `32:ctrp64` for some songs only kept
 /// in a user's library.
 const CTR: &str = ":ctrp";
+/// The frames Apple's AAC encoder puts before the music, which its files
+/// don't say.
+pub const PRIMING: u32 = 2112;
+/// An AAC-LC frame's length, in samples per channel.
+const AAC_FRAMES: u32 = 1024;
 /// Each sample of that flavour is one AAC-LC frame: 1024 frames at 44.1 kHz.
 const AAC_FRAME: std::time::Duration =
     std::time::Duration::from_nanos(1024 * 1_000_000_000 / 44_100);
@@ -152,6 +157,9 @@ pub struct Protected {
     pub playlist: String,
     /// The encode's bit rate, as its flavour names it.
     pub kbps: u32,
+    /// The frames after the music in the last AAC frame, to leave out with
+    /// the [`PRIMING`] before it, so that songs follow without a gap.
+    pub padding: u32,
     licensed_as: String,
     is_library: bool,
     file: EncryptedFile,
@@ -212,7 +220,9 @@ impl AppleMusic {
             .decode(&file.key_id_base64)
             .map_err(|e| playback_error(format!("key id: {e}")))?;
         let pssh = widevine::build_pssh(&key_id);
+        let padding = self.padding(&file.url, &playlist).await.unwrap_or(0);
         Ok(Some(Protected {
+            padding,
             url: file.url.clone(),
             playlist: widevine_playlist(&String::from_utf8_lossy(&playlist), &url, &pssh),
             pssh,
@@ -222,6 +232,34 @@ impl AppleMusic {
             is_library: is_library_id(adam_id),
             file,
         }))
+    }
+
+    /// The padding at the end of the file the playlist maps: its last
+    /// fragment's last frame is that much shorter than 1024. Only the
+    /// fragment's start is read.
+    async fn padding(&self, url: &str, playlist: &[u8]) -> Option<u32> {
+        let playlist = m3u8_rs::parse_media_playlist_res(playlist).ok()?;
+        let mut end = 0u64;
+        let mut last = None;
+        for segment in &playlist.segments {
+            let range = segment.byte_range.as_ref()?;
+            let start = range.offset.unwrap_or(end);
+            end = start + range.length;
+            last = Some(start);
+        }
+        let from = last?;
+        // Its `moof` is a few kilobytes at most.
+        let to = (from + 16 * 1024).min(end) - 1;
+        let resp = self
+            .asset_request(url)
+            .header("Range", format!("bytes={from}-{to}"))
+            .send()
+            .await
+            .ok()?;
+        let fragment = resp.bytes().await.ok()?;
+        cenc::last_sample_duration(&fragment)
+            .filter(|&d| d > 0 && d < AAC_FRAMES)
+            .map(|d| AAC_FRAMES - d)
     }
 
     /// The licence for `protected`, in answer to a CDM's `challenge`.
@@ -408,6 +446,21 @@ impl AppleMusic {
 
     /// A download under way, its headers in.
     async fn start_download(&self, url: &str) -> Result<reqwest::Response> {
+        let resp = self
+            .asset_request(url)
+            .send()
+            .await
+            .map_err(|e| Error::Network(format!("asset download: {}", e.without_url())))?;
+        if !resp.status().is_success() {
+            return Err(playback_error(format!(
+                "asset download: HTTP {}",
+                resp.status()
+            )));
+        }
+        Ok(resp)
+    }
+
+    fn asset_request(&self, url: &str) -> reqwest::RequestBuilder {
         let mut request = self.http.get(url);
         // The user's token goes to Apple only: a radio station's segments
         // may be a broadcaster's.
@@ -421,17 +474,7 @@ impl AppleMusic {
                 .header("x-apple-music-user-token", &self.user_token)
                 .header("Cookie", format!("media-user-token={}", self.user_token));
         }
-        let resp = request
-            .send()
-            .await
-            .map_err(|e| Error::Network(format!("asset download: {}", e.without_url())))?;
-        if !resp.status().is_success() {
-            return Err(playback_error(format!(
-                "asset download: HTTP {}",
-                resp.status()
-            )));
-        }
-        Ok(resp)
+        request
     }
 }
 
