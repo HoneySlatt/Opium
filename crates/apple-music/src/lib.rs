@@ -775,8 +775,10 @@ impl Provider for AppleMusic {
 
     async fn search_library(&self, query: &str) -> Result<SearchResults> {
         let term: String = url::form_urlencoded::byte_serialize(query.as_bytes()).collect();
+        // The songs' albums too: without, a song found has none to open,
+        // nor its moving cover to show.
         let path = format!(
-            "/v1/me/library/search?term={term}&types=library-songs,library-albums,library-artists,library-playlists&limit={SEARCH_LIMIT}"
+            "/v1/me/library/search?term={term}&types=library-songs,library-albums,library-artists,library-playlists&limit={SEARCH_LIMIT}&include%5Blibrary-songs%5D=albums"
         );
         self.search_at(&path).await
     }
