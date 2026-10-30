@@ -1008,15 +1008,17 @@ async fn run(
                 }
                 tokio::spawn(async move {
                     let provider = ProviderKind::AppleMusic;
+                    // Whole, in the order of what was added to last.
                     let result = am
-                        .each_recently_added(RECENT_LIMIT, |items, done| {
+                        .recently_added_by_activity(RECENT_LIMIT)
+                        .await
+                        .map(|items| {
                             replies.send(Reply::RecentlyAdded {
                                 provider,
                                 items,
-                                done,
+                                done: true,
                             })
-                        })
-                        .await;
+                        });
                     failed(&replies, result, || Reply::RecentlyAdded {
                         provider,
                         items: Vec::new(),

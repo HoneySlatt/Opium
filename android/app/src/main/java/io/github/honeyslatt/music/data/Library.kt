@@ -138,8 +138,9 @@ class Library(private val core: Core, private val scope: CoroutineScope) {
             { session.libraryTracks(provider, it).let { p -> p.items to p.next } },
         ) { f -> _lists.update { it.copy(songs = f(it.songs)) } }
         if (!ask) return
-        // Apple gives 25 at a time: three pages fill Library's 66. Loaded
-        // again (the screen made anew), they take the place of the last ones.
+        // Apple's comes whole, in the order of what was added to last; the
+        // others' by pages, up to three. Loaded again (the screen made anew),
+        // they take the place of the last ones.
         scope.launch {
             val fresh = mutableListOf<Collection>()
             pages({ session.recentlyAdded(provider, it).let { p -> p.items to p.next } }, limit = 3) { items, done, error ->

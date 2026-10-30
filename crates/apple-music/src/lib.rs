@@ -160,6 +160,8 @@ const NOTES_LANGUAGE: &str = "en-US";
 const EDITORIAL_LANGUAGE: &str = "en-GB";
 /// Recently Added answers at most 25 at a time.
 const RECENT_PAGE: u32 = 25;
+/// How much of Recently Added the phone asks for: it shows 66.
+const RECENT_SHOWN: usize = 100;
 /// Search caps each result type at 25.
 const SEARCH_LIMIT: u32 = 25;
 
@@ -484,6 +486,21 @@ impl AppleMusic {
     }
 
     /// What was added last, as far back as `limit` items.
+    /// Recently Added as Apple Music's app shows it: an album a song was just
+    /// added to comes up, though the album joined the library long before,
+    /// where Apple's list keeps it where it first came.
+    pub async fn recently_added_by_activity(&self, limit: usize) -> Result<Vec<Collection>> {
+        let mut listed = Vec::new();
+        let (got, newest) = tokio::join!(
+            self.each_recently_added(limit, |items, _| listed.extend(items)),
+            self.library_tracks_newest(None),
+        );
+        got?;
+        // Without the newest songs, the list as Apple keeps it.
+        let newest = newest.map(|p| p.items).unwrap_or_default();
+        Ok(by_activity(listed, &newest))
+    }
+
     pub async fn each_recently_added(
         &self,
         limit: usize,
@@ -688,14 +705,14 @@ impl Provider for AppleMusic {
             .await
     }
 
+    /// The whole of it at once, as the app shows it (see
+    /// [`AppleMusic::recently_added_by_activity`]).
     async fn recently_added(&self, cursor: Option<&Cursor>) -> Result<Page<Collection>> {
-        let page = self
-            .page(&recently_added_path(), cursor, convert::collection)
-            .await?;
-        Ok(Page {
-            items: page.items.into_iter().flatten().collect(),
-            next: page.next,
-        })
+        let items = match cursor {
+            None => self.recently_added_by_activity(RECENT_SHOWN).await?,
+            Some(_) => Vec::new(),
+        };
+        Ok(Page { items, next: None })
     }
 
     async fn album(&self, album: &ItemId) -> Result<Album> {
@@ -1140,9 +1157,167 @@ impl Provider for AppleMusic {
     }
 }
 
+/// `listed` (Recently Added, by when each joined the library) in the order of
+/// what was added last, as `newest` (the songs, the latest added first) says:
+/// an album comes up to where its latest song stands, what is between keeps
+/// its order. Each album's `added` becomes when it was last added to, as near
+/// as is known, so that a merge by date keeps the order.
+fn by_activity(listed: Vec<Collection>, newest: &[Track]) -> Vec<Collection> {
+    use std::collections::{HashMap, HashSet};
+    // The albums of the newest songs, each once, with the song saying so.
+    let mut seen = HashSet::new();
+    let touched: Vec<(&ItemId, &Track)> = newest
+        .iter()
+        .filter_map(|t| Some((t.album_id.as_ref()?, t)))
+        .filter(|(id, _)| seen.insert(*id))
+        .collect();
+    let rank: HashMap<&ItemId, usize> = touched
+        .iter()
+        .enumerate()
+        .map(|(i, (id, _))| (*id, i))
+        .collect();
+    let albums: HashMap<ItemId, Album> = listed
+        .iter()
+        .filter_map(|c| match c {
+            Collection::Album(a) => Some((a.id.clone(), a.clone())),
+            _ => None,
+        })
+        .collect();
+    let mut out = Vec::with_capacity(listed.len());
+    let mut next = 0;
+    for item in listed {
+        match &item {
+            // It comes after the albums added to since; it may have come
+            // already, as one of them.
+            Collection::Album(a) if let Some(&at) = rank.get(&a.id) => {
+                while next <= at {
+                    let (id, song) = touched[next];
+                    next += 1;
+                    let album = albums.get(id).cloned().unwrap_or_else(|| Album {
+                        id: id.clone(),
+                        title: song.album.clone().unwrap_or_default(),
+                        artists: song.artists.clone(),
+                        artist_id: None,
+                        artist_artwork: None,
+                        released: None,
+                        genre: None,
+                        description: None,
+                        catalog_id: None,
+                        in_favourites: None,
+                        year: None,
+                        artwork: song.artwork.clone(),
+                        track_count: None,
+                        explicit: song.explicit,
+                        added: None,
+                        motion: None,
+                        copyright: None,
+                        mastered: false,
+                    });
+                    out.push(Collection::Album(album));
+                }
+            }
+            _ => out.push(item),
+        }
+    }
+    // Last added to no earlier than what follows it.
+    let mut floor: Option<String> = None;
+    for item in out.iter_mut().rev() {
+        if let Collection::Album(a) = item {
+            if a.added < floor {
+                a.added.clone_from(&floor);
+            }
+            floor.clone_from(&a.added);
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_album_a_song_was_just_added_to_comes_up() {
+        let album = |id: &str, added: &str| {
+            Collection::Album(Album {
+                id: ItemId::new(ProviderKind::AppleMusic, id),
+                title: id.to_owned(),
+                artists: Vec::new(),
+                artist_id: None,
+                artist_artwork: None,
+                released: None,
+                genre: None,
+                description: None,
+                catalog_id: None,
+                in_favourites: None,
+                year: None,
+                artwork: None,
+                track_count: None,
+                explicit: false,
+                added: Some(added.to_owned()),
+                motion: None,
+                copyright: None,
+                mastered: false,
+            })
+        };
+        let song = |album: &str| Track {
+            id: ItemId::new(ProviderKind::AppleMusic, "i.song"),
+            title: "song".into(),
+            artists: Vec::new(),
+            album: Some(album.to_owned()),
+            album_id: Some(ItemId::new(ProviderKind::AppleMusic, album)),
+            duration: None,
+            track_number: None,
+            disc_number: None,
+            artwork: None,
+            explicit: false,
+            quality: None,
+            in_library: true,
+            library_id: None,
+        };
+        let playlist_item = |name: &str| {
+            Collection::Playlist(Playlist {
+                id: ItemId::new(ProviderKind::AppleMusic, name),
+                name: name.to_owned(),
+                description: None,
+                curator: None,
+                favourites: false,
+                artwork: None,
+                track_count: None,
+                catalog_id: None,
+                in_favourites: None,
+                editable: true,
+            })
+        };
+        // `old` joined long ago and had a song added last; `p` is a playlist.
+        let listed = vec![
+            album("a", "2026-10-28"),
+            album("b", "2026-10-25"),
+            playlist_item("p"),
+            album("c", "2026-10-20"),
+            album("old", "2026-01-01"),
+        ];
+        let newest = [song("old"), song("a"), song("b"), song("b"), song("c")];
+        let titles: Vec<(String, Option<String>)> = by_activity(listed, &newest)
+            .into_iter()
+            .map(|c| match c {
+                Collection::Album(a) => (a.title, a.added),
+                Collection::Playlist(p) => (p.name, None),
+                Collection::Station(s) => (s.name, None),
+            })
+            .collect();
+        let date = |d: &str| Some(d.to_owned());
+        assert_eq!(
+            titles,
+            [
+                ("old".into(), date("2026-10-28")),
+                ("a".into(), date("2026-10-28")),
+                ("b".into(), date("2026-10-25")),
+                ("p".into(), None),
+                ("c".into(), date("2026-10-20")),
+            ]
+        );
+    }
 
     #[test]
     fn the_next_page_keeps_the_first_requests_parameters() {
