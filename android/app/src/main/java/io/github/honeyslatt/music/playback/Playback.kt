@@ -38,6 +38,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -254,6 +255,12 @@ class Playback(private val context: Context, private val core: Core, private val
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 _playing.value = isPlaying
+                devices.playing(isPlaying)
+                tell()
+            }
+
+            // A seek, or a song that moved on: told at once.
+            override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
                 tell()
             }
 
@@ -456,6 +463,7 @@ class Playback(private val context: Context, private val core: Core, private val
         player.clearMediaItems()
         _now.value = track
         _loading.value = true
+        tell()
         scope.launch {
             val source = try {
                 playable(track, mine)
@@ -625,10 +633,14 @@ class Playback(private val context: Context, private val core: Core, private val
             }
         }
         scope.launch { devices.peers.collect(::follow) }
+        // Changes are told as they happen; while it plays, now and then
+        // too, should the music have stalled. Nothing runs while it doesn't.
         scope.launch {
-            while (true) {
-                tell()
-                kotlinx.coroutines.delay(1_000)
+            _playing.collectLatest { on ->
+                while (on) {
+                    kotlinx.coroutines.delay(5_000)
+                    tell()
+                }
             }
         }
     }

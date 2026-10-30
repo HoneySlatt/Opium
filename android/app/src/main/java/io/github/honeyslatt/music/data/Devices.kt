@@ -43,7 +43,8 @@ class Devices(context: Context) {
     private val wifi = context.applicationContext.getSystemService(WifiManager::class.java)
 
     // Android drops the network's multicast to save power: the devices'
-    // announcements need it let through while the app is in use.
+    // announcements need it let through, but only while they are looked
+    // for (see [watch]).
     private val multicast = wifi.createMulticastLock("music-connect").apply { setReferenceCounted(false) }
 
     private val _peers = MutableStateFlow<List<Peer>>(emptyList())
@@ -84,6 +85,21 @@ class Devices(context: Context) {
     private fun read() {
         _peers.value = node.peers()
         peersAt = SystemClock.elapsedRealtime()
+        watch()
+    }
+
+    private var onScreen = false
+    private var playing = false
+
+    /**
+     * Let the announcements through while the app is on screen (a device
+     * may be there to pair), or while music plays in the background and a
+     * paired device isn't connected yet; not otherwise: a connection made
+     * needs none, and nothing is worth the battery while nothing plays.
+     */
+    private fun watch() {
+        val missing = _peers.value.any { it.paired && !it.connected }
+        if (onScreen || (playing && missing)) multicast.acquire() else multicast.release()
     }
 
     private fun take(event: Event) {
@@ -100,9 +116,16 @@ class Devices(context: Context) {
         }
     }
 
-    /** While the app is on screen: the others' announcements come through. */
+    /** The app came on screen, or left it. */
     fun looking(on: Boolean) {
-        if (on) multicast.acquire() else multicast.release()
+        onScreen = on
+        watch()
+    }
+
+    /** Music started or stopped playing on this phone. */
+    fun playing(on: Boolean) {
+        playing = on
+        watch()
     }
 
     fun notice(text: String) {
