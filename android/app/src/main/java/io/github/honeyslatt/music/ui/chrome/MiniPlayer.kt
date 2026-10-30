@@ -24,6 +24,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.honeyslatt.music.core.model.Track
+import io.github.honeyslatt.music.ui.actions.LocalActions
+import io.github.honeyslatt.music.ui.components.anchor
+import io.github.honeyslatt.music.ui.components.rememberAnchor
 import io.github.honeyslatt.music.ui.Icons
 import io.github.honeyslatt.music.ui.components.Cover
 import io.github.honeyslatt.music.ui.components.Glyph
@@ -53,9 +56,12 @@ fun MiniPlayer(state: MiniState, folded: Boolean, modifier: Modifier = Modifier)
     val track = state.track ?: return
     val shape = RoundedCornerShape(29.dp)
     val threshold = with(LocalDensity.current) { 56.dp.toPx() }
+    val actions = LocalActions.current
+    val anchor = rememberAnchor()
     Row(
         modifier
             .height(58.dp)
+            .anchor(anchor)
             .capsule(shape)
             .pointerInput(state) {
                 var dragged = 0f
@@ -67,7 +73,7 @@ fun MiniPlayer(state: MiniState, folded: Boolean, modifier: Modifier = Modifier)
                     },
                 ) { _, amount -> dragged += amount }
             }
-            .press(shape, onClick = state.onOpen)
+            .press(shape, onLongClick = { actions?.trackMenu(track, anchor.rect) }, onClick = state.onOpen)
             .padding(start = 9.dp, end = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),

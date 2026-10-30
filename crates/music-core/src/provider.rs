@@ -33,6 +33,12 @@ pub trait Provider: Send + Sync {
     /// The user's saved songs (Apple library songs, SoundCloud likes, Navidrome starred).
     async fn library_tracks(&self, cursor: Option<&Cursor>) -> Result<Page<Track>>;
 
+    /// The saved songs, the latest added first. Services that keep no such
+    /// order give theirs.
+    async fn library_tracks_newest(&self, cursor: Option<&Cursor>) -> Result<Page<Track>> {
+        self.library_tracks(cursor).await
+    }
+
     async fn library_albums(&self, cursor: Option<&Cursor>) -> Result<Page<Album>>;
 
     async fn library_playlists(&self, cursor: Option<&Cursor>) -> Result<Page<Playlist>>;

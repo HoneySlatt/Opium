@@ -333,6 +333,11 @@ fn library_songs_path() -> String {
     format!("/v1/me/library/songs?limit={PAGE}&relate=albums")
 }
 
+/// Apple sorts them so, though it doesn't say when each was added.
+fn newest_songs_path() -> String {
+    format!("{}&sort=-dateAdded", library_songs_path())
+}
+
 /// With the catalog's rating, for the E under explicit covers.
 fn library_albums_path() -> String {
     format!("/v1/me/library/albums?limit={PAGE}&include=catalog&fields%5Balbums%5D=contentRating")
@@ -650,6 +655,11 @@ impl Provider for AppleMusic {
 
     async fn library_tracks(&self, cursor: Option<&Cursor>) -> Result<Page<Track>> {
         self.page(&library_songs_path(), cursor, convert::track)
+            .await
+    }
+
+    async fn library_tracks_newest(&self, cursor: Option<&Cursor>) -> Result<Page<Track>> {
+        self.page(&newest_songs_path(), cursor, convert::track)
             .await
     }
 

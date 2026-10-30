@@ -246,6 +246,22 @@ impl Session {
         })
     }
 
+    /// The saved songs, the latest added first.
+    pub async fn library_tracks_newest(
+        &self,
+        kind: ProviderKind,
+        page: Option<String>,
+    ) -> Result<TrackPage, MusicError> {
+        let page = self
+            .provider(kind)?
+            .library_tracks_newest(cursor(page).as_ref())
+            .await?;
+        Ok(TrackPage {
+            items: page.items,
+            next: next(page.next),
+        })
+    }
+
     pub async fn library_albums(
         &self,
         kind: ProviderKind,

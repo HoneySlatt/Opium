@@ -45,6 +45,13 @@ class Core(context: Context) {
 
     val hasAppleToken get() = appleToken.exists()
 
+    /** A choice the app remembers: a sort order, a switch. */
+    fun setting(key: String): String? = prefs.getString(key, null)
+
+    fun setSetting(key: String, value: String) {
+        prefs.edit().putString(key, value).apply()
+    }
+
     /** Sign in again with what was kept. */
     suspend fun start() {
         if (hasAppleToken) connectApple(appleToken.readText())

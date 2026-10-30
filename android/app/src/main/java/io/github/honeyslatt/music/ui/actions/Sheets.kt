@@ -33,6 +33,7 @@ import androidx.media3.common.util.UnstableApi
 import io.github.honeyslatt.music.core.model.Playlist
 import io.github.honeyslatt.music.ui.Icons
 import io.github.honeyslatt.music.ui.components.Cover
+import io.github.honeyslatt.music.ui.components.fold
 import io.github.honeyslatt.music.ui.components.Glyph
 import io.github.honeyslatt.music.ui.components.Group
 import io.github.honeyslatt.music.ui.components.GroupRow
@@ -95,8 +96,8 @@ private fun AddToPlaylists(actions: Actions, spec: SheetSpec.AddToPlaylists, ope
                 BasicText("New Playlist…", style = geist(16.sp).copy(color = roles.tint))
             }
         }
-        val folded = foldText(query.trim())
-        val matching = all.filter { folded.isEmpty() || foldText(it.name).contains(folded) }
+        val folded = fold(query.trim())
+        val matching = all.filter { folded.isEmpty() || fold(it.name).contains(folded) }
         @Composable
         fun rows(list: List<Playlist>) = list.forEachIndexed { i, p ->
             val has = already(p)
@@ -254,6 +255,3 @@ private fun Centred(label: String, colour: androidx.compose.ui.graphics.Color, b
     }
 }
 
-/** For matching: lower case, without accents. */
-private fun foldText(text: String) =
-    java.text.Normalizer.normalize(text, java.text.Normalizer.Form.NFD).replace(Regex("\\p{Mn}+"), "").lowercase()

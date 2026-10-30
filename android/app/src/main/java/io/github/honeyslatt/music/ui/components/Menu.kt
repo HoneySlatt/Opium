@@ -49,8 +49,8 @@ import io.github.honeyslatt.music.ui.Icons
 import io.github.honeyslatt.music.ui.theme.geist
 import io.github.honeyslatt.music.ui.theme.roles
 
-/** A choice of a menu; destructive ones are red. */
-class MenuItem(val label: String, val icon: ImageVector?, val danger: Boolean = false, val onClick: () -> Unit)
+/** A choice of a menu; destructive ones are red, the one in use ticked. */
+class MenuItem(val label: String, val icon: ImageVector?, val danger: Boolean = false, val checked: Boolean = false, val onClick: () -> Unit)
 
 /** What a menu is about, above its choices. */
 class MenuHead(val artwork: Artwork?, val title: String, val subtitle: String, val star: Boolean = false)
@@ -183,6 +183,7 @@ private fun MenuCard(spec: MenuSpec, menus: Menus, modifier: Modifier) {
                 ) {
                     BasicText(item.label, Modifier.weight(1f), style = geist(16.sp).copy(color = colour), maxLines = 1)
                     item.icon?.let { Glyph(it, colour, 19.dp) }
+                    if (item.checked) Glyph(Icons.Check, roles.tint, 18.dp)
                 }
             }
         }

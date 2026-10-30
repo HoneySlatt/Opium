@@ -227,6 +227,32 @@ class Actions(
         )
     }
 
+    fun artistMenu(detail: io.github.honeyslatt.music.core.model.ArtistDetail, anchor: Rect) {
+        val songs = detail.topSongs
+        menus.show(
+            MenuSpec(anchor, null) {
+                listOf(
+                    listOf(
+                        MenuItem("Play", Icons.Play) { playback.play(songs, 0) },
+                        MenuItem("Shuffle", Icons.Shuffle) { playback.shuffle(songs) },
+                    ),
+                )
+            },
+        )
+    }
+
+    fun isFavourite(artist: io.github.honeyslatt.music.core.model.Artist) =
+        isFavourite(FavouriteKind.ARTIST, artist.id, artist.inFavourites)
+
+    fun toggleFavourite(artist: io.github.honeyslatt.music.core.model.Artist) {
+        val was = isFavourite(artist)
+        favourites[artist.id] = !was
+        hud.show(if (was) "Removed from Favourites" else "Favourited", if (was) Icons.Star else Icons.Starf)
+        change("Couldn't change the favourites", undo = { favourites[artist.id] = was }) {
+            session.setFavourite(FavouriteKind.ARTIST, artist.id, !was)
+        }
+    }
+
     // ---- The queue ----
 
     // With nothing playing, they just play: no word needed.

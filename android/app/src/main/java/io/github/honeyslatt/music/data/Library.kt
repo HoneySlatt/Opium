@@ -23,6 +23,8 @@ data class LibraryLists(
     val artists: Listing<Artist> = Listing(),
     val songs: Listing<Track> = Listing(),
     val recentlyAdded: Listing<Collection> = Listing(),
+    /** The songs, the latest added first: loaded once Songs is sorted so. */
+    val newestSongs: Listing<Track> = Listing(),
 )
 
 /** The library of every service connected, each list filled page by page. */
@@ -30,8 +32,28 @@ class Library(private val core: Core, private val scope: CoroutineScope) {
     private val _lists = MutableStateFlow(LibraryLists())
     val lists: StateFlow<LibraryLists> = _lists.asStateFlow()
 
+    private val providers = mutableListOf<ProviderKind>()
+    private var newestAsked = false
+
+    /** Load the songs newest first, of every service loaded. */
+    fun loadNewestSongs() {
+        if (newestAsked) return
+        newestAsked = true
+        providers.toList().forEach(::loadNewest)
+    }
+
+    private fun loadNewest(provider: ProviderKind) {
+        scope.launch {
+            pages({ core.session.libraryTracksNewest(provider, it).let { p -> p.items to p.next } }) { items, done, error ->
+                _lists.update { it.copy(newestSongs = it.newestSongs.more(items, done, error)) }
+            }
+        }
+    }
+
     /** Load `provider`'s lists, adding to those of the others. */
     fun load(provider: ProviderKind) {
+        providers += provider
+        if (newestAsked) loadNewest(provider)
         val session = core.session
         scope.launch {
             pages({ session.libraryPlaylists(provider, it).let { p -> p.items to p.next } }) { items, done, error ->

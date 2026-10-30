@@ -79,7 +79,7 @@ fun App(core: Core, library: Library, playback: io.github.honeyslatt.music.playb
     val now by playback.now.collectAsStateWithLifecycle()
     val playing by playback.playing.collectAsStateWithLifecycle()
     val loading by playback.loading.collectAsStateWithLifecycle()
-    val context = LibraryContext(core, nav, lists, services, account, playback = playback)
+    val context = LibraryContext(core, nav, lists, services, account, playback = playback, library = library)
     var npOpen by rememberSaveable { mutableStateOf(false) }
     val mini = MiniState(now, playing, loading, playback::toggle, playback::next, playback::previous, onOpen = { npOpen = true })
     val scope = rememberCoroutineScope()

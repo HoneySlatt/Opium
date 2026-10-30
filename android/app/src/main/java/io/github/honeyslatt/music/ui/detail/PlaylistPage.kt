@@ -39,6 +39,9 @@ import io.github.honeyslatt.music.ui.library.Empty
 import io.github.honeyslatt.music.ui.library.LibraryContext
 import io.github.honeyslatt.music.ui.library.PlayShuffle
 import io.github.honeyslatt.music.ui.actions.LocalActions
+import io.github.honeyslatt.music.ui.components.SearchReveal
+import io.github.honeyslatt.music.ui.components.matches
+import androidx.compose.runtime.saveable.rememberSaveable
 import io.github.honeyslatt.music.ui.theme.geist
 import io.github.honeyslatt.music.ui.theme.roles
 
@@ -63,7 +66,10 @@ fun PlaylistPage(c: LibraryContext, id: ItemId) {
     }
     // Songs taken out here, gone at once.
     var removed by remember(id) { mutableStateOf(setOf<ItemId>()) }
-    val tracks = (loaded as? Loading.Ready)?.value.orEmpty().filter { it.id !in removed }
+    var searching by rememberSaveable(id) { mutableStateOf(false) }
+    var query by rememberSaveable(id) { mutableStateOf("") }
+    val every = (loaded as? Loading.Ready)?.value.orEmpty().filter { it.id !in removed }
+    val tracks = if (query.isBlank()) every else every.filter { matches(query, it.title, it.artists.joinToString(", "), it.album) }
     val actions = LocalActions.current
     val favourites = playlist?.favourites == true
     val page = if (favourites) favouritesPage(roles.dark) else rememberPageColour(playlist?.artwork)
@@ -73,7 +79,7 @@ fun PlaylistPage(c: LibraryContext, id: ItemId) {
         name,
         page,
         listOf(
-            BarAction(Icons.Search, "Search in Playlist") {},
+            BarAction(Icons.Search, "Search in Playlist") { searching = !searching },
             *listOfNotNull(
                 if (playlist != null && !favourites && playlist.id.provider == ProviderKind.APPLE_MUSIC) {
                     BarAction(if (actions?.isFavourite(playlist) == true) Icons.Starf else Icons.Star, "Favourite") { actions?.togglePlaylistFavourite(playlist) }
@@ -112,6 +118,7 @@ fun PlaylistPage(c: LibraryContext, id: ItemId) {
                 }
             }
         }
+        item { SearchReveal(searching, query, "Search in Playlist") { query = it } }
         item { PlayShuffle(tracks.isNotEmpty(), { c.playback.play(tracks, 0) }, { c.playback.shuffle(tracks) }) }
         item { Spacer(Modifier.height(8.dp)) }
         if (tracks.isEmpty()) item { Empty(loaded.listing(), "No songs", "This playlist is empty.") }
@@ -119,7 +126,7 @@ fun PlaylistPage(c: LibraryContext, id: ItemId) {
             TrackRow(track, inPlaylist = playlist, onRemoved = { removed = removed + track.id }) { c.playback.play(tracks, i) }
         }
         // Its count and length go under the songs, once they are all in.
-        if (tracks.isNotEmpty() && complete) item { Foot(listOf(countAndLength(tracks))) }
+        if (tracks.isNotEmpty() && complete && query.isBlank()) item { Foot(listOf(countAndLength(tracks))) }
     }
 }
 

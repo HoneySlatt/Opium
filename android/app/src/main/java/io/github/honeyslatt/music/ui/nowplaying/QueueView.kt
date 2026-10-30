@@ -29,6 +29,9 @@ import androidx.compose.ui.unit.sp
 import androidx.media3.common.util.UnstableApi
 import io.github.honeyslatt.music.core.QueueRepeat
 import io.github.honeyslatt.music.core.model.Track
+import io.github.honeyslatt.music.ui.actions.LocalActions
+import io.github.honeyslatt.music.ui.components.anchor
+import io.github.honeyslatt.music.ui.components.rememberAnchor
 import io.github.honeyslatt.music.playback.Playback
 import io.github.honeyslatt.music.ui.Icons
 import io.github.honeyslatt.music.ui.components.Cover
@@ -123,8 +126,10 @@ private fun Toggle(icon: androidx.compose.ui.graphics.vector.ImageVector, label:
 @Composable
 private fun QueueRow(track: Track, removable: Boolean, onPlay: () -> Unit, onRemove: () -> Unit) {
     val np = LocalNp.current
+    val actions = LocalActions.current
+    val anchor = rememberAnchor()
     Row(
-        Modifier.fillMaxWidth().height(60.dp).press(onClick = onPlay),
+        Modifier.fillMaxWidth().height(60.dp).anchor(anchor).press(onLongClick = { actions?.trackMenu(track, anchor.rect) }, onClick = onPlay),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {

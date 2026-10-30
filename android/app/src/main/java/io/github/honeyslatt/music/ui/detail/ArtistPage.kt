@@ -24,6 +24,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import io.github.honeyslatt.music.ui.actions.LocalActions
+import io.github.honeyslatt.music.core.model.ProviderKind
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
@@ -63,12 +65,21 @@ fun ArtistPage(c: LibraryContext, id: ItemId) {
     val loaded by produceState<Loading<ArtistDetail>>(Loading.Pending, id) { value = load { c.core.session.artist(id) } }
     val d = (loaded as? Loading.Ready)?.value
     val page = rememberPageColour(d?.artist?.artwork)
-    val favourite = d?.artist?.inFavourites == true
+    val actions = LocalActions.current
+    val artist = d?.artist
+    val favourite = artist != null && actions?.isFavourite(artist) == true
     DetailPage(
         c.nav,
-        d?.artist?.name.orEmpty(),
+        artist?.name.orEmpty(),
         page,
-        listOf(BarAction(if (favourite) Icons.Starf else Icons.Star, "Favourite") {}, BarAction(Icons.More, "More") {}),
+        listOfNotNull(
+            if (artist?.id?.provider == ProviderKind.APPLE_MUSIC) {
+                BarAction(if (favourite) Icons.Starf else Icons.Star, "Favourite") { actions?.toggleFavourite(artist) }
+            } else {
+                null
+            },
+            BarAction(Icons.More, "More") { rect -> d?.takeIf { it.topSongs.isNotEmpty() }?.let { actions?.artistMenu(it, rect) } },
+        ),
     ) {
         item { Hero(d?.artist, d?.motion?.takeIf { c.animatedArtwork }) { d?.topSongs?.let { c.playback.shuffle(it) } } }
         if (d == null) {

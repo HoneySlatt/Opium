@@ -17,6 +17,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -31,6 +33,7 @@ import io.github.honeyslatt.music.core.artistsLeftOut
 import io.github.honeyslatt.music.core.model.Album
 import io.github.honeyslatt.music.core.model.Collection
 import io.github.honeyslatt.music.core.model.ProviderKind
+import io.github.honeyslatt.music.core.model.Track
 import io.github.honeyslatt.music.core.songsLeftOut
 import io.github.honeyslatt.music.data.LibraryLists
 import io.github.honeyslatt.music.data.Listing
@@ -55,6 +58,11 @@ import io.github.honeyslatt.music.ui.nav.Navigator
 import io.github.honeyslatt.music.ui.nav.Route
 import io.github.honeyslatt.music.ui.actions.LocalActions
 import io.github.honeyslatt.music.ui.actions.SheetSpec
+import io.github.honeyslatt.music.ui.components.LocalMenus
+import io.github.honeyslatt.music.ui.components.SearchReveal
+import io.github.honeyslatt.music.ui.components.fold
+import io.github.honeyslatt.music.ui.components.matches
+import io.github.honeyslatt.music.ui.components.sort
 import io.github.honeyslatt.music.ui.theme.geist
 import io.github.honeyslatt.music.ui.theme.roles
 import kotlinx.coroutines.Dispatchers
@@ -71,6 +79,7 @@ class LibraryContext(
     val animatedArtwork: Boolean = true,
     @property:androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     val playback: io.github.honeyslatt.music.playback.Playback,
+    val library: io.github.honeyslatt.music.data.Library? = null,
 )
 
 /** As many as Apple Music shows under Recently Added. */
@@ -178,8 +187,11 @@ fun Empty(listing: Listing<*>, title: String, detail: String) {
 fun Playlists(c: LibraryContext) {
     val actions = LocalActions.current
     val playlists = c.lists.playlists
-    val favourites = playlists.items.firstOrNull { it.favourites }
-    ListPage(c.nav, "Playlists", actions = listOf(BarAction(Icons.Search, "Search Playlists") {})) {
+    var searching by rememberSaveable { mutableStateOf(false) }
+    var query by rememberSaveable { mutableStateOf("") }
+    val favourites = playlists.items.firstOrNull { it.favourites }?.takeIf { matches(query, "Favourite Songs") }
+    ListPage(c.nav, "Playlists", actions = listOf(BarAction(Icons.Search, "Search Playlists") { searching = !searching })) {
+        item { SearchReveal(searching, query, "Search Playlists") { query = it } }
         item {
             ItemRow(
                 artwork = null,
@@ -210,7 +222,7 @@ fun Playlists(c: LibraryContext) {
                 ) { c.nav.push(Route.Playlist(favourites.id)) }
             }
         }
-        val rest = playlists.items.filter { !it.favourites }
+        val rest = playlists.items.filter { !it.favourites && matches(query, it.name, it.curator) }
         if (rest.isEmpty() && favourites == null) {
             item { Empty(playlists, "No playlists", "Playlists you make or add show here.") }
         }
@@ -232,18 +244,36 @@ fun songs(n: Int) = if (n == 1) "1 song" else "$n songs"
 @Composable
 fun Albums(c: LibraryContext) {
     var source by rememberSaveable { mutableStateOf<ProviderKind?>(null) }
+    var searching by rememberSaveable { mutableStateOf(false) }
+    var query by rememberSaveable { mutableStateOf("") }
+    var order by remember { mutableStateOf(c.core.setting("albums-sort")?.let { runCatching { AlbumSort.valueOf(it) }.getOrNull() } ?: AlbumSort.Added) }
+    val menus = LocalMenus.current
     val all = c.lists.albums.items
-    val shown by produceState(all, all, source) {
+    val shown by produceState(all, all, source, query, order) {
         value = withContext(Dispatchers.Default) {
-            if (source != null) {
+            val some = if (source != null) {
                 all.filter { it.id.provider == source }
             } else {
                 val out = albumsLeftOut(all).toSet()
                 all.filterIndexed { i, _ -> i.toUInt() !in out }
             }
+            some.filter { matches(query, it.title, it.artists.joinToString(", ")) }.sortedBy(order)
         }
     }
-    GridPage(c.nav, "Albums", actions = listOf(BarAction(Icons.Search, "Search Albums") {}, BarAction(Icons.Sort, "Sort") {})) {
+    GridPage(
+        c.nav,
+        "Albums",
+        actions = listOf(
+            BarAction(Icons.Search, "Search Albums") { searching = !searching },
+            BarAction(Icons.Sort, "Sort") { rect ->
+                menus.sort(rect, AlbumSort.entries, order, AlbumSort::label) {
+                    order = it
+                    c.core.setSetting("albums-sort", it.name)
+                }
+            },
+        ),
+    ) {
+        full { SearchReveal(searching, query, "Search Albums") { query = it } }
         full { SourceChips(source, c.services) { source = it } }
         full { Spacer(Modifier.height(10.dp)) }
         if (shown.isEmpty()) {
@@ -270,9 +300,13 @@ fun Artists(c: LibraryContext) {
             all.filterIndexed { i, _ -> i.toUInt() !in out }
         }
     }
-    ListPage(c.nav, "Artists", actions = listOf(BarAction(Icons.Search, "Search Artists") {})) {
-        if (shown.isEmpty()) item { Empty(c.lists.artists, "No artists", "Artists of the songs you add show here.") }
-        items(shown, key = { it.id.provider.name + it.id.id }) { artist ->
+    var searching by rememberSaveable { mutableStateOf(false) }
+    var query by rememberSaveable { mutableStateOf("") }
+    val matching = shown.filter { matches(query, it.name) }
+    ListPage(c.nav, "Artists", actions = listOf(BarAction(Icons.Search, "Search Artists") { searching = !searching })) {
+        item { SearchReveal(searching, query, "Search Artists") { query = it } }
+        if (matching.isEmpty()) item { Empty(c.lists.artists, "No artists", "Artists of the songs you add show here.") }
+        items(matching, key = { it.id.provider.name + it.id.id }) { artist ->
             ItemRow(artist.artwork, artist.name, round = true) { c.nav.push(Route.LibraryArtist(artist)) }
         }
     }
@@ -281,26 +315,48 @@ fun Artists(c: LibraryContext) {
 @Composable
 fun Songs(c: LibraryContext) {
     var source by rememberSaveable { mutableStateOf<ProviderKind?>(null) }
-    val all = c.lists.songs.items
-    val shown by produceState(all, all, source) {
+    var searching by rememberSaveable { mutableStateOf(false) }
+    var query by rememberSaveable { mutableStateOf("") }
+    var order by remember { mutableStateOf(c.core.setting("songs-sort")?.let { runCatching { SongSort.valueOf(it) }.getOrNull() } ?: SongSort.Name) }
+    val menus = LocalMenus.current
+    // Newest first is a list of its own, in the order Apple keeps.
+    LaunchedEffect(order) { if (order == SongSort.Added) c.library?.loadNewestSongs() }
+    val listing = if (order == SongSort.Added) c.lists.newestSongs else c.lists.songs
+    val all = listing.items
+    val shown by produceState(all, all, source, query, order) {
         value = withContext(Dispatchers.Default) {
-            if (source != null) {
+            val some = if (source != null) {
                 all.filter { it.id.provider == source }
             } else {
                 val out = songsLeftOut(all).toSet()
                 all.filterIndexed { i, _ -> i.toUInt() !in out }
             }
+            // Apple lists a song saved twice twice: once is enough.
+            some.distinctBy { it.id }.filter { matches(query, it.title, it.artists.joinToString(", "), it.album) }.sortedBy(order)
         }
     }
-    ListPage(c.nav, "Songs", actions = listOf(BarAction(Icons.Search, "Search Songs") {}, BarAction(Icons.Sort, "Sort") {})) {
+    ListPage(
+        c.nav,
+        "Songs",
+        actions = listOf(
+            BarAction(Icons.Search, "Search Songs") { searching = !searching },
+            BarAction(Icons.Sort, "Sort") { rect ->
+                menus.sort(rect, SongSort.entries, order, SongSort::label) {
+                    order = it
+                    c.core.setSetting("songs-sort", it.name)
+                }
+            },
+        ),
+    ) {
+        item { SearchReveal(searching, query, "Search Songs") { query = it } }
         item { SourceChips(source, c.services) { source = it } }
         item { PlayShuffle(shown.isNotEmpty(), { c.playback.play(shown, 0) }, { c.playback.shuffle(shown) }) }
-        if (shown.isEmpty()) item { Empty(c.lists.songs, "No songs here", "Nothing matches this source.") }
+        if (shown.isEmpty()) item { Empty(listing, "No songs here", "Nothing matches this source.") }
         itemsIndexed(shown, key = { _, t -> t.id.provider.name + t.id.id }) { i, track -> TrackRow(track) { c.playback.play(shown, i) } }
         if (shown.isNotEmpty()) {
             item {
                 BasicText(
-                    if (c.lists.songs.done) songs(shown.size) else "${songs(shown.size)} so far…",
+                    if (listing.done) songs(shown.size) else "${songs(shown.size)} so far…",
                     Modifier.padding(start = 20.dp, top = 16.dp),
                     style = geist(13.5.sp).copy(color = roles.sub),
                 )
@@ -347,4 +403,27 @@ fun Coming(nav: Navigator, title: String, account: (@Composable () -> Unit)? = n
             )
         }
     }
+}
+
+enum class AlbumSort(val label: String) { Added("Date Added"), Name("Name"), Artist("Artist"), Released("Release Date") }
+
+enum class SongSort(val label: String) { Name("Name"), Artist("Artist"), Album("Album"), Added("Date Added") }
+
+/**
+ * Albums in `order`: names without case or accents, dates newest first;
+ * those without the date sorted by go last.
+ */
+private fun List<Album>.sortedBy(order: AlbumSort): List<Album> = when (order) {
+    AlbumSort.Name -> sortedBy { fold(it.title) }
+    AlbumSort.Artist -> sortedWith(compareBy({ fold(it.artists.joinToString(", ")) }, { fold(it.title) }))
+    AlbumSort.Added -> sortedWith(compareBy(nullsLast(reverseOrder())) { it.added })
+    AlbumSort.Released -> sortedWith(compareBy(nullsLast(reverseOrder())) { it.released ?: it.year?.toString() })
+}
+
+/** Songs in `order`; Date Added keeps the order they came in, newest first. */
+private fun List<Track>.sortedBy(order: SongSort): List<Track> = when (order) {
+    SongSort.Name -> sortedBy { fold(it.title) }
+    SongSort.Artist -> sortedWith(compareBy({ fold(it.artists.joinToString(", ")) }, { fold(it.title) }))
+    SongSort.Album -> sortedWith(compareBy({ fold(it.album.orEmpty()) }, { it.discNumber?.toInt() ?: 1 }, { it.trackNumber?.toInt() ?: 0 }))
+    SongSort.Added -> this
 }
