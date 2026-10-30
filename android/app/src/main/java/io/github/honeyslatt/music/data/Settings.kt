@@ -20,6 +20,7 @@ class Settings(context: Context) {
     private val sitesFirstState = flag("lyrics-sites-first", false)
     private val animatedState = flag("animated-artwork", true)
     private val originals = flag("soundcloud-originals", true)
+    private val spatialState = flag("spatial-audio", true)
     private val qualityState = mutableStateOf(
         runCatching { MotionQuality.valueOf(prefs.getString("animated-quality", null) ?: "") }.getOrDefault(MotionQuality.Automatic),
     )
@@ -58,6 +59,11 @@ class Settings(context: Context) {
     var soundcloudOriginals: Boolean
         get() = originals.value
         set(v) = save("soundcloud-originals", v).also { originals.value = v }
+
+    /** Apple Music → Dolby Atmos: a song mixed in Atmos plays as Spatial Audio. */
+    var spatialAudio: Boolean
+        get() = spatialState.value
+        set(v) = save("spatial-audio", v).also { spatialState.value = v }
 
     var animatedArtwork: Boolean
         get() = animatedState.value

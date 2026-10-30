@@ -287,6 +287,12 @@ private fun Service(core: Core, settings: Settings, kind: ProviderKind, onSignIn
                     Switch(settings.soundcloudOriginals) { settings.soundcloudOriginals = it }
                 }
             }
+            if (kind == ProviderKind.APPLE_MUSIC) {
+                GroupRow(first = false) {
+                    Words("Dolby Atmos", "Songs mixed in Atmos play as Spatial Audio, for headphones.")
+                    Switch(settings.spatialAudio) { settings.spatialAudio = it }
+                }
+            }
         }
     }
     Group(if (signedIn) null else limits) {

@@ -125,6 +125,8 @@ pub enum Request {
         fallback: Option<ItemId>,
         /// A SoundCloud uploader's original file, when they allow it.
         original: bool,
+        /// Apple's Spatial Audio, for a song mixed in Dolby Atmos.
+        spatial: bool,
     },
     /// An animated cover's video at `size` pixels, kept on disk.
     Motion {
@@ -138,6 +140,7 @@ pub enum Request {
         track: ItemId,
         fallback: Option<ItemId>,
         original: bool,
+        spatial: bool,
     },
     /// An album and its tracks.
     Album(ItemId),
@@ -317,10 +320,12 @@ pub enum Reply {
 /// What a fetch hands the player: a track, a station's stream, or a whole
 /// file in memory.
 pub enum Playable {
-    /// An Apple Music track, and the bit rate of its encode when known.
+    /// An Apple Music track, the bit rate of its encode when known, and
+    /// whether it is Spatial Audio.
     Track {
         stream: AudioStream,
         kbps: Option<u32>,
+        spatial: bool,
     },
     /// A SoundCloud track, in memory or still downloading.
     SoundCloud(soundcloud::Audio),
@@ -1049,11 +1054,12 @@ async fn run(
                 token,
                 track,
                 fallback,
+                spatial,
                 ..
             } => {
                 let cdm = cdm.clone();
                 tokio::spawn(async move {
-                    let result = playable(&am, cdm, &track, fallback.as_ref()).await;
+                    let result = playable(&am, cdm, &track, fallback.as_ref(), spatial).await;
                     replies.send(Reply::Fetched { token, result });
                 });
             }
@@ -1080,6 +1086,7 @@ async fn run(
                 token,
                 track,
                 fallback,
+                spatial,
                 ..
             } => {
                 if let Some(last) = warming.take() {
@@ -1087,7 +1094,7 @@ async fn run(
                 }
                 let cdm = cdm.clone();
                 warming = Some(tokio::spawn(async move {
-                    let result = playable(&am, cdm, &track, fallback.as_ref()).await;
+                    let result = playable(&am, cdm, &track, fallback.as_ref(), spatial).await;
                     replies.send(Reply::Fetched { token, result });
                 }));
             }
@@ -1102,17 +1109,19 @@ const STATION_BATCH: usize = 20;
 const RECENT_LIMIT: usize = 200;
 
 /// A track or a station, ready to play: stations (`ra.`) stream, everything
-/// else is a track. A catalog song Apple no longer offers here is played from
-/// the library's copy, when there is one, as Apple Music does.
+/// else is a track, as Spatial Audio with `spatial` when mixed in Dolby
+/// Atmos. A catalog song Apple no longer offers here is played from the
+/// library's copy, when there is one, as Apple Music does.
 async fn playable(
     am: &AppleMusic,
     cdm: Result<widevine::Cdm, String>,
     track: &ItemId,
     fallback: Option<&ItemId>,
+    spatial: bool,
 ) -> Result<Playable, String> {
-    let first = playable_as(am, cdm.clone(), track).await;
+    let first = playable_as(am, cdm.clone(), track, spatial).await;
     match (first, fallback) {
-        (Err(_), Some(copy)) if copy != track => playable_as(am, cdm, copy).await,
+        (Err(_), Some(copy)) if copy != track => playable_as(am, cdm, copy, spatial).await,
         (result, _) => result,
     }
 }
@@ -1121,6 +1130,7 @@ async fn playable_as(
     am: &AppleMusic,
     cdm: Result<widevine::Cdm, String>,
     track: &ItemId,
+    spatial: bool,
 ) -> Result<Playable, String> {
     match cdm {
         Ok(cdm) if track.id.starts_with("ra.") => am
@@ -1129,9 +1139,13 @@ async fn playable_as(
             .map(Playable::Live)
             .map_err(|e| e.to_string()),
         Ok(cdm) => am
-            .fetch_track(&cdm, track)
+            .fetch_track(&cdm, track, spatial)
             .await
-            .map(|(stream, kbps)| Playable::Track { stream, kbps })
+            .map(|(stream, kbps, spatial)| Playable::Track {
+                stream,
+                kbps,
+                spatial,
+            })
             .map_err(|e| e.to_string()),
         Err(e) => Err(e),
     }

@@ -61,6 +61,9 @@ pub struct Settings {
     pub lyrics_off: Vec<lyrics::Source>,
     /// The sites' lyrics before the service's own (off unless set).
     pub lyrics_sites_first: Option<bool>,
+    /// A song mixed in Dolby Atmos plays as Apple's Spatial Audio, its
+    /// binaural rendering (on unless turned off).
+    pub spatial_audio: Option<bool>,
     /// The services turned off: still signed in, but not used.
     pub services_off: Vec<music_core::model::ProviderKind>,
 }

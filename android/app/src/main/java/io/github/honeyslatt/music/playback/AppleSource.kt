@@ -37,8 +37,12 @@ fun appleSource(
     item: MediaItem.Builder = MediaItem.Builder(),
     player: ExoPlayer? = null,
 ): HlsMediaSource {
-    val playlistUri = Uri.parse("music-playlist://apple/$key.m3u8")
+    val playlistUri = Uri.parse("music-playlist://apple/$key/playlist.m3u8")
     val playlist = track.playlist().toByteArray()
+    // Spatial Audio's init segment, with its key ids written in, which the
+    // playlist names beside it.
+    val initUri = Uri.parse("music-playlist://apple/$key/init.mp4")
+    val init = track.init()
     val http = Http.sources
     // The playlist comes from the core; the audio from Apple's servers.
     val sources = DataSource.Factory {
@@ -51,7 +55,11 @@ fun appleSource(
             }
 
             override fun open(spec: DataSpec): Long {
-                val source = if (spec.uri == playlistUri) ByteArrayDataSource(playlist) else http.createDataSource()
+                val source = when {
+                    spec.uri == playlistUri -> ByteArrayDataSource(playlist)
+                    spec.uri == initUri && init != null -> ByteArrayDataSource(init)
+                    else -> http.createDataSource()
+                }
                 listeners.forEach(source::addTransferListener)
                 inner = source
                 return source.open(spec)
@@ -76,6 +84,9 @@ fun appleSource(
     }
     val drm = DefaultDrmSessionManager.Builder()
         .setUuidAndExoMediaDrmProvider(C.WIDEVINE_UUID, FrameworkMediaDrm.DEFAULT_PROVIDER)
+        // Spatial Audio's file changes key after its first segment: a
+        // session for each.
+        .setMultiSession(true)
         .build(licences)
     // The licence is asked for at once, with the key already known, rather
     // than once the player has read the file's start.

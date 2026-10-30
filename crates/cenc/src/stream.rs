@@ -219,6 +219,7 @@ impl Feed {
                                 kind.copy_from_slice(b"mp4a");
                             }
                         }
+                        crate::fmp4::one_sample_entry(&mut state.data, &found.several_entries);
                         state.ready = found.end;
                         *init = Some(found);
                     }
@@ -230,6 +231,14 @@ impl Feed {
                 let before = state.samples.len();
                 state.ready = init.fragments(&state.data, state.ready, &mut state.samples);
                 let added = state.samples.len() - before;
+                if !init.several_entries.is_empty() {
+                    let mut fragments: Vec<usize> =
+                        state.samples[before..].iter().map(|s| s.fragment).collect();
+                    fragments.dedup();
+                    for moof in fragments {
+                        crate::fmp4::first_sample_entry(&mut state.data, moof);
+                    }
+                }
                 state.decrypted.extend(std::iter::repeat_n(false, added));
             }
         }
@@ -491,6 +500,7 @@ mod tests {
                 len: 50,
                 iv: [0; 16],
                 subs: vec![],
+                description: 0,
             })
             .collect();
         for s in &samples {
@@ -552,6 +562,7 @@ mod tests {
                 len: 10,
                 iv: [0; 16],
                 subs: vec![],
+                description: 0,
             })
             .collect();
         let stream =
@@ -570,6 +581,7 @@ mod tests {
                 len: 10,
                 iv: [0; 16],
                 subs: vec![],
+                description: 0,
             })
             .collect();
         let data: Vec<u8> = (0..1000).map(|i| (i % 251) as u8 ^ 0xFF).collect();

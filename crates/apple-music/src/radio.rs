@@ -272,7 +272,7 @@ pub struct LiveAsset {
 
 /// The key id in a Widevine PSSH carried by a `data:` key URI: the
 /// `WidevineCencHeader`'s field 2, 16 bytes.
-fn pssh_key_id(key_uri: &str) -> Option<[u8; 16]> {
+pub(crate) fn pssh_key_id(key_uri: &str) -> Option<[u8; 16]> {
     let pssh = STANDARD.decode(key_uri.rsplit_once("base64,")?.1).ok()?;
     // Box header (8), version and flags (4), system id (16), data size (4).
     let data = pssh.get(32..)?;

@@ -990,6 +990,15 @@ impl App {
         self.settings.save();
     }
 
+    pub fn spatial_audio(&self) -> bool {
+        self.settings.spatial_audio.unwrap_or(true)
+    }
+
+    pub fn set_spatial_audio(&mut self, on: bool) {
+        self.settings.spatial_audio = Some(on);
+        self.settings.save();
+    }
+
     /// Load the library again, as at start: after signing in anew.
     fn reload_library(&mut self) {
         self.songs.clear();
@@ -2267,6 +2276,7 @@ impl App {
             track: track.id.clone(),
             fallback: track.library_id.clone(),
             original: self.soundcloud_originals(),
+            spatial: self.spatial_audio(),
         });
     }
 
@@ -2441,6 +2451,7 @@ impl App {
             track: playing.id.clone(),
             fallback: playing.library_id.clone(),
             original: self.soundcloud_originals(),
+            spatial: self.spatial_audio(),
         });
         self.warm = Some(Warm {
             token,
@@ -3421,6 +3432,17 @@ impl App {
                     self.searches.insert((scope, source, query), loaded);
                 }
                 Reply::Fetched { token, result } => {
+                    // Spatial Audio says so where the encode shows.
+                    if let Ok(Playable::Track { spatial: true, .. }) = &result
+                        && let Some(track) = self.tracks.get_mut(&token)
+                    {
+                        track.quality = Some(music_core::model::AudioQuality {
+                            codec: music_core::model::Codec::Other("Dolby Atmos".into()),
+                            sample_rate: Some(48_000),
+                            bit_depth: None,
+                            bitrate_kbps: None,
+                        });
+                    }
                     // An encode below Apple's usual 256 kbps shows as it is,
                     // and is told of when it is to play.
                     if let Ok(Playable::Track {

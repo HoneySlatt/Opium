@@ -26,6 +26,7 @@ import io.github.honeyslatt.music.core.connect.Handoff
 import io.github.honeyslatt.music.core.connect.Peer
 import io.github.honeyslatt.music.core.connect.Playing
 import io.github.honeyslatt.music.core.model.AudioQuality
+import io.github.honeyslatt.music.core.model.Codec
 import io.github.honeyslatt.music.core.model.Repeat
 import io.github.honeyslatt.music.core.model.ProviderKind
 import io.github.honeyslatt.music.core.model.Track
@@ -520,9 +521,17 @@ class Playback(private val context: Context, private val core: Core, private val
     /** The real bit rates of Apple songs served below the usual 256 kbps, once read. */
     private val lesser = androidx.compose.runtime.mutableStateMapOf<String, UInt>()
 
-    /** `track`'s quality as it plays: Apple's listing says 256 kbps even when less is served. */
-    fun quality(track: Track): AudioQuality? =
-        lesser[track.id.id]?.let { kbps -> track.quality?.copy(bitrateKbps = kbps) } ?: track.quality
+    /** The Apple songs playing as Spatial Audio, their Dolby Atmos mix rendered binaurally. */
+    private val atmos = androidx.compose.runtime.mutableStateSetOf<String>()
+
+    /**
+     * `track`'s quality as it plays: Apple's listing says 256 kbps even
+     * when less is served, and AAC when its Dolby Atmos mix is what plays.
+     */
+    fun quality(track: Track): AudioQuality? = when {
+        track.id.id in atmos -> AudioQuality(codec = Codec.Other("Dolby Atmos"), sampleRate = 48_000u, bitDepth = null, bitrateKbps = null)
+        else -> lesser[track.id.id]?.let { kbps -> track.quality?.copy(bitrateKbps = kbps) } ?: track.quality
+    }
 
     /** Whether `track` stands for a station's stream, rather than a song. */
     fun isStation(track: Track) = track.id.id in stations
@@ -864,12 +873,14 @@ class Playback(private val context: Context, private val core: Core, private val
             ProviderKind.APPLE_MUSIC -> {
                 // A catalog song Apple no longer offers here plays from the
                 // library's copy, as Apple Music does.
+                val spatial = (context.applicationContext as io.github.honeyslatt.music.MusicApp).settings.spatialAudio
                 val protected = try {
-                    core.session.protected(track.id)
+                    core.session.protected(track.id, spatial)
                 } catch (e: MusicException) {
                     val copy = track.libraryId?.takeIf { it != track.id } ?: throw e
-                    core.session.protected(copy)
+                    core.session.protected(copy, spatial)
                 } ?: error("a song you uploaded can't play here yet")
+                if (protected.spatial()) atmos += track.id.id else atmos -= track.id.id
                 scope.launch { protected.lesserKbps()?.let { lesser[track.id.id] = it } }
                 appleSource(protected, "$generation-${keys++}", item, player)
             }

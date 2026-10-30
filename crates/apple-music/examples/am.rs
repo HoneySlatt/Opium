@@ -406,7 +406,13 @@ async fn open_track(
     let cdm_path = widevine::locate().ok_or("no Widevine CDM found")?;
     let cdm = widevine::Cdm::open(&cdm_path)?;
     let track = music_core::model::ItemId::new(music_core::model::ProviderKind::AppleMusic, id);
-    Ok(am.fetch_track(&cdm, &track).await?.0)
+    // `MUSIC_SPATIAL=1`: Spatial Audio, for a song with a Dolby Atmos mix.
+    let spatial = std::env::var_os("MUSIC_SPATIAL").is_some();
+    let (stream, _, spatial) = am.fetch_track(&cdm, &track, spatial).await?;
+    if spatial {
+        println!("Spatial Audio (binaural)");
+    }
+    Ok(stream)
 }
 
 async fn fetch(am: &AppleMusic, id: &str, out: &str) -> Result<(), Box<dyn std::error::Error>> {

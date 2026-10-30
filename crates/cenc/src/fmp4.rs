@@ -139,16 +139,18 @@ struct TrackInfo {
     default_iv_size: u8,
 }
 
-fn extract_track_info(
-    data: &[u8],
-    init_end: usize,
-) -> Result<(Vec<TrackInfo>, Vec<usize>), String> {
+/// The tracks, the `enca`/`encv` boxes, and the sample entry counts above
+/// one, as [`Init`] keeps them.
+type TrackBoxes = (Vec<TrackInfo>, Vec<usize>, Vec<usize>);
+
+fn extract_track_info(data: &[u8], init_end: usize) -> Result<TrackBoxes, String> {
     let mut track_infos = Vec::new();
     let mut enca_positions = Vec::new();
+    let mut several_entries = Vec::new();
 
     let (moov_body_start, moov_body_end) = match find_deep(data, 0, init_end, MOOV) {
         Some(v) => v,
-        None => return Ok((track_infos, enca_positions)),
+        None => return Ok((track_infos, enca_positions, several_entries)),
     };
 
     for (trak_box_start, trak_body_start, trak_body_end) in
@@ -167,6 +169,9 @@ fn extract_track_info(
             .unwrap_or(0);
 
         if let Some((stsd_bs, stsd_be)) = find_deep(data, trak_body_start, trak_body_end, STSD) {
+            if stsd_bs + 8 <= stsd_be && u32be(data, stsd_bs + 4) > 1 {
+                several_entries.push(stsd_bs + 4);
+            }
             let entries_start = stsd_bs + 8;
             let mut epos = entries_start;
             while epos < stsd_be {
@@ -191,7 +196,7 @@ fn extract_track_info(
         break;
     }
 
-    Ok((track_infos, enca_positions))
+    Ok((track_infos, enca_positions, several_entries))
 }
 
 fn get_tenc_iv_size(data: &[u8], enca_body_start: usize, enca_body_end: usize) -> u8 {
@@ -316,6 +321,9 @@ pub struct EncryptedSample {
     pub len: usize,
     pub iv: [u8; 16],
     pub subs: Vec<(u16, u32)>,
+    /// Which of the track's sample entries its fragment names, from 0:
+    /// Apple's enhanced files have one per key.
+    pub description: u32,
 }
 
 impl EncryptedSample {
@@ -330,6 +338,8 @@ pub struct Fmp4Layout {
     /// `enca`/`encv` box offsets to be relabelled `mp4a` so decoders accept the
     /// now-cleartext track.
     pub enca_positions: Vec<usize>,
+    /// The sample entry counts above one, as [`Init`] keeps them.
+    pub several_entries: Vec<usize>,
     /// Every encrypted sample, in file order.
     pub samples: Vec<EncryptedSample>,
 }
@@ -342,6 +352,7 @@ pub fn index_fmp4(data: &[u8]) -> Result<Fmp4Layout, String> {
     let init = Init::read(data)?.ok_or_else(|| "no moov".to_string())?;
     let mut layout = Fmp4Layout {
         enca_positions: init.enca_positions.clone(),
+        several_entries: init.several_entries.clone(),
         samples: Vec::new(),
     };
     init.fragments(data, init.end, &mut layout.samples);
@@ -354,6 +365,11 @@ pub struct Init {
     track_infos: Vec<TrackInfo>,
     /// `enca`/`encv` box offsets, as in [`Fmp4Layout`].
     pub enca_positions: Vec<usize>,
+    /// Where a track's sample entry count is above one: Apple's enhanced
+    /// files have one entry per key, all the same audio, and decoders that
+    /// take a single entry refuse them. Once decrypted, the first stands
+    /// for all: see [`one_sample_entry`].
+    pub several_entries: Vec<usize>,
     /// Where the movie box ends: the fragments follow.
     pub end: usize,
 }
@@ -367,10 +383,11 @@ impl Init {
                 return Ok(None);
             };
             if box_type(data, pos) == MOOV {
-                let (track_infos, enca_positions) = extract_track_info(data, be)?;
+                let (track_infos, enca_positions, several_entries) = extract_track_info(data, be)?;
                 return Ok(Some(Self {
                     track_infos,
                     enca_positions,
+                    several_entries,
                     end: be,
                 }));
             }
@@ -449,6 +466,10 @@ impl Init {
             let Some(ti) = self.track_infos.iter().find(|t| t.track_id == track_id) else {
                 continue;
             };
+            let description = tfhd
+                .as_ref()
+                .and_then(|&(bs, be, _)| tfhd_description_at(data, bs, be))
+                .map_or(0, |at| u32be(data, at).saturating_sub(1));
             let per_sample_iv_size = ti.default_iv_size;
 
             let mut traf_ivs: Vec<[u8; 16]> = Vec::new();
@@ -505,6 +526,7 @@ impl Init {
                     len: sz,
                     iv,
                     subs: traf_subs.get(i).cloned().unwrap_or_default(),
+                    description,
                 });
                 offset += sz;
             }
@@ -554,6 +576,59 @@ pub fn patch_init(buf: &mut [u8], layout: &Fmp4Layout) {
             buf[pos + 4..pos + 8].copy_from_slice(b"mp4a");
         }
     }
+    one_sample_entry(buf, &layout.several_entries);
+    if !layout.several_entries.is_empty() {
+        let mut fragments: Vec<usize> = layout.samples.iter().map(|s| s.fragment).collect();
+        fragments.dedup();
+        for moof in fragments {
+            first_sample_entry(buf, moof);
+        }
+    }
+}
+
+/// Leave each track of `several_entries` (see [`Init::several_entries`])
+/// with its first sample entry only, which then stands for all: its count
+/// says one, the others stay behind it unread. Their fragments name the
+/// first through [`first_sample_entry`].
+pub fn one_sample_entry(buf: &mut [u8], several_entries: &[usize]) {
+    for &at in several_entries {
+        if let Some(count) = buf.get_mut(at..at + 4) {
+            count.copy_from_slice(&1u32.to_be_bytes());
+        }
+    }
+}
+
+/// Have the fragment whose `moof` starts at `moof` name its track's first
+/// sample entry, where it names another.
+pub fn first_sample_entry(buf: &mut [u8], moof: usize) {
+    let Some((moof_bs, moof_be, _)) = read_box(buf, moof).filter(|_| box_type(buf, moof) == MOOF)
+    else {
+        return;
+    };
+    let mut at = Vec::new();
+    for (traf_pos, traf_bs, traf_be) in find_all_children(buf, moof_bs, moof_be) {
+        if box_type(buf, traf_pos) == TRAF
+            && let Some((bs, be, _)) = find_child(buf, traf_bs, traf_be, TFHD)
+            && let Some(index) = tfhd_description_at(buf, bs, be)
+        {
+            at.push(index);
+        }
+    }
+    for index in at {
+        buf[index..index + 4].copy_from_slice(&1u32.to_be_bytes());
+    }
+}
+
+/// Where a `tfhd` body from `bs` to `be` holds its sample description
+/// index, when it has one: after the track id, and the base data offset
+/// when there is one.
+fn tfhd_description_at(data: &[u8], bs: usize, be: usize) -> Option<usize> {
+    let flags = u32be(data, bs) & 0x00ff_ffff;
+    if flags & 0x02 == 0 {
+        return None;
+    }
+    let at = bs + 8 + if flags & 0x01 != 0 { 8 } else { 0 };
+    (at + 4 <= be).then_some(at)
 }
 
 fn parse_trun(
@@ -716,6 +791,63 @@ mod tests {
         ])
     }
 
+    /// Apple's enhanced files: a sample entry per key, each with its own
+    /// constant IV, and fragments naming theirs.
+    #[test]
+    fn several_sample_entries_read_as_one_and_samples_say_theirs() {
+        let be = |v: u32| v.to_be_bytes();
+        let entry = |iv: u8| {
+            let mut tenc = vec![1, 0, 0, 0, 0, 0, 1, 0];
+            tenc.extend_from_slice(&[0; 16]);
+            tenc.push(16);
+            tenc.extend_from_slice(&[iv; 16]);
+            let sinf = boxed(b"sinf", &boxed(b"schi", &boxed(b"tenc", &tenc)));
+            boxed(b"enca", &concat(&[vec![0u8; 28], sinf]))
+        };
+        let mut tkhd = vec![0u8; 20];
+        tkhd[12..16].copy_from_slice(&1u32.to_be_bytes());
+        let stsd = concat(&[be(0).to_vec(), be(2).to_vec(), entry(1), entry(2)]);
+        let init = concat(&[
+            boxed(b"ftyp", b"isom"),
+            boxed(
+                b"moov",
+                &boxed(
+                    b"trak",
+                    &concat(&[boxed(b"tkhd", &tkhd), boxed(b"stsd", &stsd)]),
+                ),
+            ),
+        ]);
+        // default-base-is-moof, and the second sample entry.
+        let tfhd = boxed(b"tfhd", &[be(0x0002_0002), be(1), be(2)].concat());
+        let trun_len = 8 + 16;
+        let moof_len = 8 + 8 + tfhd.len() + trun_len;
+        let trun = boxed(
+            b"trun",
+            &[be(0x201), be(1), be(moof_len as u32 + 8), be(4)].concat(),
+        );
+        let moof = boxed(b"moof", &boxed(b"traf", &concat(&[tfhd, trun])));
+        let mut data = concat(&[init.clone(), moof, boxed(b"mdat", &[9; 4])]);
+
+        let ivs: Vec<Vec<u8>> = tencs(&data)
+            .into_iter()
+            .filter_map(|t| t.constant_iv)
+            .collect();
+        assert_eq!(ivs, [vec![1; 16], vec![2; 16]]);
+        let layout = index_fmp4(&data).unwrap();
+        assert_eq!(layout.samples.len(), 1);
+        assert_eq!(layout.samples[0].description, 1);
+        assert_eq!(
+            &data[layout.samples[0].start..layout.samples[0].end()],
+            &[9; 4]
+        );
+
+        patch_init(&mut data, &layout);
+        let count = layout.several_entries[0];
+        assert_eq!(u32be(&data, count), 1);
+        let tfhd = data.windows(4).position(|w| w == b"tfhd").unwrap() + 4;
+        assert_eq!(u32be(&data, tfhd + 8), 1);
+    }
+
     /// A box can be well-formed as a box and still too short to hold the fields
     /// its type implies. `index_fmp4` parses bytes straight off the network
     /// under `State`'s mutex, so a panic here poisons the mutex and leaves the
@@ -802,7 +934,27 @@ fn find_box_anywhere<'a>(data: &'a [u8], kind: &[u8; 4]) -> Option<&'a [u8]> {
 }
 
 pub fn tenc(init: &[u8]) -> Option<Tenc> {
-    let body = find_box_anywhere(init, b"tenc")?;
+    read_tenc(find_box_anywhere(init, b"tenc")?)
+}
+
+/// Every sample entry's protection, in their order: one per key in
+/// Apple's enhanced files (see [`EncryptedSample::description`]).
+pub fn tencs(init: &[u8]) -> Vec<Tenc> {
+    let mut found = Vec::new();
+    let mut from = 0;
+    while let Some(body) = init
+        .get(from..)
+        .and_then(|rest| find_box_anywhere(rest, b"tenc"))
+    {
+        // Where this one's body starts, to look on after it.
+        let at = body.as_ptr() as usize - init.as_ptr() as usize;
+        found.extend(read_tenc(body));
+        from = at;
+    }
+    found
+}
+
+fn read_tenc(body: &[u8]) -> Option<Tenc> {
     // version, flags (3), reserved, pattern (version 1) or reserved,
     // is_protected, per-sample IV size, key id (16), then a constant IV.
     if body.len() < 24 {

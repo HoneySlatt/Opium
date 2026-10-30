@@ -29,10 +29,10 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
     let width = (ui.available_width() - 2.0 * pad).min(MAX_WIDTH);
     let paired = app.devices.peers.iter().filter(|p| p.paired).count().max(1);
     let total = BODY_TOP
-        + 9.0 * (GROUP_HEAD + GROUP_GAP)
+        + 10.0 * (GROUP_HEAD + GROUP_GAP)
         + 3.0 * ROW
         + THEMES
-        + (11 + paired) as f32 * ROW
+        + (12 + paired) as f32 * ROW
         + 104.0;
     let output = egui::ScrollArea::vertical()
         .id_salt("settings")
@@ -116,6 +116,37 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
                 pos2(card.left() + 16.0, card.top() + 1.5 * ROW),
                 "Add playlist songs to the library",
                 "A song you add to a playlist joins your library if it isn't there yet.",
+                width - 32.0 - 60.0,
+            );
+            y = card.bottom() + GROUP_GAP;
+
+            y = group(
+                ui,
+                &theme,
+                left,
+                y,
+                width,
+                "Spatial Audio",
+                "How Apple Music's songs mixed in Dolby Atmos play.",
+            );
+            let card = Rect::from_min_size(pos2(left, y), vec2(width, ROW));
+            panel(ui, &theme, card, 1);
+            let on = app.spatial_audio();
+            if switch(
+                ui,
+                &theme,
+                pos2(card.right() - 16.0, card.center().y),
+                on,
+                "spatial-audio",
+            ) {
+                app.set_spatial_audio(!on);
+            }
+            labels(
+                ui,
+                &theme,
+                pos2(card.left() + 16.0, card.center().y),
+                "Dolby Atmos",
+                "Apple's binaural rendering of the Atmos mix, for headphones (AAC 256, 48 kHz). Off, these songs play in stereo.",
                 width - 32.0 - 60.0,
             );
             y = card.bottom() + GROUP_GAP;

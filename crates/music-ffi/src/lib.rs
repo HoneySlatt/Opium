@@ -726,15 +726,17 @@ impl Session {
         .await
     }
 
-    /// An Apple song's encrypted file, for the player's own CDM.
+    /// An Apple song's encrypted file, for the player's own CDM: with
+    /// `spatial`, a song mixed in Dolby Atmos as Spatial Audio.
     pub async fn protected(
         self: Arc<Self>,
         song: ItemId,
+        spatial: bool,
     ) -> Result<Option<Arc<ProtectedTrack>>, MusicError> {
         off(async move {
             let apple = self.apple()?;
             Ok(apple
-                .protected(&song)
+                .protected(&song, spatial)
                 .await?
                 .map(|protected| ProtectedTrack::new(apple.clone(), protected)))
         })
@@ -1297,12 +1299,13 @@ impl Apple {
     pub async fn protected(
         self: Arc<Self>,
         song: String,
+        spatial: bool,
     ) -> Result<Option<Arc<ProtectedTrack>>, MusicError> {
         off(async move {
             let id = ItemId::new(ProviderKind::AppleMusic, song);
             Ok(self
                 .0
-                .protected(&id)
+                .protected(&id, spatial)
                 .await?
                 .map(|protected| ProtectedTrack::new(self.0.clone(), protected)))
         })
@@ -1355,6 +1358,18 @@ impl ProtectedTrack {
 
     pub fn kbps(&self) -> u32 {
         self.protected.kbps
+    }
+
+    /// Spatial Audio: Apple's binaural rendering of the song's Dolby Atmos
+    /// mix, AAC 256 kbps at 48 kHz.
+    pub fn spatial(&self) -> bool {
+        self.protected.spatial
+    }
+
+    /// The init segment the playlist names `init.mp4`, beside it, with its
+    /// key ids written in: Spatial Audio's only.
+    pub fn init(&self) -> Option<Vec<u8>> {
+        self.protected.init.clone()
     }
 
     /// The frames the encoder put before the music, to leave out.
