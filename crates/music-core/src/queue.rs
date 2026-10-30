@@ -2,7 +2,8 @@ use rand::seq::SliceRandom;
 
 use crate::model::Track;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
 pub enum Repeat {
     #[default]
     Off,
@@ -20,6 +21,9 @@ pub struct Queue {
     pos: usize,
     shuffle: bool,
     repeat: Repeat,
+    /// Bumped by every change, so that a copy shown elsewhere is sent again
+    /// only when it is out of date.
+    revision: u64,
 }
 
 impl Queue {
@@ -29,6 +33,7 @@ impl Queue {
 
     /// Replace the whole queue, starting playback at `start` (an index into `tracks`).
     pub fn replace(&mut self, tracks: Vec<Track>, start: usize) {
+        self.revision += 1;
         self.order = (0..tracks.len()).collect();
         self.pos = start.min(tracks.len().saturating_sub(1));
         self.tracks = tracks;
@@ -51,6 +56,7 @@ impl Queue {
 
     /// The user pressed next. Wraps around unless repeat is off.
     pub fn skip_next(&mut self) -> Option<&Track> {
+        self.revision += 1;
         if self.pos + 1 < self.order.len() {
             self.pos += 1;
         } else if self.repeat != Repeat::Off && !self.order.is_empty() {
@@ -63,6 +69,7 @@ impl Queue {
 
     /// The user pressed previous. Stays on the first track rather than wrapping.
     pub fn skip_previous(&mut self) -> Option<&Track> {
+        self.revision += 1;
         self.pos = self.pos.saturating_sub(1);
         self.current()
     }
@@ -89,12 +96,14 @@ impl Queue {
 
     /// Play `track` right after the current one.
     pub fn add_next(&mut self, track: Track) {
+        self.revision += 1;
         let at = (self.pos + 1).min(self.order.len());
         self.order.insert(at, self.tracks.len());
         self.tracks.push(track);
     }
 
     pub fn add_last(&mut self, track: Track) {
+        self.revision += 1;
         self.order.push(self.tracks.len());
         self.tracks.push(track);
     }
@@ -106,6 +115,7 @@ impl Queue {
 
     /// Make the `k`-th upcoming track current; the ones before it are skipped.
     pub fn jump(&mut self, k: usize) -> Option<&Track> {
+        self.revision += 1;
         if k < self.upcoming_len() {
             self.pos += 1 + k;
         }
@@ -114,6 +124,7 @@ impl Queue {
 
     /// Take the `k`-th upcoming track out of the queue.
     pub fn remove_upcoming(&mut self, k: usize) {
+        self.revision += 1;
         if k < self.upcoming_len() {
             let index = self.order.remove(self.pos + 1 + k);
             self.forget(index);
@@ -122,6 +133,7 @@ impl Queue {
 
     /// Take every upcoming track out, keeping what has played.
     pub fn clear_upcoming(&mut self) {
+        self.revision += 1;
         self.order.truncate(self.pos + 1);
         let mut kept = vec![false; self.tracks.len()];
         for &i in &self.order {
@@ -153,12 +165,42 @@ impl Queue {
         }
     }
 
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+
+    /// The whole queue: its tracks in their order, the play order over them,
+    /// and where in it the current track is.
+    pub fn snapshot(&self) -> (Vec<Track>, Vec<usize>, usize) {
+        (self.tracks.clone(), self.order.clone(), self.pos)
+    }
+
+    /// Take over a queue as [`snapshot`](Self::snapshot) gave it. An order
+    /// that doesn't fit the tracks plays them in their own.
+    pub fn restore(&mut self, tracks: Vec<Track>, order: Vec<usize>, pos: usize, shuffle: bool) {
+        self.revision += 1;
+        let mut seen = vec![false; tracks.len()];
+        let fits = order.len() <= tracks.len()
+            && order
+                .iter()
+                .all(|&i| i < tracks.len() && !std::mem::replace(&mut seen[i], true));
+        self.order = if fits {
+            order
+        } else {
+            (0..tracks.len()).collect()
+        };
+        self.pos = pos.min(self.order.len().saturating_sub(1));
+        self.tracks = tracks;
+        self.shuffle = shuffle;
+    }
+
     pub fn shuffle(&self) -> bool {
         self.shuffle
     }
 
     /// Shuffling keeps the current track playing and shuffles everything else after it.
     pub fn set_shuffle(&mut self, on: bool) {
+        self.revision += 1;
         if on == self.shuffle {
             return;
         }
@@ -176,6 +218,7 @@ impl Queue {
     }
 
     pub fn set_repeat(&mut self, repeat: Repeat) {
+        self.revision += 1;
         self.repeat = repeat;
     }
 
@@ -321,6 +364,29 @@ mod tests {
         q.add_last(track(100));
         let upcoming: Vec<u32> = q.upcoming().filter_map(|t| t.track_number).collect();
         assert_eq!(upcoming, vec![99, 1, 2, 100]);
+    }
+
+    #[test]
+    fn a_restored_snapshot_plays_on_and_unshuffles_the_same() {
+        let mut q = queue_of(6, 2);
+        q.set_shuffle(true);
+        q.skip_next();
+        let (tracks, order, pos) = q.snapshot();
+        let mut other = Queue::new();
+        other.restore(tracks, order, pos, true);
+        assert_eq!(number(other.current()), number(q.current()));
+        assert!(other.upcoming().eq(q.upcoming()));
+        q.set_shuffle(false);
+        other.set_shuffle(false);
+        assert!(other.upcoming().eq(q.upcoming()));
+    }
+
+    #[test]
+    fn an_order_that_does_not_fit_is_dropped() {
+        let mut q = Queue::new();
+        q.restore((0..3).map(track).collect(), vec![0, 0, 7], 1, false);
+        assert_eq!(number(q.current()), Some(1));
+        assert_eq!(q.upcoming_len(), 1);
     }
 
     #[test]

@@ -27,7 +27,13 @@ const THEMES: f32 = 14.0 + 10.0 + 74.0 + 10.0 + 18.0 + 18.0 + 4.0 + 14.0 + 12.0 
 pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
     let theme = app.theme.clone();
     let width = (ui.available_width() - 2.0 * pad).min(MAX_WIDTH);
-    let total = BODY_TOP + 8.0 * (GROUP_HEAD + GROUP_GAP) + 3.0 * ROW + THEMES + 11.0 * ROW + 104.0;
+    let paired = app.devices.peers.iter().filter(|p| p.paired).count().max(1);
+    let total = BODY_TOP
+        + 9.0 * (GROUP_HEAD + GROUP_GAP)
+        + 3.0 * ROW
+        + THEMES
+        + (11 + paired) as f32 * ROW
+        + 104.0;
     let output = egui::ScrollArea::vertical()
         .id_salt("settings")
         .auto_shrink(false)
@@ -228,6 +234,20 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
             scale(app, ui, &theme, card);
             y = card.bottom() + GROUP_GAP;
 
+            y = group(
+                ui,
+                &theme,
+                left,
+                y,
+                width,
+                "Devices",
+                "Your phone, on the same Wi-Fi, plays here and controls this computer, once paired.",
+            );
+            let card = Rect::from_min_size(pos2(left, y), vec2(width, paired as f32 * ROW));
+            panel(ui, &theme, card, paired);
+            devices(app, ui, &theme, card);
+            y = card.bottom() + GROUP_GAP;
+
             y = group(ui, &theme, left, y, width, "About", "");
             let card = Rect::from_min_size(pos2(left, y), vec2(width, ROW));
             panel(ui, &theme, card, 1);
@@ -311,7 +331,11 @@ fn button(ui: &mut Ui, theme: &Theme, right: f32, y: f32, label: &str, enabled: 
         pos2(right - g.size().x - 28.0, y - 15.0),
         pos2(right, y + 15.0),
     );
-    let response = ui.interact(rect, Id::unique(("settings-button", label)), Sense::click());
+    let response = ui.interact(
+        rect,
+        Id::unique(("settings-button", label, y as i32)),
+        Sense::click(),
+    );
     let hovered = enabled && response.hovered();
     let fill = theme.text_a(if hovered { 0.14 } else { 0.08 });
     ui.painter().rect_filled(rect, 8.0, fill);
@@ -321,6 +345,54 @@ fn button(ui: &mut Ui, theme: &Theme, right: f32, y: f32, label: &str, enabled: 
         && response
             .on_hover_cursor(egui::CursorIcon::PointingHand)
             .clicked()
+}
+
+/// The devices paired, each with Forget; or how to pair one.
+fn devices(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect) {
+    let paired: Vec<connect::Peer> = app
+        .devices
+        .peers
+        .iter()
+        .filter(|p| p.paired)
+        .cloned()
+        .collect();
+    if paired.is_empty() {
+        let port = app.devices.node.port();
+        labels(
+            ui,
+            theme,
+            pos2(card.left() + 16.0, card.center().y),
+            "No device paired yet",
+            &format!(
+                "On the phone, open Now Playing and tap the device under the controls. \
+                 The firewall must let in TCP {port} and UDP 5353."
+            ),
+            card.width() - 32.0,
+        );
+        return;
+    }
+    for (i, peer) in paired.iter().enumerate() {
+        let y = card.top() + i as f32 * ROW + ROW / 2.0;
+        let state = match (&peer.playing, peer.connected) {
+            (Some(p), true) if p.playing => match &p.track {
+                Some(t) => format!("Playing “{}”", t.title),
+                None => "Connected".to_owned(),
+            },
+            (_, true) => "Connected".to_owned(),
+            _ => "Not on the network".to_owned(),
+        };
+        if button(ui, theme, card.right() - 16.0, y, "Forget", true) {
+            app.devices.node.forget(&peer.device.id);
+        }
+        labels(
+            ui,
+            theme,
+            pos2(card.left() + 16.0, y),
+            &peer.device.name,
+            &state,
+            card.width() - 32.0 - 100.0,
+        );
+    }
 }
 
 fn services(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect) {

@@ -18,6 +18,10 @@ class MusicApp : Application() {
     lateinit var settings: io.github.honeyslatt.music.data.Settings
         private set
 
+    /** The user's other devices, through Music Connect. */
+    lateinit var devices: io.github.honeyslatt.music.data.Devices
+        private set
+
     @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     lateinit var playback: io.github.honeyslatt.music.playback.Playback
         private set
@@ -28,6 +32,7 @@ class MusicApp : Application() {
         core = Core(this)
         settings = io.github.honeyslatt.music.data.Settings(this)
         library = Library(core, scope)
-        playback = io.github.honeyslatt.music.playback.Playback(this, core, scope)
+        devices = io.github.honeyslatt.music.data.Devices(this)
+        playback = io.github.honeyslatt.music.playback.Playback(this, core, scope, devices)
     }
 }

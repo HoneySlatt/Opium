@@ -40,9 +40,11 @@ class MainActivity : ComponentActivity() {
         super.onStart()
         // Being connected to it is what keeps the session service running.
         controller = MediaController.Builder(this, SessionToken(this, ComponentName(this, PlaybackService::class.java))).buildAsync()
+        (application as MusicApp).devices.looking(true)
     }
 
     override fun onStop() {
+        (application as MusicApp).devices.looking(false)
         controller?.let(MediaController::releaseFuture)
         controller = null
         super.onStop()

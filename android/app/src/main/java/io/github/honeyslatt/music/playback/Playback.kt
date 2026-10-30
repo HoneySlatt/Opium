@@ -16,19 +16,30 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.source.MediaSource
+import android.os.SystemClock
 import io.github.honeyslatt.music.core.MusicException
 import io.github.honeyslatt.music.core.PlayQueue
 import io.github.honeyslatt.music.core.QueueRepeat
+import io.github.honeyslatt.music.core.connect.Command
+import io.github.honeyslatt.music.core.connect.Event
+import io.github.honeyslatt.music.core.connect.Handoff
+import io.github.honeyslatt.music.core.connect.Peer
+import io.github.honeyslatt.music.core.connect.Playing
 import io.github.honeyslatt.music.core.model.AudioQuality
+import io.github.honeyslatt.music.core.model.Repeat
 import io.github.honeyslatt.music.core.model.ProviderKind
 import io.github.honeyslatt.music.core.model.Track
 import io.github.honeyslatt.music.data.Core
+import io.github.honeyslatt.music.data.Devices
 import io.github.honeyslatt.music.ui.components.at
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 /**
@@ -52,9 +63,12 @@ private const val MAX_SKIPS = 5
  * player. The player only ever holds the current song and the next one,
  * each made playable just before it is needed, so that the next follows
  * without a gap while the whole queue isn't resolved at once.
+ *
+ * Another device can be chosen to play on instead (Music Connect): the
+ * screens then show what it plays, and what they ask goes to it.
  */
 @UnstableApi
-class Playback(private val context: Context, private val core: Core, private val scope: CoroutineScope) {
+class Playback(private val context: Context, private val core: Core, private val scope: CoroutineScope, val devices: Devices) {
     val queue = PlayQueue()
 
     // Decoded to float rather than 16 bits: a 24-bit file keeps its bits
@@ -70,46 +84,78 @@ class Playback(private val context: Context, private val core: Core, private val
         .build()
 
     private val _now = MutableStateFlow<Track?>(null)
-
-    /** The song playing, or on its way. */
-    val now: StateFlow<Track?> = _now.asStateFlow()
-
     private val _playing = MutableStateFlow(false)
-    val playing: StateFlow<Boolean> = _playing.asStateFlow()
-
     private val _loading = MutableStateFlow(false)
-
-    /** The current song is still being made playable. */
-    val loading: StateFlow<Boolean> = _loading.asStateFlow()
 
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
 
     /** What follows, in play order, and what played, most recent first. */
     private val _upcoming = MutableStateFlow<List<Track>>(emptyList())
-    val upcoming: StateFlow<List<Track>> = _upcoming.asStateFlow()
     private val _history = MutableStateFlow<List<Track>>(emptyList())
-    val history: StateFlow<List<Track>> = _history.asStateFlow()
-
     private val _shuffle = MutableStateFlow(false)
-    val shuffleOn: StateFlow<Boolean> = _shuffle.asStateFlow()
     private val _repeat = MutableStateFlow(QueueRepeat.OFF)
-    val repeat: StateFlow<QueueRepeat> = _repeat.asStateFlow()
+
+    /** The device chosen to play on, when it isn't this phone: its id. */
+    private val target = MutableStateFlow<String?>(null)
+
+    /** The device played on, when it isn't this phone, as last heard from. */
+    val remote: StateFlow<Peer?> = combine(target, devices.peers) { id, peers ->
+        id?.let { peers.find { p -> p.device.id == it && p.connected } }
+    }.stateIn(scope, SharingStarted.Eagerly, null)
+
+    /** This phone's `local`, or what the device played on says. */
+    private fun <T> shown(local: StateFlow<T>, far: (Peer) -> T): StateFlow<T> =
+        combine(local, remote) { l, r -> if (r != null) far(r) else l }.stateIn(scope, SharingStarted.Eagerly, local.value)
+
+    /** The song playing, or on its way. */
+    val now: StateFlow<Track?> = shown(_now) { it.playing?.track }
+    val playing: StateFlow<Boolean> = shown(_playing) { it.playing?.playing == true }
+
+    /** The current song is still being made playable. */
+    val loading: StateFlow<Boolean> = shown(_loading) { false }
+    val upcoming: StateFlow<List<Track>> = shown(_upcoming) { it.upcoming }
+    val history: StateFlow<List<Track>> = shown(_history) { emptyList() }
+    val shuffleOn: StateFlow<Boolean> = shown(_shuffle) { it.playing?.shuffle == true }
+    val repeat: StateFlow<QueueRepeat> = shown(_repeat) { queueRepeat(it.playing?.repeat ?: Repeat.OFF) }
 
     private val _signal = MutableStateFlow(Signal())
     val signal: StateFlow<Signal> = _signal.asStateFlow()
 
     /** Where the song is, in ms; read as often as wanted. */
-    val position: Long get() = player.currentPosition.coerceAtLeast(0)
+    val position: Long get() = remote.value?.let(::farPosition) ?: player.currentPosition.coerceAtLeast(0)
+
+    /** Where the song the device played on plays is by now. */
+    private fun farPosition(peer: Peer): Long {
+        val p = peer.playing ?: return 0
+        var ms = p.positionMs.toLong()
+        if (p.playing) ms += SystemClock.elapsedRealtime() - devices.peersAt
+        return p.durationMs?.let { ms.coerceAtMost(it.toLong()) } ?: ms
+    }
 
     /** How long the song is, in ms, once known. */
     val duration: Long?
+        get() = remote.value?.let { it.playing?.durationMs?.toLong() } ?: localDuration
+
+    private val localDuration: Long?
         get() = player.duration.takeIf { it != C.TIME_UNSET && it > 0 }
             ?: _now.value?.duration?.toMillis()
 
-    fun seekTo(ms: Long) = player.seekTo(ms)
+    /** Set while carrying out what another device asked: it is for this phone's player. */
+    private var obeying = false
 
-    fun setShuffle(on: Boolean) {
+    /** The device what is asked goes to, if not this phone's player. */
+    private fun far(): String? = if (obeying) null else remote.value?.device?.id
+
+    /** Ask the device played on, or do it `here`. */
+    private inline fun either(command: () -> Command, here: () -> Unit) {
+        val id = far()
+        if (id != null) devices.send(id, command()) else here()
+    }
+
+    fun seekTo(ms: Long) = either({ Command.Seek(ms.coerceAtLeast(0).toULong()) }) { player.seekTo(ms) }
+
+    fun setShuffle(on: Boolean) = either({ Command.SetShuffle(on) }) {
         queue.setShuffle(on)
         changed()
         lineUpNext()
@@ -117,19 +163,22 @@ class Playback(private val context: Context, private val core: Core, private val
 
     /** Off, all, one, off. */
     fun cycleRepeat() {
-        queue.setRepeat(
-            when (queue.repeat()) {
-                QueueRepeat.OFF -> QueueRepeat.ALL
-                QueueRepeat.ALL -> QueueRepeat.ONE
-                QueueRepeat.ONE -> QueueRepeat.OFF
-            },
-        )
+        val next = when (repeat.value) {
+            QueueRepeat.OFF -> QueueRepeat.ALL
+            QueueRepeat.ALL -> QueueRepeat.ONE
+            QueueRepeat.ONE -> QueueRepeat.OFF
+        }
+        either({ Command.SetRepeat(repeatOf(next)) }) { setRepeat(next) }
+    }
+
+    private fun setRepeat(repeat: QueueRepeat) {
+        queue.setRepeat(repeat)
         changed()
         lineUpNext()
     }
 
     /** Play the `k`-th upcoming song now. */
-    fun jump(k: Int) {
+    fun jump(k: Int) = either({ Command.Jump(k.toUInt()) }) {
         val previous = _now.value
         if (queue.jump(k.toUInt()) != null) {
             previous?.let(::played)
@@ -137,16 +186,21 @@ class Playback(private val context: Context, private val core: Core, private val
         }
     }
 
-    fun removeUpcoming(k: Int) {
+    fun removeUpcoming(k: Int) = either({ Command.RemoveUpcoming(k.toUInt()) }) {
         queue.removeUpcoming(k.toUInt())
         changed()
         if (k == 0) lineUpNext()
     }
 
-    fun clearUpcoming() {
+    fun clearUpcoming() = either({ Command.ClearUpcoming }) {
         queue.clearUpcoming()
         changed()
         lineUpNext()
+    }
+
+    /** The volume of the device played on, from 0 to 1. */
+    fun setRemoteVolume(volume: Float) {
+        remote.value?.let { devices.send(it.device.id, Command.SetVolume(volume.coerceIn(0f, 1f))) }
     }
 
     fun clearHistory() {
@@ -157,11 +211,13 @@ class Playback(private val context: Context, private val core: Core, private val
     private var station: io.github.honeyslatt.music.core.model.ItemId? = null
     private var refilling = false
 
-    /** The queue's state, as the screens show it. */
+    /** The queue's state, as the screens and the other devices show it. */
     private fun changed() {
         _upcoming.value = queue.upcoming()
         _shuffle.value = queue.shuffle()
         _repeat.value = queue.repeat()
+        devices.publishUpcoming(_upcoming.value.take(100))
+        tell()
         refill()
     }
 
@@ -198,6 +254,7 @@ class Playback(private val context: Context, private val core: Core, private val
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 _playing.value = isPlaying
+                tell()
             }
 
             override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
@@ -248,6 +305,10 @@ class Playback(private val context: Context, private val core: Core, private val
     /** Play `tracks` from `start`. */
     fun play(tracks: List<Track>, start: Int) {
         if (tracks.isEmpty()) return
+        either({ Command.PlayList(tracks, start.toUInt()) }) { playHere(tracks, start) }
+    }
+
+    private fun playHere(tracks: List<Track>, start: Int) {
         station = null
         queue.replace(tracks, start.toUInt())
         startCurrent()
@@ -261,29 +322,39 @@ class Playback(private val context: Context, private val core: Core, private val
      * plays its stream as the queue's one song.
      */
     suspend fun playStation(station: io.github.honeyslatt.music.core.model.Station) {
+        far()?.let { devices.send(it, Command.PlayStation(station)); return }
         if (station.kind == io.github.honeyslatt.music.core.model.StationKind.TRACKS) return playStation(station.id)
         stations[station.id.id] = station
-        val song = Track(
-            id = station.id,
-            title = station.name,
-            artists = listOf(if (station.kind == io.github.honeyslatt.music.core.model.StationKind.LIVE) "Live Radio" else "Radio Episode"),
-            album = station.description,
-            albumId = null,
-            duration = null,
-            trackNumber = null,
-            discNumber = null,
-            artwork = station.artwork,
-            explicit = false,
-            quality = null,
-            inLibrary = false,
-            libraryId = null,
-        )
-        play(listOf(song), 0)
+        playHere(listOf(stationSong(station)), 0)
     }
+
+    /** A station's stream, as the queue's one song. */
+    private fun stationSong(station: io.github.honeyslatt.music.core.model.Station) = Track(
+        id = station.id,
+        title = station.name,
+        artists = listOf(if (station.kind == io.github.honeyslatt.music.core.model.StationKind.LIVE) "Live Radio" else "Radio Episode"),
+        album = station.description,
+        albumId = null,
+        duration = null,
+        trackNumber = null,
+        discNumber = null,
+        artwork = station.artwork,
+        explicit = false,
+        quality = null,
+        inLibrary = false,
+        libraryId = null,
+    )
 
     /** A station of songs, going on for as long as it plays. */
     suspend fun playStation(id: io.github.honeyslatt.music.core.model.ItemId) {
-        play(core.session.stationTracks(id, STATION_SONGS), 0)
+        far()?.let {
+            val station = io.github.honeyslatt.music.core.model.Station(id, "Station", null, null, io.github.honeyslatt.music.core.model.StationKind.TRACKS)
+            devices.send(it, Command.PlayStation(station))
+            return
+        }
+        val tracks = core.session.stationTracks(id, STATION_SONGS)
+        if (tracks.isEmpty()) return
+        playHere(tracks, 0)
         station = id
     }
 
@@ -310,6 +381,7 @@ class Playback(private val context: Context, private val core: Core, private val
     /** Play `tracks` right after the current song, in their order. */
     fun playNext(tracks: List<Track>) {
         if (tracks.isEmpty()) return
+        far()?.let { devices.send(it, Command.PlayNext(tracks)); return }
         if (_now.value == null) return play(tracks, 0)
         tracks.asReversed().forEach(queue::addNext)
         changed()
@@ -319,6 +391,7 @@ class Playback(private val context: Context, private val core: Core, private val
     /** Play `tracks` once everything else has. */
     fun addToQueue(tracks: List<Track>) {
         if (tracks.isEmpty()) return
+        far()?.let { devices.send(it, Command.AddToQueue(tracks)); return }
         if (_now.value == null) return play(tracks, 0)
         tracks.forEach(queue::addLast)
         changed()
@@ -328,11 +401,16 @@ class Playback(private val context: Context, private val core: Core, private val
     /** Play `tracks` shuffled, from a random one. */
     fun shuffle(tracks: List<Track>) {
         if (tracks.isEmpty()) return
+        far()?.let {
+            devices.send(it, Command.SetShuffle(true))
+            devices.send(it, Command.PlayList(tracks, tracks.indices.random().toUInt()))
+            return
+        }
         queue.setShuffle(true)
         play(tracks, tracks.indices.random())
     }
 
-    fun toggle() {
+    fun toggle() = either({ Command.Toggle }) {
         if (player.playbackState == Player.STATE_IDLE && _now.value != null) {
             startCurrent()
         } else if (player.isPlaying) {
@@ -342,7 +420,7 @@ class Playback(private val context: Context, private val core: Core, private val
         }
     }
 
-    fun next() {
+    fun next() = either({ Command.Next }) {
         _now.value?.takeIf { !player.hasNextMediaItem() }?.let(::played)
         if (player.hasNextMediaItem() && queue.repeat() != QueueRepeat.ONE) {
             queue.skipNext()
@@ -353,7 +431,7 @@ class Playback(private val context: Context, private val core: Core, private val
     }
 
     /** Back to the song's start, or to the one before when already there. */
-    fun previous() {
+    fun previous() = either({ Command.Previous }) {
         if (player.currentPosition > 3_000) {
             player.seekTo(0)
         } else if (queue.skipPrevious() != null) {
@@ -369,6 +447,8 @@ class Playback(private val context: Context, private val core: Core, private val
     /** Make the queue's current song playable and play it, at once. */
     private fun startCurrent() {
         val track = queue.current() ?: return
+        val from = startAt
+        startAt = 0
         changed()
         val mine = ++generation
         lining?.cancel()
@@ -388,7 +468,7 @@ class Playback(private val context: Context, private val core: Core, private val
             }
             if (mine != generation) return@launch
             _loading.value = false
-            player.setMediaSource(source)
+            if (from > 0) player.setMediaSource(source, from) else player.setMediaSource(source)
             player.prepare()
             player.play()
             lineUpNext()
@@ -410,6 +490,148 @@ class Playback(private val context: Context, private val core: Core, private val
     }
 
     private var keys = 0
+
+    /** Where the next song started goes on from: one handed over midway. */
+    private var startAt = 0L
+
+    /**
+     * Play on the device `id`, or on this phone when null: what plays here
+     * moves there, or what plays there comes here, as with Spotify's
+     * devices. A device that plays while this phone doesn't is only
+     * controlled from here.
+     */
+    fun playOn(id: String?) {
+        val from = remote.value?.device?.id
+        if (id == from) return
+        if (id == null) {
+            from?.let { devices.send(it, Command.HandOver) }
+        } else if (from == null && player.isPlaying && devices.handOff(id, handoff())) {
+            player.pause()
+        }
+        target.value = id
+    }
+
+    /** The queue as it stands, for another device to play on from here. */
+    private fun handoff(): Handoff {
+        val s = queue.snapshot()
+        return Handoff(s.tracks, s.order, s.at, queue.shuffle(), repeatOf(queue.repeat()), player.currentPosition.coerceAtLeast(0).toULong(), player.isPlaying, station)
+    }
+
+    /** Play on from where another device left off. */
+    private fun take(from: String, h: Handoff) {
+        target.value = null
+        val previous = _now.value
+        // A station on air came as the queue's one song: it plays as one here too.
+        h.tracks.filter { it.id.id.startsWith("ra.") && it.duration == null }.forEach {
+            val kind = if (it.artists.any { a -> a.startsWith("Live", ignoreCase = true) }) {
+                io.github.honeyslatt.music.core.model.StationKind.LIVE
+            } else {
+                io.github.honeyslatt.music.core.model.StationKind.EPISODE
+            }
+            stations[it.id.id] = io.github.honeyslatt.music.core.model.Station(it.id, it.title, it.album, it.artwork, kind)
+        }
+        queue.restore(h.tracks, h.order, h.at, h.shuffle)
+        queue.setRepeat(queueRepeat(h.repeat))
+        station = h.station
+        previous?.let(::played)
+        startAt = h.positionMs.toLong()
+        startCurrent()
+        devices.notice("Playing here, from ${devices.name(from)}")
+    }
+
+    /** Do what another device asked of this phone's player. */
+    private fun obey(from: String, command: Command) {
+        obeying = true
+        try {
+            when (command) {
+                Command.Play -> if (!player.isPlaying) toggle()
+                Command.Pause -> player.pause()
+                Command.Toggle -> toggle()
+                Command.Next -> next()
+                Command.Previous -> previous()
+                is Command.Seek -> seekTo(command.positionMs.toLong())
+                is Command.SetVolume -> {
+                    val audio = context.getSystemService(android.media.AudioManager::class.java)
+                    val max = audio.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC)
+                    audio.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, Math.round(command.volume * max), 0)
+                }
+                is Command.SetShuffle -> setShuffle(command.on)
+                is Command.SetRepeat -> setRepeat(queueRepeat(command.repeat))
+                is Command.Jump -> jump(command.k.toInt())
+                is Command.RemoveUpcoming -> removeUpcoming(command.k.toInt())
+                Command.ClearUpcoming -> clearUpcoming()
+                is Command.PlayList -> playHere(command.tracks, command.start.toInt())
+                is Command.PlayNext -> playNext(command.tracks)
+                is Command.AddToQueue -> addToQueue(command.tracks)
+                is Command.PlayStation -> {
+                    val s = command.station
+                    if (s.kind == io.github.honeyslatt.music.core.model.StationKind.TRACKS) {
+                        scope.launch {
+                            runCatching { core.session.stationTracks(s.id, STATION_SONGS) }.getOrNull()?.takeIf { it.isNotEmpty() }?.let {
+                                playHere(it, 0)
+                                station = s.id
+                            }
+                        }
+                    } else {
+                        stations[s.id.id] = s
+                        playHere(listOf(stationSong(s)), 0)
+                    }
+                }
+                Command.HandOver -> if (devices.handOff(from, handoff())) player.pause()
+            }
+        } finally {
+            obeying = false
+        }
+    }
+
+    /** Tell the other devices what plays here; only a change goes out. */
+    private fun tell() {
+        val t = _now.value
+        val audio = context.getSystemService(android.media.AudioManager::class.java)
+        val max = audio.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+        devices.publish(
+            Playing(
+                track = t,
+                playing = player.isPlaying || _loading.value,
+                positionMs = player.currentPosition.coerceAtLeast(0).toULong(),
+                durationMs = localDuration?.toULong(),
+                shuffle = queue.shuffle(),
+                repeat = repeatOf(queue.repeat()),
+                volume = audio.getStreamVolume(android.media.AudioManager.STREAM_MUSIC).toFloat() / max,
+                live = t != null && isLive(t),
+            ),
+        )
+    }
+
+    /** Which devices played, to follow one that starts while this phone is quiet. */
+    private val farPlaying = mutableMapOf<String, Boolean>()
+
+    private fun follow(peers: List<Peer>) {
+        for (p in peers) {
+            val on = p.connected && p.playing?.playing == true
+            val before = farPlaying.put(p.device.id, on) ?: false
+            if (on && !before && target.value == null && !player.isPlaying && !_loading.value) target.value = p.device.id
+        }
+        // The device played on left: back to this phone.
+        target.value?.let { id -> if (peers.none { it.device.id == id && it.connected }) target.value = null }
+    }
+
+    init {
+        devices.heard = { event ->
+            when (event) {
+                is Event.Asked -> obey(event.from, event.command)
+                is Event.Handed -> take(event.from, event.handoff)
+                else -> {}
+            }
+        }
+        scope.launch { devices.peers.collect(::follow) }
+        scope.launch {
+            while (true) {
+                tell()
+                kotlinx.coroutines.delay(1_000)
+            }
+        }
+    }
 
     /** A song as the player plays it, with what the lock screen shows. */
     private suspend fun playable(track: Track, generation: Int): MediaSource {
@@ -449,4 +671,16 @@ class Playback(private val context: Context, private val core: Core, private val
             ProviderKind.NAVIDROME -> navidromeSource(core.session.navidromeStreamUrl(track.id), item)
         }
     }
+}
+
+private fun queueRepeat(r: Repeat) = when (r) {
+    Repeat.OFF -> QueueRepeat.OFF
+    Repeat.ALL -> QueueRepeat.ALL
+    Repeat.ONE -> QueueRepeat.ONE
+}
+
+private fun repeatOf(r: QueueRepeat) = when (r) {
+    QueueRepeat.OFF -> Repeat.OFF
+    QueueRepeat.ALL -> Repeat.ALL
+    QueueRepeat.ONE -> Repeat.ONE
 }

@@ -43,6 +43,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -93,6 +94,7 @@ fun App(core: Core, library: Library, playback: io.github.honeyslatt.music.playb
     val menus = remember { Menus() }
     val actions = remember { Actions(appContext, core, library, playback, nav, hud, menus, scope) }
     val browse = remember { Browse(core, scope) }
+    LaunchedEffect(Unit) { playback.devices.notices.collect { hud.show(it) } }
     actions.beforeLeaving = { npOpen = false }
     LyricsSource.find = { track ->
         // A station's stream has no lyrics to look for.
@@ -152,6 +154,7 @@ fun App(core: Core, library: Library, playback: io.github.honeyslatt.music.playb
         }
         io.github.honeyslatt.music.ui.settings.SettingsSheet(settingsOpen, core, settings, connecting::start) { settingsOpen = false }
         ActionSheets(actions)
+        io.github.honeyslatt.music.ui.nowplaying.PairingHost(playback.devices)
         MenuHost(menus)
         HudHost(hud)
     }

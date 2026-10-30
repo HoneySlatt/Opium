@@ -121,6 +121,7 @@ fun NowPlaying(playback: Playback, actions: NpActions) {
     val t = track ?: return
     var mode by remember { mutableStateOf(NpMode.Artwork) }
     var signalOpen by remember { mutableStateOf(false) }
+    var devicesOpen by remember { mutableStateOf(false) }
     val motion by produceState<String?>(null, t.albumId) { value = actions.motion(t) }
     val dark = roles.dark
     // Over the moving cover the text is white in both themes.
@@ -207,11 +208,12 @@ fun NowPlaying(playback: Playback, actions: NpActions) {
                     exit = fadeOut(Calm) + slideOutVertically(tween(CALM_MS)) { it / 12 } + shrinkVertically(tween(CALM_MS)),
                 ) {
                     Column {
-                        Controls(playback, t, playing, mode, onSignal = { signalOpen = true }) { mode = if (mode == it) NpMode.Artwork else it }
+                        Controls(playback, t, playing, mode, onSignal = { signalOpen = true }, onDevices = { devicesOpen = true }) { mode = if (mode == it) NpMode.Artwork else it }
                     }
                 }
             }
             Sheet(signalOpen, "Signal Path", onClose = { signalOpen = false }) { SignalPath(playback, t) }
+            DevicesSheet(devicesOpen, playback) { devicesOpen = false }
         }
     }
 }
@@ -388,12 +390,14 @@ fun rememberPosition(playback: Playback, playing: Boolean): Long {
 
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
-private fun Controls(playback: Playback, t: Track, playing: Boolean, mode: NpMode, onSignal: () -> Unit, onMode: (NpMode) -> Unit) {
+private fun Controls(playback: Playback, t: Track, playing: Boolean, mode: NpMode, onSignal: () -> Unit, onDevices: () -> Unit, onMode: (NpMode) -> Unit) {
     val np = LocalNp.current
-    if (playback.isLive(t)) {
+    val remote by playback.remote.collectAsStateWithLifecycle()
+    if (remote?.playing?.live ?: playback.isLive(t)) {
         LiveControls()
     } else {
-        Scrubber(playback, t, playing, onSignal)
+        // The signal path is this phone's: none to show for another device.
+        Scrubber(playback, t, playing, if (remote == null) onSignal else ({}))
     }
     Row(Modifier.fillMaxWidth().padding(top = 26.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
         Transport(Icons.Rw, 36) { playback.previous() }
@@ -402,7 +406,7 @@ private fun Controls(playback: Playback, t: Track, playing: Boolean, mode: NpMod
     }
     Row(Modifier.fillMaxWidth().padding(top = 30.dp), horizontalArrangement = Arrangement.SpaceAround) {
         Bottom(Icons.Lyrics, mode == NpMode.Lyrics) { onMode(NpMode.Lyrics) }
-        Output()
+        Output(playback, onDevices)
         Bottom(Icons.Queue, mode == NpMode.Queue) { onMode(NpMode.Queue) }
     }
 }
@@ -500,11 +504,13 @@ private fun Bottom(icon: androidx.compose.ui.graphics.vector.ImageVector, on: Bo
     ) { Glyph(icon, np.fg.copy(alpha = if (on) 1f else 0.78f), 22.dp) }
 }
 
-/** The output, by the device's name; a tap opens Android's own switcher. */
+/** Where it plays: this phone's output, or the device played on; a tap opens Play On. */
+@androidx.annotation.OptIn(UnstableApi::class)
 @Composable
-private fun Output() {
+private fun Output(playback: Playback, onDevices: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val np = LocalNp.current
+    val remote by playback.remote.collectAsStateWithLifecycle()
     val device = remember { mutableStateOf(Outputs.current(context)) }
     LaunchedEffect(Unit) {
         while (true) {
@@ -513,7 +519,13 @@ private fun Output() {
         }
     }
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Bottom(device.value.icon, false) { Outputs.showSwitcher(context) }
-        BasicText(device.value.name, style = geist(11.sp).copy(color = np.sub), maxLines = 1)
+        val r = remote
+        if (r != null) {
+            Bottom(r.icon(), true, onDevices)
+            BasicText(r.device.name, style = geist(11.sp, FontWeight.SemiBold).copy(color = np.fg), maxLines = 1)
+        } else {
+            Bottom(device.value.icon, false, onDevices)
+            BasicText(device.value.name, style = geist(11.sp).copy(color = np.sub), maxLines = 1)
+        }
     }
 }

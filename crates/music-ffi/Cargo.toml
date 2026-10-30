@@ -14,6 +14,7 @@ path = "src/bin/uniffi-bindgen.rs"
 
 [dependencies]
 apple-music = { path = "../apple-music" }
+connect = { path = "../connect", features = ["ffi"] }
 music-core = { path = "../music-core", features = ["ffi"] }
 services = { path = "../services" }
 navidrome = { path = "../navidrome" }

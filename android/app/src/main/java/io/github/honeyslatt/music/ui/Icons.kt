@@ -32,6 +32,7 @@ object Icons {
     val Queue: ImageVector by lazy { stroked("queue", "M3 12h.01", "M3 18h.01", "M3 6h.01", "M8 12h13", "M8 18h13", "M8 6h13") }
     val Headphones: ImageVector by lazy { stroked("headphones", "M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3") }
     val Phone: ImageVector by lazy { stroked("phone", "M7.0 2.0h10.0a2.0 2.0 0 0 1 2.0 2.0v16.0a2.0 2.0 0 0 1 -2.0 2.0h-10.0a2.0 2.0 0 0 1 -2.0 -2.0v-16.0a2.0 2.0 0 0 1 2.0 -2.0z", "M12 18h.01") }
+    val Monitor: ImageVector by lazy { stroked("monitor", "M4.0 3.0h16.0a2.0 2.0 0 0 1 2.0 2.0v10.0a2.0 2.0 0 0 1 -2.0 2.0h-16.0a2.0 2.0 0 0 1 -2.0 -2.0v-10.0a2.0 2.0 0 0 1 2.0 -2.0z", "M8 21h8", "M12 17v4") }
     val Usb: ImageVector by lazy { stroked("usb", "M9.0 7.0a1.0 1.0 0 1 0 2.0 0a1.0 1.0 0 1 0 -2.0 0", "M3.0 20.0a1.0 1.0 0 1 0 2.0 0a1.0 1.0 0 1 0 -2.0 0", "M4.7 19.3 19 5", "m21 3-3 1 2 2Z", "M9.26 7.68 5 12l2 5", "m10 14 5 2 3.5-3.5", "m18 12 1-1 1 1-1 1Z") }
     val Bt: ImageVector by lazy { stroked("bt", "m7 7 10 10-5 5V2l5 5L7 17") }
     val Wave: ImageVector by lazy { stroked("wave", "M2 10v3", "M6 6v11", "M10 3v18", "M14 8v7", "M18 5v13", "M22 10v3") }

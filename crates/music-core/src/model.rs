@@ -179,7 +179,7 @@ pub enum Collection {
 }
 
 /// A radio station.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct Station {
     pub id: ItemId,
@@ -190,7 +190,7 @@ pub struct Station {
     pub kind: StationKind,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
 pub enum StationKind {
     /// On air now (Apple Music 1, Hits…).

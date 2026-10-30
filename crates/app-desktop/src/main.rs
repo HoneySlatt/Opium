@@ -5,6 +5,7 @@ mod backend;
 mod cache;
 mod color;
 mod covers;
+mod devices;
 mod fonts;
 mod icons;
 mod mpris;

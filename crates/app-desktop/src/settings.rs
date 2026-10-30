@@ -109,12 +109,17 @@ pub enum AlbumSort {
     Released,
 }
 
-fn path() -> PathBuf {
+/// Where the app keeps what it keeps: the settings, the paired devices.
+pub fn dir() -> PathBuf {
     let config = std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
         .unwrap_or_default();
-    config.join("music/settings.toml")
+    config.join("music")
+}
+
+fn path() -> PathBuf {
+    dir().join("settings.toml")
 }
 
 impl Settings {

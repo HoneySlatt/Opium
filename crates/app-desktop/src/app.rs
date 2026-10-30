@@ -331,6 +331,8 @@ pub struct App {
     pub player: Player,
     /// The desktop's media controls.
     mpris: crate::mpris::Mpris,
+    /// The user's other devices, on the network.
+    pub devices: crate::devices::Devices,
     pub connection: Connection,
     /// The Apple Music storefront (country) of the account, once connected.
     pub storefront: Option<String>,
@@ -460,6 +462,9 @@ pub struct App {
     next_token: Token,
     /// Fetching, to play as soon as it arrives.
     pending_play: Option<Token>,
+    /// Where a track handed over from another device goes on from, once
+    /// it plays.
+    start_at: Option<(Token, Duration)>,
     /// Fetching or fetched, to follow the current track.
     queued_next: Option<Token>,
     /// The player has `queued_next` as its next track, fetched.
@@ -524,6 +529,7 @@ impl App {
             backend,
             player: Player::new(),
             mpris: crate::mpris::Mpris::start(cc.egui_ctx.clone()),
+            devices: crate::devices::Devices::start(cc.egui_ctx.clone()),
             connection: if settings.services_off.contains(&ProviderKind::AppleMusic) {
                 Connection::NotSignedIn
             } else {
@@ -608,6 +614,7 @@ impl App {
             server_songs: None,
             next_token: 0,
             pending_play: None,
+            start_at: None,
             queued_next: None,
             next_ready: false,
             warm: None,
@@ -2159,6 +2166,9 @@ impl App {
     fn play_now(&mut self, token: Token, stream: Playable) {
         self.playing = Some(token);
         self.player.play(token, Self::source(stream));
+        if let Some((_, at)) = self.start_at.take_if(|(t, _)| *t == token) {
+            self.player.seek(at);
+        }
     }
 
     fn now_title(&self, token: Option<Token>) -> String {
@@ -3340,6 +3350,129 @@ impl App {
         }
     }
 
+    /// Do what the other devices asked of this one.
+    fn other_devices(&mut self, now: f64) {
+        use connect::{Command, Event};
+        while let Some(event) = self.devices.next_event() {
+            match event {
+                Event::Changed => self.devices.peers = self.devices.node.peers(),
+                Event::ShowCode { device, code } => self.devices.pairing = Some((device, code)),
+                Event::AskCode { .. } => {}
+                Event::Paired { device, error } => {
+                    self.devices.pairing = None;
+                    self.devices.peers = self.devices.node.peers();
+                    match error {
+                        None => self.notify(format!("Paired with {}", device.name), now),
+                        Some(e) => {
+                            self.notify(format!("Not paired with {}: {e}", device.name), now)
+                        }
+                    }
+                }
+                Event::Handed { from, handoff } => {
+                    let name = self.device_name(&from);
+                    self.take_over(handoff);
+                    self.notify(format!("Playing here, from {name}"), now);
+                }
+                Event::Asked { from, command } => match command {
+                    Command::Play if !self.is_playing() => self.toggle_play(),
+                    Command::Pause if self.is_playing() => self.player.pause(),
+                    Command::Play | Command::Pause => {}
+                    Command::Toggle => self.toggle_play(),
+                    Command::Next => self.next(),
+                    Command::Previous => self.previous(),
+                    Command::Seek { position_ms } => {
+                        self.seek(Duration::from_millis(position_ms));
+                    }
+                    Command::SetVolume { volume } => self.set_volume(volume),
+                    Command::SetShuffle { on } => {
+                        if on != self.queue.shuffle() {
+                            self.toggle_shuffle();
+                        }
+                    }
+                    Command::SetRepeat { repeat } => self.set_repeat(repeat),
+                    Command::Jump { k } => self.jump_to(k as usize),
+                    Command::RemoveUpcoming { k } => self.remove_upcoming(k as usize),
+                    Command::ClearUpcoming => self.clear_upcoming(),
+                    Command::PlayList { tracks, start } => {
+                        self.play_list(tracks, start as usize);
+                        // Played from the phone's page, not this one's.
+                        self.playing_from = None;
+                    }
+                    Command::PlayNext { tracks } => self.enqueue(tracks, Enqueue::Next, now),
+                    Command::AddToQueue { tracks } => self.enqueue(tracks, Enqueue::Last, now),
+                    Command::PlayStation { station } => self.play_station(&station),
+                    Command::HandOver => {
+                        let handoff = self.handoff();
+                        if self.devices.node.hand_off(&from, handoff) {
+                            self.player.pause();
+                        }
+                    }
+                },
+            }
+        }
+    }
+
+    fn device_name(&self, id: &str) -> String {
+        self.devices
+            .peers
+            .iter()
+            .find(|p| p.device.id == id)
+            .map_or_else(|| "another device".to_owned(), |p| p.device.name.clone())
+    }
+
+    /// The queue as it stands, for another device to play on from here.
+    fn handoff(&self) -> connect::Handoff {
+        let (tracks, order, at) = self.queue.snapshot();
+        connect::Handoff {
+            tracks,
+            order: order.into_iter().map(|i| i as u32).collect(),
+            at: at as u32,
+            shuffle: self.queue.shuffle(),
+            repeat: self.queue.repeat(),
+            position_ms: self.status.position.as_millis() as u64,
+            playing: self.is_playing(),
+            station: self.station.clone(),
+        }
+    }
+
+    /// Play on from where another device left off.
+    fn take_over(&mut self, handoff: connect::Handoff) {
+        let order = handoff.order.into_iter().map(|i| i as usize).collect();
+        self.queue
+            .restore(handoff.tracks, order, handoff.at as usize, handoff.shuffle);
+        self.queue.set_repeat(handoff.repeat);
+        self.playing_from = None;
+        self.start_current();
+        self.station = handoff.station;
+        let at = Duration::from_millis(handoff.position_ms);
+        match self.pending_play {
+            Some(token) => self.start_at = Some((token, at)),
+            None => self.seek(at),
+        }
+    }
+
+    /// Tell the other devices what plays here.
+    fn tell_devices(&mut self) {
+        let state = self.media_state();
+        self.devices.node.publish(connect::Playing {
+            live: state.track.is_some() && state.length.is_none(),
+            track: state.track,
+            playing: state.playback == crate::mpris::Playback::Playing,
+            position_ms: state.position.as_millis() as u64,
+            duration_ms: state.length.map(|d| d.as_millis() as u64),
+            shuffle: state.shuffle,
+            repeat: state.repeat,
+            volume: Some(state.volume),
+        });
+        let revision = self.queue.revision();
+        if self.devices.upcoming_told != Some(revision) {
+            self.devices.upcoming_told = Some(revision);
+            self.devices
+                .node
+                .publish_upcoming(self.queue.upcoming().take(100).cloned().collect());
+        }
+    }
+
     /// The interface scale, changed with Ctrl +, Ctrl − and Ctrl 0.
     fn zoom(&mut self, ctx: &egui::Context) {
         let (bigger, smaller, reset) = ctx.input_mut(|i| {
@@ -3387,6 +3520,7 @@ impl eframe::App for App {
         let now = ui.input(|i| i.time);
         self.pump(now);
         self.media_controls(ui.ctx());
+        self.other_devices(now);
         if let Some(edited) = self.search_edited {
             if now - edited >= SEARCH_PAUSE {
                 self.submit_search();
@@ -3464,6 +3598,7 @@ impl eframe::App for App {
             ui.ctx().request_repaint_after(Duration::from_millis(250));
         }
         self.mpris.update(self.media_state());
+        self.tell_devices();
     }
 }
 

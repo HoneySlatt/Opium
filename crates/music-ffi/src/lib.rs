@@ -956,6 +956,80 @@ pub enum QueueRepeat {
     One,
 }
 
+/// A queue's songs in their own order, the play order over them, and where
+/// in that the song playing is.
+#[derive(uniffi::Record)]
+pub struct QueueSnapshot {
+    pub tracks: Vec<Track>,
+    pub order: Vec<u32>,
+    pub at: u32,
+}
+
+/// What Music Connect says, told to the app as it comes; from the node's
+/// own threads.
+#[uniffi::export(with_foreign)]
+pub trait ConnectListener: Send + Sync {
+    fn heard(&self, event: connect::Event);
+}
+
+/// This phone on the network, as Music Connect: see the `connect` crate.
+#[derive(uniffi::Object)]
+pub struct Connect(connect::Node);
+
+#[uniffi::export]
+impl Connect {
+    /// Go on the network as `name`, keeping the pairings in `dir`.
+    #[uniffi::constructor]
+    pub fn new(name: String, dir: String, listener: Arc<dyn ConnectListener>) -> Arc<Self> {
+        Arc::new(Self(connect::Node::start(
+            name,
+            connect::DeviceKind::Phone,
+            std::path::Path::new(&dir),
+            move |event| listener.heard(event),
+        )))
+    }
+
+    pub fn me(&self) -> connect::Device {
+        self.0.me()
+    }
+
+    pub fn peers(&self) -> Vec<connect::Peer> {
+        self.0.peers()
+    }
+
+    pub fn publish(&self, playing: connect::Playing) {
+        self.0.publish(playing);
+    }
+
+    pub fn publish_upcoming(&self, upcoming: Vec<Track>) {
+        self.0.publish_upcoming(upcoming);
+    }
+
+    pub fn send(&self, to: String, command: connect::Command) -> bool {
+        self.0.send(&to, command)
+    }
+
+    pub fn hand_off(&self, to: String, handoff: connect::Handoff) -> bool {
+        self.0.hand_off(&to, handoff)
+    }
+
+    pub fn pair(&self, id: String) {
+        self.0.pair(&id);
+    }
+
+    pub fn enter_code(&self, code: String) {
+        self.0.enter_code(code);
+    }
+
+    pub fn cancel_pairing(&self) {
+        self.0.cancel_pairing();
+    }
+
+    pub fn forget(&self, id: String) {
+        self.0.forget(&id);
+    }
+}
+
 /// The play queue, the desktop's own: tracks in their order, a play order
 /// over them for shuffle, repeat.
 #[derive(uniffi::Object, Default)]
@@ -1042,6 +1116,24 @@ impl PlayQueue {
             music_core::Repeat::All => QueueRepeat::All,
             music_core::Repeat::One => QueueRepeat::One,
         }
+    }
+
+    /// The whole queue, for another device to play on from here.
+    pub fn snapshot(&self) -> QueueSnapshot {
+        self.with(|q| {
+            let (tracks, order, at) = q.snapshot();
+            QueueSnapshot {
+                tracks,
+                order: order.into_iter().map(|i| i as u32).collect(),
+                at: at as u32,
+            }
+        })
+    }
+
+    /// Take over a queue another device played.
+    pub fn restore(&self, tracks: Vec<Track>, order: Vec<u32>, at: u32, shuffle: bool) {
+        let order = order.into_iter().map(|i| i as usize).collect();
+        self.with(|q| q.restore(tracks, order, at as usize, shuffle));
     }
 
     pub fn set_repeat(&self, repeat: QueueRepeat) {
