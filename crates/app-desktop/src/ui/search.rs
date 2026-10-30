@@ -162,7 +162,9 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, query: &str) -> f32 {
                 egui::Align::Min,
                 theme.text,
             );
-            let (sources, _) = sources_shown(ui, &theme, Id::unique("search"), title_rect);
+            let services = app.services_in_use();
+            let (sources, _) =
+                sources_shown(ui, &theme, Id::unique("search"), title_rect, &services);
             if sources
                 && let Some(source) = source_chips(
                     ui,
@@ -170,16 +172,21 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, query: &str) -> f32 {
                     left + width,
                     content.top() + 73.0,
                     app.search_source,
-                    &app.services_in_use(),
+                    &services,
                 )
             {
                 app.set_search_source(source);
                 app.detail_selected = None;
             }
 
-            // The catalogue searched, as the source chosen says: a server's
-            // songs are only in the library.
-            let catalogue = match app.search_source {
+            // The catalogue searched, as the source chosen says, or the
+            // only service there is: a server's songs are only in the
+            // library.
+            let only = match services.as_slice() {
+                [one] => Some(*one),
+                _ => None,
+            };
+            let catalogue = match app.search_source.or(only) {
                 Some(ProviderKind::AppleMusic) => "Apple Music",
                 Some(ProviderKind::SoundCloud) => "SoundCloud",
                 _ => "All",

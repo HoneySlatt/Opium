@@ -124,7 +124,8 @@ fn header(app: &mut App, ui: &mut Ui, theme: &Theme, top: f32, left: f32, width:
         egui::Align::Min,
         theme.text,
     );
-    let (sources, _) = sources_shown(ui, theme, Id::unique("songs"), title_rect);
+    let services = app.services_in_use();
+    let (sources, _) = sources_shown(ui, theme, Id::unique("songs"), title_rect, &services);
 
     // The search, right-aligned, then the source filter left of it.
     let search = super::page_search(app, ui, theme, left + width, top + 71.0, "Search Songs");
@@ -138,7 +139,7 @@ fn header(app: &mut App, ui: &mut Ui, theme: &Theme, top: f32, left: f32, width:
             search.left - 10.0,
             top + 73.0,
             app.songs_view.source,
-            &app.services_in_use(),
+            &services,
         )
     {
         app.set_songs_source(source);
@@ -268,8 +269,18 @@ fn rebuild_order(app: &mut App) {
 
 /// Whether page `id` shows its source filter: hidden until its title (`title`,
 /// with a chevron after it) is clicked, as on the phone; a click folds it
-/// again. Returns that, and where the chevron ends.
-pub(super) fn sources_shown(ui: &Ui, theme: &Theme, id: Id, title: Rect) -> (bool, f32) {
+/// again. With a single service of `services`, there is nothing to choose
+/// between: no chevron. Returns that, and where the title or chevron ends.
+pub(super) fn sources_shown(
+    ui: &Ui,
+    theme: &Theme,
+    id: Id,
+    title: Rect,
+    services: &[ProviderKind],
+) -> (bool, f32) {
+    if services.len() < 2 {
+        return (false, title.right());
+    }
     let id = id.with("sources");
     let shown: bool = ui.ctx().data(|d| d.get_temp(id)).unwrap_or(false);
     let end = title.right() + 30.0;

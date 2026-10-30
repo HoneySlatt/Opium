@@ -49,7 +49,7 @@ import io.github.honeyslatt.music.ui.components.Line
 import io.github.honeyslatt.music.ui.components.ListPage
 import io.github.honeyslatt.music.ui.components.SectionHeader
 import io.github.honeyslatt.music.ui.components.SourceChips
-import io.github.honeyslatt.music.ui.components.Fold
+import io.github.honeyslatt.music.ui.components.sourcesFold
 import io.github.honeyslatt.music.ui.components.TrackRow
 import io.github.honeyslatt.music.ui.components.byline
 import io.github.honeyslatt.music.ui.components.full
@@ -109,7 +109,7 @@ fun LibraryRoot(c: LibraryContext) {
                 }
             }
         }
-        full { SectionHeader("Recently Added", fold = Fold(sources) { sources = !sources }) }
+        full { SectionHeader("Recently Added", fold = sourcesFold(c.services, sources) { sources = !sources }) }
         full { SourceChips(sources, source, c.services) { source = it } }
         full { Spacer(Modifier.height(8.dp)) }
         collections(c, added, c.lists.recentlyAdded)
@@ -298,7 +298,7 @@ fun Albums(c: LibraryContext) {
                 }
             },
         ),
-        fold = Fold(sources) { sources = !sources },
+        fold = sourcesFold(c.services, sources) { sources = !sources },
     ) {
         full { SearchReveal(searching, query, "Search Albums") { query = it } }
         full { SourceChips(sources, source, c.services) { source = it } }
@@ -384,7 +384,7 @@ fun Songs(c: LibraryContext) {
                 }
             },
         ),
-        fold = Fold(sources) { sources = !sources },
+        fold = sourcesFold(c.services, sources) { sources = !sources },
     ) {
         item { SearchReveal(searching, query, "Search Songs") { query = it } }
         item { SourceChips(sources, source, c.services) { source = it } }

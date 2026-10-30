@@ -141,15 +141,19 @@ class KeptSource(private val core: io.github.honeyslatt.music.data.Core, private
 @Composable
 fun rememberSource(core: io.github.honeyslatt.music.data.Core, page: String) = androidx.compose.runtime.remember(page) { KeptSource(core, "source-$page") }
 
+/** The fold of a page's source filter: none with a single service, nothing to choose between. */
+fun sourcesFold(services: List<ProviderKind>, open: Boolean, toggle: () -> Unit): Fold? =
+    if (services.size > 1) Fold(open, toggle) else null
+
 /**
  * The source filter: All, then each service. `null` is All. Folded away
  * until its title is tapped, and again when it is tapped again, whatever
- * service is chosen.
+ * service is chosen; not there with a single service.
  */
 @Composable
 fun SourceChips(open: Boolean, selected: ProviderKind?, services: List<ProviderKind>, onSelect: (ProviderKind?) -> Unit) {
     AnimatedVisibility(
-        open,
+        open && services.size > 1,
         enter = expandVertically(tween(250)) + fadeIn(tween(250)),
         exit = shrinkVertically(tween(250)) + fadeOut(tween(200)),
     ) {

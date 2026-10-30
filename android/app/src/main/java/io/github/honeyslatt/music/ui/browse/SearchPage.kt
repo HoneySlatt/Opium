@@ -51,6 +51,7 @@ import io.github.honeyslatt.music.core.model.SearchResults
 import io.github.honeyslatt.music.ui.Icons
 import io.github.honeyslatt.music.ui.actions.LocalActions
 import io.github.honeyslatt.music.ui.components.Fold
+import io.github.honeyslatt.music.ui.components.sourcesFold
 import io.github.honeyslatt.music.ui.components.CoverCard
 import io.github.honeyslatt.music.ui.components.Glyph
 import io.github.honeyslatt.music.ui.components.ItemRow
@@ -118,12 +119,12 @@ fun SearchPage(c: LibraryContext) {
         keepSearched(c.core.searched, recent)
     }
     // The title folds the source chips.
-    ListPage(c.nav, "Search", fold = Fold(sources) { sources = !sources }) {
+    ListPage(c.nav, "Search", fold = sourcesFold(c.services, sources) { sources = !sources }) {
         item { SearchReveal(true, query, if (library) "Your Library" else "Artists, Songs, Lyrics and More", focusOnOpen = false) { query = it } }
         item {
-            // The catalogue searched, as the source chosen says: a server's
-            // songs are only in the library.
-            val catalogue = when (source) {
+            // The catalogue searched, as the source chosen says, or the
+            // only service there is: a server's songs are only in the library.
+            val catalogue = when (source ?: c.services.singleOrNull()) {
                 ProviderKind.APPLE_MUSIC -> "Apple Music"
                 ProviderKind.SOUND_CLOUD -> "SoundCloud"
                 else -> "All"
