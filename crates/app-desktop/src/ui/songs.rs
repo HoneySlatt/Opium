@@ -124,8 +124,7 @@ fn header(app: &mut App, ui: &mut Ui, theme: &Theme, top: f32, left: f32, width:
         egui::Align::Min,
         theme.text,
     );
-    let chosen = app.songs_view.source.is_some();
-    let (sources, _) = sources_shown(ui, theme, Id::unique("songs"), title_rect, chosen);
+    let (sources, _) = sources_shown(ui, theme, Id::unique("songs"), title_rect);
 
     // The search, right-aligned, then the source filter left of it.
     let search = super::page_search(app, ui, theme, left + width, top + 71.0, "Search Songs");
@@ -267,19 +266,11 @@ fn rebuild_order(app: &mut App) {
 }
 
 /// Whether page `id` shows its source filter: hidden until its title (`title`,
-/// with a chevron after it) is clicked, or shown at first when a service is
-/// chosen; a click folds it again. Returns that, and where the chevron ends.
-pub(super) fn sources_shown(
-    ui: &Ui,
-    theme: &Theme,
-    id: Id,
-    title: Rect,
-    chosen: bool,
-) -> (bool, f32) {
+/// with a chevron after it) is clicked, as on the phone; a click folds it
+/// again. Returns that, and where the chevron ends.
+pub(super) fn sources_shown(ui: &Ui, theme: &Theme, id: Id, title: Rect) -> (bool, f32) {
     let id = id.with("sources");
-    // Open at first when a source is chosen, so that it shows; folded at
-    // will, whatever is chosen.
-    let shown: bool = ui.ctx().data(|d| d.get_temp(id)).unwrap_or(chosen);
+    let shown: bool = ui.ctx().data(|d| d.get_temp(id)).unwrap_or(false);
     let end = title.right() + 30.0;
     let response = ui.interact(
         Rect::from_min_max(title.min, pos2(end, title.max.y)),

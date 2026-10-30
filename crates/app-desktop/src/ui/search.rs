@@ -162,8 +162,7 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, query: &str) -> f32 {
                 egui::Align::Min,
                 theme.text,
             );
-            let chosen = app.search_source.is_some();
-            let (sources, _) = sources_shown(ui, &theme, Id::unique("search"), title_rect, chosen);
+            let (sources, _) = sources_shown(ui, &theme, Id::unique("search"), title_rect);
             if sources
                 && let Some(source) = source_chips(
                     ui,

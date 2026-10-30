@@ -621,10 +621,8 @@ fn page(app: &mut App, ui: &mut Ui, pad: f32, kind: Kind) -> f32 {
             // title is clicked.
             let mut sources = false;
             if kind != Kind::Artists {
-                let chosen = app.grid_source.is_some();
                 let id = Id::unique(("grid", title));
-                (sources, title_end) =
-                    super::songs::sources_shown(ui, &theme, id, title_rect, chosen);
+                (sources, title_end) = super::songs::sources_shown(ui, &theme, id, title_rect);
             }
             // Albums sort as the menu after the title says.
             if kind == Kind::Albums {
