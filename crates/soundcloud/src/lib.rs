@@ -31,6 +31,8 @@ const SECURE: &str = "https://secure.soundcloud.com";
 const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
 /// Items a page of a list asks for.
 const PAGE: u32 = 200;
+/// The most of an artist's tracks their page lists.
+const UPLOADS_MAX: usize = 1000;
 /// Tracks `tracks?ids=` takes at once.
 const IDS_AT_ONCE: usize = 50;
 /// Tracks a playlist holds, as the web player allows.
@@ -386,6 +388,12 @@ impl SoundCloud {
     async fn like(&self, kind: FavouriteKind, id: &ItemId, on: bool) -> Result<()> {
         let path = match kind {
             FavouriteKind::Song => format!("/users/{}/track_likes/{}", self.me.id, id.id),
+            // A single is its track.
+            FavouriteKind::Album if id.id.starts_with(convert::SINGLE) => format!(
+                "/users/{}/track_likes/{}",
+                self.me.id,
+                &id.id[convert::SINGLE.len()..]
+            ),
             FavouriteKind::Album | FavouriteKind::Playlist => {
                 format!("/users/{}/playlist_likes/{}", self.me.id, id.id)
             }
@@ -408,6 +416,25 @@ impl SoundCloud {
             reqwest::Method::DELETE
         };
         self.send(method, &path, None).await.map(drop)
+    }
+
+    /// An artist's own tracks as singles, newest first, up to
+    /// [`UPLOADS_MAX`].
+    async fn uploads(&self, artist: &ItemId) -> Result<Vec<Album>> {
+        let mut page: types::Collection<types::Track> = self
+            .page(&format!("/users/{}/tracks", artist.id), None)
+            .await?;
+        let mut tracks = std::mem::take(&mut page.collection);
+        while let Some(next) = page.next_href.take()
+            && tracks.len() < UPLOADS_MAX
+        {
+            page = self.get(&next).await?;
+            tracks.append(&mut page.collection);
+        }
+        tracks.truncate(UPLOADS_MAX);
+        let mut singles: Vec<Album> = tracks.into_iter().map(convert::single).collect();
+        singles.sort_by(|a, b| b.released.cmp(&a.released));
+        Ok(singles)
     }
 
     /// Every track of a playlist, in its order: it lists only the first few
@@ -603,11 +630,19 @@ impl Provider for SoundCloud {
 
     /// SoundCloud's albums are playlists marked so.
     async fn album(&self, album: &ItemId) -> Result<Album> {
+        if let Some(single) = album.id.strip_prefix(convert::SINGLE) {
+            let track: types::Track = self.get(&format!("/tracks/{single}")).await?;
+            return Ok(convert::single(track));
+        }
         let playlist: types::Playlist = self.get(&format!("/playlists/{}", album.id)).await?;
         Ok(convert::album(playlist))
     }
 
     async fn album_tracks(&self, album: &ItemId) -> Result<Vec<Track>> {
+        if let Some(single) = album.id.strip_prefix(convert::SINGLE) {
+            let track: types::Track = self.get(&format!("/tracks/{single}")).await?;
+            return Ok(vec![convert::track(track)]);
+        }
         let playlist = self.whole_playlist(album).await?;
         Ok(playlist.tracks.into_iter().map(convert::track).collect())
     }
@@ -619,16 +654,19 @@ impl Provider for SoundCloud {
             format!("/users/{}/toptracks", artist.id),
             format!("/users/{}/albums", artist.id),
         );
-        let (top, albums) = tokio::try_join!(
+        let (top, albums, singles) = tokio::join!(
             self.get_with::<types::Collection<types::Track>>(&top_path, &limit),
             self.get_with::<types::Collection<types::Playlist>>(&albums_path, &limit),
-        )?;
+            self.uploads(artist),
+        );
+        let (top, albums) = (top?, albums?);
         Ok(ArtistDetail {
             artist: convert::user(user),
             top_songs: top.collection.into_iter().map(convert::track).collect(),
             latest: None,
             albums: albums.collection.into_iter().map(convert::album).collect(),
-            singles: Vec::new(),
+            // Without them the page still shows what it has.
+            singles: singles.unwrap_or_default(),
             compilations: Vec::new(),
             appears_on: Vec::new(),
             similar: Vec::new(),

@@ -8,6 +8,9 @@ use music_core::model::{
 
 use crate::types;
 
+/// The id of a track listed as a single: its own page holds it alone.
+pub(crate) const SINGLE: &str = "single:";
+
 pub(crate) fn id(id: u64) -> ItemId {
     ItemId::new(ProviderKind::SoundCloud, id.to_string())
 }
@@ -125,6 +128,40 @@ pub(crate) fn album(album: types::Playlist) -> Album {
         ),
         track_count: album.track_count,
         explicit: false,
+        added: None,
+        motion: None,
+        copyright: None,
+        mastered: false,
+    }
+}
+
+/// A track on its own, as an artist's page lists their uploads among
+/// singles, dated as SoundCloud shows it.
+pub(crate) fn single(single: types::Track) -> Album {
+    let released = single
+        .display_date
+        .clone()
+        .or(single.release_date.clone())
+        .and_then(|d| d.get(..10).map(str::to_owned));
+    let owner = single.user.clone();
+    let genre = single.genre.clone().filter(|g| !g.trim().is_empty());
+    let id = ItemId::new(ProviderKind::SoundCloud, format!("{SINGLE}{}", single.id));
+    let single = track(single);
+    Album {
+        id,
+        title: single.title,
+        artists: single.artists,
+        artist_id: owner.as_ref().map(|u| self::id(u.id)),
+        artist_artwork: artwork(owner.as_ref().and_then(|u| u.avatar_url.as_deref())),
+        year: released.as_deref().and_then(|d| d.get(..4)?.parse().ok()),
+        released,
+        genre,
+        description: None,
+        catalog_id: None,
+        in_favourites: None,
+        artwork: single.artwork,
+        track_count: Some(1),
+        explicit: single.explicit,
         added: None,
         motion: None,
         copyright: None,
