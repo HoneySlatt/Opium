@@ -252,6 +252,16 @@ const HISTORY: usize = 100;
 /// An album and its tracks.
 pub type AlbumPage = (Album, Arc<Vec<Track>>);
 
+/// A song's lyrics being looked for: its service and the lyrics sites are
+/// asked in turn, until one has them.
+struct LyricsHunt {
+    track: Track,
+    service_asked: bool,
+    sites_asked: bool,
+    /// The service's failure, shown if no one has them.
+    error: Option<String>,
+}
+
 /// Songs by what their copies share: title and first artist.
 type SongIndex = HashMap<(String, String), Vec<Track>>;
 
@@ -429,6 +439,8 @@ pub struct App {
     pub playlist_tracks: HashMap<ItemId, PlaylistTracks>,
     palettes: HashMap<String, PaletteState>,
     lyrics: HashMap<ItemId, Loaded<Option<Arc<Lyrics>>>>,
+    /// Where each song's lyrics have been looked for so far.
+    lyrics_hunts: HashMap<ItemId, LyricsHunt>,
     /// The selected row on an album or playlist page.
     pub detail_selected: Option<usize>,
     /// An album's notes shown whole, and its title.
@@ -580,6 +592,7 @@ impl App {
             playlist_tracks: HashMap::new(),
             palettes: HashMap::new(),
             lyrics: HashMap::new(),
+            lyrics_hunts: HashMap::new(),
             detail_selected: None,
             page_search: String::new(),
             notes: None,
@@ -1358,11 +1371,113 @@ impl App {
     }
 
     /// A track's lyrics, fetched on first ask.
-    pub fn lyrics(&mut self, id: &ItemId) -> &Loaded<Option<Arc<Lyrics>>> {
-        if !self.lyrics.contains_key(id) {
-            self.backend.send(Request::Lyrics(id.clone()));
+    /// The song's lyrics, looked for the first time: from its service, and
+    /// from the lyrics sites when it has none (or first, if so set).
+    pub fn lyrics(&mut self, track: &Track) -> &Loaded<Option<Arc<Lyrics>>> {
+        let id = track.id.clone();
+        if !self.lyrics.contains_key(&id) {
+            self.lyrics.insert(id.clone(), Loaded::Loading);
+            self.lyrics_hunts.insert(
+                id.clone(),
+                LyricsHunt {
+                    track: track.clone(),
+                    service_asked: false,
+                    // A station's stream has no song to look up.
+                    sites_asked: track.id.id.starts_with("ra."),
+                    error: None,
+                },
+            );
+            self.hunt_lyrics(&id);
         }
-        self.lyrics.entry(id.clone()).or_insert(Loaded::Loading)
+        self.lyrics.entry(id).or_insert(Loaded::Loading)
+    }
+
+    /// The lyrics sites turned on, in the order they are asked.
+    pub fn lyrics_sources(&self) -> Vec<lyrics::Source> {
+        self.lyrics_sites()
+            .into_iter()
+            .filter_map(|(s, on)| on.then_some(s))
+            .collect()
+    }
+
+    /// Every lyrics site, in order, and whether it is on.
+    pub fn lyrics_sites(&self) -> Vec<(lyrics::Source, bool)> {
+        let order = &self.settings.lyrics_order;
+        let mut all: Vec<lyrics::Source> = order.clone();
+        all.extend(lyrics::Source::ALL.iter().filter(|s| !order.contains(s)));
+        all.into_iter()
+            .map(|s| (s, !self.settings.lyrics_off.contains(&s)))
+            .collect()
+    }
+
+    pub fn set_lyrics_site(&mut self, source: lyrics::Source, on: bool) {
+        self.settings.lyrics_off.retain(|s| *s != source);
+        if !on {
+            self.settings.lyrics_off.push(source);
+        }
+        self.settings.save();
+        self.lyrics_found_anew();
+    }
+
+    /// Ask `source` before the one before it.
+    pub fn raise_lyrics_site(&mut self, source: lyrics::Source) {
+        let mut order: Vec<lyrics::Source> =
+            self.lyrics_sites().into_iter().map(|(s, _)| s).collect();
+        if let Some(at) = order.iter().position(|s| *s == source)
+            && at > 0
+        {
+            order.swap(at, at - 1);
+        }
+        self.settings.lyrics_order = order;
+        self.settings.save();
+        self.lyrics_found_anew();
+    }
+
+    pub fn lyrics_sites_first(&self) -> bool {
+        self.settings.lyrics_sites_first.unwrap_or(false)
+    }
+
+    pub fn set_lyrics_sites_first(&mut self, on: bool) {
+        self.settings.lyrics_sites_first = Some(on);
+        self.settings.save();
+        self.lyrics_found_anew();
+    }
+
+    /// Lyrics are looked for again, as the sources changed.
+    fn lyrics_found_anew(&mut self) {
+        self.lyrics.clear();
+        self.lyrics_hunts.clear();
+    }
+
+    /// Ask the next of the song's service and the lyrics sites; when no one
+    /// is left, it has none.
+    fn hunt_lyrics(&mut self, id: &ItemId) {
+        let sources = self.lyrics_sources();
+        let sites_first = self.lyrics_sites_first();
+        let Some(hunt) = self.lyrics_hunts.get_mut(id) else {
+            return;
+        };
+        if sources.is_empty() {
+            hunt.sites_asked = true;
+        }
+        let ask_sites = !hunt.sites_asked && (sites_first || hunt.service_asked);
+        if ask_sites {
+            hunt.sites_asked = true;
+            self.backend.send(Request::SiteLyrics {
+                track: Box::new(hunt.track.clone()),
+                sources,
+            });
+        } else if !hunt.service_asked {
+            hunt.service_asked = true;
+            self.backend.send(Request::Lyrics(id.clone()));
+        } else {
+            let loaded = match hunt.error.take() {
+                Some(e) => Loaded::Failed(e),
+                None => Loaded::Ready(None),
+            };
+            self.lyrics.insert(id.clone(), loaded);
+            self.lyrics_hunts.remove(id);
+        }
     }
 
     /// Whether the drawer is open on the lyrics, or on the queue.
@@ -2841,13 +2956,29 @@ impl App {
                     let state = palette.map_or(PaletteState::Failed, PaletteState::Ready);
                     self.palettes.insert(url, state);
                 }
-                Reply::Lyrics { id, result } => {
-                    let loaded = match result {
-                        Ok(lyrics) => Loaded::Ready(lyrics.map(Arc::new)),
-                        Err(e) => Loaded::Failed(e),
-                    };
-                    self.lyrics.insert(id, loaded);
-                }
+                Reply::Lyrics { id, result } => match result {
+                    Ok(Some(lyrics)) => {
+                        self.lyrics_hunts.remove(&id);
+                        self.lyrics
+                            .insert(id, Loaded::Ready(Some(Arc::new(lyrics))));
+                    }
+                    // The sites may have them, if not asked yet.
+                    Ok(None) => self.hunt_lyrics(&id),
+                    Err(e) => {
+                        if let Some(hunt) = self.lyrics_hunts.get_mut(&id) {
+                            hunt.error = Some(e);
+                        }
+                        self.hunt_lyrics(&id);
+                    }
+                },
+                Reply::SiteLyrics { id, found } => match found {
+                    Some((lyrics, _)) => {
+                        self.lyrics_hunts.remove(&id);
+                        self.lyrics
+                            .insert(id, Loaded::Ready(Some(Arc::new(lyrics))));
+                    }
+                    None => self.hunt_lyrics(&id),
+                },
                 Reply::Search {
                     scope,
                     query,

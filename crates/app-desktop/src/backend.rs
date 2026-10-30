@@ -146,8 +146,13 @@ pub enum Request {
     Playlist(ItemId),
     /// The three colours of the cover at this URL.
     Palette(String),
-    /// A track's lyrics.
+    /// A track's lyrics, from its service.
     Lyrics(ItemId),
+    /// A track's lyrics from the lyrics sites, asked in this order.
+    SiteLyrics {
+        track: Box<Track>,
+        sources: Vec<lyrics::Source>,
+    },
     /// Songs, albums, artists and playlists matching a query, in the
     /// catalog or in the library.
     Search(SearchScope, String),
@@ -289,6 +294,11 @@ pub enum Reply {
     Lyrics {
         id: ItemId,
         result: Result<Option<Lyrics>, String>,
+    },
+    /// What the lyrics sites had for a track, and which one.
+    SiteLyrics {
+        id: ItemId,
+        found: Option<(Lyrics, lyrics::Source)>,
     },
     Search {
         scope: SearchScope,
@@ -569,6 +579,7 @@ async fn run(
         .and_then(|path| widevine::Cdm::open(&path).map_err(|e| e.to_string()));
 
     let http = reqwest::Client::new();
+    let finder = Arc::new(lyrics::Finder::new());
     let mut warming: Option<tokio::task::JoinHandle<()>> = None;
     while let Some(request) = requests.recv().await {
         let replies = replies.clone();
@@ -724,6 +735,24 @@ async fn run(
                 }
                 continue;
             }
+            // No service needed.
+            Request::SiteLyrics { track, sources } => {
+                let finder = finder.clone();
+                tokio::spawn(async move {
+                    let query = lyrics::Query {
+                        artist: first_artist(&track.artists),
+                        album: track.album.clone(),
+                        duration: track.duration,
+                        title: track.title.clone(),
+                    };
+                    let found = finder.find(&query, &sources).await;
+                    replies.send(Reply::SiteLyrics {
+                        id: track.id,
+                        found,
+                    });
+                });
+                continue;
+            }
             Request::Search(scope, query) => {
                 tokio::spawn(search(
                     apple.clone(),
@@ -802,6 +831,7 @@ async fn run(
             | Request::ReconnectSoundCloud
             | Request::SignInNavidrome { .. }
             | Request::SetService { .. }
+            | Request::SiteLyrics { .. }
             | Request::Library
             | Request::Playlists
             | Request::Search(..) => {}
@@ -1250,6 +1280,18 @@ fn shared_request(p: Arc<dyn Provider>, request: Request, replies: Replies) -> O
         other => return Some(other),
     }
     None
+}
+
+/// The first of a song's artists, as services join several in one name.
+fn first_artist(artists: &[String]) -> String {
+    let first = artists.first().map_or("", String::as_str);
+    let lower = first.to_lowercase();
+    let cut = [" & ", ", ", " feat", " ft.", " x "]
+        .iter()
+        .filter_map(|sep| lower.find(sep))
+        .min()
+        .unwrap_or(first.len());
+    first[..cut].trim().to_owned()
 }
 
 /// Which service a request is for, when it names an item.

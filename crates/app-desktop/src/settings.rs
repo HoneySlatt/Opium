@@ -50,6 +50,12 @@ pub struct Settings {
     /// A SoundCloud track plays from the uploader's original file when they
     /// let it be downloaded (on unless turned off).
     pub soundcloud_originals: Option<bool>,
+    /// The lyrics sites, in the order they are asked; all of them unless set.
+    pub lyrics_order: Vec<lyrics::Source>,
+    /// The lyrics sites turned off.
+    pub lyrics_off: Vec<lyrics::Source>,
+    /// The sites' lyrics before the service's own (off unless set).
+    pub lyrics_sites_first: Option<bool>,
     /// The services turned off: still signed in, but not used.
     pub services_off: Vec<music_core::model::ProviderKind>,
 }

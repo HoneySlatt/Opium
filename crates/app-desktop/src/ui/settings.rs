@@ -27,7 +27,7 @@ const THEMES: f32 = 14.0 + 10.0 + 74.0 + 10.0 + 18.0 + 18.0 + 4.0 + 14.0 + 12.0 
 pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
     let theme = app.theme.clone();
     let width = (ui.available_width() - 2.0 * pad).min(MAX_WIDTH);
-    let total = BODY_TOP + 7.0 * (GROUP_HEAD + GROUP_GAP) + 3.0 * ROW + THEMES + 7.0 * ROW + 104.0;
+    let total = BODY_TOP + 8.0 * (GROUP_HEAD + GROUP_GAP) + 3.0 * ROW + THEMES + 11.0 * ROW + 104.0;
     let output = egui::ScrollArea::vertical()
         .id_salt("settings")
         .auto_shrink(false)
@@ -143,6 +143,20 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
                 "When the artist allows downloads, their file plays (often WAV or FLAC, lossless) instead of the AAC stream. SoundCloud counts it as a download, not a play.",
                 width - 32.0 - 60.0,
             );
+            y = card.bottom() + GROUP_GAP;
+
+            y = group(
+                ui,
+                &theme,
+                left,
+                y,
+                width,
+                "Lyrics",
+                "Where a song's lyrics come from when its service has none, in this order.",
+            );
+            let card = Rect::from_min_size(pos2(left, y), vec2(width, 4.0 * ROW));
+            panel(ui, &theme, card, 4);
+            lyrics_sites(app, ui, &theme, card);
             y = card.bottom() + GROUP_GAP;
 
             y = group(
@@ -513,6 +527,77 @@ fn navidrome_form(app: &mut App, ui: &mut Ui, theme: &Theme, x: f32, right: f32,
     if submit && !signing {
         app.sign_in_navidrome();
     }
+}
+
+/// The lyrics sites, each with its switch and a way to ask it sooner, then
+/// whether they come before the service's own.
+fn lyrics_sites(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect) {
+    let sites = app.lyrics_sites();
+    for (i, (source, on)) in sites.iter().copied().enumerate() {
+        let y = card.top() + i as f32 * ROW + ROW / 2.0;
+        if switch(
+            ui,
+            theme,
+            pos2(card.right() - 16.0, y),
+            on,
+            &format!("lyrics-site-{i}"),
+        ) {
+            app.set_lyrics_site(source, !on);
+        }
+        // The first is asked first already.
+        let mut words_right = card.right() - 16.0 - 60.0;
+        if i > 0 {
+            let up = Rect::from_center_size(pos2(words_right - 14.0, y), vec2(28.0, 28.0));
+            let mut up_ui = ui.new_child(egui::UiBuilder::new().max_rect(up));
+            if super::icon_button(
+                &mut up_ui,
+                theme,
+                icons::ARROW_UP,
+                28.0,
+                14.0,
+                theme.subtext0,
+                true,
+            )
+            .on_hover_text("Ask it sooner")
+            .clicked()
+            {
+                app.raise_lyrics_site(source);
+            }
+            words_right = up.left() - 8.0;
+        }
+        let detail = match source {
+            lyrics::Source::Lrclib => "Open and free, made for synced lyrics.",
+            lyrics::Source::NetEase => "A large catalogue, with much from Asia.",
+            lyrics::Source::KuGou => "Another large catalogue, from China.",
+        };
+        labels(
+            ui,
+            theme,
+            pos2(card.left() + 16.0, y),
+            &format!("{}. {}", i + 1, source.name()),
+            detail,
+            words_right - card.left() - 32.0,
+        );
+    }
+    let y = card.top() + sites.len() as f32 * ROW + ROW / 2.0;
+    let first = app.lyrics_sites_first();
+    if switch(
+        ui,
+        theme,
+        pos2(card.right() - 16.0, y),
+        first,
+        "lyrics-sites-first",
+    ) {
+        app.set_lyrics_sites_first(!first);
+    }
+    labels(
+        ui,
+        theme,
+        pos2(card.left() + 16.0, y),
+        "Before the service's own",
+        "Look for the sites' lyrics first, even where Apple Music or the server has some.",
+        card.width() - 32.0 - 60.0,
+    );
 }
 
 fn appearance(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect) {

@@ -31,8 +31,8 @@ struct Scroll {
 
 /// The lyrics once they have loaded, for the column to widen around them.
 pub fn ready(app: &mut App) -> Option<Arc<Lyrics>> {
-    let id = app.now.as_ref()?.id.clone();
-    match app.lyrics(&id) {
+    let track = app.now.clone()?;
+    match app.lyrics(&track) {
         Loaded::Ready(lyrics) => lyrics.clone(),
         _ => None,
     }
@@ -52,7 +52,7 @@ pub fn show(
     let Some(track) = app.now.clone() else {
         return;
     };
-    let lyrics = match app.lyrics(&track.id) {
+    let lyrics = match app.lyrics(&track) {
         Loaded::Loading => return,
         Loaded::Ready(Some(lyrics)) => lyrics.clone(),
         Loaded::Ready(None) => {
@@ -61,7 +61,7 @@ pub fn show(
                 theme,
                 body,
                 "No lyrics for this track",
-                "Apple Music has no synced lyrics for it yet.",
+                "Neither its service nor the lyrics sites have them.",
             );
         }
         Loaded::Failed(e) => {

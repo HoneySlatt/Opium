@@ -63,7 +63,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         if lyrics.is_some() {
             let size = (body.width() * 0.046).clamp(22.0, 42.0);
             lyrics::show(app, ui, &theme, body, size, full.height(), "np-lyrics");
-        } else if !matches!(app.lyrics(&track.id), Loaded::Loading) {
+        } else if !matches!(app.lyrics(&track), Loaded::Loading) {
             title(ui, &theme, &track, body, full);
         }
     }
