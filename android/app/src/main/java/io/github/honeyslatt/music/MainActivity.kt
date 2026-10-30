@@ -60,7 +60,11 @@ class MainActivity : ComponentActivity() {
             LaunchedEffect(Unit) { app.core.start() }
             // The library loads once Apple Music answers.
             LaunchedEffect(apple is Connection.Connected) {
-                if (apple is Connection.Connected) app.library.load(ProviderKind.APPLE_MUSIC)
+                if (apple is Connection.Connected) {
+                    app.library.load(ProviderKind.APPLE_MUSIC)
+                } else {
+                    app.library.forget(ProviderKind.APPLE_MUSIC)
+                }
             }
             MusicTheme(appearance) {
                 when {
@@ -69,7 +73,7 @@ class MainActivity : ComponentActivity() {
                         scope.launch { app.core.signedInToApple(token) }
                     }
                     !app.core.hasAppleToken && apple !is Connection.Connecting -> SignInPrompt { signingIn = true }
-                    else -> App(app.core, app.library, app.playback)
+                    else -> App(app.core, app.library, app.playback, app.settings) { signingIn = true }
                 }
             }
         }

@@ -32,7 +32,30 @@ class Library(private val core: Core, private val scope: CoroutineScope) {
     private val _lists = MutableStateFlow(LibraryLists())
     val lists: StateFlow<LibraryLists> = _lists.asStateFlow()
 
-    private val providers = mutableListOf<ProviderKind>()
+    private val providers = mutableSetOf<ProviderKind>()
+
+    /** A service turned off or signed out of: its items go from the lists. */
+    fun forget(provider: ProviderKind) {
+        providers -= provider
+        _lists.update { l ->
+            l.copy(
+                playlists = l.playlists.copy(items = l.playlists.items.filter { it.id.provider != provider }),
+                albums = l.albums.copy(items = l.albums.items.filter { it.id.provider != provider }),
+                artists = l.artists.copy(items = l.artists.items.filter { it.id.provider != provider }),
+                songs = l.songs.copy(items = l.songs.items.filter { it.id.provider != provider }),
+                newestSongs = l.newestSongs.copy(items = l.newestSongs.items.filter { it.id.provider != provider }),
+                recentlyAdded = l.recentlyAdded.copy(
+                    items = l.recentlyAdded.items.filter {
+                        when (it) {
+                            is Collection.Album -> it.v1.id.provider
+                            is Collection.Playlist -> it.v1.id.provider
+                            is Collection.Station -> it.v1.id.provider
+                        } != provider
+                    },
+                ),
+            )
+        }
+    }
     private var newestAsked = false
 
     /** Load the songs newest first, of every service loaded. */

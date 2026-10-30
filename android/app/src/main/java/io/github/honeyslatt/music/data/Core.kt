@@ -52,9 +52,29 @@ class Core(context: Context) {
         prefs.edit().putString(key, value).apply()
     }
 
+    /** Settings → Apple Music → Use Apple Music: off keeps the sign-in. */
+    val appleEnabled get() = prefs.getBoolean("apple-enabled", true)
+
     /** Sign in again with what was kept. */
     suspend fun start() {
-        if (hasAppleToken) connectApple(appleToken.readText())
+        if (hasAppleToken && appleEnabled) connectApple(appleToken.readText())
+    }
+
+    suspend fun setAppleEnabled(on: Boolean) {
+        prefs.edit().putBoolean("apple-enabled", on).apply()
+        if (on) {
+            start()
+        } else {
+            session.disconnect(io.github.honeyslatt.music.core.model.ProviderKind.APPLE_MUSIC)
+            _apple.value = Connection.Off
+        }
+    }
+
+    /** Forget the account: its token goes from the phone. */
+    fun signOutOfApple() {
+        session.disconnect(io.github.honeyslatt.music.core.model.ProviderKind.APPLE_MUSIC)
+        appleToken.delete()
+        _apple.value = Connection.Off
     }
 
     /** The token Apple's sign-in page left, kept and used. */

@@ -42,6 +42,10 @@ sealed interface Route {
 class Navigator(start: Tab = Tab.Library) {
     var tab by mutableStateOf(start)
         private set
+
+    /** The last tab of the bar, which it shows folded while Search is open. */
+    var barTab by mutableStateOf(start.takeIf { it != Tab.Search } ?: Tab.Home)
+        private set
     private val stacks = Tab.entries.associateWith { mutableStateListOf<Route>(Route.Root) }
 
     /** The bottom bar folds while a page scrolls down, as on iOS 26. */
@@ -72,6 +76,7 @@ class Navigator(start: Tab = Tab.Library) {
         folded = false
         if (next != tab) {
             tab = next
+            if (next != Tab.Search) barTab = next
             return
         }
         val stack = stacks.getValue(tab)

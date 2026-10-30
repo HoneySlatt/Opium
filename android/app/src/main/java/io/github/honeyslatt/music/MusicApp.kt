@@ -15,6 +15,8 @@ class MusicApp : Application() {
         private set
     lateinit var library: Library
         private set
+    lateinit var settings: io.github.honeyslatt.music.data.Settings
+        private set
 
     @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     lateinit var playback: io.github.honeyslatt.music.playback.Playback
@@ -24,6 +26,7 @@ class MusicApp : Application() {
         super.onCreate()
         Tls.init(this)
         core = Core(this)
+        settings = io.github.honeyslatt.music.data.Settings(this)
         library = Library(core, scope)
         playback = io.github.honeyslatt.music.playback.Playback(this, core, scope)
     }

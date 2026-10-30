@@ -51,6 +51,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.honeyslatt.music.data.Connection
 import io.github.honeyslatt.music.data.Core
 import io.github.honeyslatt.music.data.Library
+import io.github.honeyslatt.music.data.Settings
 import io.github.honeyslatt.music.core.model.ProviderKind
 import io.github.honeyslatt.music.ui.chrome.BottomChrome
 import io.github.honeyslatt.music.ui.chrome.MiniState
@@ -74,16 +75,17 @@ import io.github.honeyslatt.music.ui.theme.roles
 
 /** The app: the page of the current tab, under the bottom chrome. */
 @Composable
-fun App(core: Core, library: Library, playback: io.github.honeyslatt.music.playback.Playback) {
+fun App(core: Core, library: Library, playback: io.github.honeyslatt.music.playback.Playback, settings: Settings, onSignIn: () -> Unit) {
     val nav = remember { Navigator() }
     val apple by core.apple.collectAsStateWithLifecycle()
     val lists by library.lists.collectAsStateWithLifecycle()
     val services = listOfNotNull(ProviderKind.APPLE_MUSIC.takeIf { apple is Connection.Connected })
-    val account: @Composable () -> Unit = { Avatar("H") {} }
+    var settingsOpen by remember { mutableStateOf(false) }
+    val account: @Composable () -> Unit = { Avatar("H") { settingsOpen = true } }
     val now by playback.now.collectAsStateWithLifecycle()
     val playing by playback.playing.collectAsStateWithLifecycle()
     val loading by playback.loading.collectAsStateWithLifecycle()
-    val context = LibraryContext(core, nav, lists, services, account, playback = playback, library = library)
+    val context = LibraryContext(core, nav, lists, services, account, animatedArtwork = settings.animatedArtwork, playback = playback, library = library)
     var npOpen by rememberSaveable { mutableStateOf(false) }
     val mini = MiniState(now, playing, loading, playback::toggle, playback::next, playback::previous, onOpen = { npOpen = true })
     val scope = rememberCoroutineScope()
@@ -98,7 +100,7 @@ fun App(core: Core, library: Library, playback: io.github.honeyslatt.music.playb
         if (playback.isStation(track)) {
             null
         } else {
-            runCatching { core.session.lyrics(track, listOf(LyricsSite.LRCLIB, LyricsSite.NET_EASE, LyricsSite.KU_GOU), false) }.getOrNull()
+            runCatching { core.session.lyrics(track, settings.lyricsSites, settings.sitesFirst) }.getOrNull()
         }
     }
     // An album's animated cover, asked once.
@@ -127,6 +129,7 @@ fun App(core: Core, library: Library, playback: io.github.honeyslatt.music.playb
     BackHandler(enabled = npOpen) { npOpen = false }
     androidx.compose.runtime.CompositionLocalProvider(
         LocalNowPlaying provides NowPlayingMark(now?.id, playing),
+        io.github.honeyslatt.music.ui.detail.LocalMotionQuality provides settings.motionQuality,
         LocalActions provides actions,
         LocalMenus provides menus,
     ) {
@@ -148,6 +151,7 @@ fun App(core: Core, library: Library, playback: io.github.honeyslatt.music.playb
         ) {
             SwipeDown({ npOpen = false }) { NowPlaying(playback, npActions) }
         }
+        io.github.honeyslatt.music.ui.settings.SettingsSheet(settingsOpen, core, settings, onSignIn) { settingsOpen = false }
         ActionSheets(actions)
         MenuHost(menus)
         HudHost(hud)

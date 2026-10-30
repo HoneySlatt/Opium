@@ -90,7 +90,7 @@ fun BottomChrome(nav: Navigator, mini: MiniState, modifier: Modifier = Modifier)
                 Modifier.width(width).height(64.dp).capsule(shape).padding(5.dp),
                 horizontalArrangement = Arrangement.Center,
             ) {
-                val tabs = if (folded) listOf(nav.tab.takeIf { it != Tab.Search } ?: Tab.Library) else Tab.entries.filter { it != Tab.Search }
+                val tabs = if (folded) listOf(nav.barTab) else Tab.entries.filter { it != Tab.Search }
                 tabs.forEach { tab ->
                     TabButton(tab, on = tab == nav.tab, folded = folded, Modifier.weight(1f)) {
                         if (folded) nav.folded = false else nav.select(tab)

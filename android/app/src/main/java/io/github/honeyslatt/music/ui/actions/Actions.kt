@@ -62,6 +62,7 @@ class Actions(
 ) {
     private val session get() = core.session
     private val prefs = context.getSharedPreferences("music", Context.MODE_PRIVATE)
+    private val settings = (context.applicationContext as io.github.honeyslatt.music.MusicApp).settings
 
     /** Called before a page opens, as Now Playing closes for it. */
     var beforeLeaving: () -> Unit = {}
@@ -79,8 +80,8 @@ class Actions(
     val contents = mutableStateMapOf<ItemId, Set<ItemId>>()
 
     /** Settings → Library. */
-    val favouritesToLibrary get() = prefs.getBoolean("favourites-to-library", true)
-    val playlistSongsToLibrary get() = prefs.getBoolean("playlist-songs-to-library", true)
+    val favouritesToLibrary get() = settings.favouritesToLibrary
+    val playlistSongsToLibrary get() = settings.playlistSongsToLibrary
 
     fun inLibrary(t: Track) = t.id.provider == ProviderKind.NAVIDROME || (inLibraryNow[t.id] ?: t.inLibrary)
 

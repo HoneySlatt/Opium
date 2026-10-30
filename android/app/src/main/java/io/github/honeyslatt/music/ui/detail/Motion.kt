@@ -25,6 +25,9 @@ import androidx.media3.ui.compose.SURFACE_TYPE_TEXTURE_VIEW
 import androidx.media3.ui.compose.modifiers.resizeWithContentScale
 import androidx.media3.ui.compose.state.rememberPresentationState
 
+/** Settings → Artwork → Quality. */
+val LocalMotionQuality = androidx.compose.runtime.staticCompositionLocalOf { io.github.honeyslatt.music.data.MotionQuality.Automatic }
+
 /**
  * An animated cover: Apple's video, looping without sound, faded in over
  * the still cover once its first frame is drawn. It never asks for audio
@@ -35,9 +38,20 @@ import androidx.media3.ui.compose.state.rememberPresentationState
 fun MotionArtwork(url: String, modifier: Modifier = Modifier, crop: Boolean = false) {
     val context = LocalContext.current
     var shown by remember(url) { mutableStateOf(false) }
-    val player = remember(url) {
+    val quality = LocalMotionQuality.current
+    val player = remember(url, quality) {
         ExoPlayer.Builder(context).build().apply {
             volume = 0f
+            // Low, or Automatic on mobile data: the smallest of Apple's sizes.
+            val metered = context.getSystemService(android.net.ConnectivityManager::class.java).isActiveNetworkMetered
+            trackSelectionParameters = trackSelectionParameters.buildUpon().apply {
+                when {
+                    quality == io.github.honeyslatt.music.data.MotionQuality.Low ||
+                        (quality == io.github.honeyslatt.music.data.MotionQuality.Automatic && metered) -> setMaxVideoSize(486, 486)
+                    quality == io.github.honeyslatt.music.data.MotionQuality.High -> setForceHighestSupportedBitrate(true)
+                    else -> {}
+                }
+            }.build()
             repeatMode = Player.REPEAT_MODE_ONE
             setMediaItem(MediaItem.fromUri(url))
             addListener(object : Player.Listener {
