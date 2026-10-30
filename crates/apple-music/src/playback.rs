@@ -431,12 +431,14 @@ impl AppleMusic {
 
     async fn web_playback(&self, adam_id: &str) -> Result<serde_json::Value> {
         let resp = self
-            .authorized(self.http.post(WEB_PLAYBACK))
-            .header("x-apple-music-user-token", &self.user_token)
-            .json(&web_playback_body(adam_id))
-            .send()
-            .await
-            .map_err(|e| Error::Network(format!("webPlayback: {e}")))?;
+            .send(
+                self.http
+                    .post(WEB_PLAYBACK)
+                    .header("x-apple-music-user-token", &self.user_token)
+                    .json(&web_playback_body(adam_id)),
+                "webPlayback",
+            )
+            .await?;
         let json = json_body(resp, "webPlayback").await?;
         json["songList"]
             .as_array()
@@ -480,12 +482,14 @@ impl AppleMusic {
             "user-initiated": true,
         });
         let resp = self
-            .authorized(self.http.post(LICENSE))
-            .header("x-apple-music-user-token", &self.user_token)
-            .json(&envelope)
-            .send()
-            .await
-            .map_err(|e| Error::Network(format!("licence: {e}")))?;
+            .send(
+                self.http
+                    .post(LICENSE)
+                    .header("x-apple-music-user-token", &self.user_token)
+                    .json(&envelope),
+                "licence",
+            )
+            .await?;
         let json = json_body(resp, "licence").await?;
         if let Some(code) = json["errorCode"].as_i64().filter(|&c| c != 0) {
             return Err(playback_error(format!(

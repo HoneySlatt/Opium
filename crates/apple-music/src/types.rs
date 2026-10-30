@@ -1,14 +1,26 @@
 //! The slice of Apple's `amp-api` JSON this crate reads.
 
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer, de::DeserializeOwned};
 
 #[derive(Debug, Deserialize)]
+#[serde(bound(deserialize = "T: DeserializeOwned"))]
 pub struct Response<T> {
+    /// The items read; one that can't be is left out rather than fail the
+    /// whole page, and with it a library's load.
+    #[serde(deserialize_with = "readable")]
     pub data: Vec<T>,
     pub next: Option<String>,
     /// A list's length, on its pages.
     #[serde(default)]
     pub meta: Option<Meta>,
+}
+
+fn readable<'de, D: Deserializer<'de>, T: DeserializeOwned>(d: D) -> Result<Vec<T>, D::Error> {
+    let items = Vec::<serde_json::Value>::deserialize(d)?;
+    Ok(items
+        .into_iter()
+        .filter_map(|item| serde_json::from_value(item).ok())
+        .collect())
 }
 
 #[derive(Debug, Default, Deserialize)]

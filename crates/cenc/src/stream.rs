@@ -53,6 +53,9 @@ struct State {
     /// A sample a reader is blocked on, for the decrypt thread to jump to.
     wanted: Option<usize>,
     failed: Option<String>,
+    /// The CDM itself failed: nothing more is decrypted. A download that
+    /// failed leaves what came to be decrypted and played.
+    undecryptable: bool,
     /// Set when the reader is dropped, so the thread stops early.
     abandoned: bool,
     /// Samples ending before this offset may be read undecrypted: a seek is
@@ -109,6 +112,7 @@ impl AudioStream {
                 downloading: None,
                 wanted: None,
                 failed: None,
+                undecryptable: false,
                 abandoned: false,
                 skippable_before: 0,
                 reading: 0,
@@ -163,6 +167,7 @@ impl AudioStream {
                 downloading: Some(None),
                 wanted: None,
                 failed: None,
+                undecryptable: false,
                 abandoned: false,
                 skippable_before: 0,
                 reading: 0,
@@ -282,7 +287,7 @@ impl Shared {
             let (index, ciphertext, sample) = {
                 let mut state = self.lock();
                 let index = loop {
-                    if state.abandoned || state.failed.is_some() {
+                    if state.abandoned || state.undecryptable {
                         return;
                     }
                     if let Some(wanted) = state.wanted.take() {
@@ -335,7 +340,8 @@ impl Shared {
                 }
                 Err(e) => state.failed = Some(e),
             }
-            let failed = state.failed.is_some();
+            let failed = !state.decrypted[index];
+            state.undecryptable = failed;
             drop(state);
             self.changed.notify_all();
             if failed {
@@ -393,12 +399,15 @@ impl Read for AudioStream {
             state.reading = reading;
             self.shared.changed.notify_all();
         }
+        // A failure ends the track where it struck, not where it is read:
+        // what came and was decrypted before still plays.
+        let failed = |e: &String| io::Error::other(format!("decryption failed: {e}"));
         loop {
-            if let Some(e) = &state.failed {
-                return Err(io::Error::other(format!("decryption failed: {e}")));
-            }
             // Only what has come, and been indexed, can be read.
             if start >= state.ready {
+                if let Some(e) = &state.failed {
+                    return Err(failed(e));
+                }
                 if state.downloading.is_none() {
                     return Ok(0);
                 }
@@ -418,6 +427,9 @@ impl Read for AudioStream {
                     if sample_start > start {
                         end = sample_start;
                         break;
+                    }
+                    if let Some(e) = &state.failed {
+                        return Err(failed(e));
                     }
                     self.shared.changed.notify_all();
                     state = self

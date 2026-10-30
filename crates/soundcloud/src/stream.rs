@@ -362,7 +362,21 @@ impl SoundCloud {
         }
         // The segments' URLs are signed: they go as they are.
         let parts: Vec<Result<Vec<u8>>> = futures_util::stream::iter(urls)
-            .map(|url| async move { self.public_bytes(&url).await.map(|(b, _)| b) })
+            .map(|url| async move {
+                // One of some sixty failing is a blip: tried twice more,
+                // rather than lose the song for it.
+                let mut tries = 0;
+                loop {
+                    match self.public_bytes(&url).await {
+                        Ok((bytes, _)) => break Ok(bytes),
+                        Err(_) if tries < 2 => {
+                            tries += 1;
+                            tokio::time::sleep(std::time::Duration::from_millis(500 * tries)).await;
+                        }
+                        Err(e) => break Err(e),
+                    }
+                }
+            })
             .buffered(SEGMENTS_AT_ONCE)
             .collect()
             .await;

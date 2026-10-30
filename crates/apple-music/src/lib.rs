@@ -167,10 +167,18 @@ const SEARCH_LIMIT: u32 = 25;
 
 pub struct AppleMusic {
     http: reqwest::Client,
-    developer_token: String,
+    /// Borrowed from the web player, which swaps it now and then: read again
+    /// when Apple turns it down.
+    developer_token: std::sync::RwLock<String>,
+    /// When it was last read again, so a run of refusals reads it once.
+    renewed: tokio::sync::Mutex<Option<std::time::Instant>>,
     user_token: String,
     storefront: String,
 }
+
+/// How long a developer token read again is trusted before it may be read
+/// once more.
+const RENEW_EVERY: std::time::Duration = std::time::Duration::from_secs(300);
 
 /// The account as others see it on Apple Music.
 #[derive(Debug, Clone, PartialEq)]
@@ -199,7 +207,8 @@ impl AppleMusic {
         let developer_token = auth::developer_token(&http).await?;
         let mut am = Self {
             http,
-            developer_token,
+            developer_token: std::sync::RwLock::new(developer_token),
+            renewed: tokio::sync::Mutex::new(None),
             user_token: user_token.into(),
             storefront: String::new(),
         };
@@ -238,13 +247,77 @@ impl AppleMusic {
         &self.storefront
     }
 
+    fn developer_token(&self) -> String {
+        self.developer_token
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+
     /// What every request to Apple carries: both tokens, presented the way the
     /// web player presents them.
     fn authorized(&self, req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
-        req.bearer_auth(&self.developer_token)
+        self.authorized_with(&self.developer_token(), req)
+    }
+
+    fn authorized_with(
+        &self,
+        token: &str,
+        req: reqwest::RequestBuilder,
+    ) -> reqwest::RequestBuilder {
+        req.bearer_auth(token)
             .header("Origin", WEB_PLAYER)
             .header("Referer", format!("{WEB_PLAYER}/"))
             .header("Cookie", format!("media-user-token={}", self.user_token))
+    }
+
+    /// Send `request` with both tokens. Turned down with a 401, the developer
+    /// token having expired or been swapped, it is read again from the web
+    /// player and the request sent once more: a long session doesn't end up
+    /// signed out for it.
+    async fn send(
+        &self,
+        request: reqwest::RequestBuilder,
+        what: &str,
+    ) -> Result<reqwest::Response> {
+        let token = self.developer_token();
+        let again = request.try_clone();
+        let failed = |e: reqwest::Error| Error::Network(format!("{what}: {e}"));
+        let resp = self
+            .authorized_with(&token, request)
+            .send()
+            .await
+            .map_err(failed)?;
+        if resp.status().as_u16() == 401
+            && let Some(again) = again
+            && self.renew_developer_token(&token).await
+        {
+            return self.authorized(again).send().await.map_err(failed);
+        }
+        Ok(resp)
+    }
+
+    /// Read the developer token again, unless another request just did, in
+    /// place of `refused`; whether there is a new one to try.
+    async fn renew_developer_token(&self, refused: &str) -> bool {
+        let mut renewed = self.renewed.lock().await;
+        if self.developer_token() != refused {
+            return true;
+        }
+        if renewed.is_some_and(|at| at.elapsed() < RENEW_EVERY) {
+            return false;
+        }
+        *renewed = Some(std::time::Instant::now());
+        match auth::developer_token(&self.http).await {
+            Ok(token) if token != refused => {
+                *self
+                    .developer_token
+                    .write()
+                    .unwrap_or_else(|e| e.into_inner()) = token;
+                true
+            }
+            _ => false,
+        }
     }
 
     /// `Ok(None)` on 404, which Apple also answers for some empty collections.
@@ -252,11 +325,13 @@ impl AppleMusic {
         let mut waited = false;
         let resp = loop {
             let resp = self
-                .authorized(self.http.get(format!("{API}{path}")))
-                .header("Media-User-Token", &self.user_token)
-                .send()
-                .await
-                .map_err(|e| Error::Network(format!("{path}: {e}")))?;
+                .send(
+                    self.http
+                        .get(format!("{API}{path}"))
+                        .header("Media-User-Token", &self.user_token),
+                    path,
+                )
+                .await?;
             // Asked to slow down: once, after the wait it names if short.
             if resp.status().as_u16() != 429 || waited {
                 break resp;
@@ -312,11 +387,8 @@ impl AppleMusic {
     /// Send a request that changes the account, and say whether Apple took it.
     async fn send_change(&self, req: reqwest::RequestBuilder, path: &str) -> Result<()> {
         let resp = self
-            .authorized(req)
-            .header("Media-User-Token", &self.user_token)
-            .send()
-            .await
-            .map_err(|e| Error::Network(format!("{path}: {e}")))?;
+            .send(req.header("Media-User-Token", &self.user_token), path)
+            .await?;
         match resp.status().as_u16() {
             401 | 403 => Err(Error::NotSignedIn),
             code if (200..300).contains(&code) => Ok(()),
@@ -1010,12 +1082,14 @@ impl Provider for AppleMusic {
             "relationships": { "tracks": { "data": data } },
         });
         let resp = self
-            .authorized(self.http.post(format!("{API}{path}")))
-            .header("Media-User-Token", &self.user_token)
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| Error::Network(format!("{path}: {e}")))?;
+            .send(
+                self.http
+                    .post(format!("{API}{path}"))
+                    .header("Media-User-Token", &self.user_token)
+                    .json(&body),
+                &path,
+            )
+            .await?;
         let status = resp.status();
         if status.as_u16() == 401 || status.as_u16() == 403 {
             return Err(Error::NotSignedIn);
@@ -1110,12 +1184,14 @@ impl Provider for AppleMusic {
         let path = format!("/v1/me/stations/next-tracks/{}", station.id);
         let call = || async {
             let resp = self
-                .authorized(self.http.post(format!("{API}{path}")))
-                .header("Media-User-Token", &self.user_token)
-                .header("Content-Length", "0")
-                .send()
-                .await
-                .map_err(|e| Error::Network(format!("{path}: {e}")))?;
+                .send(
+                    self.http
+                        .post(format!("{API}{path}"))
+                        .header("Media-User-Token", &self.user_token)
+                        .header("Content-Length", "0"),
+                    &path,
+                )
+                .await?;
             if !resp.status().is_success() {
                 return Err(Error::Protocol(format!("{path}: HTTP {}", resp.status())));
             }

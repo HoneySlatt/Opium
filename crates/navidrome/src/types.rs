@@ -14,8 +14,10 @@ pub struct Envelope<T> {
 pub struct Response<T> {
     pub status: String,
     pub error: Option<ApiError>,
+    /// Not an `Option`: serde would make a body it can't read `None`, and a
+    /// page with one odd song would pass for an empty one, ending the list.
     #[serde(flatten)]
-    pub body: Option<T>,
+    pub body: T,
 }
 
 #[derive(Debug, Deserialize)]

@@ -229,7 +229,7 @@ impl Navidrome {
                 _ => Error::Protocol(format!("Navidrome {view}: {}", error.message)),
             });
         }
-        Ok(response.body.unwrap_or_default())
+        Ok(response.body)
     }
 
     /// Where a song's file streams from, as it is on the server: signed

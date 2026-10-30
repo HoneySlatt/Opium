@@ -285,8 +285,18 @@ impl SoundCloud {
             .send()
             .await
             .map_err(|e| Error::Network(format!("SoundCloud sign-in: {e}")))?;
-        if !resp.status().is_success() {
-            return Err(Error::NotSignedIn);
+        // Only a refresh token turned down signs out: SoundCloud busy, or its
+        // bot wall, is said as such and tried again later.
+        match resp.status().as_u16() {
+            400 | 401 => return Err(Error::NotSignedIn),
+            403 if resp.headers().contains_key("x-dd-b") => return Err(turned_away()),
+            _ if !resp.status().is_success() => {
+                return Err(Error::Protocol(format!(
+                    "SoundCloud sign-in: HTTP {}",
+                    resp.status()
+                )));
+            }
+            _ => {}
         }
         let grant: types::Grant = resp
             .json()
@@ -465,7 +475,9 @@ impl Provider for SoundCloud {
 
     async fn search(&self, query: &str) -> Result<SearchResults> {
         let q = [("q", query), ("limit", "20")];
-        let (tracks, users, playlists, albums) = tokio::try_join!(
+        // Each kind as it came: one that failed leaves the others shown,
+        // unless they all did.
+        let (tracks, users, playlists, albums) = tokio::join!(
             self.get_with::<types::Collection<types::Track>>("/search/tracks", &q),
             self.get_with::<types::Collection<types::User>>("/search/users", &q),
             self.get_with::<types::Collection<types::Playlist>>(
@@ -473,14 +485,21 @@ impl Provider for SoundCloud {
                 &q
             ),
             self.get_with::<types::Collection<types::Playlist>>("/search/albums", &q),
-        )?;
+        );
+        if tracks.is_err() && users.is_err() && playlists.is_err() && albums.is_err() {
+            return tracks.map(|_| SearchResults::default());
+        }
+        fn got<T>(page: Result<types::Collection<T>>) -> Vec<T> {
+            page.map(|p| p.collection).unwrap_or_default()
+        }
+        let (tracks, users, playlists, albums) =
+            (got(tracks), got(users), got(playlists), got(albums));
         let me = Some(self.me.id);
         Ok(SearchResults {
-            tracks: tracks.collection.into_iter().map(convert::track).collect(),
-            albums: albums.collection.into_iter().map(convert::album).collect(),
-            artists: users.collection.into_iter().map(convert::user).collect(),
+            tracks: tracks.into_iter().map(convert::track).collect(),
+            albums: albums.into_iter().map(convert::album).collect(),
+            artists: users.into_iter().map(convert::user).collect(),
             playlists: playlists
-                .collection
                 .into_iter()
                 .map(|p| convert::playlist(p, me))
                 .collect(),

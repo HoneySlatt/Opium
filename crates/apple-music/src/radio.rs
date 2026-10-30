@@ -529,7 +529,7 @@ impl AppleMusic {
     ) -> Result<Vec<u8>> {
         Licensing {
             http: self.http.clone(),
-            developer_token: self.developer_token.clone(),
+            developer_token: self.developer_token(),
             user_token: self.user_token.clone(),
             key_server: key_server.to_owned(),
         }
@@ -554,7 +554,7 @@ impl AppleMusic {
 
         let licensing = key_server.map(|key_server| Licensing {
             http: self.http.clone(),
-            developer_token: self.developer_token.clone(),
+            developer_token: self.developer_token(),
             user_token: self.user_token.clone(),
             key_server: key_server.to_owned(),
         });
