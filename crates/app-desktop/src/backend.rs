@@ -52,6 +52,12 @@ pub enum Request {
     SignIn,
     /// Connect again with the saved token (after a sign-in).
     Reconnect,
+    /// Turn a service on, connecting and loading its library, or off,
+    /// leaving it signed in but unused.
+    SetService {
+        provider: ProviderKind,
+        on: bool,
+    },
     /// Sign in to SoundCloud in the browser, then connect and load its library.
     SignInSoundCloud,
     ReconnectSoundCloud,
@@ -456,7 +462,8 @@ impl Replies {
 }
 
 impl Backend {
-    pub fn start(ctx: egui::Context) -> Self {
+    /// Start, connecting to every service but those `off`.
+    pub fn start(ctx: egui::Context, off: Vec<ProviderKind>) -> Self {
         let (requests, request_rx) = tokio::sync::mpsc::unbounded_channel();
         let again = requests.clone();
         let (tx, replies) = mpsc::channel();
@@ -468,7 +475,7 @@ impl Backend {
                     .enable_all()
                     .build()
                     .expect("start the tokio runtime");
-                runtime.block_on(run(request_rx, again, replies_out));
+                runtime.block_on(run(request_rx, again, replies_out, off));
             })
             .expect("spawn the backend thread");
         Self { requests, replies }
@@ -542,10 +549,21 @@ async fn run(
     mut requests: UnboundedReceiver<Request>,
     again: UnboundedSender<Request>,
     replies: Replies,
+    off: Vec<ProviderKind>,
 ) {
-    let mut apple = connect(&replies).await;
-    let mut sc = connect_soundcloud(&replies).await;
-    let mut nd = connect_navidrome(&replies).await;
+    let on = |p| !off.contains(&p);
+    let mut apple = match on(ProviderKind::AppleMusic) {
+        true => connect(&replies).await,
+        false => None,
+    };
+    let mut sc = match on(ProviderKind::SoundCloud) {
+        true => connect_soundcloud(&replies).await,
+        false => None,
+    };
+    let mut nd = match on(ProviderKind::Navidrome) {
+        true => connect_navidrome(&replies).await,
+        false => None,
+    };
     let cdm = widevine::locate()
         .ok_or_else(|| "no Widevine module found: install Brave, Chrome or Firefox".to_owned())
         .and_then(|path| widevine::Cdm::open(&path).map_err(|e| e.to_string()));
@@ -571,6 +589,32 @@ async fn run(
             }
             Request::Reconnect => {
                 apple = connect(&replies).await;
+                continue;
+            }
+            Request::SetService { provider, on } => {
+                match (provider, on) {
+                    (ProviderKind::AppleMusic, false) => apple = None,
+                    (ProviderKind::SoundCloud, false) => sc = None,
+                    (ProviderKind::Navidrome, false) => nd = None,
+                    (ProviderKind::AppleMusic, true) => {
+                        apple = connect(&replies).await;
+                        if let Some(am) = apple.clone() {
+                            tokio::spawn(load_library(am, replies));
+                        }
+                    }
+                    (ProviderKind::SoundCloud, true) => {
+                        sc = connect_soundcloud(&replies).await;
+                        if let Some(sc) = sc.clone() {
+                            tokio::spawn(load_soundcloud_library(sc, replies));
+                        }
+                    }
+                    (ProviderKind::Navidrome, true) => {
+                        nd = connect_navidrome(&replies).await;
+                        if let Some(nd) = nd.clone() {
+                            tokio::spawn(load_navidrome_library(nd, replies));
+                        }
+                    }
+                }
                 continue;
             }
             Request::SignInSoundCloud => {
@@ -757,6 +801,7 @@ async fn run(
             | Request::SignInSoundCloud
             | Request::ReconnectSoundCloud
             | Request::SignInNavidrome { .. }
+            | Request::SetService { .. }
             | Request::Library
             | Request::Playlists
             | Request::Search(..) => {}

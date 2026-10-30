@@ -3,6 +3,8 @@
 
 use egui::{Id, Rect, Sense, Stroke, Ui, pos2, vec2};
 
+use music_core::model::ProviderKind;
+
 use crate::app::{App, Connection, SoundCloudState};
 use crate::fonts::{Weight, font};
 use crate::icons::{self, Icon};
@@ -317,7 +319,36 @@ fn services(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect) {
         let y = card.top() + i as f32 * ROW + ROW / 2.0;
         let tile = Rect::from_center_size(pos2(card.left() + 16.0 + 20.0, y), vec2(40.0, 40.0));
         let x = tile.right() + 14.0;
-        let right = card.right() - 16.0;
+        // Its switch at the end: off, the service is left signed in, unused.
+        let provider = [
+            ProviderKind::AppleMusic,
+            ProviderKind::SoundCloud,
+            ProviderKind::Navidrome,
+        ][i];
+        let on = app.service_on(provider);
+        if switch(
+            ui,
+            theme,
+            pos2(card.right() - 16.0, y),
+            on,
+            &format!("service-{i}"),
+        ) {
+            app.set_service(provider, !on);
+        }
+        let right = card.right() - 16.0 - 60.0;
+        if !on {
+            ui.painter().rect_filled(tile, 10.0, theme.text_a(0.08));
+            paint_icon(ui, icon, tile.center(), 20.0, theme.muted());
+            labels(
+                ui,
+                theme,
+                pos2(x, y),
+                name,
+                "Off: still signed in, and used again once turned on.",
+                right - x - 12.0,
+            );
+            continue;
+        }
         // What the row says, its button (label, enabled) and whether the
         // service is connected.
         let (detail, button_state, connected) = match i {

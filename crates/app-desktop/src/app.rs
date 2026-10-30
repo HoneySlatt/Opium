@@ -510,7 +510,7 @@ impl App {
         watch_theme(cc.egui_ctx.clone(), theme_changed.clone());
         // Ctrl +, − and 0 are ours: 0 goes back to the scale that suits the screen.
         cc.egui_ctx.options_mut(|o| o.zoom_with_keyboard = false);
-        let backend = Backend::start(cc.egui_ctx.clone());
+        let backend = Backend::start(cc.egui_ctx.clone(), settings.services_off.clone());
         backend.send(Request::Library);
         let mut app = Self {
             theme,
@@ -804,6 +804,58 @@ impl App {
             self.soundcloud_signing_in = true;
             self.backend.send(Request::SignInSoundCloud);
         }
+    }
+
+    /// Whether a service is on: signed in, it is used.
+    pub fn service_on(&self, provider: ProviderKind) -> bool {
+        !self.settings.services_off.contains(&provider)
+    }
+
+    /// Turn a service on, loading its library again, or off: its songs,
+    /// albums, artists and playlists leave the library, and it is asked
+    /// nothing more, its sign-in kept.
+    pub fn set_service(&mut self, provider: ProviderKind, on: bool) {
+        self.settings.services_off.retain(|p| *p != provider);
+        if !on {
+            self.settings.services_off.push(provider);
+        }
+        self.settings.save();
+        self.backend.send(Request::SetService { provider, on });
+        let of_it = |id: &ItemId| id.provider == provider;
+        match provider {
+            ProviderKind::AppleMusic => {
+                self.connection = if on {
+                    Connection::Connecting
+                } else {
+                    Connection::NotSignedIn
+                }
+            }
+            ProviderKind::SoundCloud => self.soundcloud = SoundCloudState::Connecting,
+            ProviderKind::Navidrome => self.navidrome = SoundCloudState::Connecting,
+        }
+        if on {
+            return;
+        }
+        self.songs.retain(|t| !of_it(&t.id));
+        self.library_songs.retain(|id| !of_it(id));
+        self.songs_coming.remove(&provider);
+        self.songs_done = self.songs_coming.is_empty();
+        self.songs_view.order_key = None;
+        self.songs_view.selected = None;
+        self.playlists.retain(|p| !of_it(&p.id));
+        self.library_albums
+            .arrived_from(Vec::new(), true, true, |a| of_it(&a.id));
+        self.library_artists
+            .arrived_from(Vec::new(), true, true, |a| of_it(&a.id));
+        self.recently_added
+            .arrived_from(Vec::new(), true, true, |c| match c {
+                Collection::Album(a) => of_it(&a.id),
+                Collection::Playlist(p) => of_it(&p.id),
+                Collection::Station(s) => of_it(&s.id),
+            });
+        self.searches.clear();
+        self.server_songs = None;
+        self.whole_albums.clear();
     }
 
     /// Sign in to the server with what the form holds; its password is
@@ -2408,6 +2460,8 @@ impl App {
                     }
                 }
                 Reply::NotSignedIn => self.connection = Connection::NotSignedIn,
+                Reply::SoundCloud(_) if !self.service_on(ProviderKind::SoundCloud) => {}
+                Reply::Navidrome(_) if !self.service_on(ProviderKind::Navidrome) => {}
                 Reply::SoundCloud(result) => {
                     self.soundcloud = match result {
                         Ok(Some(name)) => SoundCloudState::Connected(name),
@@ -2450,6 +2504,13 @@ impl App {
                     }
                     self.notify(e, now);
                 }
+                // A service turned off since says nothing more.
+                Reply::Songs { provider, .. }
+                | Reply::Playlists { provider, .. }
+                | Reply::LibraryAlbums { provider, .. }
+                | Reply::LibraryArtists { provider, .. }
+                | Reply::RecentlyAdded { provider, .. }
+                    if !self.service_on(provider) => {}
                 Reply::Songs {
                     provider,
                     tracks,

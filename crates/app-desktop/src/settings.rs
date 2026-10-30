@@ -50,6 +50,8 @@ pub struct Settings {
     /// A SoundCloud track plays from the uploader's original file when they
     /// let it be downloaded (on unless turned off).
     pub soundcloud_originals: Option<bool>,
+    /// The services turned off: still signed in, but not used.
+    pub services_off: Vec<music_core::model::ProviderKind>,
 }
 
 /// Repeat, as kept: the queue's own, by name.
