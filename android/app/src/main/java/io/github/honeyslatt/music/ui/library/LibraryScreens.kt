@@ -71,11 +71,14 @@ class LibraryContext(
     val playback: io.github.honeyslatt.music.playback.Playback,
 )
 
+/** As many as Apple Music shows under Recently Added. */
+private const val RECENT_SHOWN = 66
+
 /** Library: the four lists, then Recently Added. */
 @Composable
 fun LibraryRoot(c: LibraryContext) {
     var source by rememberSaveable { mutableStateOf<ProviderKind?>(null) }
-    val added = c.lists.recentlyAdded.items.filter { source == null || it.provider() == source }.take(8)
+    val added = c.lists.recentlyAdded.items.filter { source == null || it.provider() == source }.take(RECENT_SHOWN)
     GridPage(c.nav, "Library", account = c.account) {
         full {
             androidx.compose.foundation.layout.Column(Modifier.padding(top = 6.dp)) {

@@ -53,8 +53,9 @@ class Library(private val core: Core, private val scope: CoroutineScope) {
                 _lists.update { it.copy(songs = it.songs.more(items, done, error)) }
             }
         }
+        // Apple gives 25 at a time: three pages fill Library's 66.
         scope.launch {
-            pages({ session.recentlyAdded(provider, it).let { p -> p.items to p.next } }, limit = 1) { items, done, error ->
+            pages({ session.recentlyAdded(provider, it).let { p -> p.items to p.next } }, limit = 3) { items, done, error ->
                 _lists.update { it.copy(recentlyAdded = it.recentlyAdded.more(items, done, error)) }
             }
         }
