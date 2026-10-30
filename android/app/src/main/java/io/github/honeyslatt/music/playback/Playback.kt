@@ -222,6 +222,43 @@ class Playback(context: Context, private val core: Core, private val scope: Coro
         startCurrent()
     }
 
+    /** Stations playing as the queue's one song, by their id. */
+    private val stations = mutableMapOf<String, io.github.honeyslatt.music.core.model.Station>()
+
+    /**
+     * Tune in: a station of songs plays them; one on air (or an episode)
+     * plays its stream as the queue's one song.
+     */
+    suspend fun playStation(station: io.github.honeyslatt.music.core.model.Station) {
+        if (station.kind == io.github.honeyslatt.music.core.model.StationKind.TRACKS) {
+            play(core.session.stationTracks(station.id, 25u), 0)
+            return
+        }
+        stations[station.id.id] = station
+        val song = Track(
+            id = station.id,
+            title = station.name,
+            artists = listOf(if (station.kind == io.github.honeyslatt.music.core.model.StationKind.LIVE) "Live Radio" else "Radio Episode"),
+            album = station.description,
+            albumId = null,
+            duration = null,
+            trackNumber = null,
+            discNumber = null,
+            artwork = station.artwork,
+            explicit = false,
+            quality = null,
+            inLibrary = false,
+            libraryId = null,
+        )
+        play(listOf(song), 0)
+    }
+
+    /** Whether `track` stands for a station's stream, rather than a song. */
+    fun isStation(track: Track) = track.id.id in stations
+
+    /** Whether what plays is a station on air, with no end to seek to. */
+    fun isLive(track: Track) = stations[track.id.id]?.kind == io.github.honeyslatt.music.core.model.StationKind.LIVE
+
     /** Play `tracks` right after the current song, in their order. */
     fun playNext(tracks: List<Track>) {
         if (tracks.isEmpty()) return
@@ -338,6 +375,7 @@ class Playback(context: Context, private val core: Core, private val scope: Coro
                     .setArtworkUri(track.artwork?.at(600)?.let(Uri::parse))
                     .build(),
             )
+        if (track.id.id in stations) return liveSource(core.session.liveStation(track.id), item)
         return when (track.id.provider) {
             ProviderKind.APPLE_MUSIC -> {
                 val protected = core.session.protected(track.id) ?: error("a song you uploaded can't play here yet")

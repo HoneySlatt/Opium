@@ -87,7 +87,7 @@ fun ArtistPage(c: LibraryContext, id: ItemId) {
             return@DetailPage
         }
         d.latest?.let { latest -> item { SectionHeader("Latest Release") }; item { Latest(latest) { c.nav.push(Route.Album(latest.id)) } } }
-        topSongs(d.topSongs) { i -> c.playback.play(d.topSongs, i) }
+        songColumns("Top Songs", d.topSongs) { i -> c.playback.play(d.topSongs, i) }
         albumShelf(c, "Albums", d.albums)
         albumShelf(c, "Singles & EPs", d.singles)
         shelf(
@@ -176,10 +176,10 @@ private fun Latest(album: Album, onClick: () -> Unit) {
     }
 }
 
-/** Top Songs, in columns of four that page sideways. */
-private fun LazyListScope.topSongs(tracks: List<Track>, play: (Int) -> Unit) {
+/** Songs in columns of four that page sideways: Top Songs, Best New Songs. */
+fun LazyListScope.songColumns(title: String, tracks: List<Track>, play: (Int) -> Unit) {
     if (tracks.isEmpty()) return
-    item { SectionHeader("Top Songs") }
+    item { SectionHeader(title) }
     item {
         val state = rememberLazyListState()
         BoxWithConstraints(Modifier.fillMaxWidth()) {

@@ -118,7 +118,10 @@ class Actions(
 
     // ---- Menus ----
 
+    fun isStation(track: Track) = playback.isStation(track)
+
     fun trackMenu(track: Track, anchor: Rect, inPlaylist: Playlist? = null, onRemoved: () -> Unit = {}) {
+        if (playback.isStation(track)) return
         val head = MenuHead(track.artwork, track.title, track.artists.joinToString(", "))
         menus.show(
             MenuSpec(anchor, head) {

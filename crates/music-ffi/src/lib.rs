@@ -526,6 +526,57 @@ impl Session {
             .await?
             .map(|protected| ProtectedTrack::new(apple.clone(), protected)))
     }
+
+    /// A station that streams (on air, or an episode), to tune in to.
+    pub async fn live_station(&self, station: ItemId) -> Result<Arc<LiveStation>, MusicError> {
+        let apple = self.apple()?;
+        let asset = apple.live_asset(&station).await?;
+        Ok(Arc::new(LiveStation { apple, asset }))
+    }
+}
+
+/// A station's stream, played by Android's player: its HLS playlist, and
+/// the licences for its Widevine keys.
+#[derive(uniffi::Object)]
+pub struct LiveStation {
+    apple: Arc<AppleMusic>,
+    asset: apple_music::LiveAsset,
+}
+
+#[uniffi::export(async_runtime = "tokio")]
+impl LiveStation {
+    pub fn master(&self) -> String {
+        self.asset.master.clone()
+    }
+
+    /// Whether its segments are encrypted (Apple's own stations are).
+    pub fn encrypted(&self) -> bool {
+        self.asset.key_server.is_some()
+    }
+
+    /// A licence for `challenge`, for the key the stream uses now: the key
+    /// server names keys by the playlist's key line, which a challenge
+    /// doesn't carry.
+    pub async fn license(&self, challenge: Vec<u8>) -> Result<Vec<u8>, MusicError> {
+        let key_server = self
+            .asset
+            .key_server
+            .as_deref()
+            .ok_or_else(|| MusicError::Failed {
+                reason: "the station isn't encrypted".into(),
+            })?;
+        let key_uri = self
+            .apple
+            .live_key_uri(&self.asset.master)
+            .await?
+            .ok_or_else(|| MusicError::Failed {
+                reason: "the station's playlist names no key".into(),
+            })?;
+        Ok(self
+            .apple
+            .live_license(key_server, &key_uri, &challenge)
+            .await?)
+    }
 }
 
 /// The positions of `songs` to leave out of a list of every service's: the

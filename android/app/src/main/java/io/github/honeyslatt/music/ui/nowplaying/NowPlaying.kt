@@ -319,6 +319,8 @@ private fun RoundSmall(icon: androidx.compose.ui.graphics.vector.ImageVector, on
 @Composable
 private fun StarAndMore(t: Track) {
     val actions = LocalActions.current
+    // A station's stream is no song to favourite or add.
+    if (actions?.isStation(t) == true) return
     if (t.id.provider != ProviderKind.NAVIDROME) {
         val favourite = actions?.isFavourite(FavouriteKind.SONG, t.id) == true
         RoundSmall(if (favourite) Icons.Starf else Icons.Star) { actions?.toggleFavourite(t) }
@@ -388,6 +390,44 @@ fun rememberPosition(playback: Playback, playing: Boolean): Long {
 @Composable
 private fun Controls(playback: Playback, t: Track, playing: Boolean, mode: NpMode, onSignal: () -> Unit, onMode: (NpMode) -> Unit) {
     val np = LocalNp.current
+    if (playback.isLive(t)) {
+        LiveControls()
+    } else {
+        Scrubber(playback, t, playing, onSignal)
+    }
+    Row(Modifier.fillMaxWidth().padding(top = 26.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+        Transport(Icons.Rw, 36) { playback.previous() }
+        Transport(if (playing) Icons.Pause else Icons.Play, 46) { playback.toggle() }
+        Transport(Icons.Ff, 36) { playback.next() }
+    }
+    Row(Modifier.fillMaxWidth().padding(top = 30.dp), horizontalArrangement = Arrangement.SpaceAround) {
+        Bottom(Icons.Lyrics, mode == NpMode.Lyrics) { onMode(NpMode.Lyrics) }
+        Output()
+        Bottom(Icons.Queue, mode == NpMode.Queue) { onMode(NpMode.Queue) }
+    }
+}
+
+/** On air: nowhere to seek, so a full bar and LIVE. */
+@Composable
+private fun LiveControls() {
+    val np = LocalNp.current
+    Box(Modifier.fillMaxWidth().padding(top = 22.dp).height(18.dp), contentAlignment = Alignment.CenterStart) {
+        Box(Modifier.fillMaxWidth().height(7.dp).background(np.fg.copy(alpha = 0.9f), RoundedCornerShape(6.dp)))
+    }
+    Box(Modifier.fillMaxWidth().padding(top = 4.dp).height(22.dp), contentAlignment = Alignment.Center) {
+        BasicText(
+            "LIVE",
+            Modifier.background(roles.red, RoundedCornerShape(6.dp)).padding(horizontal = 9.dp, vertical = 3.dp),
+            style = geist(11.5.sp, FontWeight.Bold, 0.04f).copy(color = Color.White),
+        )
+    }
+}
+
+/** The scrubber and the times, with the quality between them. */
+@androidx.annotation.OptIn(UnstableApi::class)
+@Composable
+private fun Scrubber(playback: Playback, t: Track, playing: Boolean, onSignal: () -> Unit) {
+    val np = LocalNp.current
     val position = rememberPosition(playback, playing)
     val duration = playback.duration ?: 0L
     var dragging by remember { mutableStateOf<Float?>(null) }
@@ -438,16 +478,6 @@ private fun Controls(playback: Playback, t: Track, playing: Boolean, mode: NpMod
             Modifier.weight(1f),
             style = times.copy(textAlign = androidx.compose.ui.text.style.TextAlign.End),
         )
-    }
-    Row(Modifier.fillMaxWidth().padding(top = 26.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-        Transport(Icons.Rw, 36) { playback.previous() }
-        Transport(if (playing) Icons.Pause else Icons.Play, 46) { playback.toggle() }
-        Transport(Icons.Ff, 36) { playback.next() }
-    }
-    Row(Modifier.fillMaxWidth().padding(top = 30.dp), horizontalArrangement = Arrangement.SpaceAround) {
-        Bottom(Icons.Lyrics, mode == NpMode.Lyrics) { onMode(NpMode.Lyrics) }
-        Output()
-        Bottom(Icons.Queue, mode == NpMode.Queue) { onMode(NpMode.Queue) }
     }
 }
 

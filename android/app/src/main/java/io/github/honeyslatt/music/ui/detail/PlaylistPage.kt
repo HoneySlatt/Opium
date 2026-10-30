@@ -46,8 +46,8 @@ import io.github.honeyslatt.music.ui.theme.geist
 import io.github.honeyslatt.music.ui.theme.roles
 
 @Composable
-fun PlaylistPage(c: LibraryContext, id: ItemId) {
-    val playlist: Playlist? = c.lists.playlists.items.firstOrNull { it.id == id }
+fun PlaylistPage(c: LibraryContext, id: ItemId, known: Playlist? = null) {
+    val playlist: Playlist? = c.lists.playlists.items.firstOrNull { it.id == id } ?: known
     // Every page of its songs, one after another.
     var complete by remember(id) { mutableStateOf(false) }
     val loaded by produceState<Loading<List<Track>>>(Loading.Pending, id) {

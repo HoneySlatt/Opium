@@ -219,8 +219,17 @@ impl Licensing {
         let (session, challenge) = cdm
             .start_session(&pssh)
             .map_err(|e| Error::Playback(e.to_string()))?;
+        let license = self.request(key_uri, &challenge).await?;
+        session
+            .update(&license)
+            .map_err(|e| Error::Playback(e.to_string()))?;
+        Ok(session)
+    }
+
+    /// The licence for `challenge`, the key server's answer to it.
+    async fn request(&self, key_uri: &str, challenge: &[u8]) -> Result<Vec<u8>> {
         let body = serde_json::json!({
-            "challenge": STANDARD.encode(&challenge),
+            "challenge": STANDARD.encode(challenge),
             "uri": key_uri,
             "key-system": "com.widevine.alpha",
             "event": "beats1",
@@ -242,17 +251,23 @@ impl Licensing {
             .json()
             .await
             .map_err(|e| Error::Protocol(format!("radio licence ({status}): {e}")))?;
-        let license = json["license"]
+        json["license"]
             .as_str()
             .and_then(|l| STANDARD.decode(l).ok())
             .ok_or_else(|| {
                 Error::Playback(format!("the radio licence was refused ({status}): {json}"))
-            })?;
-        session
-            .update(&license)
-            .map_err(|e| Error::Playback(e.to_string()))?;
-        Ok(session)
+            })
     }
+}
+
+/// Where a station streams, for a player that reads HLS and asks for
+/// Widevine licences itself (Android's).
+#[derive(Debug, Clone)]
+pub struct LiveAsset {
+    /// The master playlist.
+    pub master: String,
+    /// Where licences come from, when the stream is encrypted.
+    pub key_server: Option<String>,
 }
 
 /// The key id in a Widevine PSSH carried by a `data:` key URI: the
@@ -423,9 +438,8 @@ impl AppleMusic {
             .map_err(|e| Error::Network(format!("{url}: {e}")))
     }
 
-    /// Tune in to a station that streams: one on air from now on, an episode
-    /// from its start, decrypted when it is Apple's own.
-    pub async fn live_station(&self, cdm: &Cdm, station: &ItemId) -> Result<LiveStream> {
+    /// Where `station` streams, and its key server.
+    pub async fn live_asset(&self, station: &ItemId) -> Result<LiveAsset> {
         #[derive(serde::Deserialize)]
         #[serde(rename_all = "camelCase")]
         struct Station {
@@ -458,7 +472,49 @@ impl AppleMusic {
         let master_url = asset["url"]
             .as_str()
             .ok_or_else(|| Error::Playback(format!("the station has no stream: {assets}")))?;
-        let key_server = asset["keyServerUrl"].as_str();
+        Ok(LiveAsset {
+            master: master_url.to_owned(),
+            key_server: asset["keyServerUrl"].as_str().map(str::to_owned),
+        })
+    }
+
+    /// The Widevine key the stream uses now: its `data:` URI, which names
+    /// the key to the key server.
+    pub async fn live_key_uri(&self, master: &str) -> Result<Option<String>> {
+        let text = self.text(master).await?;
+        let variant = match best_variant(&text) {
+            Some(v) => resolve(master, &v),
+            None => master.to_owned(),
+        };
+        Ok(media_playlist(&self.text(&variant).await?)
+            .key
+            .map(|(uri, _)| uri))
+    }
+
+    /// A licence for `challenge`, a Widevine CDM's request for the key at
+    /// `key_uri`.
+    pub async fn live_license(
+        &self,
+        key_server: &str,
+        key_uri: &str,
+        challenge: &[u8],
+    ) -> Result<Vec<u8>> {
+        Licensing {
+            http: self.http.clone(),
+            developer_token: self.developer_token.clone(),
+            user_token: self.user_token.clone(),
+            key_server: key_server.to_owned(),
+        }
+        .request(key_uri, challenge)
+        .await
+    }
+
+    /// Tune in to a station that streams: one on air from now on, an episode
+    /// from its start, decrypted when it is Apple's own.
+    pub async fn live_station(&self, cdm: &Cdm, station: &ItemId) -> Result<LiveStream> {
+        let asset = self.live_asset(station).await?;
+        let master_url = asset.master.as_str();
+        let key_server = asset.key_server.as_deref();
 
         let master = self.text(master_url).await?;
         // A master playlist names variants; a media playlist is the stream.

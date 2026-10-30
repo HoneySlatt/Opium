@@ -18,6 +18,11 @@ import io.github.honeyslatt.music.ui.components.Menus
 import io.github.honeyslatt.music.ui.components.MenuHost
 import io.github.honeyslatt.music.ui.components.LocalMenus
 import io.github.honeyslatt.music.ui.actions.Actions
+import io.github.honeyslatt.music.ui.browse.Browse
+import io.github.honeyslatt.music.ui.browse.HomePage
+import io.github.honeyslatt.music.ui.browse.NewPage
+import io.github.honeyslatt.music.ui.browse.RadioPage
+import io.github.honeyslatt.music.ui.browse.SearchPage
 import io.github.honeyslatt.music.ui.actions.ActionSheets
 import io.github.honeyslatt.music.ui.actions.LocalActions
 import io.github.honeyslatt.music.ui.components.NowPlayingMark
@@ -57,7 +62,6 @@ import io.github.honeyslatt.music.ui.detail.LibraryArtistPage
 import io.github.honeyslatt.music.ui.detail.PlaylistPage
 import io.github.honeyslatt.music.ui.library.Albums
 import io.github.honeyslatt.music.ui.library.Artists
-import io.github.honeyslatt.music.ui.library.Coming
 import io.github.honeyslatt.music.ui.library.LibraryContext
 import io.github.honeyslatt.music.ui.library.LibraryRoot
 import io.github.honeyslatt.music.ui.library.Playlists
@@ -87,9 +91,15 @@ fun App(core: Core, library: Library, playback: io.github.honeyslatt.music.playb
     val hud = remember { Hud(scope) }
     val menus = remember { Menus() }
     val actions = remember { Actions(appContext, core, library, playback, nav, hud, menus, scope) }
+    val browse = remember { Browse(core, scope) }
     actions.beforeLeaving = { npOpen = false }
     LyricsSource.find = { track ->
-        runCatching { core.session.lyrics(track, listOf(LyricsSite.LRCLIB, LyricsSite.NET_EASE, LyricsSite.KU_GOU), false) }.getOrNull()
+        // A station's stream has no lyrics to look for.
+        if (playback.isStation(track)) {
+            null
+        } else {
+            runCatching { core.session.lyrics(track, listOf(LyricsSite.LRCLIB, LyricsSite.NET_EASE, LyricsSite.KU_GOU), false) }.getOrNull()
+        }
     }
     // An album's animated cover, asked once.
     val motions = remember { java.util.concurrent.ConcurrentHashMap<String, String>() }
@@ -126,7 +136,7 @@ fun App(core: Core, library: Library, playback: io.github.honeyslatt.music.playb
             transitionSpec = { push(initialState, targetState) },
             label = "pages",
         ) { (tab, _, page) ->
-            Page(tab, page, context, account)
+            Page(tab, page, context, account, browse)
         }
         BottomChrome(nav, mini, Modifier.align(Alignment.BottomCenter))
         // Now Playing rises from the mini player over 440 ms, and goes back
@@ -157,11 +167,14 @@ private fun push(from: Triple<Tab, Int, Route>, to: Triple<Tab, Int, Route>): Co
 }
 
 @Composable
-private fun Page(tab: Tab, page: Route, c: LibraryContext, account: @Composable () -> Unit) {
+private fun Page(tab: Tab, page: Route, c: LibraryContext, account: @Composable () -> Unit, browse: Browse) {
     when (page) {
         Route.Root -> when (tab) {
+            Tab.Home -> HomePage(c, browse, account)
+            Tab.New -> NewPage(c, browse, account)
+            Tab.Radio -> RadioPage(c, browse, account)
             Tab.Library -> LibraryRoot(c)
-            else -> Coming(c.nav, tab.label, account.takeIf { tab != Tab.Search })
+            Tab.Search -> SearchPage(c)
         }
         Route.Playlists -> Playlists(c)
         Route.Albums -> Albums(c)
@@ -169,7 +182,7 @@ private fun Page(tab: Tab, page: Route, c: LibraryContext, account: @Composable 
         Route.Songs -> Songs(c)
         Route.RecentlyAdded -> RecentlyAdded(c)
         is Route.Album -> AlbumPage(c, page.id)
-        is Route.Playlist -> PlaylistPage(c, page.id)
+        is Route.Playlist -> PlaylistPage(c, page.id, page.known)
         is Route.LibraryArtist -> LibraryArtistPage(c, page.artist)
         is Route.Artist -> ArtistPage(c, page.id)
     }

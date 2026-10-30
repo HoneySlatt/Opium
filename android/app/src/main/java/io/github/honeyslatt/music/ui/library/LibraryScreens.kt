@@ -391,20 +391,6 @@ fun PlayShuffle(enabled: Boolean, onPlay: () -> Unit = {}, onShuffle: () -> Unit
     }
 }
 
-/** A tab or page that comes in a later step. */
-@Composable
-fun Coming(nav: Navigator, title: String, account: (@Composable () -> Unit)? = null) {
-    ListPage(nav, title, account = account) {
-        item {
-            BasicText(
-                "Coming next.",
-                Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
-                style = geist(15.sp).copy(color = roles.sub),
-            )
-        }
-    }
-}
-
 enum class AlbumSort(val label: String) { Added("Date Added"), Name("Name"), Artist("Artist"), Released("Release Date") }
 
 enum class SongSort(val label: String) { Name("Name"), Artist("Artist"), Album("Album"), Added("Date Added") }

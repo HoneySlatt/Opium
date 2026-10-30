@@ -47,10 +47,10 @@ fun matches(query: String, vararg fields: String?): Boolean {
  * keyboard comes with it), and kept open while it holds words.
  */
 @Composable
-fun SearchReveal(open: Boolean, value: String, placeholder: String, onChange: (String) -> Unit) {
+fun SearchReveal(open: Boolean, value: String, placeholder: String, focusOnOpen: Boolean = true, onChange: (String) -> Unit) {
     AnimatedVisibility(open || value.isNotEmpty(), enter = expandVertically(tween(250)), exit = shrinkVertically(tween(250))) {
         val focus = remember { FocusRequester() }
-        LaunchedEffect(open) { if (open) runCatching { focus.requestFocus() } }
+        LaunchedEffect(open) { if (open && focusOnOpen) runCatching { focus.requestFocus() } }
         Row(
             Modifier
                 .padding(start = 20.dp, end = 20.dp, top = 6.dp, bottom = 8.dp)
