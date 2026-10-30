@@ -95,6 +95,9 @@ class Core(context: Context) {
         }
     }
 
+    /** What was opened from searches, for Recently Searched. */
+    val searched: String = File(context.filesDir, "recently-searched.json").path
+
     /** The library's lists as last read, by service: see [Library]. */
     val kept = File(context.cacheDir, "library").apply { mkdirs() }
 

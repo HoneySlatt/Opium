@@ -902,6 +902,32 @@ fn kept<T: serde::de::DeserializeOwned>(path: &str) -> Vec<T> {
         .unwrap_or_default()
 }
 
+/// What was opened or played from a search, as Recently Searched lists it.
+#[derive(Clone, serde::Serialize, serde::Deserialize, uniffi::Enum)]
+pub enum Searched {
+    AlbumOpened { album: Album },
+    ArtistOpened { artist: Artist },
+    SongPlayed { track: Track },
+    PlaylistOpened { playlist: Playlist },
+}
+
+/// A search's find, and whether it was found in the library.
+#[derive(Clone, serde::Serialize, serde::Deserialize, uniffi::Record)]
+pub struct RecentlySearched {
+    pub item: Searched,
+    pub library: bool,
+}
+
+#[uniffi::export]
+pub fn keep_searched(path: String, items: Vec<RecentlySearched>) {
+    keep(&path, &items);
+}
+
+#[uniffi::export]
+pub fn kept_searched(path: String) -> Vec<RecentlySearched> {
+    kept(&path)
+}
+
 #[uniffi::export]
 pub fn keep_tracks(path: String, items: Vec<Track>) {
     keep(&path, &items);

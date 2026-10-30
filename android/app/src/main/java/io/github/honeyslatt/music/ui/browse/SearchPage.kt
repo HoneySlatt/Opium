@@ -4,6 +4,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -28,7 +29,20 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.honeyslatt.music.core.RecentlySearched
 import io.github.honeyslatt.music.core.SearchScope
+import io.github.honeyslatt.music.core.Searched
+import io.github.honeyslatt.music.core.keepSearched
+import io.github.honeyslatt.music.core.keptSearched
+import io.github.honeyslatt.music.core.model.FavouriteKind
+import io.github.honeyslatt.music.ui.components.Cover
+import io.github.honeyslatt.music.ui.components.ExplicitBadge
+import io.github.honeyslatt.music.ui.components.anchor
+import io.github.honeyslatt.music.ui.components.rememberAnchor
+import io.github.honeyslatt.music.ui.components.underline
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import io.github.honeyslatt.music.core.songsLeftOut
 import io.github.honeyslatt.music.data.LibraryLists
 import io.github.honeyslatt.music.core.model.Artist
@@ -58,8 +72,8 @@ import io.github.honeyslatt.music.ui.theme.geist
 import io.github.honeyslatt.music.ui.theme.roles
 import kotlinx.coroutines.delay
 
-/** How many searches Recently Searched keeps. */
-private const val RECENT = 10
+/** How many finds Recently Searched keeps. */
+private const val RECENT = 20
 
 /** How many songs a search shows before its title is tapped. */
 private const val SONGS = 6
@@ -67,7 +81,8 @@ private const val SONGS = 6
 /**
  * Search: the field, `Apple Music | Your Library` (remembered), and what
  * matches: the top result, songs, albums, artists, playlists. Before a
- * word is typed, the searches made lately.
+ * word is typed, what was opened or played from searches lately, as Apple
+ * Music lists it.
  */
 @Composable
 fun SearchPage(c: LibraryContext) {
@@ -77,7 +92,7 @@ fun SearchPage(c: LibraryContext) {
     var sources by rememberSaveable { mutableStateOf(false) }
     // The sections whose title showed all they found: Songs, Albums, Artists.
     var unfolded by remember { mutableStateOf(emptySet<String>()) }
-    var recent by remember { mutableStateOf(c.core.setting("recent-searches")?.split('\n')?.filter { it.isNotBlank() }.orEmpty()) }
+    var recent by remember { mutableStateOf(keptSearched(c.core.searched)) }
     val words = query.trim()
     // Each search starts with its first results only.
     androidx.compose.runtime.LaunchedEffect(words, library, source) { unfolded = emptySet() }
@@ -96,10 +111,10 @@ fun SearchPage(c: LibraryContext) {
             if (library && (source == null || source == ProviderKind.SOUND_CLOUD)) found.withLikes(lists, words) else found
         }
     }
-    // A result opened: its search is worth keeping.
-    val keep = {
-        recent = (listOf(words) + recent.filter { !it.equals(words, ignoreCase = true) }).take(RECENT)
-        c.core.setSetting("recent-searches", recent.joinToString("\n"))
+    // A result opened or played: first in Recently Searched, once.
+    val keep: (Searched, Boolean) -> Unit = { item, inLibrary ->
+        recent = (listOf(RecentlySearched(item, inLibrary)) + recent.filter { it.item.id() != item.id() }).take(RECENT)
+        keepSearched(c.core.searched, recent)
     }
     // The title folds the source chips.
     ListPage(c.nav, "Search", fold = Fold(sources) { sources = !sources }) {
@@ -113,12 +128,12 @@ fun SearchPage(c: LibraryContext) {
         item { SourceChips(sources, source, c.services) { source = it } }
         val r = results
         when {
-            r == null -> recentSearches(recent, onPick = { query = it }) {
+            r == null -> recentSearches(c, recent, keep) {
                 recent = emptyList()
-                c.core.setSetting("recent-searches", "")
+                keepSearched(c.core.searched, recent)
             }
             r !is Loading.Ready -> item { Empty(r.listing(), "", "") }
-            else -> results(c, r.value, library, words, { name -> Fold(name in unfolded) { unfolded = if (name in unfolded) unfolded - name else unfolded + name } }, keep)
+            else -> results(c, r.value, library, words, { name -> Fold(name in unfolded) { unfolded = if (name in unfolded) unfolded - name else unfolded + name } }) { keep(it, library) }
         }
     }
 }
@@ -145,7 +160,20 @@ private fun SearchResults.withLikes(lists: LibraryLists, words: String): SearchR
 private fun <T> inTurns(a: List<T>, b: List<T>): List<T> =
     (0 until maxOf(a.size, b.size)).flatMap { i -> listOfNotNull(a.getOrNull(i), b.getOrNull(i)) }
 
-private fun androidx.compose.foundation.lazy.LazyListScope.recentSearches(recent: List<String>, onPick: (String) -> Unit, onClear: () -> Unit) {
+/** The id of what was found, to keep it once. */
+private fun Searched.id() = when (this) {
+    is Searched.AlbumOpened -> album.id
+    is Searched.ArtistOpened -> artist.id
+    is Searched.SongPlayed -> track.id
+    is Searched.PlaylistOpened -> playlist.id
+}
+
+private fun androidx.compose.foundation.lazy.LazyListScope.recentSearches(
+    c: LibraryContext,
+    recent: List<RecentlySearched>,
+    keep: (Searched, Boolean) -> Unit,
+    onClear: () -> Unit,
+) {
     if (recent.isEmpty()) return
     item {
         Row(
@@ -156,14 +184,92 @@ private fun androidx.compose.foundation.lazy.LazyListScope.recentSearches(recent
             BasicText("Clear", Modifier.press(onClick = onClear), style = geist(15.sp, FontWeight.Medium).copy(color = roles.tint))
         }
     }
-    items(recent.size) { i ->
+    items(recent, key = { it.item.id().let { id -> "${id.provider}:${id.id}" } }) { entry ->
+        SearchedRow(c, entry) { keep(entry.item, entry.library) }
+    }
+}
+
+/**
+ * A find of Recently Searched, as Apple Music shows it: a star when it is a
+ * favourite, its cover (round for an artist), its title, what it is and by
+ * whom, and whether it came from the library; a song has its menu.
+ */
+@Composable
+private fun SearchedRow(c: LibraryContext, entry: RecentlySearched, onOpen: () -> Unit) {
+    val actions = LocalActions.current
+    val anchor = rememberAnchor()
+    val more = rememberAnchor()
+    class Shown(
+        val artwork: io.github.honeyslatt.music.core.model.Artwork?,
+        val title: String,
+        val explicit: Boolean,
+        val what: String,
+        val round: Boolean,
+        val favourite: Boolean,
+        val menu: ((androidx.compose.ui.geometry.Rect) -> Unit)?,
+        val song: Boolean,
+        val open: () -> Unit,
+    )
+    fun line(kind: String, by: String?) = listOfNotNull(kind, by?.ifEmpty { null }).joinToString(" · ")
+    val s = when (val i = entry.item) {
+        is Searched.AlbumOpened -> i.album.let { a ->
+            Shown(
+                a.artwork, a.title, a.explicit, line("Album", a.artists.joinToString(", ")), false,
+                actions?.isFavourite(FavouriteKind.ALBUM, a.catalogId ?: a.id, a.inFavourites) == true,
+                { r -> actions?.albumMenu(a, r) }, false,
+            ) { c.nav.push(Route.Album(a.id)) }
+        }
+        is Searched.ArtistOpened -> i.artist.let { a ->
+            Shown(a.artwork, a.name, false, "Artist", true, actions?.isFavourite(a) == true, null, false) {
+                c.nav.push(if (entry.library) Route.LibraryArtist(a) else Route.Artist(a.id))
+            }
+        }
+        is Searched.SongPlayed -> i.track.let { t ->
+            Shown(
+                t.artwork, t.title, t.explicit, line("Song", t.artists.joinToString(", ")), false,
+                t.id.provider != ProviderKind.NAVIDROME && actions?.isFavourite(FavouriteKind.SONG, t.id) == true,
+                { r -> actions?.trackMenu(t, r) }, true,
+            ) { c.playback.play(listOf(t), 0) }
+        }
+        is Searched.PlaylistOpened -> i.playlist.let { p ->
+            Shown(p.artwork, p.name, false, line("Playlist", p.curator), false, actions?.isFavourite(p) == true, { r -> actions?.playlistMenu(p, r) }, false) {
+                c.nav.push(Route.Playlist(p.id, p))
+            }
+        }
+    }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .height(if (entry.library) 78.dp else 70.dp)
+            .anchor(anchor)
+            .press(onLongClick = s.menu?.let { m -> { m(anchor.rect) } }) {
+                onOpen()
+                s.open()
+            },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.width(20.dp), contentAlignment = Alignment.Center) {
+            if (s.favourite) Glyph(Icons.Starf, roles.tint, 9.dp)
+        }
+        Cover(s.artwork, 56.dp, if (s.round) CircleShape else RoundedCornerShape(6.dp), Modifier.size(56.dp))
         Row(
-            Modifier.fillMaxWidth().height(48.dp).press { onPick(recent[i]) }.padding(horizontal = 20.dp),
+            Modifier.weight(1f).fillMaxHeight().underline(roles.line).padding(start = 14.dp, end = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Glyph(Icons.Search, roles.muted, 18.dp)
-            Line(recent[i], geist(16.sp).copy(color = roles.text))
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Line(s.title, geist(16.sp).copy(color = roles.text), Modifier.weight(1f, fill = false))
+                    if (s.explicit) ExplicitBadge()
+                }
+                Line(s.what, geist(13.5.sp).copy(color = roles.sub))
+                if (entry.library) Line("From Your Library", geist(13.5.sp).copy(color = roles.sub))
+            }
+            if (s.song) {
+                Box(
+                    Modifier.size(44.dp).anchor(more).press(CircleShape) { s.menu?.invoke(more.rect) },
+                    contentAlignment = Alignment.Center,
+                ) { Glyph(Icons.More, roles.text, 20.dp) }
+            }
         }
     }
 }
@@ -174,7 +280,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.results(
     library: Boolean,
     words: String,
     fold: (String) -> Fold,
-    keep: () -> Unit,
+    keep: (Searched) -> Unit,
 ) {
     if (r.tracks.isEmpty() && r.albums.isEmpty() && r.artists.isEmpty() && r.playlists.isEmpty()) {
         item {
@@ -191,7 +297,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.results(
         item { SectionHeader("Top Result") }
         item {
             ItemRow(top.artwork, top.name, "Artist", round = true) {
-                keep()
+                keep(Searched.ArtistOpened(top))
                 c.nav.push(artist(top))
             }
         }
@@ -203,7 +309,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.results(
         val songs = if (all.open) r.tracks else r.tracks.take(SONGS)
         items(songs.size) { i ->
             TrackRow(songs[i]) {
-                keep()
+                keep(Searched.SongPlayed(songs[i]))
                 c.playback.play(songs, i)
             }
         }
@@ -216,7 +322,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.results(
         fun card(a: io.github.honeyslatt.music.core.model.Album, modifier: Modifier) {
             val actions = LocalActions.current
             CoverCard(a.artwork, a.title, a.artists.joinToString(", "), a.explicit, modifier = modifier, onMenu = { actions?.albumMenu(a, it) }) {
-                keep()
+                keep(Searched.AlbumOpened(a))
                 c.nav.push(Route.Album(a.id))
             }
         }
@@ -242,7 +348,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.results(
         val more = r.artists.drop(1).let { if (all.open) it else it.take(5) }
         items(more.size) { i ->
             ItemRow(more[i].artwork, more[i].name, "Artist", round = true) {
-                keep()
+                keep(Searched.ArtistOpened(more[i]))
                 c.nav.push(artist(more[i]))
             }
         }
@@ -254,7 +360,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.results(
             LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 items(r.playlists) { p ->
                     CoverCard(p.artwork, p.name, p.curator ?: "Playlist", modifier = Modifier.width(164.dp), onMenu = { actions?.playlistMenu(p, it) }) {
-                        keep()
+                        keep(Searched.PlaylistOpened(p))
                         c.nav.push(Route.Playlist(p.id, p))
                     }
                 }
