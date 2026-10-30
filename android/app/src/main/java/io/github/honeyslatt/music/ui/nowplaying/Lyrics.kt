@@ -1,7 +1,11 @@
 package io.github.honeyslatt.music.ui.nowplaying
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
@@ -19,6 +23,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -27,8 +32,11 @@ import androidx.compose.runtime.Composable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -38,7 +46,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -87,16 +97,17 @@ fun Lyrics(playback: Playback, track: Track, calm: Boolean, onFound: (Boolean) -
     val position = rememberPosition(playback, playing)
     val current = if (l.synced) l.lines.indexOfLast { it.startMs <= position }.coerceAtLeast(0) else -1
     val state = rememberLazyListState()
+    var glide by remember { mutableStateOf<Glide?>(null) }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val above = with(LocalDensity.current) { (maxHeight * 0.28f).roundToPx() }
         val anchor by rememberUpdatedState(above)
         val sung by rememberUpdatedState(current)
-        LaunchedEffect(current) { if (current >= 0) state.animateScrollToItem(current, -anchor) }
+        LaunchedEffect(current) { if (current >= 0) state.glideTo(current, anchor) { glide = it } }
         // The list grows or shrinks as the controls step aside: the line
         // being sung goes back to its place once they have.
         LaunchedEffect(calm) {
             kotlinx.coroutines.delay(CALM_MS.toLong())
-            if (sung >= 0) state.animateScrollToItem(sung, -anchor)
+            if (sung >= 0) state.glideTo(sung, anchor) { glide = it }
         }
         LazyColumn(
             Modifier
@@ -120,14 +131,72 @@ fun Lyrics(playback: Playback, track: Track, calm: Boolean, onFound: (Boolean) -
         ) {
             itemsIndexed(l.lines) { i, line ->
                 val on = i == current
-                Box(Modifier.fillMaxWidth().press { playback.seekTo(line.startMs) }.padding(vertical = 10.dp)) {
+                // A line that was sung dims slowly; the next one grows as it lights.
+                val lit by animateFloatAsState(if (on) 1f else 0f, tween(if (on) 360 else 520), label = "lit")
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .graphicsLayer {
+                            translationY = glide?.lag(i) ?: 0f
+                            val grown = 1f + 0.02f * lit
+                            scaleX = grown
+                            scaleY = grown
+                            transformOrigin = TransformOrigin(0f, 0.5f)
+                        }
+                        .press { playback.seekTo(line.startMs) }
+                        .padding(vertical = 10.dp),
+                ) {
                     when {
                         line.text.isBlank() -> Dots(on)
                         on -> Sung(line, l.lines.getOrNull(i + 1), position)
-                        else -> BasicText(line.text, style = lyricStyle().copy(color = if (l.synced) np.dim else np.fg))
+                        else -> BasicText(line.text, style = lyricStyle().copy(color = if (l.synced) lerp(np.dim, np.fg, lit) else np.fg))
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * The list on its way to a line: it glides there, and the lines below it
+ * follow one after the other, each a beat later.
+ */
+private class Glide(val to: Int, val shift: Float) {
+    val clock = Animatable(0f)
+
+    /** How far line `i` trails behind the list. */
+    fun lag(i: Int): Float {
+        val rank = (i - to).coerceIn(0, STAGGERED)
+        if (rank == 0) return 0f
+        val t = clock.value
+        return shift * (eased(t) - eased(t - rank * STAGGER_MS))
+    }
+}
+
+private val GlideEasing = CubicBezierEasing(0.3f, 0f, 0.1f, 1f)
+private const val GLIDE_MS = 620f
+private const val STAGGER_MS = 45f
+private const val STAGGERED = 6
+
+private fun eased(ms: Float) = GlideEasing.transform((ms / GLIDE_MS).coerceIn(0f, 1f))
+
+/** Bring line `index` to `anchor` px below the top: a glide if it is in sight, a cut if not. */
+private suspend fun LazyListState.glideTo(index: Int, anchor: Int, show: (Glide?) -> Unit) {
+    val seen = layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }
+    if (seen == null) {
+        show(null)
+        scrollToItem(index, -anchor)
+        return
+    }
+    val glide = Glide(index, (seen.offset - anchor).toFloat())
+    show(glide)
+    val total = GLIDE_MS + STAGGERED * STAGGER_MS
+    scroll {
+        var done = 0f
+        glide.clock.animateTo(total, tween(total.toInt(), easing = LinearEasing)) {
+            val far = glide.shift * eased(value)
+            scrollBy(far - done)
+            done = far
         }
     }
 }
@@ -157,7 +226,7 @@ private fun Sung(line: LyricLine, next: LyricLine?, position: Long) {
         shares(words, line, next, position)
     }
     val glow = Shadow(np.fg.copy(alpha = 0.22f), blurRadius = 28f)
-    FlowRow(Modifier.graphicsLayer { scaleX = 1.02f; scaleY = 1.02f; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0.5f) }) {
+    FlowRow {
         words.forEachIndexed { i, word ->
             val p = progress.getOrElse(i) { 0f }
             val edge = (p * 1.25f).coerceIn(0f, 1f)
