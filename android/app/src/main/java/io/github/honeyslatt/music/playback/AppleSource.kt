@@ -8,7 +8,6 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.ByteArrayDataSource
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
-import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.TransferListener
 import androidx.media3.exoplayer.drm.DefaultDrmSessionManager
 import androidx.media3.exoplayer.drm.ExoMediaDrm
@@ -19,6 +18,11 @@ import androidx.media3.exoplayer.hls.HlsMediaSource
 import io.github.honeyslatt.music.core.ProtectedTrack
 import java.util.UUID
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
+import androidx.media3.common.DrmInitData
+import androidx.media3.common.Format
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.analytics.PlayerId
 
 /**
  * An Apple song as ExoPlayer plays it: its playlist from the core, its audio
@@ -27,10 +31,15 @@ import kotlinx.coroutines.runBlocking
  * gap. Checked on a Pixel 10 (Widevine L1) in step 0.
  */
 @UnstableApi
-fun appleSource(track: ProtectedTrack, key: String, item: MediaItem.Builder = MediaItem.Builder()): HlsMediaSource {
+fun appleSource(
+    track: ProtectedTrack,
+    key: String,
+    item: MediaItem.Builder = MediaItem.Builder(),
+    player: ExoPlayer? = null,
+): HlsMediaSource {
     val playlistUri = Uri.parse("music-playlist://apple/$key.m3u8")
     val playlist = track.playlist().toByteArray()
-    val http = DefaultHttpDataSource.Factory()
+    val http = Http.sources
     // The playlist comes from the core; the audio from Apple's servers.
     val sources = DataSource.Factory {
         object : DataSource {
@@ -68,8 +77,27 @@ fun appleSource(track: ProtectedTrack, key: String, item: MediaItem.Builder = Me
     val drm = DefaultDrmSessionManager.Builder()
         .setUuidAndExoMediaDrmProvider(C.WIDEVINE_UUID, FrameworkMediaDrm.DEFAULT_PROVIDER)
         .build(licences)
+    // The licence is asked for at once, with the key already known, rather
+    // than once the player has read the file's start.
+    if (player != null) {
+        drm.setPlayer(player.playbackLooper, PlayerId.UNSET)
+        drm.prepare()
+        val pssh = DrmInitData(DrmInitData.SchemeData(C.WIDEVINE_UUID, MimeTypes.VIDEO_MP4, track.pssh()))
+        val held = drm.preacquireSession(null, Format.Builder().setSampleMimeType(MimeTypes.AUDIO_AAC).setDrmInitData(pssh).build())
+        // Let go once the player holds its own reference, or the source goes.
+        player.addListener(object : androidx.media3.common.Player.Listener {
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (isPlaying) {
+                    held.release()
+                    drm.release()
+                    player.removeListener(this)
+                }
+            }
+        })
+    }
+    val padding = { runBlocking { withTimeoutOrNull(2_000) { track.padding() } }?.toInt() ?: 0 }
     return HlsMediaSource.Factory(sources)
-        .setExtractorFactory(Trimmed.Factory(track.priming().toInt(), track.padding().toInt()))
+        .setExtractorFactory(Trimmed.Factory(track.priming().toInt(), padding))
         .setDrmSessionManagerProvider { drm }
         .createMediaSource(item.setUri(playlistUri).setMimeType(MimeTypes.APPLICATION_M3U8).build())
 }

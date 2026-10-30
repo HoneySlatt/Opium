@@ -16,6 +16,12 @@ use crate::AppleMusic;
 use cenc::AudioStream;
 
 const WEB_PLAYBACK: &str = "https://play.music.apple.com/WebObjects/MZPlay.woa/wa/webPlayback";
+/// The web player's host, to connect to ahead of a song.
+const WEB_PLAYBACK_HOST: &str = "https://play.music.apple.com/";
+/// Where the songs' playlists and files are.
+pub const ASSET_HOST: &str = "https://aod-ssl.itunes.apple.com/";
+/// The licence server's host, to connect to ahead of the licence.
+const LICENSE_HOST: &str = "https://play.itunes.apple.com/";
 const LICENSE: &str =
     "https://play.itunes.apple.com/WebObjects/MZPlay.woa/wa/acquireWebPlaybackLicense";
 /// The catalog flavours Widevine can open are `ctrp` ones (the `cbcp` use
@@ -157,9 +163,6 @@ pub struct Protected {
     pub playlist: String,
     /// The encode's bit rate, as its flavour names it.
     pub kbps: u32,
-    /// The frames after the music in the last AAC frame, to leave out with
-    /// the [`PRIMING`] before it, so that songs follow without a gap.
-    pub padding: u32,
     licensed_as: String,
     is_library: bool,
     file: EncryptedFile,
@@ -206,6 +209,12 @@ impl AppleMusic {
     /// upload, which has no licence to ask for.
     pub async fn protected(&self, track: &ItemId) -> Result<Option<Protected>> {
         let adam_id = track.id.as_str();
+        // The licence comes next, from another host: its connection opens
+        // meanwhile.
+        let http = self.http.clone();
+        tokio::spawn(async move {
+            let _ = http.head(LICENSE_HOST).send().await;
+        });
         let song = self.web_playback(adam_id).await?;
         // A library song Apple matched to the catalog is licensed by the
         // catalog's id, said here, though asked for as the library's.
@@ -220,9 +229,7 @@ impl AppleMusic {
             .decode(&file.key_id_base64)
             .map_err(|e| playback_error(format!("key id: {e}")))?;
         let pssh = widevine::build_pssh(&key_id);
-        let padding = self.padding(&file.url, &playlist).await.unwrap_or(0);
         Ok(Some(Protected {
-            padding,
             url: file.url.clone(),
             playlist: widevine_playlist(&String::from_utf8_lossy(&playlist), &url, &pssh),
             pssh,
@@ -234,10 +241,17 @@ impl AppleMusic {
         }))
     }
 
-    /// The padding at the end of the file the playlist maps: its last
-    /// fragment's last frame is that much shorter than 1024. Only the
-    /// fragment's start is read.
-    async fn padding(&self, url: &str, playlist: &[u8]) -> Option<u32> {
+    /// The frames after the music in `protected`'s last AAC frame, to leave
+    /// out with the [`PRIMING`] before it, so that songs follow without a
+    /// gap: its last fragment's last frame is that much shorter than 1024.
+    /// Only the fragment's start is read.
+    pub async fn padding(&self, protected: &Protected) -> u32 {
+        self.padding_of(&protected.url, protected.playlist.as_bytes())
+            .await
+            .unwrap_or(0)
+    }
+
+    async fn padding_of(&self, url: &str, playlist: &[u8]) -> Option<u32> {
         let playlist = m3u8_rs::parse_media_playlist_res(playlist).ok()?;
         let mut end = 0u64;
         let mut last = None;
@@ -260,6 +274,17 @@ impl AppleMusic {
         cenc::last_sample_duration(&fragment)
             .filter(|&d| d > 0 && d < AAC_FRAMES)
             .map(|d| AAC_FRAMES - d)
+    }
+
+    /// Open the connections a song's start goes through (the web player,
+    /// the files, the licences), so that the first song starts as fast as
+    /// the next ones.
+    pub async fn warm(&self) {
+        let _ = tokio::join!(
+            self.http.head(WEB_PLAYBACK_HOST).send(),
+            self.http.head(ASSET_HOST).send(),
+            self.http.head(LICENSE_HOST).send(),
+        );
     }
 
     /// The licence for `protected`, in answer to a CDM's `challenge`.

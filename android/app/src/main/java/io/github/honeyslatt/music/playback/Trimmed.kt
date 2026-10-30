@@ -21,7 +21,7 @@ import androidx.media3.extractor.TrackOutput
 class Trimmed(
     private val inner: HlsMediaChunkExtractor,
     private val priming: Int,
-    private val padding: Int,
+    private val padding: () -> Int,
 ) : HlsMediaChunkExtractor by inner {
 
     override fun init(output: ExtractorOutput) {
@@ -33,7 +33,7 @@ class Trimmed(
                         track.format(
                             format.buildUpon()
                                 .setEncoderDelay(priming)
-                                .setEncoderPadding(padding)
+                                .setEncoderPadding(padding())
                                 .build(),
                         )
                     }
@@ -44,7 +44,8 @@ class Trimmed(
 
     override fun recreate(): HlsMediaChunkExtractor = Trimmed(inner.recreate(), priming, padding)
 
-    class Factory(private val priming: Int, private val padding: Int) : HlsExtractorFactory {
+    /** `padding` is asked for when the audio's format is read, by then known. */
+    class Factory(private val priming: Int, private val padding: () -> Int) : HlsExtractorFactory {
         private val default = DefaultHlsExtractorFactory()
 
         override fun createExtractor(

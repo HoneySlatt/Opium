@@ -172,6 +172,8 @@ impl Session {
     pub async fn connect_apple(&self, user_token: String) -> Result<String, MusicError> {
         let apple = Arc::new(AppleMusic::connect(&user_token).await?);
         let storefront = apple.storefront().to_owned();
+        let warming = apple.clone();
+        tokio::spawn(async move { warming.warm().await });
         self.update(|s| s.apple = Some(apple));
         Ok(storefront)
     }
@@ -391,7 +393,7 @@ impl Session {
         Ok(apple
             .protected(&song)
             .await?
-            .map(|protected| Arc::new(ProtectedTrack { apple, protected })))
+            .map(|protected| ProtectedTrack::new(apple.clone(), protected)))
     }
 }
 
@@ -525,6 +527,12 @@ impl PlayQueue {
     }
 }
 
+/// Where Apple Music's song files are, for the player to connect to ahead.
+#[uniffi::export]
+pub fn apple_asset_host() -> String {
+    apple_music::ASSET_HOST.to_owned()
+}
+
 /// A cover's three colours, best first, as `0xrrggbb`, from its encoded
 /// image.
 #[uniffi::export]
@@ -569,12 +577,11 @@ impl Apple {
     /// A catalog song's encrypted file and its key; `None` for an upload.
     pub async fn protected(&self, song: String) -> Result<Option<Arc<ProtectedTrack>>, MusicError> {
         let id = ItemId::new(ProviderKind::AppleMusic, song);
-        Ok(self.0.protected(&id).await?.map(|protected| {
-            Arc::new(ProtectedTrack {
-                apple: self.0.clone(),
-                protected,
-            })
-        }))
+        Ok(self
+            .0
+            .protected(&id)
+            .await?
+            .map(|protected| ProtectedTrack::new(self.0.clone(), protected)))
     }
 }
 
@@ -583,6 +590,26 @@ impl Apple {
 pub struct ProtectedTrack {
     apple: Arc<AppleMusic>,
     protected: Protected,
+    padding: std::sync::Mutex<Option<PaddingTask>>,
+}
+
+enum PaddingTask {
+    Running(tokio::task::JoinHandle<u32>),
+    Done(u32),
+}
+
+impl ProtectedTrack {
+    fn new(apple: Arc<AppleMusic>, protected: Protected) -> Arc<Self> {
+        let task = {
+            let (apple, protected) = (apple.clone(), protected.clone());
+            tokio::spawn(async move { apple.padding(&protected).await })
+        };
+        Arc::new(Self {
+            apple,
+            protected,
+            padding: std::sync::Mutex::new(Some(PaddingTask::Running(task))),
+        })
+    }
 }
 
 #[uniffi::export(async_runtime = "tokio")]
@@ -610,9 +637,21 @@ impl ProtectedTrack {
         apple_music::PRIMING
     }
 
-    /// The frames after the music in the last frame, to leave out.
-    pub fn padding(&self) -> u32 {
-        self.protected.padding
+    /// The frames after the music in the last frame, to leave out: read
+    /// in the background from the start, as the song needn't wait for it.
+    pub async fn padding(&self) -> u32 {
+        let task = self
+            .padding
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take();
+        let found = match task {
+            Some(PaddingTask::Running(task)) => task.await.unwrap_or(0),
+            Some(PaddingTask::Done(n)) => n,
+            None => 0,
+        };
+        *self.padding.lock().unwrap_or_else(|e| e.into_inner()) = Some(PaddingTask::Done(found));
+        found
     }
 
     /// The licence, in answer to the CDM's challenge.

@@ -70,7 +70,9 @@ class Playback(context: Context, private val core: Core, private val scope: Coro
     private var failedInRow = 0
 
     init {
+        Http.warm()
         player.addListener(object : Player.Listener {
+
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 _playing.value = isPlaying
             }
@@ -202,7 +204,7 @@ class Playback(context: Context, private val core: Core, private val scope: Coro
         return when (track.id.provider) {
             ProviderKind.APPLE_MUSIC -> {
                 val protected = core.session.protected(track.id) ?: error("a song you uploaded can't play here yet")
-                appleSource(protected, "$generation-${keys++}", item)
+                appleSource(protected, "$generation-${keys++}", item, player)
             }
             else -> error("${track.id.provider} plays once it is connected")
         }

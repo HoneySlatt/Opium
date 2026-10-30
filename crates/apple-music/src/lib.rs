@@ -14,7 +14,7 @@ pub mod signin;
 mod types;
 
 pub use cenc::AudioStream;
-pub use playback::{PRIMING, Protected};
+pub use playback::{ASSET_HOST, PRIMING, Protected};
 pub use radio::LiveStream;
 
 use async_trait::async_trait;
@@ -180,6 +180,9 @@ impl AppleMusic {
             // than hang what waits on it.
             .connect_timeout(std::time::Duration::from_secs(10))
             .read_timeout(std::time::Duration::from_secs(30))
+            // A song's start needs three of Apple's hosts: their connections
+            // are kept a while, not dropped after 90 s.
+            .pool_idle_timeout(std::time::Duration::from_secs(300))
             .build()
             .map_err(|e| Error::Network(e.to_string()))?;
         let developer_token = auth::developer_token(&http).await?;
