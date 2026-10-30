@@ -1,10 +1,11 @@
 //! Apple Music's lyrics: TTML, line-timed (`lyrics`) or word-timed
-//! (`syllable-lyrics`). Lines are what the app shows, so both are read as
-//! `<p begin end>` paragraphs; background vocals are left out.
+//! (`syllable-lyrics`). Both are read as `<p begin end>` paragraphs, the
+//! word-timed ones keeping each `<span begin end>` syllable as a word of its
+//! line; background vocals are left out.
 
 use std::time::Duration;
 
-use music_core::model::{LyricLine, Lyrics};
+use music_core::model::{LyricLine, LyricWord, Lyrics};
 use quick_xml::Reader;
 use quick_xml::events::{BytesStart, Event};
 
@@ -15,8 +16,10 @@ pub(crate) fn parse_ttml(ttml: &str) -> Option<Lyrics> {
     let synced = !ttml.contains("timing=\"None\"");
     let mut reader = Reader::from_str(ttml);
     let mut lines = Vec::new();
-    // Inside a <p>: its times and the text so far.
-    let mut paragraph: Option<(Option<Duration>, Option<Duration>, String)> = None;
+    // Inside a <p>: its times, its text and words so far.
+    let mut paragraph: Option<Paragraph> = None;
+    // Inside a timed <span>: the word being read.
+    let mut word: Option<LyricWord> = None;
     // Depth inside a background-vocals span, whose text is skipped.
     let mut skipping = 0usize;
 
@@ -24,47 +27,64 @@ pub(crate) fn parse_ttml(ttml: &str) -> Option<Lyrics> {
         match reader.read_event().ok()? {
             Event::Start(e) => {
                 if e.local_name().as_ref() == "p" {
-                    paragraph = Some((time_attr(&e, "begin"), time_attr(&e, "end"), String::new()));
+                    paragraph = Some(Paragraph {
+                        begin: time_attr(&e, "begin"),
+                        end: time_attr(&e, "end"),
+                        text: String::new(),
+                        words: Vec::new(),
+                    });
                 } else if skipping > 0 || is_background(&e) {
                     skipping += 1;
+                } else if paragraph.is_some()
+                    && let (Some(begin), Some(end)) = (time_attr(&e, "begin"), time_attr(&e, "end"))
+                {
+                    word = Some(LyricWord {
+                        start: begin,
+                        end,
+                        text: String::new(),
+                    });
                 }
             }
             Event::End(e) => {
                 if e.local_name().as_ref() == "p" {
-                    if let Some((begin, end, text)) = paragraph.take() {
-                        let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+                    if let Some(p) = paragraph.take() {
+                        let text = p.text.split_whitespace().collect::<Vec<_>>().join(" ");
                         if !text.is_empty() {
                             lines.push(LyricLine {
-                                start: begin.unwrap_or_default(),
-                                end,
+                                start: p.begin.unwrap_or_default(),
+                                end: p.end,
                                 text,
+                                words: p.words,
                             });
                         }
                     }
-                } else {
-                    skipping = skipping.saturating_sub(1);
+                } else if skipping > 0 {
+                    skipping -= 1;
+                } else if let Some(w) = word.take()
+                    && let Some(p) = &mut paragraph
+                    && !w.text.trim().is_empty()
+                {
+                    p.words.push(w);
                 }
             }
             Event::Text(t) if skipping == 0 => {
-                if let Some((_, _, text)) = &mut paragraph {
-                    text.push_str(&t.xml10_content());
-                }
+                let content = t.xml10_content();
+                add_text(&mut paragraph, &mut word, &content);
             }
             Event::GeneralRef(r) if skipping == 0 => {
-                if let Some((_, _, text)) = &mut paragraph {
-                    if let Ok(Some(c)) = r.resolve_char_ref() {
-                        text.push(c);
-                    } else {
-                        text.push_str(match r.xml10_content().as_ref() {
-                            "amp" => "&",
-                            "lt" => "<",
-                            "gt" => ">",
-                            "quot" => "\"",
-                            "apos" => "'",
-                            _ => "",
-                        });
+                let c = match r.resolve_char_ref() {
+                    Ok(Some(c)) => c.to_string(),
+                    _ => match r.xml10_content().as_ref() {
+                        "amp" => "&",
+                        "lt" => "<",
+                        "gt" => ">",
+                        "quot" => "\"",
+                        "apos" => "'",
+                        _ => "",
                     }
-                }
+                    .to_owned(),
+                };
+                add_text(&mut paragraph, &mut word, &c);
             }
             Event::Eof => break,
             _ => {}
@@ -77,6 +97,42 @@ pub(crate) fn parse_ttml(ttml: &str) -> Option<Lyrics> {
         lines = with_gaps(lines);
     }
     Some(Lyrics { lines, synced })
+}
+
+/// A `<p>` being read.
+struct Paragraph {
+    begin: Option<Duration>,
+    end: Option<Duration>,
+    text: String,
+    words: Vec<LyricWord>,
+}
+
+/// Text inside a paragraph: its word's when in one, else between words,
+/// where a space goes to the word before.
+fn add_text(paragraph: &mut Option<Paragraph>, word: &mut Option<LyricWord>, text: &str) {
+    let Some(p) = paragraph else {
+        return;
+    };
+    p.text.push_str(text);
+    // Line breaks and runs of spaces are one space.
+    let flat: String = text
+        .chars()
+        .map(|c| if c.is_whitespace() { ' ' } else { c })
+        .collect();
+    match word {
+        Some(w) => w.text.push_str(&flat),
+        None => {
+            if let Some(last) = p.words.last_mut()
+                && !last.text.ends_with(' ')
+            {
+                let gap = flat.trim();
+                if flat.starts_with(' ') || gap.is_empty() {
+                    last.text.push(' ');
+                }
+                last.text.push_str(gap);
+            }
+        }
+    }
 }
 
 fn is_background(e: &BytesStart) -> bool {
@@ -113,6 +169,7 @@ fn with_gaps(lines: Vec<LyricLine>) -> Vec<LyricLine> {
                 start: previous_end,
                 end: Some(line.start),
                 text: String::new(),
+                words: Vec::new(),
             });
         }
         previous_end = line.end.unwrap_or(line.start);
@@ -158,7 +215,25 @@ mod tests {
 <p begin="1.0" end="3.0"><span begin="1.0" end="1.5">Hello</span> <span begin="1.6" end="2.0">world</span><span ttm:role="x-bg"><span begin="2.1" end="2.5">(ooh)</span></span></p>
 </div></body></tt>"#;
         let lyrics = parse_ttml(ttml).unwrap();
-        assert_eq!(lyrics.lines.last().unwrap().text, "Hello world");
+        let line = lyrics.lines.last().unwrap();
+        assert_eq!(line.text, "Hello world");
+        let words: Vec<(&str, u64)> = line
+            .words
+            .iter()
+            .map(|w| (w.text.as_str(), w.start.as_millis() as u64))
+            .collect();
+        assert_eq!(words, [("Hello ", 1000), ("world", 1600)]);
+    }
+
+    #[test]
+    fn syllables_of_one_word_stay_joined() {
+        let ttml = r#"<tt itunes:timing="Word"><body><div>
+<p begin="1.0" end="3.0"><span begin="1.0" end="1.3">Ex</span><span begin="1.3" end="1.6">pect</span> <span begin="1.7" end="2.0">it</span></p>
+</div></body></tt>"#;
+        let line = parse_ttml(ttml).unwrap().lines.pop().unwrap();
+        let texts: Vec<&str> = line.words.iter().map(|w| w.text.as_str()).collect();
+        assert_eq!(texts, ["Ex", "pect ", "it"]);
+        assert_eq!(line.text, "Expect it");
     }
 
     #[test]

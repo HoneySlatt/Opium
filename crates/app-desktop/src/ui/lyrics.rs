@@ -2,10 +2,11 @@
 //! kept a third of the way down, a click on a line jumps to it.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use egui::text::{LayoutJob, TextFormat, TextWrapping};
 use egui::{Id, Rect, Sense, Ui, pos2, vec2};
-use music_core::model::{ItemId, Lyrics};
+use music_core::model::{ItemId, LyricLine, Lyrics};
 
 use crate::app::{App, Loaded};
 use crate::fonts::{Weight, font};
@@ -157,10 +158,21 @@ pub fn show(
                 app.play_from(line.start);
             }
         }
-        opacity *= edge_fade(rect.center().y, list, offset);
+        let fade = edge_fade(rect.center().y, list, offset);
+        opacity *= fade;
         let color = theme.text_a(opacity);
         let scale = 1.0 + (LIT - 1.0) * lit;
         match &galleys[i] {
+            // The line being sung word by word: what is sung lights up as
+            // it goes.
+            Some(_) if on && !line.words.is_empty() => {
+                let galley = sung(ui, line, position, size, wrap, scale, theme, fade);
+                let top = rect.center().y - galley.size().y / 2.0;
+                painter.galley(pos2(rect.left() + PAD.x, top), galley, color);
+                if app.is_playing() {
+                    ui.ctx().request_repaint();
+                }
+            }
             Some(galley) => {
                 let galley = if scale > 1.0 {
                     layout(ui, &line.text, size, wrap, scale, theme)
@@ -201,6 +213,57 @@ fn time_chip(ui: &Ui, painter: &egui::Painter, theme: &Theme, line: Rect, at: st
     );
     let size = g.size();
     painter.galley(chip.center() - size / 2.0, g, theme.text_a(0.6));
+}
+
+/// How bright what is still to be sung in the line playing is, to what is
+/// sung.
+const UNSUNG: f32 = 0.42;
+
+/// The line playing, word by word: each letter lit as its word goes by, the
+/// word being sung filling from its first letter to its last.
+#[allow(clippy::too_many_arguments)]
+fn sung(
+    ui: &Ui,
+    line: &LyricLine,
+    position: Duration,
+    size: f32,
+    wrap: f32,
+    scale: f32,
+    theme: &Theme,
+    fade: f32,
+) -> Arc<egui::Galley> {
+    let size = size * scale;
+    let format = |opacity: f32| TextFormat {
+        font_id: font(size, Weight::Bold),
+        color: theme.text_a(opacity * fade),
+        extra_letter_spacing: -0.015 * size,
+        line_height: Some(size * 1.22),
+        ..TextFormat::default()
+    };
+    let mut job = LayoutJob::default();
+    let count = line.words.len();
+    for (k, word) in line.words.iter().enumerate() {
+        let span = word.end.saturating_sub(word.start).as_secs_f32().max(0.001);
+        let progress = (position.saturating_sub(word.start).as_secs_f32() / span).clamp(0.0, 1.0);
+        let text = if k + 1 == count {
+            word.text.trim_end()
+        } else {
+            word.text.as_str()
+        };
+        let letters = text.chars().filter(|c| !c.is_whitespace()).count().max(1);
+        let mut n = 0usize;
+        for c in text.chars() {
+            let lit = if c.is_whitespace() {
+                progress
+            } else {
+                n += 1;
+                (progress * letters as f32 - (n - 1) as f32).clamp(0.0, 1.0)
+            };
+            job.append(&c.to_string(), 0.0, format(UNSUNG + (1.0 - UNSUNG) * lit));
+        }
+    }
+    job.wrap = TextWrapping::wrap_at_width(wrap * scale);
+    ui.painter().layout_job(job)
 }
 
 fn layout(ui: &Ui, s: &str, size: f32, wrap: f32, scale: f32, theme: &Theme) -> Arc<egui::Galley> {

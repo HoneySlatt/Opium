@@ -185,6 +185,7 @@ pub(crate) fn lyrics(list: types::LyricsList) -> Option<Lyrics> {
             start: starts[i].unwrap_or_default(),
             end: starts.get(i + 1).copied().flatten(),
             text: l.value.trim().to_owned(),
+            words: Vec::new(),
         })
         .collect();
     (!lines.is_empty()).then_some(Lyrics {

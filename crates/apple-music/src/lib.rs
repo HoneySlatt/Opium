@@ -1072,13 +1072,13 @@ impl Provider for AppleMusic {
         Ok(resp.data.into_iter().filter_map(convert::shelf).collect())
     }
 
-    /// Line-timed lyrics, else the word-timed ones read line by line. Uploads
-    /// (`i.` ids) are not in the catalog and have none.
+    /// Word-timed lyrics, else line-timed ones. Uploads (`i.` ids) are not
+    /// in the catalog and have none.
     async fn lyrics(&self, track: &ItemId) -> Result<Option<Lyrics>> {
         if track.id.starts_with("i.") {
             return Ok(None);
         }
-        for kind in ["lyrics", "syllable-lyrics"] {
+        for kind in ["syllable-lyrics", "lyrics"] {
             let path = format!("/v1/catalog/{}/songs/{}/{kind}", self.storefront, track.id);
             let Some(resp) = self.fetch::<types::LyricsResponse>(&path).await? else {
                 continue;

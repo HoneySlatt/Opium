@@ -328,6 +328,15 @@ async fn lyrics(am: &AppleMusic, id: &str) -> Result<(), Box<dyn std::error::Err
     println!("{} lines, synced: {}", lyrics.lines.len(), lyrics.synced);
     for line in &lyrics.lines {
         println!("  {:>7.2}  {}", line.start.as_secs_f64(), line.text);
+        // Word-timed lyrics: each word's start and text.
+        if !line.words.is_empty() {
+            let words: Vec<String> = line
+                .words
+                .iter()
+                .map(|w| format!("{:.2}:{:?}", w.start.as_secs_f64(), w.text))
+                .collect();
+            println!("           {}", words.join(" "));
+        }
     }
     Ok(())
 }

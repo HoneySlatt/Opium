@@ -304,6 +304,18 @@ pub struct LyricLine {
     pub start: std::time::Duration,
     pub end: Option<std::time::Duration>,
     pub text: String,
+    /// When the lyrics are timed word by word: the line's words (or
+    /// syllables) in order, their text making up `text`; empty otherwise.
+    pub words: Vec<LyricWord>,
+}
+
+/// A word or syllable sung from `start` to `end`. Its text keeps the space
+/// after it, if any, so that the words of a line join into its text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LyricWord {
+    pub start: std::time::Duration,
+    pub end: std::time::Duration,
+    pub text: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

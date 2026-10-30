@@ -4,7 +4,7 @@
 
 use std::time::Duration;
 
-use music_core::model::{LyricLine, Lyrics};
+use music_core::model::{LyricLine, LyricWord, Lyrics};
 
 /// A line's times, from its leading `[mm:ss.xx]` tags, and its text; no
 /// times for a tag such as `[ar:…]`.
@@ -37,6 +37,61 @@ fn millis(tag: &str) -> Option<i64> {
         _ => frac.get(..3)?.parse().ok()?,
     };
     Some(minutes * 60_000 + seconds * 1000 + frac_ms)
+}
+
+/// A line of enhanced LRC, `<mm:ss.xx>` before each word: its text without
+/// them, and its words, each ending where the next begins and the last
+/// where the line does. A line without them has no words.
+fn enhanced(text: &str, line_end: Option<Duration>, shift: i64) -> (String, Vec<LyricWord>) {
+    if !text.contains('<') {
+        return (text.to_owned(), Vec::new());
+    }
+    let mut starts_texts: Vec<(i64, String)> = Vec::new();
+    let mut plain = String::new();
+    let mut rest = text;
+    while !rest.is_empty() {
+        let (at, after) = match rest.strip_prefix('<').and_then(|r| r.split_once('>')) {
+            Some((tag, after)) => match millis(tag) {
+                Some(ms) => (Some(ms - shift), after),
+                None => (None, rest),
+            },
+            None => (None, rest),
+        };
+        let Some(at) = at else {
+            // Text before the first tag, or a stray `<`: the line's own.
+            let cut = rest[1..].find('<').map_or(rest.len(), |i| i + 1);
+            plain.push_str(&rest[..cut]);
+            if let Some((_, word)) = starts_texts.last_mut() {
+                word.push_str(&rest[..cut]);
+            }
+            rest = &rest[cut..];
+            continue;
+        };
+        let cut = after.find('<').unwrap_or(after.len());
+        let word = &after[..cut];
+        plain.push_str(word);
+        if !word.is_empty() {
+            starts_texts.push((at.max(0), word.to_owned()));
+        }
+        rest = &after[cut..];
+    }
+    let words = starts_texts
+        .iter()
+        .enumerate()
+        .map(|(i, (at, word))| LyricWord {
+            start: Duration::from_millis(*at as u64),
+            end: starts_texts
+                .get(i + 1)
+                .map(|(next, _)| Duration::from_millis(*next as u64))
+                .or(line_end)
+                .unwrap_or(Duration::from_millis(*at as u64 + 1000)),
+            text: word.clone(),
+        })
+        .collect();
+    (
+        plain.split_whitespace().collect::<Vec<_>>().join(" "),
+        words,
+    )
 }
 
 /// The `[offset:±ms]` tag: positive is earlier.
@@ -106,10 +161,15 @@ pub fn parse(text: &str, title: &str) -> Option<Lyrics> {
         let lines = timed_lines
             .into_iter()
             .enumerate()
-            .map(|(i, (at, text))| LyricLine {
-                start: Duration::from_millis(at as u64),
-                end: starts.get(i + 1).map(|&e| Duration::from_millis(e as u64)),
-                text,
+            .map(|(i, (at, text))| {
+                let end = starts.get(i + 1).map(|&e| Duration::from_millis(e as u64));
+                let (text, words) = enhanced(&text, end, shift);
+                LyricLine {
+                    start: Duration::from_millis(at as u64),
+                    end,
+                    text,
+                    words,
+                }
             })
             .collect();
         return Some(Lyrics {
@@ -124,6 +184,7 @@ pub fn parse(text: &str, title: &str) -> Option<Lyrics> {
                 start: Duration::ZERO,
                 end: None,
                 text,
+                words: Vec::new(),
             })
             .collect(),
         synced: false,
@@ -163,6 +224,29 @@ mod tests {
         let l = parse(text, "Hold On").unwrap();
         assert_eq!(l.lines.len(), 1);
         assert_eq!(l.lines[0].text, "I got my eyes on you");
+    }
+
+    #[test]
+    fn enhanced_lines_are_timed_word_by_word() {
+        let text = "[00:10.00]<00:10.00>Hello <00:10.50>world\n[00:12.00]Next\n";
+        let l = parse(text, "x").unwrap();
+        assert_eq!(l.lines[0].text, "Hello world");
+        let words: Vec<(u64, u64, &str)> = l.lines[0]
+            .words
+            .iter()
+            .map(|w| {
+                (
+                    w.start.as_millis() as u64,
+                    w.end.as_millis() as u64,
+                    w.text.as_str(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            words,
+            [(10_000, 10_500, "Hello "), (10_500, 12_000, "world")]
+        );
+        assert!(l.lines[1].words.is_empty());
     }
 
     #[test]
