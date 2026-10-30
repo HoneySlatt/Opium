@@ -18,15 +18,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import io.github.honeyslatt.music.core.model.ProviderKind
-import io.github.honeyslatt.music.data.Connection
 import io.github.honeyslatt.music.ui.App
 import io.github.honeyslatt.music.ui.connect.ConnectHost
 import io.github.honeyslatt.music.ui.connect.Connecting
 import io.github.honeyslatt.music.ui.connect.Welcome
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.runtime.key
 import androidx.compose.ui.Modifier
 import io.github.honeyslatt.music.ui.theme.MusicTheme
 
@@ -72,21 +69,7 @@ class MainActivity : ComponentActivity() {
             val appearance by app.core.appearance.collectAsStateWithLifecycle()
             val connecting = remember { Connecting() }
             var welcomed by remember { mutableStateOf(app.core.welcomed) }
-            LaunchedEffect(Unit) { app.core.start() }
-            // Each service's library shows as kept while it connects (or can't),
-            // loads once it answers, and goes when it is off.
-            ProviderKind.entries.forEach { kind ->
-                key(kind) {
-                    val state by app.core.connection(kind).collectAsStateWithLifecycle()
-                    LaunchedEffect(state is Connection.Connected, state is Connection.Off) {
-                        when (state) {
-                            is Connection.Connected -> app.library.load(kind)
-                            Connection.Off -> app.library.forget(kind)
-                            else -> app.library.showKept(kind)
-                        }
-                    }
-                }
-            }
+            LaunchedEffect(Unit) { app.start() }
             MusicTheme(appearance) {
                 Box(Modifier.fillMaxSize()) {
                     if (welcomed) {

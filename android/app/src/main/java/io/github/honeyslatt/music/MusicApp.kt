@@ -7,7 +7,11 @@ import io.github.honeyslatt.music.data.Library
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import io.github.honeyslatt.music.core.model.ProviderKind
+import io.github.honeyslatt.music.data.Connection
 
 class MusicApp : Application() {
     /** For work that outlives a screen: sign-ins, the library's loading. */
@@ -47,5 +51,30 @@ class MusicApp : Application() {
                 }
             },
         )
+    }
+
+    private var started = false
+
+    /**
+     * Connect the services and keep the library in step with them: each
+     * service's lists show as kept while it connects (or can't), load once
+     * it answers, and go when it is off. Once, whether the screen or the
+     * car (which opens the app's music without it) comes first.
+     */
+    fun start() {
+        if (started) return
+        started = true
+        scope.launch { core.start() }
+        ProviderKind.entries.forEach { kind ->
+            scope.launch {
+                core.connection(kind).map { (it is Connection.Connected) to (it == Connection.Off) }.distinctUntilChanged().collect {
+                    when (core.connection(kind).value) {
+                        is Connection.Connected -> library.load(kind)
+                        Connection.Off -> library.forget(kind)
+                        else -> library.showKept(kind)
+                    }
+                }
+            }
+        }
     }
 }

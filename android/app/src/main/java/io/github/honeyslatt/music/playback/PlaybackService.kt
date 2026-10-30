@@ -3,24 +3,27 @@ package io.github.honeyslatt.music.playback
 import android.app.PendingIntent
 import android.content.Intent
 import androidx.media3.common.ForwardingPlayer
+import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
-import androidx.media3.session.MediaSessionService
 import io.github.honeyslatt.music.MainActivity
 import io.github.honeyslatt.music.MusicApp
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
 /**
  * The media session Android draws the notification, the lock screen and
  * the car from. Next and previous go through the app's queue: the player
  * itself only holds the current song and the next. While another device
- * is played on, the session shows and controls that one instead.
+ * is played on, the session shows and controls that one instead. Android
+ * Auto browses the app's music through it (see [CarLibrary]).
  */
 @UnstableApi
-class PlaybackService : MediaSessionService() {
-    private var session: MediaSession? = null
+class PlaybackService : MediaLibraryService() {
+    private var session: MediaLibrarySession? = null
     private val scope = kotlinx.coroutines.MainScope()
 
     override fun onCreate() {
@@ -42,8 +45,14 @@ class PlaybackService : MediaSessionService() {
                 setSmallIcon(io.github.honeyslatt.music.R.drawable.ic_notification)
             },
         )
-        val session = MediaSession.Builder(this, here).setSessionActivity(open).build()
+        val app = application as MusicApp
+        val car = CarLibrary(app, app.scope)
+        val session = MediaLibrarySession.Builder(this, here, car).setSessionActivity(open).build()
         this.session = session
+        // Favourite, shuffle and repeat, as they change, in the car.
+        scope.launch {
+            combine(playback.now, playback.shuffleOn, playback.repeat) { _, _, _ -> }.collect { car.refresh() }
+        }
         scope.launch {
             playback.remote.collect { remote ->
                 far.changed()
@@ -61,6 +70,11 @@ class PlaybackService : MediaSessionService() {
                 Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,
                 Player.COMMAND_SEEK_TO_PREVIOUS,
                 Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM,
+                // What the car picks: played by the library (CarLibrary) before
+                // it comes here, so it is taken and left be.
+                Player.COMMAND_SET_MEDIA_ITEM,
+                Player.COMMAND_CHANGE_MEDIA_ITEMS,
+                Player.COMMAND_PREPARE,
             )
 
             override fun getAvailableCommands(): Player.Commands =
@@ -79,7 +93,21 @@ class PlaybackService : MediaSessionService() {
             // Play from the earbuds, the lock screen or the car with nothing
             // made playable yet (the app just opened on what played last),
             // or at the queue's end: the app's own Play, which sees to it.
+            override fun setMediaItem(mediaItem: MediaItem) {}
+
+            override fun setMediaItem(mediaItem: MediaItem, startPositionMs: Long) {}
+
+            override fun setMediaItem(mediaItem: MediaItem, resetPosition: Boolean) {}
+
+            override fun setMediaItems(mediaItems: MutableList<MediaItem>) {}
+
+            override fun setMediaItems(mediaItems: MutableList<MediaItem>, resetPosition: Boolean) {}
+
+            override fun setMediaItems(mediaItems: MutableList<MediaItem>, startIndex: Int, startPositionMs: Long) {}
+
             override fun play() {
+                // A song picked is on its way, and plays when it comes.
+                if (playback.loading.value) return
                 if (player === playback.player && player.playbackState.let { it == Player.STATE_IDLE || it == Player.STATE_ENDED }) {
                     playback.toggle()
                 } else {
@@ -95,7 +123,7 @@ class PlaybackService : MediaSessionService() {
             }
         }
 
-    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo) = session
+    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = session
 
     /**
      * Swiped away from the recent apps: the music stops, as an iPhone's
