@@ -56,10 +56,10 @@ import io.github.honeyslatt.music.ui.theme.geist
 import io.github.honeyslatt.music.ui.theme.roles
 
 /** A sheet's background: the grouped colour, a shade lifted in the dark. */
-val sheetColour @Composable get() = if (roles.dark) Color(0xFF131118) else roles.grouped
+val sheetColour @Composable get() = if (roles.dark) Color(0xFF1C1C1C) else roles.grouped
 
 /** A group's background inside a sheet. */
-val sheetCell @Composable get() = if (roles.dark) Color(0xFF1E1B26) else roles.cell
+val sheetCell @Composable get() = if (roles.dark) Color(0xFF262626) else roles.cell
 
 /**
  * A sheet rising from the bottom with 26 dp corners over a scrim, as tall as
@@ -78,7 +78,7 @@ fun Sheet(
     BackHandler(open, onClose)
     Box(Modifier.fillMaxSize()) {
         AnimatedVisibility(open, enter = fadeIn(tween(300)), exit = fadeOut(tween(300))) {
-            val scrim = if (roles.dark) Color.Black.copy(alpha = 0.5f) else Color(0x471E103C)
+            val scrim = if (roles.dark) Color.Black.copy(alpha = 0.5f) else Color(0x47161616)
             Box(
                 Modifier
                     .fillMaxSize()
@@ -170,7 +170,7 @@ fun Group(footer: String? = null, content: @Composable ColumnScope.() -> Unit) {
     }
 }
 
-/** A sheet's text button: grey, or violet for what it is for. */
+/** A sheet's text button: grey, or the accent for what it is for. */
 @Composable
 fun SheetButton(label: String, primary: Boolean = false, enabled: Boolean = true, onClick: () -> Unit) {
     val shape = RoundedCornerShape(20.dp)

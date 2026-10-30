@@ -3,11 +3,11 @@
     <!--
     The screens are drawn by Compose; these colours are for what Android
     draws itself from the app's theme: Android Auto's play button and
-    highlights, in the app's violet rather than its teal.
+    highlights, in the app's pink rather than its teal.
     -->
     <style name="Theme.Music" parent="@android:style/Theme.Material.NoActionBar">
-        <item name="android:colorPrimary">#FF7C3AED</item>
-        <item name="android:colorPrimaryDark">#FF5B21B6</item>
-        <item name="android:colorAccent">#FF7C3AED</item>
+        <item name="android:colorPrimary">#FFFA2D48</item>
+        <item name="android:colorPrimaryDark">#FFC81E36</item>
+        <item name="android:colorAccent">#FFFA2D48</item>
     </style>
 </resources>

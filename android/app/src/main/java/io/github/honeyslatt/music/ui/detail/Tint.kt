@@ -60,12 +60,12 @@ fun rememberPageColour(artwork: Artwork?): Color {
     return colour
 }
 
-/** Favourite Songs has no cover: its page takes Music's violet, dimmed. */
-fun favouritesPage(dark: Boolean) = if (dark) Color(0xFF231A3B) else Color(0xFFF1EDFA)
+/** Favourite Songs has no cover: its page takes Music's pink, dimmed. */
+fun favouritesPage(dark: Boolean) = if (dark) Color(0xFF3B1A21) else Color(0xFFFCE9EC)
 
 /**
  * The roles on a page tinted by its cover, as on iOS 26.4: the page's
- * colour as the base, text only white or black (no violet), and fills of
+ * colour as the base, text only white or black (no accent), and fills of
  * text at 9 % instead of the surfaces.
  */
 fun Roles.tintedBy(page: Color): Roles {

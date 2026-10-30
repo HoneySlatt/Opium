@@ -41,7 +41,7 @@ import io.github.honeyslatt.music.ui.theme.geist
 import io.github.honeyslatt.music.ui.theme.roles
 
 /**
- * The first launch: a violet glow, the three services, and Continue once
+ * The first launch: a pink glow, the three services, and Continue once
  * one of them is connected.
  */
 @Composable

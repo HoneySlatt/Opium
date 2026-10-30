@@ -277,7 +277,7 @@ private fun Intro(kind: ProviderKind, onGo: () -> Unit) {
     }
 }
 
-/** The design's large violet button; grey and still until it can be used. */
+/** The design's large accent button; grey and still until it can be used. */
 @Composable
 fun BigButton(label: String, enabled: Boolean = true, onClick: () -> Unit) {
     val shape = RoundedCornerShape(14.dp)

@@ -106,7 +106,7 @@ private fun androidx.compose.foundation.layout.RowScope.Words(title: String, det
     }
 }
 
-/** A switch: violet when on, its knob sliding over. */
+/** A switch: the accent when on, its knob sliding over. */
 @Composable
 fun Switch(on: Boolean, onChange: (Boolean) -> Unit) {
     val knob by animateDpAsState(if (on) 20.dp else 0.dp, tween(220, easing = io.github.honeyslatt.music.ui.chrome.Standard), label = "switch")

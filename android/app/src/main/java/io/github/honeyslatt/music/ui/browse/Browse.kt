@@ -237,7 +237,7 @@ private fun Collection.texts(): Triple<io.github.honeyslatt.music.core.model.Art
 private fun PickCard(item: Collection, pick: Pick?, onClick: () -> Unit) {
     val (artwork, title, subtitle) = item.texts()
     val fill = artwork?.background?.let { Color(0xFF000000.toInt() or it.toInt()) } ?: roles.surface2
-    val ink = if (fill.luminance() > 0.5f) Color(0xFF17141E) else Color.White
+    val ink = if (fill.luminance() > 0.5f) Color(0xFF161616) else Color.White
     val shape = RoundedCornerShape(16.dp)
     Column(Modifier.width(252.dp).height(344.dp).press(shape, shrink = 0.97f, onClick = onClick).background(fill, shape)) {
         AsyncImage(

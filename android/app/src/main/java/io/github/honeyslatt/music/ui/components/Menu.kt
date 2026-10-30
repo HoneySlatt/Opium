@@ -139,7 +139,7 @@ fun MenuHost(menus: Menus) {
 @Composable
 private fun MenuCard(spec: MenuSpec, menus: Menus, modifier: Modifier) {
     val shape = RoundedCornerShape(18.dp)
-    val separator = if (roles.dark) Color(0xFF121017) else roles.surface
+    val separator = if (roles.dark) Color(0xFF101010) else roles.surface
     Column(
         modifier
             .width(270.dp)

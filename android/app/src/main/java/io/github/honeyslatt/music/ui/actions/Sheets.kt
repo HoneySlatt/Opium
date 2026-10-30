@@ -128,7 +128,7 @@ private fun AddToPlaylists(actions: Actions, spec: SheetSpec.AddToPlaylists, ope
     }
 }
 
-/** A round tick: empty, chosen (violet), or grey for a playlist that has the songs. */
+/** A round tick: empty, chosen (the accent), or grey for a playlist that has the songs. */
 @Composable
 private fun Tick(on: Boolean, done: Boolean) {
     val fill = when {
