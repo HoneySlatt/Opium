@@ -3,7 +3,7 @@
 
 use egui::{Color32, Id, Order, Rect, Sense, Stroke, Ui, pos2, vec2};
 use music_core::Repeat;
-use music_core::model::{ProviderKind, Track};
+use music_core::model::Track;
 
 use crate::app::{App, DrawerTab};
 use crate::color::{alpha, mix};
@@ -428,11 +428,7 @@ fn row(ui: &mut Ui, theme: &Theme, track: &Track, kind: RowKind, salt: &str) -> 
         egui::Align::Min,
         title_color,
     );
-    let source = match track.id.provider {
-        ProviderKind::AppleMusic => icons::APPLE_MUSIC,
-        ProviderKind::SoundCloud => icons::CLOUD,
-        ProviderKind::Navidrome => icons::SERVER,
-    };
+    let source = icons::service(track.id.provider);
     let muted = alpha(theme.muted(), fade);
     paint_icon(
         ui,

@@ -128,7 +128,7 @@ fn steps(app: &App, track: &Track) -> Vec<Step> {
         ),
         ProviderKind::SoundCloud => (
             "SoundCloud",
-            icons::CLOUD,
+            icons::SOUNDCLOUD,
             match track.quality.as_ref().map(|q| &q.codec) {
                 Some(Codec::Other(o)) if o == "Original" => "the uploader's own file",
                 _ => "HLS; Widevine CENC for a label's tracks",
@@ -136,7 +136,7 @@ fn steps(app: &App, track: &Track) -> Vec<Step> {
         ),
         ProviderKind::Navidrome => (
             "Navidrome",
-            icons::SERVER,
+            icons::NAVIDROME,
             "stream?format=raw, original file",
         ),
     };

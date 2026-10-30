@@ -390,7 +390,7 @@ pub fn playlist(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
         meta.push((Some(icons::CLOCK), length_label(total)));
     }
     // The service by its logo alone.
-    meta.push((Some(icons::APPLE_MUSIC), String::new()));
+    meta.push((Some(icons::service(playlist.id.provider)), String::new()));
     let header = Header {
         kind: "Playlist",
         title: playlist.name.clone(),
@@ -441,8 +441,11 @@ fn album_header(album: &Album, tracks: &[Track], favourite: bool) -> Header {
         Some(icons::NOTE),
         format!("{count} TRACK{}", if count == 1 { "" } else { "S" }),
     ));
-    if let Some((label, _)) = tracks.iter().find_map(quality_label) {
-        meta.push((Some(icons::APPLE_MUSIC), label));
+    if let Some(((label, _), provider)) = tracks
+        .iter()
+        .find_map(|t| quality_label(t).map(|q| (q, t.id.provider)))
+    {
+        meta.push((Some(icons::service(provider)), label));
     }
     Header {
         kind: "Album",

@@ -324,12 +324,8 @@ fn button(ui: &mut Ui, theme: &Theme, right: f32, y: f32, label: &str, enabled: 
 }
 
 fn services(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect) {
-    let rows: [(Icon, &str); 3] = [
-        (icons::APPLE_MUSIC, "Apple Music"),
-        (icons::CLOUD, "SoundCloud"),
-        (icons::SERVER, "Navidrome"),
-    ];
-    for (i, (icon, name)) in rows.into_iter().enumerate() {
+    let names = ["Apple Music", "SoundCloud", "Navidrome"];
+    for (i, name) in names.into_iter().enumerate() {
         let y = card.top() + i as f32 * ROW + ROW / 2.0;
         let tile = Rect::from_center_size(pos2(card.left() + 16.0 + 20.0, y), vec2(40.0, 40.0));
         let x = tile.right() + 14.0;
@@ -351,8 +347,7 @@ fn services(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect) {
         }
         let right = card.right() - 16.0 - 60.0;
         if !on {
-            ui.painter().rect_filled(tile, 10.0, theme.text_a(0.08));
-            paint_icon(ui, icon, tile.center(), 20.0, theme.muted());
+            service_logo(ui, theme, provider, tile, false);
             labels(
                 ui,
                 theme,
@@ -410,8 +405,7 @@ fn services(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect) {
             _ => {
                 let connected = matches!(app.navidrome, SoundCloudState::Connected(_));
                 if !connected || app.navidrome_editing {
-                    ui.painter().rect_filled(tile, 10.0, theme.text_a(0.08));
-                    paint_icon(ui, icon, tile.center(), 20.0, theme.muted());
+                    service_logo(ui, theme, provider, tile, false);
                     navidrome_form(app, ui, theme, x, right, y);
                     continue;
                 }
@@ -426,24 +420,7 @@ fn services(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect) {
                 )
             }
         };
-        if i == 0 {
-            // Apple Music's own logo, tile and all.
-            paint_icon(
-                ui,
-                icons::APPLE_MUSIC,
-                tile.center(),
-                40.0,
-                egui::Color32::WHITE,
-            );
-        } else {
-            let (fill, glyph) = if connected {
-                (theme.accent, theme.on_accent())
-            } else {
-                (theme.text_a(0.08), theme.muted())
-            };
-            ui.painter().rect_filled(tile, 10.0, fill);
-            paint_icon(ui, icon, tile.center(), 20.0, glyph);
-        }
+        service_logo(ui, theme, provider, tile, connected);
 
         let (label, enabled) = button_state;
         // The button first, so the words know how much room is left.
@@ -472,6 +449,24 @@ fn services(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect) {
             state_right -= w + 20.0;
         }
         labels(ui, theme, pos2(x, y), name, &detail, state_right - x - 12.0);
+    }
+}
+
+/// A service's logo on its row, dimmed unless it is connected.
+fn service_logo(ui: &Ui, theme: &Theme, provider: ProviderKind, tile: Rect, connected: bool) {
+    paint_icon(
+        ui,
+        icons::service(provider),
+        tile.center(),
+        tile.width(),
+        egui::Color32::WHITE,
+    );
+    if !connected {
+        ui.painter().rect_filled(
+            tile.expand(1.0),
+            10.0,
+            crate::color::alpha(theme.mantle, 0.55),
+        );
     }
 }
 

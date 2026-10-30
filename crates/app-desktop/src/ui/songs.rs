@@ -274,12 +274,12 @@ pub(super) fn source_chips(
         ),
         (
             Some(ProviderKind::SoundCloud),
-            Some(icons::CLOUD),
+            Some(icons::SOUNDCLOUD),
             "SoundCloud",
         ),
         (
             Some(ProviderKind::Navidrome),
-            Some(icons::SERVER),
+            Some(icons::NAVIDROME),
             "Navidrome",
         ),
     ];
