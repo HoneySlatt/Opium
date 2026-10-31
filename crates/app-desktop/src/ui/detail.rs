@@ -535,7 +535,13 @@ fn banner_header(
         paint_text(ui, g, lx, line_y, egui::Align::Min, soft);
     }
     let mut y = line_y - 12.0 - 8.0;
-    if let Some(d) = &header.description {
+    // A playlist's description; an album's notes stay behind "…", as
+    // Spotify shows none.
+    if let Some(d) = header
+        .description
+        .as_ref()
+        .filter(|_| header.kind == "Playlist")
+    {
         let soft = Color32::from_white_alpha(170);
         let g = text(
             ui,
