@@ -38,6 +38,9 @@ const IDS_AT_ONCE: usize = 50;
 /// Tracks a playlist holds, as the web player allows.
 const PLAYLIST_MAX: usize = 500;
 
+/// The client id is read again at most this often.
+const RESCRAPE_EVERY: std::time::Duration = std::time::Duration::from_secs(600);
+
 /// The longest wait SoundCloud may ask for before a request is tried again.
 const MAX_RETRY_AFTER: u64 = 10;
 
@@ -111,7 +114,11 @@ pub struct SoundCloud {
     /// Held while the tokens are renewed, and the client id read again: a
     /// refresh token serves once, so requests refused together renew once.
     renewing: tokio::sync::Mutex<()>,
-    rescraping: tokio::sync::Mutex<()>,
+    /// Held while a playlist's tracks are read and written whole: two
+    /// changes at once would each write the list without the other's.
+    editing: tokio::sync::Mutex<()>,
+    /// When the client id was last read again.
+    rescraping: tokio::sync::Mutex<Option<std::time::Instant>>,
     /// The signed-in user.
     me: types::User,
     /// What each station has played, so that it goes on without repeating.
@@ -152,7 +159,8 @@ impl SoundCloud {
             tokens: Mutex::new(tokens),
             on_tokens,
             renewing: tokio::sync::Mutex::new(()),
-            rescraping: tokio::sync::Mutex::new(()),
+            rescraping: tokio::sync::Mutex::new(None),
+            editing: tokio::sync::Mutex::new(()),
             me: types::User::default(),
             stations: Mutex::default(),
             browser,
@@ -301,18 +309,11 @@ impl SoundCloud {
                     renewed = true;
                     self.renew(&token).await?;
                 }
-                401 => return Err(Error::NotSignedIn),
                 // Its guard says so; another client id wouldn't change it.
                 403 if guarded(status, guard_header, &text) => return Err(turned_away()),
-                403 if !rescraped => {
-                    rescraped = true;
-                    let _scraping = self.rescraping.lock().await;
-                    // Read again meanwhile, for another request refused.
-                    if self.client_id() == client_id {
-                        let id = client_id::scrape(&self.http).await?;
-                        *self.client_id.write().unwrap_or_else(|e| e.into_inner()) = id;
-                    }
-                }
+                // Refused still: the web player's client id may have changed.
+                401 | 403 if !rescraped && self.rescrape(&client_id).await? => rescraped = true,
+                401 => return Err(Error::NotSignedIn),
                 // Asked to slow down: once, after the wait it names if short.
                 429 if !waited => {
                     waited = true;
@@ -329,6 +330,25 @@ impl SoundCloud {
                 _ => return Ok(text),
             }
         }
+    }
+
+    /// Read the web player's client id again, as `refused` was: unless it
+    /// was read again meanwhile, for another request refused, or lately
+    /// (a refusal for another reason, a private track, isn't worth reading
+    /// soundcloud.com each time). Whether it is worth asking again.
+    async fn rescrape(&self, refused: &str) -> Result<bool> {
+        let mut last = self.rescraping.lock().await;
+        if self.client_id() != refused {
+            return Ok(true);
+        }
+        if last.is_some_and(|at| at.elapsed() < RESCRAPE_EVERY) {
+            return Ok(false);
+        }
+        *last = Some(std::time::Instant::now());
+        let id = client_id::scrape(&self.http).await?;
+        let changed = id != refused;
+        *self.client_id.write().unwrap_or_else(|e| e.into_inner()) = id;
+        Ok(changed)
     }
 
     /// Renew the token with the refresh token, as the web player's server
@@ -793,14 +813,14 @@ impl Provider for SoundCloud {
         };
         let mut stations = self.stations.lock().unwrap_or_else(|e| e.into_inner());
         let state = stations.entry(station.id.clone()).or_default();
+        let further = page.collection.last().map(|t| t.id);
         let fresh: Vec<types::Track> = page
             .collection
             .into_iter()
             .filter(|t| t.title.is_some() && state.seen.insert(t.id))
             .collect();
-        if let Some(t) = fresh.last() {
-            state.last = Some(t.id);
-        }
+        // All played already: on from one of them, not from the same again.
+        state.last = fresh.last().map(|t| t.id).or(further).or(state.last);
         Ok(fresh.into_iter().map(convert::track).collect())
     }
 
@@ -868,6 +888,7 @@ impl Provider for SoundCloud {
 
     /// `entry` is the track itself: a playlist has a track once.
     async fn remove_from_playlist(&self, playlist: &ItemId, entry: &ItemId) -> Result<()> {
+        let _editing = self.editing.lock().await;
         let mut ids = self.playlist_ids(playlist).await?;
         ids.retain(|id| id.to_string() != entry.id);
         self.set_playlist_tracks(playlist, &ids).await
@@ -875,6 +896,7 @@ impl Provider for SoundCloud {
 
     /// At the end, those not in it already.
     async fn add_to_playlist(&self, playlist: &ItemId, tracks: &[ItemId]) -> Result<()> {
+        let _editing = self.editing.lock().await;
         let mut ids = self.playlist_ids(playlist).await?;
         for id in tracks.iter().filter_map(|t| t.id.parse::<u64>().ok()) {
             if !ids.contains(&id) {

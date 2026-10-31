@@ -293,7 +293,7 @@ impl AppleMusic {
             .map_err(failed)?;
         if resp.status().as_u16() == 401
             && let Some(again) = again
-            && self.renew_developer_token(&token).await
+            && self.renew_developer_token(&token).await?
         {
             return self.authorized(again).send().await.map_err(failed);
         }
@@ -301,26 +301,34 @@ impl AppleMusic {
     }
 
     /// Read the developer token again, unless another request just did, in
-    /// place of `refused`; whether there is a new one to try.
-    async fn renew_developer_token(&self, refused: &str) -> bool {
+    /// place of `refused`; whether there is a new one to try. The web player
+    /// out of reach is said as such, and tried again on the next refusal,
+    /// rather than taken for a sign-out for a while.
+    async fn renew_developer_token(&self, refused: &str) -> Result<bool> {
         let mut renewed = self.renewed.lock().await;
         if self.developer_token() != refused {
-            return true;
+            return Ok(true);
         }
         if renewed.is_some_and(|at| at.elapsed() < RENEW_EVERY) {
-            return false;
+            return Ok(false);
         }
-        *renewed = Some(std::time::Instant::now());
-        match auth::developer_token(&self.http).await {
-            Ok(token) if token != refused => {
-                *self
-                    .developer_token
-                    .write()
-                    .unwrap_or_else(|e| e.into_inner()) = token;
-                true
+        let token = match auth::developer_token(&self.http).await {
+            Ok(token) => token,
+            Err(e @ Error::Network(_)) => return Err(e),
+            Err(_) => {
+                *renewed = Some(std::time::Instant::now());
+                return Ok(false);
             }
-            _ => false,
+        };
+        *renewed = Some(std::time::Instant::now());
+        if token == refused {
+            return Ok(false);
         }
+        *self
+            .developer_token
+            .write()
+            .unwrap_or_else(|e| e.into_inner()) = token;
+        Ok(true)
     }
 
     /// `Ok(None)` on 404, which Apple also answers for some empty collections.
@@ -647,7 +655,13 @@ impl AppleMusic {
             each(Vec::new(), true);
             return Ok(());
         };
-        let got = resp.data.len();
+        // How far the next page starts, as Apple says: the page's length,
+        // items left out for being unreadable included.
+        let got = resp
+            .next
+            .as_deref()
+            .and_then(offset_in)
+            .unwrap_or(resp.data.len());
         let total = resp.meta.as_ref().and_then(|m| m.total);
         let items: Vec<T> = resp.data.into_iter().map(convert).collect();
         let next = resp.next.filter(|_| got > 0 && got < limit);
@@ -716,9 +730,15 @@ impl AppleMusic {
                 .fetch::<types::Response<types::Resource<A>>>(&path)
                 .await?
             else {
+                // Gone from under it (Apple says 404 for some empty pages): done.
+                each(Vec::new(), true);
                 break;
             };
-            got += resp.data.len();
+            got = resp
+                .next
+                .as_deref()
+                .and_then(offset_in)
+                .unwrap_or(got + resp.data.len());
             next = resp.next.filter(|_| got < limit);
             each(resp.data.into_iter().map(convert).collect(), next.is_none());
         }
@@ -727,6 +747,16 @@ impl AppleMusic {
 }
 
 /// The page of `next`'s list starting at `offset`, with `first`'s parameters.
+/// Where the page `next` starts.
+fn offset_in(next: &str) -> Option<usize> {
+    let base = url::Url::parse(API).ok()?;
+    base.join(next)
+        .ok()?
+        .query_pairs()
+        .find(|(k, _)| k == "offset")
+        .and_then(|(_, v)| v.parse().ok())
+}
+
 fn at_offset(next: &str, offset: usize, first: &str) -> String {
     let base = url::Url::parse(API).expect("API base");
     let Ok(mut url) = base.join(next) else {
@@ -1309,19 +1339,33 @@ impl Provider for AppleMusic {
         };
         let mut tracks: Vec<Track> = Vec::new();
         let mut barren = 0;
+        // Why no song came, if none does: signed out, or out of reach.
+        let mut failed = None;
         for _ in 0..8 {
             if tracks.len() >= count {
                 break;
             }
             let before = tracks.len();
             let (a, b, c, d) = tokio::join!(call(), call(), call(), call());
-            for page in [a, b, c, d].into_iter().flatten() {
+            let mut answered = false;
+            for page in [a, b, c, d] {
+                let page = match page {
+                    Ok(page) => page,
+                    Err(e) => {
+                        failed.get_or_insert(e);
+                        continue;
+                    }
+                };
+                answered = true;
                 for song in page.data {
                     let track = convert::track(song);
                     if !tracks.iter().any(|t| t.id == track.id) {
                         tracks.push(track);
                     }
                 }
+            }
+            if !answered {
+                break;
             }
             if tracks.len() == before {
                 barren += 1;
@@ -1331,7 +1375,9 @@ impl Provider for AppleMusic {
             }
         }
         if tracks.is_empty() {
-            return Err(Error::Playback("the station offered no songs".into()));
+            return Err(
+                failed.unwrap_or_else(|| Error::Playback("the station offered no songs".into()))
+            );
         }
         tracks.truncate(count);
         Ok(tracks)

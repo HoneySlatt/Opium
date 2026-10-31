@@ -486,10 +486,13 @@ impl Provider for Navidrome {
     /// top songs, and the artists like them the server knows of.
     async fn artist(&self, artist: &ItemId) -> Result<ArtistDetail> {
         let id = [("id", artist.id.clone())];
-        let (found, info) = tokio::try_join!(
+        // The info (biography, similar artists) only adds: a server without
+        // it, or failing on it, still shows the artist.
+        let (found, info) = tokio::join!(
             self.call("getArtist", &id),
             self.call("getArtistInfo2", &id),
-        )?;
+        );
+        let found = found?;
         let found = found
             .artist
             .ok_or_else(|| Error::Protocol("Navidrome: no such artist".into()))?;
@@ -501,7 +504,7 @@ impl Provider for Navidrome {
             .await
             .map(|b| b.top_songs.unwrap_or_default().song)
             .unwrap_or_default();
-        let info = info.artist_info2.unwrap_or_default();
+        let info = info.ok().and_then(|i| i.artist_info2).unwrap_or_default();
         let (mut albums, mut singles, mut compilations) = (Vec::new(), Vec::new(), Vec::new());
         for album in found.album.clone() {
             let kinds: Vec<String> = album

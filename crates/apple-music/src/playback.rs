@@ -824,7 +824,19 @@ impl AppleMusic {
             .send()
             .await
             .map_err(failed)?;
-        resp.bytes().await.map(|b| b.to_vec()).map_err(failed)
+        // The part asked for, and only it: an error page, or the whole file,
+        // isn't what was asked.
+        if resp.status() != reqwest::StatusCode::PARTIAL_CONTENT {
+            return Err(Error::Protocol(format!(
+                "asset download: HTTP {}",
+                resp.status()
+            )));
+        }
+        let bytes = resp.bytes().await.map_err(failed)?;
+        if bytes.len() as u64 != length {
+            return Err(Error::Protocol("asset download: cut short".into()));
+        }
+        Ok(bytes.to_vec())
     }
 
     pub(crate) async fn download(&self, url: &str) -> Result<Vec<u8>> {

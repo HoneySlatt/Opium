@@ -22,6 +22,8 @@ use crate::AppleMusic;
 const WIDEVINE: &str = "urn:uuid:edef8ba9-79d6-4ace-a3c8-27dcd51d21ed";
 /// How far behind the live edge to start, in segments: enough to buffer.
 const LEAD_SEGMENTS: usize = 2;
+/// How long a station may stay out of reach before playback is told.
+const OUT_OF_REACH: Duration = Duration::from_secs(30);
 
 /// What the radio's live playlist says about the stream now.
 #[derive(Debug, Default, PartialEq)]
@@ -625,7 +627,18 @@ impl AppleMusic {
                     .media_sequence
                     .saturating_add(playlist.segments.len().saturating_sub(LEAD_SEGMENTS) as u64)
             };
+            // When the station last answered: out of reach too long, the
+            // player is told rather than left waiting in silence.
+            let mut heard = std::time::Instant::now();
             while !running.load(Ordering::Relaxed) {
+                if heard.elapsed() > OUT_OF_REACH {
+                    let _ = tx
+                        .send(Err(
+                            "the station is out of reach: check the connection".into()
+                        ))
+                        .await;
+                    return;
+                }
                 // A rotated key needs its licence.
                 if let (Some((uri, _)), Some(licensing)) = (&playlist.key, &licensing)
                     && Some(uri) != key_uri.as_ref()
@@ -651,7 +664,16 @@ impl AppleMusic {
                     if seq < next {
                         continue;
                     }
-                    let Ok(bytes) = fetch(&http, &resolve(&variant, segment)).await else {
+                    let url = resolve(&variant, segment);
+                    // Tried again once before it is skipped.
+                    let fetched = match fetch(&http, &url).await {
+                        Ok(bytes) => Ok(bytes),
+                        Err(_) => {
+                            tokio::time::sleep(Duration::from_secs(1)).await;
+                            fetch(&http, &url).await
+                        }
+                    };
+                    let Ok(bytes) = fetched else {
                         continue;
                     };
                     let frames = match segments.frames(&bytes, iv.as_deref()) {
@@ -665,6 +687,8 @@ impl AppleMusic {
                     if tx.send(Ok(frames)).await.is_err() {
                         return;
                     }
+                    // Taken, maybe after a long pause: counted from now.
+                    heard = std::time::Instant::now();
                     next = seq + 1;
                 }
                 // An episode ends; dropping the sender ends the stream.
@@ -677,6 +701,7 @@ impl AppleMusic {
                 .await;
                 if let Ok(bytes) = fetch(&http, &variant).await {
                     playlist = media_playlist(&String::from_utf8_lossy(&bytes));
+                    heard = std::time::Instant::now();
                 }
             }
         });
