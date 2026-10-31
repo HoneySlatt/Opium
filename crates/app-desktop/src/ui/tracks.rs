@@ -250,10 +250,14 @@ pub fn row(
     if hovered {
         super::pointer_on(ui, track);
     }
+    // The hover comes and goes in a tenth of a second.
+    let lit = ui
+        .ctx()
+        .animate_bool_with_time(response.id.with("lit"), hovered, 0.1);
     let fill = if state.selected {
         Some(alpha(theme.accent, 0.16))
-    } else if hovered {
-        Some(theme.hover())
+    } else if lit > 0.0 {
+        Some(alpha(theme.text, 0.07 * lit))
     } else {
         None
     };

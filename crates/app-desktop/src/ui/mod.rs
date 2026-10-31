@@ -12,6 +12,7 @@ mod library_artist;
 mod loading;
 mod lyrics;
 mod menu;
+mod motion;
 mod now_playing;
 mod pairing;
 mod player_bar;
@@ -65,13 +66,19 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 .frame(egui::Frame::new().fill(app.theme.crust))
                 .show(ui, |ui| dock::show(app, ui));
         }
+        // The page comes in again once this goes.
+        motion::again::<(Page, bool)>(ui, "page");
         egui::CentralPanel::no_frame().show(ui, |ui| {
             let full = ui.max_rect();
-            if cover {
-                now_playing::show_cover(app, ui);
-            } else {
-                now_playing::show(app, ui);
-            }
+            let theme = app.theme.clone();
+            let t = motion::arrival(ui, &theme, "now-playing", &true);
+            motion::arriving(ui, &theme, "now-playing", t, 48.0, |ui| {
+                if cover {
+                    now_playing::show_cover(app, ui);
+                } else {
+                    now_playing::show(app, ui);
+                }
+            });
             signal::show(app, ui, full);
         });
         playlist_dialog::show(app, ui.ctx());
@@ -82,6 +89,8 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         shortcuts(app, ui);
         return;
     }
+    // Now Playing comes in again when next opened.
+    motion::again::<bool>(ui, "now-playing");
     let narrow = ui.available_width() < NARROW;
     let collapsed = app.sidebar_collapsed || narrow;
     let theme = app.theme.clone();
@@ -205,12 +214,17 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 ui.painter().rect_filled(main, RADIUS, theme.base);
             }
             let lyrics = app.lyrics_page && layout.lyrics == crate::theme::Lyrics::Page;
-            let scrolled = if lyrics {
-                lyrics_page(app, ui, main);
-                0.0
-            } else {
-                page(app, ui, narrow)
-            };
+            // Each page comes in as the theme moves.
+            let shown = (app.page.clone(), lyrics);
+            let t = motion::arrival(ui, &theme, "page", &shown);
+            let scrolled = motion::arriving(ui, &theme, "page", t, 14.0, |ui| {
+                if lyrics {
+                    lyrics_page(app, ui, main);
+                    0.0
+                } else {
+                    page(app, ui, narrow)
+                }
+            });
             if !cards && !library {
                 // The sidebar's right hairline, over the page: a cover's
                 // colours at the top of it would hide it otherwise.

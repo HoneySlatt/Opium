@@ -84,8 +84,12 @@ pub(super) fn cover_card(
         (false, true) => 6.0,
         (false, false) => 8.0,
     };
-    if tiles && response.hovered() {
-        ui.painter().rect_filled(tile, 8.0, theme.surface0);
+    let lit = ui
+        .ctx()
+        .animate_bool_with_time(id.with("lit"), response.hovered(), 0.12);
+    if tiles && lit > 0.0 {
+        ui.painter()
+            .rect_filled(tile, 8.0, crate::color::alpha(theme.surface0, lit));
     }
     let missing = card.url.is_none();
     artwork(ui, card.url.clone(), art, radius, theme);
@@ -137,9 +141,12 @@ pub(super) fn cover_card(
             }
         }
     }
-    if !tiles && response.hovered() {
-        ui.painter()
-            .rect_filled(art, radius, egui::Color32::from_black_alpha(40));
+    if !tiles && lit > 0.0 {
+        ui.painter().rect_filled(
+            art,
+            radius,
+            egui::Color32::from_black_alpha((40.0 * lit) as u8),
+        );
     }
     ui.painter().rect_stroke(
         art,
