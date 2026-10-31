@@ -423,7 +423,7 @@ fn right_side(app: &mut App, ui: &mut Ui, theme: &Theme, area: Rect, narrow: boo
     let layout = theme.layout;
     let side = layout.panel == Panel::Side && !narrow;
     let dim = theme.subtext0;
-    let width = if side { 32.0 } else { 0.0 } + 32.0 * 4.0 + 6.0 + 84.0 + 8.0 + 32.0;
+    let width = 32.0 * 4.0 + 6.0 + 84.0 + 8.0 + 32.0;
     let row_rect = Rect::from_min_max(
         pos2(area.right() - width, area.center().y - 16.0),
         pos2(area.right(), area.center().y + 16.0),
@@ -444,15 +444,6 @@ fn right_side(app: &mut App, ui: &mut Ui, theme: &Theme, area: Rect, narrow: boo
             );
         }
     };
-    if side {
-        let shows = app.side == Some(Side::NowPlaying);
-        let response = icon_button(&mut row, theme, icons::PANEL, 32.0, 16.0, on(shows), true)
-            .on_hover_text("Now playing view");
-        dot(&row, response.rect, shows);
-        if response.clicked() {
-            app.toggle_side(Side::NowPlaying);
-        }
-    }
     let lyrics_on = if layout.lyrics == Lyrics::Page {
         app.lyrics_page
     } else {

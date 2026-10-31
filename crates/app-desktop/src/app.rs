@@ -1729,15 +1729,6 @@ impl App {
         self.playing_from.as_ref()
     }
 
-    /// Show what the side column shows, or close it when it already does.
-    pub fn toggle_side(&mut self, side: Side) {
-        self.side = if self.side == Some(side) {
-            None
-        } else {
-            Some(side)
-        };
-    }
-
     pub fn can_go_back(&self) -> bool {
         !self.back.is_empty()
     }

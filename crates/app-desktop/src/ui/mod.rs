@@ -148,6 +148,34 @@ pub fn show(app: &mut App, ui: &mut Ui) {
 
     // The column beside the page: the song playing, or the queue.
     let side = layout.panel == Panel::Side && !narrow;
+    if side && app.side.is_none() {
+        // Closed, a narrow card on the right with a chevron opens it again.
+        egui::Panel::right("side-closed")
+            .exact_size(side::CLOSED + gap)
+            .resizable(false)
+            .show_separator_line(false)
+            .frame(margin(0.0, gap, top))
+            .show(ui, |ui| {
+                let rect = ui.max_rect();
+                let response = ui
+                    .interact(rect, egui::Id::unique("side-open"), Sense::click())
+                    .on_hover_text("Show Now Playing view")
+                    .on_hover_cursor(egui::CursorIcon::PointingHand);
+                ui.painter().rect_filled(rect, RADIUS, theme.base);
+                let color = if response.hovered() {
+                    theme.text
+                } else {
+                    theme.subtext0
+                };
+                paint_icon(ui, icons::LEFT, rect.center(), 16.0, color);
+                if cards {
+                    round_off(ui, rect, theme.crust);
+                }
+                if response.clicked() {
+                    app.side = Some(crate::app::Side::NowPlaying);
+                }
+            });
+    }
     if side && let Some(shows) = app.side {
         egui::Panel::right("side")
             .exact_size(side::WIDTH + gap)

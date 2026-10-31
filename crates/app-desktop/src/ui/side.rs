@@ -12,6 +12,8 @@ use crate::theme::Theme;
 use super::{artwork, icon_button, paint_icon, paint_text, text, thumb_url};
 
 pub const WIDTH: f32 = 340.0;
+/// The card left when it is closed, which opens it again.
+pub const CLOSED: f32 = 24.0;
 
 pub fn show(app: &mut App, ui: &mut Ui, shows: Side) {
     let theme = app.theme.clone();

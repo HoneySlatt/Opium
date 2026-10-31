@@ -50,52 +50,59 @@ pub fn show(app: &mut App, ui: &mut Ui, collapsed: bool) {
     let filter_id = Id::unique("library-filter");
     let mut filter: Filter = ui.data(|d| d.get_temp(filter_id)).unwrap_or_default();
 
-    // The heading: a click on it folds the library away or back.
+    // The heading. Collapsed, the library's icon opens it again; open, a
+    // button to fold it shows left of the title while the pointer is over
+    // the library, as Spotify's.
     let head = Rect::from_min_size(full.min, vec2(full.width(), 60.0));
-    let title_rect = if collapsed {
+    let fold_rect = if collapsed {
         Rect::from_center_size(pos2(full.center().x, head.center().y), vec2(40.0, 40.0))
     } else {
-        Rect::from_min_size(
-            pos2(head.left() + 12.0, head.center().y - 16.0),
-            vec2(150.0, 32.0),
+        Rect::from_center_size(
+            pos2(head.left() + 12.0 + 16.0, head.center().y),
+            vec2(32.0, 32.0),
         )
     };
-    let fold = ui
-        .interact(title_rect, Id::unique("library-fold"), Sense::click())
-        .on_hover_cursor(egui::CursorIcon::PointingHand)
-        .on_hover_text(if collapsed {
-            "Expand Your Library"
-        } else {
-            "Collapse Your Library"
-        });
-    let color = if fold.hovered() {
-        theme.text
-    } else {
-        theme.subtext0
-    };
-    if collapsed {
-        paint_icon(ui, icons::LIBRARY, title_rect.center(), 22.0, color);
-    } else {
-        let color = if fold.hovered() {
+    let hovering = ui.rect_contains_pointer(full);
+    let mut title_left = head.left() + 16.0;
+    let fold = if collapsed || hovering {
+        let response = ui
+            .interact(fold_rect, Id::unique("library-fold"), Sense::click())
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .on_hover_text(if collapsed {
+                "Expand Your Library"
+            } else {
+                "Collapse Your Library"
+            });
+        let color = if response.hovered() {
             theme.text
         } else {
-            theme.text_a(0.92)
+            theme.subtext0
         };
-        let g = text(ui, "Your Library", font(16.0, Weight::Bold), color, 200.0);
-        paint_text(
+        let icon = if collapsed {
+            icons::LIBRARY
+        } else {
+            icons::PANEL
+        };
+        paint_icon(
             ui,
-            g,
-            title_rect.left() + 4.0,
-            title_rect.center().y,
-            egui::Align::Min,
-            if fold.hovered() {
-                theme.text
-            } else {
-                theme.text_a(0.92)
-            },
+            icon,
+            fold_rect.center(),
+            if collapsed { 22.0 } else { 18.0 },
+            color,
         );
+        if !collapsed {
+            title_left = fold_rect.right() + 6.0;
+        }
+        Some(response)
+    } else {
+        None
+    };
+    if !collapsed {
+        let color = theme.text_a(0.92);
+        let g = text(ui, "Your Library", font(16.0, Weight::Bold), color, 200.0);
+        paint_text(ui, g, title_left, head.center().y, egui::Align::Min, color);
     }
-    if fold.clicked() {
+    if fold.is_some_and(|f| f.clicked()) {
         app.sidebar_collapsed = !collapsed;
     }
     // New playlist, and the grid of what the chip shows.
