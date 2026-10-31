@@ -1,0 +1,79 @@
+# Stock: Cider's layout on the desktop, Apple Music's on the phone,
+# Carbonfox's black and Apple Music's pink.
+#
+# A theme is a file like this one. On the desktop, put it in
+# ~/.config/music/themes/ (named anything.toml): it is chosen in Settings,
+# and sent to the phone paired. On the phone, import it from Settings.
+# Whatever a theme leaves out is Stock's, so it can be as short as one line.
+name = "Stock"
+
+# Both apps.
+[layout]
+header = "cover"          # cover | banner
+rows = "single"           # single | stacked
+cards = "covers"          # covers | tiles
+favourite = "star"        # star | check
+headings = "small"        # small | large
+
+[layout.desktop]
+window = "flat"           # flat | cards
+sidebar = "navigation"    # navigation | library
+top_bar = "page"          # page | window
+player_bar = "floating"   # floating | docked
+panel = "drawer"          # drawer | side
+lyrics = "drawer"         # drawer | page
+glow = "accent"           # accent | grey
+now_playing = "lyrics"    # lyrics | cover
+
+[layout.mobile]
+tabs = "five"             # five | three
+mini_player = "capsule"   # capsule | card
+now_playing = "apple"     # apple | spotify
+search = "field"          # field | tiles
+library = "sections"      # sections | list
+
+# Dark. A theme with these only stays dark on the phone.
+[colors]
+base = "#161616"      # the page
+mantle = "#1e1e1e"    # the player bar, the drawer, menus
+crust = "#101010"     # the sidebar; behind the cards
+surface0 = "#242424"
+surface1 = "#2e2e2e"
+surface2 = "#3a3a3a"
+overlay0 = "#6e7074"
+overlay1 = "#9a9ca0"
+text = "#f2f4f8"
+subtext0 = "#b6b8bb"
+accent = "#fa2d48"
+mauve = "#fb5c74"     # the accent's glow
+red = "#ff453a"
+green = "#4ade80"
+yellow = "#fbbf24"
+# The phone's own, derived when left out.
+grouped = "#161616"
+cell = "#1f1f1f"
+capsule = "#232323"
+muted = "#8a8b8e"
+
+# Light, for the phone's light appearance.
+[colors.light]
+base = "#ffffff"
+mantle = "#ffffff"
+crust = "#f2f2f7"
+surface0 = "#f0f0f2"
+surface1 = "#e6e6ea"
+surface2 = "#d8d8dd"
+overlay0 = "#8a8a8e"
+overlay1 = "#6b6b70"
+text = "#161616"
+subtext0 = "#6b6b70"
+accent = "#fa2d48"
+mauve = "#fb5c74"
+red = "#ff3b30"
+green = "#15803d"
+yellow = "#b45309"
+grouped = "#f2f2f7"
+cell = "#ffffff"
+capsule = "#ffffff"
+muted = "#8a8a8e"
+tint = "#e0193a"

@@ -2,20 +2,24 @@
 //! `C[]` keys so a theme file maps one to one, the values derived from them,
 //! and the layout, which picks how each part of the window is drawn.
 //!
-//! Themes are TOML files: Stock and Spotify are built in, and every file in
-//! `~/.config/music/themes/` is one more. A file has a `name`, a `[layout]`
-//! table and a `[colors]` table; whatever it leaves out is Stock's.
+//! Theme files are read by the core, which the phone shares (see
+//! `music_core::theme`): Stock and Spotify are built in, and every file in
+//! `~/.config/music/themes/` is one more.
 
 use std::path::PathBuf;
 
 use egui::Color32;
-use serde::Deserialize;
+pub use music_core::theme::{
+    Cards, Favourite, Glow, Header, Headings, Lyrics, NowPlaying, Panel, PlayerBar, Rows,
+    Sidebar, TopBar, Window,
+};
+use music_core::theme::ThemeFile;
 
 use crate::color::{alpha, hex, luminance, mix};
 
-/// How each part of the window is drawn. Every choice defaults to Stock's.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
-#[serde(default, deny_unknown_fields)]
+/// How each part of the window is drawn: the choices both apps make and
+/// the desktop's own, together.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Layout {
     pub window: Window,
     pub sidebar: Sidebar,
@@ -48,151 +52,25 @@ impl Layout {
         rows: Rows::Single,
         headings: Headings::Small,
     };
-}
 
-/// The window's parts.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Window {
-    /// Side by side, edge to edge.
-    #[default]
-    Flat,
-    /// Rounded cards with gaps between them on `crust`.
-    Cards,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Sidebar {
-    /// Search, then the pages, the library and the playlists, as Cider does.
-    #[default]
-    Navigation,
-    /// Your Library, as Spotify does: the playlists, albums or artists with
-    /// their covers, Search and Home being in the top bar.
-    Library,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TopBar {
-    /// Over the page: back, forward and the drawer's buttons.
-    #[default]
-    Page,
-    /// Across the window: back and forward, Home and Search in the middle,
-    /// the account on the right.
-    Window,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PlayerBar {
-    /// A floating bar over the page, as Cider's.
-    #[default]
-    Floating,
-    /// Along the window's bottom: the song on the left, the controls and the
-    /// position in the middle, the volume on the right.
-    Docked,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Panel {
-    /// A drawer sliding over the page with Playing Next, History and Lyrics.
-    #[default]
-    Drawer,
-    /// A column beside the page with the song playing or the queue.
-    Side,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Header {
-    /// A large cover with the details beside it, as Cider.
-    #[default]
-    Cover,
-    /// The cover at the bottom left of a band of its colour, the title in
-    /// large type, the buttons under it, as Spotify.
-    Banner,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Lyrics {
-    /// In the drawer.
-    #[default]
-    Drawer,
-    /// Over the whole page, on the cover's colour.
-    Page,
-}
-
-/// What lights the top of the pages without a cover of their own.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Glow {
-    /// The accent and its glow, blurred.
-    #[default]
-    Accent,
-    /// A grey fading into the page, as Spotify's.
-    Grey,
-}
-
-/// How covers in grids and shelves are drawn.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Cards {
-    /// The cover alone, darkened on hover.
-    #[default]
-    Covers,
-    /// On hover, a tile behind the cover and its words, and a round Play
-    /// on the cover, as Spotify's.
-    Tiles,
-}
-
-/// How a favourite song is marked in the lists.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Favourite {
-    /// A red star after its title, as Apple Music's.
-    #[default]
-    Star,
-    /// A check in the accent, as Spotify's saved songs.
-    Check,
-}
-
-/// How a song's row in a list reads.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Rows {
-    /// On one line, the artists in a column of their own.
-    #[default]
-    Single,
-    /// The artists under the title, as Spotify's.
-    Stacked,
-}
-
-/// How large the shelves' titles are.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Headings {
-    /// 18 px, semibold, as Cider's.
-    #[default]
-    Small,
-    /// 24 px, bold, as Spotify's.
-    Large,
-}
-
-/// The full screen player.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum NowPlaying {
-    /// Cider's: the cover down the left fading into its colours, the
-    /// lyrics on the right, the controls in a card.
-    #[default]
-    Lyrics,
-    /// Spotify's: the cover large in the middle on its colour, cards about
-    /// the song under it, the player bar kept along the bottom; the lyrics
-    /// in its place on demand.
-    Cover,
+    fn of(file: &ThemeFile) -> Layout {
+        let (shared, own) = (file.layout, file.desktop);
+        Layout {
+            window: own.window,
+            sidebar: own.sidebar,
+            top_bar: own.top_bar,
+            player_bar: own.player_bar,
+            panel: own.panel,
+            header: shared.header,
+            lyrics: own.lyrics,
+            glow: own.glow,
+            cards: shared.cards,
+            favourite: shared.favourite,
+            now_playing: own.now_playing,
+            rows: shared.rows,
+            headings: shared.headings,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -216,11 +94,7 @@ pub struct Theme {
     pub yellow: Color32,
 }
 
-/// The themes that come with the app, by id.
-const BUILT_IN: [(&str, &str); 2] = [
-    ("stock", include_str!("../assets/themes/stock.toml")),
-    ("spotify", include_str!("../assets/themes/spotify.toml")),
-];
+use music_core::theme::BUILT_IN;
 
 const fn rgb(v: u32) -> Color32 {
     Color32::from_rgb((v >> 16) as u8, (v >> 8) as u8, v as u8)
@@ -295,50 +169,28 @@ impl Theme {
     /// A theme file: its name and the theme. What it leaves out is Stock's;
     /// a malformed colour or an unknown layout choice rejects it, with why.
     pub fn from_theme_file(source: &str) -> Result<(String, Self), String> {
-        #[derive(Deserialize)]
-        #[serde(deny_unknown_fields)]
-        struct File {
-            name: Option<String>,
-            #[serde(default)]
-            layout: Layout,
-            #[serde(default)]
-            colors: toml::Table,
-        }
-        let file: File = toml::from_str(source).map_err(|e| e.message().to_string())?;
-        let mut theme = Theme {
-            layout: file.layout,
-            ..Theme::STOCK
+        let file = music_core::theme::parse(source)?;
+        let p = file.colors;
+        let theme = Theme {
+            layout: Layout::of(&file),
+            light: p.light,
+            base: rgb(p.base),
+            mantle: rgb(p.mantle),
+            crust: rgb(p.crust),
+            surface0: rgb(p.surface0),
+            surface1: rgb(p.surface1),
+            surface2: rgb(p.surface2),
+            overlay0: rgb(p.overlay0),
+            overlay1: rgb(p.overlay1),
+            text: rgb(p.text),
+            subtext0: rgb(p.subtext0),
+            accent: rgb(p.accent),
+            mauve: rgb(p.mauve),
+            red: rgb(p.red),
+            green: rgb(p.green),
+            yellow: rgb(p.yellow),
         };
-        for (key, value) in &file.colors {
-            if key == "light" {
-                theme.light = value.as_bool().ok_or("light is true or false")?;
-                continue;
-            }
-            let color = value
-                .as_str()
-                .and_then(hex)
-                .ok_or_else(|| format!("{key} is not a #rrggbb colour"))?;
-            let slot = match key.as_str() {
-                "base" => &mut theme.base,
-                "mantle" => &mut theme.mantle,
-                "crust" => &mut theme.crust,
-                "surface0" => &mut theme.surface0,
-                "surface1" => &mut theme.surface1,
-                "surface2" => &mut theme.surface2,
-                "overlay0" => &mut theme.overlay0,
-                "overlay1" => &mut theme.overlay1,
-                "text" => &mut theme.text,
-                "subtext0" => &mut theme.subtext0,
-                "accent" => &mut theme.accent,
-                "mauve" => &mut theme.mauve,
-                "red" => &mut theme.red,
-                "green" => &mut theme.green,
-                "yellow" => &mut theme.yellow,
-                _ => return Err(format!("{key} is not a colour role")),
-            };
-            *slot = color;
-        }
-        Ok((file.name.unwrap_or_default(), theme))
+        Ok((file.name, theme))
     }
 
     /// This theme's layout in `colors`' colours.
@@ -510,7 +362,7 @@ yellow = "#f6c177"
     #[test]
     fn a_theme_file_leaves_the_rest_to_stock() {
         let (name, theme) = Theme::from_theme_file(
-            "[layout]\nplayer_bar = \"docked\"\n[colors]\naccent = \"#00ff00\"",
+            "[layout.desktop]\nplayer_bar = \"docked\"\n[colors]\naccent = \"#00ff00\"",
         )
         .unwrap();
         assert_eq!(name, "");
@@ -518,9 +370,7 @@ yellow = "#f6c177"
         assert_eq!(theme.layout.sidebar, Sidebar::Navigation);
         assert_eq!(theme.accent, Color32::from_rgb(0, 255, 0));
         assert_eq!(theme.base, Theme::STOCK.base);
-        assert!(Theme::from_theme_file("[layout]\nsidebar = \"nope\"").is_err());
-        assert!(Theme::from_theme_file("[layout]\nsidbar = \"library\"").is_err());
-        assert!(Theme::from_theme_file("[colors]\nbase = \"blue\"").is_err());
+        assert!(Theme::from_theme_file("[layout.desktop]\nsidebar = \"nope\"").is_err());
     }
 
     #[test]

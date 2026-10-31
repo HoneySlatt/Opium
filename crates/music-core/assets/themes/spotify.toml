@@ -1,0 +1,48 @@
+# Spotify: rounded cards on black, Your Library, the player along the
+# bottom, the song playing beside the page on the desktop; three tabs and
+# a card for the player on the phone; and its green.
+name = "Spotify"
+
+[layout]
+header = "banner"
+rows = "stacked"
+cards = "tiles"
+favourite = "check"
+headings = "large"
+
+[layout.desktop]
+window = "cards"
+sidebar = "library"
+top_bar = "window"
+player_bar = "docked"
+panel = "side"
+lyrics = "page"
+glow = "grey"
+now_playing = "cover"
+
+[layout.mobile]
+tabs = "three"
+mini_player = "card"
+now_playing = "spotify"
+search = "tiles"
+library = "list"
+
+[colors]
+base = "#121212"
+mantle = "#282828"
+crust = "#000000"
+surface0 = "#1f1f1f"
+surface1 = "#2a2a2a"
+surface2 = "#3e3e3e"
+overlay0 = "#6a6a6a"
+overlay1 = "#a7a7a7"
+text = "#ffffff"
+subtext0 = "#b3b3b3"
+accent = "#1ed760"
+mauve = "#1db954"
+red = "#f3727f"
+green = "#1ed760"
+yellow = "#ffa42b"
+grouped = "#121212"
+cell = "#1f1f1f"
+capsule = "#282828"
