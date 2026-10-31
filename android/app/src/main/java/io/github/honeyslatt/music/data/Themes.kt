@@ -19,7 +19,7 @@ import java.io.File
 class Themes(context: Context) {
     /** A theme to choose: its id (a file's stem), its name, and the theme or
      *  what is wrong with its file. */
-    class Entry(val id: String, val name: String, val file: ThemeFile?, val problem: String?, val builtIn: Boolean)
+    data class Entry(val id: String, val name: String, val file: ThemeFile?, val problem: String?, val builtIn: Boolean)
 
     private val resolver = context.contentResolver
     private val dir = File(context.filesDir, "themes")
@@ -57,13 +57,16 @@ class Themes(context: Context) {
 
     /** Keep a theme's file under `id`, replacing one of that id; what is
      *  wrong with it, if it isn't a theme. */
-    fun keep(id: String, source: String): String? {
+    fun keep(id: String, source: String, refresh: Boolean = true): String? {
         val safe = idOf(id)
         if (builtIn.any { it.id == safe }) return "“$safe” is a built-in theme’s name."
+        val file = File(dir, "$safe.toml")
+        // The same as kept: nothing to write, nor to read again.
+        if (file.exists() && runCatching { file.readText() }.getOrNull() == source) return null
         runCatching { parseTheme(source) }.onFailure { return it.message ?: "It isn’t a theme." }
         dir.mkdirs()
-        File(dir, "$safe.toml").writeText(source)
-        _all.value = read()
+        file.writeText(source)
+        if (refresh) _all.value = read()
         return null
     }
 
@@ -90,9 +93,12 @@ class Themes(context: Context) {
      *  id; those it sent before and no longer has, taken away. */
     fun shared(themes: List<io.github.honeyslatt.music.core.connect.SharedTheme>) {
         val before = prefs.getStringSet("desktop-themes", emptySet()).orEmpty()
-        val now = themes.filter { keep(it.id, it.source) == null }.map { idOf(it.id) }.toSet()
+        // Read again once at the end, not once for each theme.
+        val now = themes.filter { keep(it.id, it.source, refresh = false) == null }.map { idOf(it.id) }.toSet()
         (before - now).forEach { remove(it) }
         prefs.edit().putStringSet("desktop-themes", now).apply()
+        val read = read()
+        if (read != _all.value) _all.value = read
     }
 
     /** Take a theme away; Stock again if it was in use. */

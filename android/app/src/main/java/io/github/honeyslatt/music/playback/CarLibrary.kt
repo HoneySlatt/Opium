@@ -98,8 +98,10 @@ class CarLibrary(private val app: MusicApp, private val scope: CoroutineScope) :
         LibraryResult.ofItemList(ImmutableList.copyOf(all.subList(from, to)), params)
     }
 
+    // An item alone isn't asked for by the car; answered so rather than
+    // with one lacking what Media3 requires of it.
     override fun onGetItem(session: MediaLibrarySession, browser: MediaSession.ControllerInfo, mediaId: String): ListenableFuture<LibraryResult<MediaItem>> =
-        Futures.immediateFuture(LibraryResult.ofItem(MediaItem.Builder().setMediaId(mediaId).build(), null))
+        Futures.immediateFuture(LibraryResult.ofError(LibraryResult.RESULT_ERROR_NOT_SUPPORTED))
 
     private suspend fun children(parent: String): List<MediaItem> = when (parent) {
         ROOT -> listOf(

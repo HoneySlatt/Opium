@@ -64,6 +64,23 @@ private const val STATION_SONGS = 20u
 /** How many songs in a row may fail to play before playback stops. */
 private const val MAX_SKIPS = 5
 
+/** The player's errors that say the network went, not that a server refused. */
+private val NETWORK_GONE = setOf(
+    PlaybackException.ERROR_CODE_IO_UNSPECIFIED,
+    PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
+    PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT,
+)
+
+/** A server refusing a song's address: often a signed one expired while paused. */
+private val REFUSED = setOf(
+    PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS,
+    PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND,
+    PlaybackException.ERROR_CODE_IO_NO_PERMISSION,
+)
+
+/** How long after the network went a song still goes on by itself when it comes back. */
+private const val RESUME_WITHIN = 10 * 60_000L
+
 /**
  * What plays: the queue (the Rust core's, as on the desktop) and the
  * player. The player only ever holds the current song and the next one,
@@ -308,6 +325,20 @@ class Playback(private val context: Context, private val core: Core, private val
     private var lining: Job? = null
     private var failedInRow = 0
 
+    /** When the network went with a song waiting on it, 0 if none; whether it waits to be made playable. */
+    private var lostAt = 0L
+    private var lostResolving = false
+
+    /** The making playable that is already a second try after a refusal. */
+    private var retried = -1
+
+    /** Paused while the song was on its way: it comes in paused. */
+    private var heldPaused = false
+
+    fun holdPaused(on: Boolean) {
+        heldPaused = on
+    }
+
     init {
         _history.value = io.github.honeyslatt.music.core.keptTracks(historyFile)
         Http.warm()
@@ -375,7 +406,13 @@ class Playback(private val context: Context, private val core: Core, private val
                     // The network gone (a tunnel, the metro): the song waits
                     // where it was, to go on once it is back, rather than the
                     // queue running through songs that can't load either.
-                    error.errorCode in 2000..2999 -> {}
+                    error.errorCode in NETWORK_GONE -> lostAt = SystemClock.elapsedRealtime()
+                    // Refused: its address made anew, from where it was, once.
+                    error.errorCode in REFUSED && retried != generation -> {
+                        retried = generation + 1
+                        startAt = player.currentPosition
+                        startCurrent()
+                    }
                     else -> skipFailed()
                 }
             }
@@ -427,8 +464,11 @@ class Playback(private val context: Context, private val core: Core, private val
         val endsAt = SystemClock.elapsedRealtime() + minutes * 60_000L
         _sleep.value = Sleep.At(minutes, endsAt)
         sleeping = scope.launch {
-            // Checked against the clock: a delay alone stretches while the phone sleeps.
-            while (SystemClock.elapsedRealtime() < endsAt) kotlinx.coroutines.delay(1_000)
+            // Checked against the clock: a delay alone stretches while the
+            // phone sleeps. Waking for what is left, not every second.
+            while (SystemClock.elapsedRealtime() < endsAt) {
+                kotlinx.coroutines.delay((endsAt - SystemClock.elapsedRealtime()).coerceIn(1_000, 60_000))
+            }
             fallAsleep()
         }
     }
@@ -576,12 +616,20 @@ class Playback(private val context: Context, private val core: Core, private val
 
     fun toggle() = either({ Command.Toggle }) {
         when {
+            // On its way: it comes in as asked last, playing or paused.
+            _loading.value -> heldPaused = !heldPaused
             player.isPlaying -> player.pause()
             _now.value == null -> player.play()
             // Stopped by the network: on from where it was.
-            player.playerError != null && player.mediaItemCount > 0 -> {
+            player.playerError?.errorCode in NETWORK_GONE && player.mediaItemCount > 0 -> {
+                lostAt = 0
                 player.prepare()
                 player.play()
+            }
+            // Refused, or failed otherwise: made playable anew, from where it was.
+            player.playerError != null -> {
+                startAt = player.currentPosition
+                startCurrent()
             }
             // Not made playable yet (as the app opened), or after a failure.
             player.playbackState == Player.STATE_IDLE || player.mediaItemCount == 0 -> startCurrent()
@@ -594,11 +642,25 @@ class Playback(private val context: Context, private val core: Core, private val
         }
     }
 
-    /** The network is back: a song stopped for want of it goes on. */
+    /**
+     * The network is back: a song stopped for want of it lately goes on, if
+     * it was playing then and still meant to (not after earbuds came out);
+     * one stopped long ago waits for Play.
+     */
     fun online() {
-        if (player.playerError?.errorCode in 2000..2999 && player.mediaItemCount > 0) {
+        if (lostAt == 0L) return
+        val recent = SystemClock.elapsedRealtime() - lostAt < RESUME_WITHIN
+        lostAt = 0
+        if (!recent) {
+            lostResolving = false
+            return
+        }
+        if (lostResolving) {
+            lostResolving = false
+            startCurrent()
+        } else if (player.playerError?.errorCode in NETWORK_GONE && player.mediaItemCount > 0) {
+            // Playing again only as the player still means to.
             player.prepare()
-            player.play()
         }
     }
 
@@ -639,6 +701,7 @@ class Playback(private val context: Context, private val core: Core, private val
         startAt = 0
         resume?.let { (id, at) -> if (id == "${track.id.provider}:${track.id.id}") from = at }
         resume = null
+        heldPaused = false
         changed()
         val mine = ++generation
         lining?.cancel()
@@ -657,17 +720,25 @@ class Playback(private val context: Context, private val core: Core, private val
             } catch (e: Exception) {
                 if (mine != generation) return@launch
                 _loading.value = false
+                heldPaused = false
                 _error.value = "Couldn't play “${track.title}”: ${e.message}"
                 // Offline, every song would fail alike: the queue waits on
-                // this one, for Play to try it again.
-                if ((e as? MusicException.Failed)?.reason?.startsWith("network error") != true) skipFailed()
+                // this one, for Play, or the network back, to try it again.
+                if ((e as? MusicException.Failed)?.reason?.startsWith("network error") == true) {
+                    lostAt = SystemClock.elapsedRealtime()
+                    lostResolving = true
+                } else {
+                    skipFailed()
+                }
                 return@launch
             }
             if (mine != generation) return@launch
             _loading.value = false
             if (from > 0) player.setMediaSource(source, from) else player.setMediaSource(source)
             player.prepare()
-            player.play()
+            // Paused on its way (earbuds, the lock screen): it stays so.
+            player.playWhenReady = !heldPaused
+            heldPaused = false
             lineUpNext()
         }
     }
@@ -724,9 +795,13 @@ class Playback(private val context: Context, private val core: Core, private val
     private val sessionFile = java.io.File(context.filesDir, "session.json").path
 
     /** Keep what plays for the next time the app opens: the queue and where it is. */
+    /** One at a time, in the order asked: an older one never written over a newer one, nor beside it. */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    private val keeping = kotlinx.coroutines.Dispatchers.IO.limitedParallelism(1)
+
     fun keepSession() {
         val session = handoff()
-        scope.launch(kotlinx.coroutines.Dispatchers.IO) { io.github.honeyslatt.music.core.keepSession(sessionFile, session) }
+        scope.launch(keeping) { io.github.honeyslatt.music.core.keepSession(sessionFile, session) }
     }
 
     /** Take over a queue as kept or handed over: its songs, its order, its station. */

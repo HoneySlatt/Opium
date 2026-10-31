@@ -14,6 +14,9 @@ path = "src/bin/uniffi-bindgen.rs"
 
 [dependencies]
 async-trait = "0.1.92"
+# What uniffi runs the exports' futures on: with its own threads, not one
+# alone, so that a library's parsing doesn't hold up a song's licence.
+async-compat = { version = "0.2.6", features = ["multi-thread"] }
 apple-music = { path = "../apple-music" }
 connect = { path = "../connect", features = ["ffi"] }
 music-core = { path = "../music-core", features = ["ffi"] }

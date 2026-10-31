@@ -3196,6 +3196,7 @@ name = "music-ffi"
 version = "0.1.0"
 dependencies = [
  "apple-music",
+ "async-compat",
  "async-trait",
  "connect",
  "jni",

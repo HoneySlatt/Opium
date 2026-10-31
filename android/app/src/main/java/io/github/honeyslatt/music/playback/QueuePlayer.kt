@@ -53,7 +53,9 @@ class QueuePlayer(
             .removeAll(Player.COMMAND_SET_SHUFFLE_MODE, Player.COMMAND_SET_REPEAT_MODE)
             .build()
         val playlist = state.playlist
-        val upcoming = playback.upcoming.value.mapIndexed(::queued)
+        // What the car's Queue lists: the next hundred, not a whole library
+        // shuffled, made again at each of the player's events.
+        val upcoming = playback.upcoming.value.take(100).mapIndexed(::queued)
         // A song picked is on its way, the player stopped for it: shown
         // coming. An empty idle session would send the car back from Now
         // Playing to where it browsed.
@@ -112,9 +114,13 @@ class QueuePlayer(
     override fun handleSetPlayWhenReady(playWhenReady: Boolean): ListenableFuture<*> {
         val player = player
         when {
-            !playWhenReady -> return super.handleSetPlayWhenReady(false)
+            // On its way, it then comes in paused.
+            !playWhenReady -> {
+                if (playback.loading.value) playback.holdPaused(true)
+                return super.handleSetPlayWhenReady(false)
+            }
             // A song picked is on its way, and plays when it comes.
-            playback.loading.value -> {}
+            playback.loading.value -> playback.holdPaused(false)
             // Play from the earbuds, the lock screen or the car with nothing
             // made playable yet (the app just opened on what played last),
             // or at the queue's end: the app's own Play, which sees to it.

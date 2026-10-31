@@ -98,11 +98,27 @@ class Core(context: Context) {
         }
     }
 
-    /** The network is back: the services it kept out are tried again. */
+    /** By service, failed tries in a row and when the last was. */
+    private val tries = mutableMapOf<ProviderKind, Pair<Int, Long>>()
+
+    /**
+     * The network is back: the services it kept out are tried again, each
+     * less often as it keeps failing (a server at home, away from it), from
+     * a minute up to half an hour.
+     */
     suspend fun retryFailed() {
+        val now = android.os.SystemClock.elapsedRealtime()
         kotlinx.coroutines.coroutineScope {
             ProviderKind.entries.filter { signedIn(it) && enabled(it) && connections.getValue(it).value is Connection.Failed }.forEach { kind ->
-                launch { connect(kind) }
+                val (failed, at) = synchronized(tries) { tries[kind] } ?: (0 to 0L)
+                val wait = (60_000L shl (failed - 1).coerceIn(0, 5)).coerceAtMost(30 * 60_000L)
+                if (failed > 0 && now - at < wait) return@forEach
+                launch {
+                    val got = connect(kind)
+                    synchronized(tries) {
+                        if (got is Connection.Connected) tries.remove(kind) else tries[kind] = (failed + 1) to now
+                    }
+                }
             }
         }
     }

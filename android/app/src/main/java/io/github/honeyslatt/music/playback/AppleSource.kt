@@ -95,16 +95,34 @@ fun appleSource(
         drm.prepare()
         val pssh = DrmInitData(DrmInitData.SchemeData(C.WIDEVINE_UUID, MimeTypes.VIDEO_MP4, track.pssh()))
         val held = drm.preacquireSession(null, Format.Builder().setSampleMimeType(MimeTypes.AUDIO_AAC).setDrmInitData(pssh).build())
-        // Let go once the player holds its own reference, or the source goes.
-        player.addListener(object : androidx.media3.common.Player.Listener {
-            override fun onIsPlayingChanged(isPlaying: Boolean) {
-                if (isPlaying) {
-                    held.release()
-                    drm.release()
-                    player.removeListener(this)
-                }
+        // Let go once this song plays, the player holding its own reference
+        // then (a song lined up comes in without a pause and a play), or
+        // after a while if it never does: thrown away with the queue.
+        val id = item.build().mediaId
+        val handler = android.os.Handler(android.os.Looper.getMainLooper())
+        val listener = object : androidx.media3.common.Player.Listener {
+            var released = false
+            val later = Runnable { letGo() }
+
+            fun letGo() {
+                if (released) return
+                released = true
+                held.release()
+                drm.release()
+                player.removeListener(this)
+                handler.removeCallbacks(later)
             }
-        })
+
+            fun check() {
+                if (player.isPlaying && player.currentMediaItem?.mediaId == id) letGo()
+            }
+
+            override fun onIsPlayingChanged(isPlaying: Boolean) = check()
+
+            override fun onMediaItemTransition(mediaItem: androidx.media3.common.MediaItem?, reason: Int) = check()
+        }
+        player.addListener(listener)
+        handler.postDelayed(listener.later, 10 * 60_000L)
     }
     val padding = { runBlocking { withTimeoutOrNull(2_000) { track.padding() } }?.toInt() ?: 0 }
     return HlsMediaSource.Factory(sources)

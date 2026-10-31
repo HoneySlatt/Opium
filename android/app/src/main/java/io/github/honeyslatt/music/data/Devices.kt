@@ -94,15 +94,21 @@ class Devices(context: Context) {
     private var onScreen = false
     private var playing = false
 
+    /** Until when, after music started in the background, a paired device is looked out for. */
+    private var lookingUntil = 0L
+    private val lookedEnough = Runnable { watch() }
+
     /**
      * Let the announcements through while the app is on screen (a device
-     * may be there to pair), or while music plays in the background and a
-     * paired device isn't connected yet; not otherwise: a connection made
-     * needs none, and nothing is worth the battery while nothing plays.
+     * may be there to pair), or for a minute after music starts in the
+     * background while a paired device isn't connected yet; not otherwise:
+     * a connection made needs none, a device away (the computer off) won't
+     * come for being looked for all along, and Wi-Fi's filter saves battery.
      */
     private fun watch() {
         val missing = _peers.value.any { it.paired && !it.connected }
-        if (onScreen || (playing && missing)) multicast.acquire() else multicast.release()
+        val lately = SystemClock.elapsedRealtime() < lookingUntil
+        if (onScreen || (playing && missing && lately)) multicast.acquire() else multicast.release()
     }
 
     private fun take(event: Event) {
@@ -128,6 +134,11 @@ class Devices(context: Context) {
 
     /** Music started or stopped playing on this phone. */
     fun playing(on: Boolean) {
+        if (on && !playing) {
+            lookingUntil = SystemClock.elapsedRealtime() + LOOK_FOR
+            main.removeCallbacks(lookedEnough)
+            main.postDelayed(lookedEnough, LOOK_FOR)
+        }
         playing = on
         watch()
     }
@@ -157,3 +168,6 @@ class Devices(context: Context) {
 
     fun forget(id: String) = node.forget(id)
 }
+
+/** How long a paired device is looked out for once music starts in the background. */
+private const val LOOK_FOR = 60_000L

@@ -23,7 +23,8 @@ pub enum MusicError {
     Failed { reason: String },
 }
 
-/// Run `work` on the runtime's threads. A future runs where it is polled,
+/// Run `work` on the runtime's threads (several: see `async-compat` in the
+/// manifest). A future runs where it is polled,
 /// and Kotlin polls where it waits, often Android's main thread: the TLS
 /// (whose certificate check may go to the network) and the parsing belong
 /// elsewhere.
@@ -1384,24 +1385,24 @@ impl Apple {
 pub struct ProtectedTrack {
     apple: Arc<AppleMusic>,
     protected: Protected,
-    padding: std::sync::Mutex<Option<PaddingTask>>,
-}
-
-enum PaddingTask {
-    Running(tokio::task::JoinHandle<u32>),
-    Done(u32),
+    /// The padding once read: kept for every asker, one given up on (a
+    /// timeout) included.
+    padding: tokio::sync::watch::Receiver<Option<u32>>,
 }
 
 impl ProtectedTrack {
     fn new(apple: Arc<AppleMusic>, protected: Protected) -> Arc<Self> {
-        let task = {
+        let (found, padding) = tokio::sync::watch::channel(None);
+        {
             let (apple, protected) = (apple.clone(), protected.clone());
-            tokio::spawn(async move { apple.padding(&protected).await })
-        };
+            tokio::spawn(async move {
+                let _ = found.send(Some(apple.padding(&protected).await));
+            });
+        }
         Arc::new(Self {
             apple,
             protected,
-            padding: std::sync::Mutex::new(Some(PaddingTask::Running(task))),
+            padding,
         })
     }
 }
@@ -1447,18 +1448,11 @@ impl ProtectedTrack {
     /// in the background from the start, as the song needn't wait for it.
     pub async fn padding(&self) -> u32 {
         // Its work runs in a task of its own already.
-        let task = self
-            .padding
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .take();
-        let found = match task {
-            Some(PaddingTask::Running(task)) => task.await.unwrap_or(0),
-            Some(PaddingTask::Done(n)) => n,
-            None => 0,
-        };
-        *self.padding.lock().unwrap_or_else(|e| e.into_inner()) = Some(PaddingTask::Done(found));
-        found
+        let mut padding = self.padding.clone();
+        match padding.wait_for(Option::is_some).await {
+            Ok(found) => found.unwrap_or(0),
+            Err(_) => 0,
+        }
     }
 
     /// The encode's real bit rate when it is less than the usual 256 kbps:
