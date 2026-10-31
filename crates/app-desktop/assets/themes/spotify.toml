@@ -16,6 +16,7 @@ cards = "tiles"
 favourite = "check"
 now_playing = "cover"
 rows = "stacked"
+headings = "large"
 
 [colors]
 light = false

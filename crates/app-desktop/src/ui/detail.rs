@@ -978,10 +978,14 @@ fn page(
             let left = main.left() + pad;
             let width = main.width() - 2.0 * pad;
             let top = main.top() + super::BANNER_BAR;
+            // Spotify's: a shade lighter than the page, across the table.
             layer.painter().rect_filled(
-                Rect::from_min_size(pos2(main.left(), top), vec2(main.width(), tracks::HEAD)),
+                Rect::from_min_max(
+                    pos2(left - 16.0, top),
+                    pos2(left + width + 16.0, top + tracks::HEAD),
+                ),
                 0.0,
-                theme.base,
+                crate::color::mix(theme.surface0, theme.base, 0.5),
             );
             let columns = match listing.columns {
                 Kind::Album { with_artist } => Columns::album(left, width, with_artist),
@@ -1355,7 +1359,7 @@ fn album_foot_ui(
         .collect();
     let id = egui::Id::unique(("more-by", &artist.id));
     // The title, and a chevron after it, lead to the artist.
-    let g = text(ui, &title, font(18.0, Weight::SemiBold), theme.text, 400.0);
+    let g = text(ui, &title, super::search::heading(theme), theme.text, 600.0);
     let chevron = pos2(at.x + g.size().x + 12.0, at.y + 12.0);
     let link = Rect::from_min_max(pos2(at.x, at.y - 3.0), pos2(chevron.x + 10.0, at.y + 25.0));
     let hit = ui.interact(link, id.with("title"), Sense::click());

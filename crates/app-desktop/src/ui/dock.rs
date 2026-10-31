@@ -17,7 +17,7 @@ use super::{
     artwork, explicit_badge, format_time, icon_button, paint_icon, paint_text, text, thumb_url,
 };
 
-const HEIGHT: f32 = 80.0;
+const HEIGHT: f32 = 72.0;
 /// The strip under the bar while another device plays.
 const STRIP: f32 = 28.0;
 
@@ -71,7 +71,10 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         pos2(bar.right() - third, bar.top()),
         bar.max - vec2(8.0, 0.0),
     );
-    let middle_width = (bar.width() - 2.0 * third - 32.0).clamp(240.0, 722.0);
+    // As Spotify's: about a quarter of the window.
+    let middle_width = (bar.width() * 0.27)
+        .min(bar.width() - 2.0 * third - 32.0)
+        .clamp(240.0, 722.0);
     let middle = Rect::from_center_size(bar.center(), vec2(middle_width, bar.height()));
     now_playing(app, ui, &theme, song);
     controls(app, ui, &theme, middle);
@@ -268,7 +271,7 @@ fn controls(app: &mut App, ui: &mut Ui, theme: &Theme, area: Rect) {
     let shown = app.shown();
     let has_track = shown.has_track;
     let dim = theme.subtext0;
-    let y = area.top() + 30.0;
+    let y = area.top() + 24.0;
     let at = |dx: f32| Rect::from_center_size(pos2(area.center().x + dx, y), vec2(32.0, 32.0));
     let button = |ui: &mut Ui, dx: f32, icon: Icon, glyph: f32, color, enabled, tip: &str| {
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(at(dx)));
@@ -288,7 +291,7 @@ fn controls(app: &mut App, ui: &mut Ui, theme: &Theme, area: Rect) {
     if button(
         ui,
         -44.0,
-        icons::BACK_FILL,
+        icons::SKIP_BACK,
         16.0,
         dim,
         has_track,
@@ -296,7 +299,7 @@ fn controls(app: &mut App, ui: &mut Ui, theme: &Theme, area: Rect) {
     ) {
         app.previous();
     }
-    if button(ui, 44.0, icons::FORWARD_FILL, 16.0, dim, has_track, "Next") {
+    if button(ui, 44.0, icons::SKIP_FORWARD, 16.0, dim, has_track, "Next") {
         app.next();
     }
     let (repeat_icon, repeat) = match shown.repeat {
@@ -350,7 +353,7 @@ fn controls(app: &mut App, ui: &mut Ui, theme: &Theme, area: Rect) {
     }
 
     // The position: the time played, the bar, the length.
-    let y = area.top() + 62.0;
+    let y = area.top() + 52.0;
     let position = super::player_bar::shown_position(app, ui);
     let small = font(11.5, Weight::Regular);
     let (played, length) = match shown.duration {
@@ -362,7 +365,7 @@ fn controls(app: &mut App, ui: &mut Ui, theme: &Theme, area: Rect) {
     paint_text(
         ui,
         g,
-        area.left() + 40.0,
+        area.left() + 32.0,
         y,
         egui::Align::Max,
         theme.subtext0,
@@ -371,16 +374,53 @@ fn controls(app: &mut App, ui: &mut Ui, theme: &Theme, area: Rect) {
     paint_text(
         ui,
         g,
-        area.right() - 40.0,
+        area.right() - 32.0,
         y,
         egui::Align::Min,
         theme.subtext0,
     );
     let rail = Rect::from_min_max(
-        pos2(area.left() + 48.0, y - 6.0),
-        pos2(area.right() - 48.0, y + 6.0),
+        pos2(area.left() + 40.0, y - 6.0),
+        pos2(area.right() - 40.0, y + 6.0),
     );
     seek_bar(app, ui, theme, rail, shown.duration);
+}
+
+/// Spotify's volume: a plain bar, in the accent with a knob on hover.
+fn volume(app: &mut App, ui: &mut Ui, theme: &Theme, shown: &crate::app::Shown) {
+    let sense = if shown.volume.is_some() {
+        Sense::click_and_drag()
+    } else {
+        Sense::hover()
+    };
+    let (rect, response) = ui.allocate_exact_size(vec2(84.0, 16.0), sense);
+    if let Some(pointer) = response.interact_pointer_pos()
+        && (response.dragged() || response.clicked())
+    {
+        app.set_volume((pointer.x - rect.left()) / rect.width());
+    }
+    let level = if shown.muted {
+        0.0
+    } else {
+        shown.volume.unwrap_or(0.0)
+    };
+    let active = shown.volume.is_some() && (response.hovered() || response.dragged());
+    let rail = Rect::from_center_size(rect.center(), vec2(rect.width(), 4.0));
+    let painter = ui.painter();
+    painter.rect_filled(rail, 2.0, theme.text_a(0.3));
+    let fill = Rect::from_min_size(rail.min, vec2(rail.width() * level, 4.0));
+    painter.rect_filled(fill, 2.0, if active { theme.accent } else { theme.text });
+    if active {
+        painter.circle_filled(pos2(fill.right(), rail.center().y), 6.0, theme.text);
+    }
+    let tip = match (&shown.on, shown.volume) {
+        (_, None) => "Its volume is set on the device itself".to_string(),
+        (Some(device), _) => format!("Volume on {} {:.0} %", device.name, level * 100.0),
+        (None, _) => format!("Volume {:.0} %", level * 100.0),
+    };
+    response
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text(tip);
 }
 
 /// The position as a 4 px bar, in the accent with a knob on hover. Click or
@@ -449,16 +489,8 @@ fn right_side(app: &mut App, ui: &mut Ui, theme: &Theme, area: Rect, narrow: boo
     } else {
         app.drawer_shows(true)
     };
-    let response = icon_button(
-        &mut row,
-        theme,
-        icons::LYRICS,
-        32.0,
-        16.0,
-        on(lyrics_on),
-        true,
-    )
-    .on_hover_text("Lyrics");
+    let response = icon_button(&mut row, theme, icons::MIC, 32.0, 16.0, on(lyrics_on), true)
+        .on_hover_text("Lyrics");
     dot(&row, response.rect, lyrics_on);
     if response.clicked() {
         if layout.lyrics == Lyrics::Page {
@@ -516,7 +548,7 @@ fn right_side(app: &mut App, ui: &mut Ui, theme: &Theme, area: Rect, narrow: boo
         app.toggle_mute();
     }
     row.add_space(6.0);
-    super::player_bar::volume_slider(app, &mut row, theme, &shown);
+    volume(app, &mut row, theme, &shown);
     row.add_space(8.0);
     let (icon, tip) = if app.now_playing {
         (icons::MINIMIZE, "Exit full screen")

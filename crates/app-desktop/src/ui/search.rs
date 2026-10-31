@@ -321,7 +321,7 @@ fn unfold_id(app: &App, query: &str, name: &str) -> Id {
 /// A section's title that shows all it found, or folds them back: a chevron
 /// after it, right when folded, down when open. Returns whether it was clicked.
 fn fold_head(ui: &Ui, theme: &Theme, at: egui::Pos2, label: &str, open: bool, id: Id) -> bool {
-    let g = text(ui, label, font(18.0, Weight::SemiBold), theme.text, 400.0);
+    let g = text(ui, label, heading(theme), theme.text, 600.0);
     let end = at.x + g.size().x;
     paint_text(ui, g, at.x, at.y + 11.0, egui::Align::Min, theme.text);
     let response = ui.interact(
@@ -448,8 +448,16 @@ fn open(app: &mut App, what: Open, query: &str) {
     }
 }
 
+/// The font of a section's title, as the theme has them.
+pub(super) fn heading(theme: &Theme) -> egui::FontId {
+    match theme.layout.headings {
+        crate::theme::Headings::Small => font(18.0, Weight::SemiBold),
+        crate::theme::Headings::Large => font(24.0, Weight::Bold),
+    }
+}
+
 pub(super) fn section_head(ui: &Ui, theme: &Theme, left: f32, top: f32, label: &str) {
-    let g = text(ui, label, font(18.0, Weight::SemiBold), theme.text, 400.0);
+    let g = text(ui, label, heading(theme), theme.text, 600.0);
     paint_text(ui, g, left, top + 11.0, egui::Align::Min, theme.text);
 }
 

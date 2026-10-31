@@ -310,13 +310,13 @@ pub fn row(
     } else {
         t1 - tx - if track.explicit { 18.0 } else { 0.0 } - if state.favourite { 17.0 } else { 0.0 }
     };
-    let title = text(
-        ui,
-        &track.title,
-        font(13.0, Weight::Medium),
-        title_color,
-        max,
-    );
+    // Spotify's stacked rows read the title larger, in regular weight.
+    let title_font = if stacked {
+        font(14.5, Weight::Regular)
+    } else {
+        font(13.0, Weight::Medium)
+    };
+    let title = text(ui, &track.title, title_font, title_color, max);
     let title_end = tx + title.size().x;
     if stacked {
         // The title over the E badge and the artists, the favourite's mark

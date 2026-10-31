@@ -29,6 +29,7 @@ pub struct Layout {
     pub favourite: Favourite,
     pub now_playing: NowPlaying,
     pub rows: Rows,
+    pub headings: Headings,
 }
 
 impl Layout {
@@ -45,6 +46,7 @@ impl Layout {
         favourite: Favourite::Star,
         now_playing: NowPlaying::Lyrics,
         rows: Rows::Single,
+        headings: Headings::Small,
     };
 }
 
@@ -166,6 +168,17 @@ pub enum Rows {
     Single,
     /// The artists under the title, as Spotify's.
     Stacked,
+}
+
+/// How large the shelves' titles are.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Headings {
+    /// 18 px, semibold, as Cider's.
+    #[default]
+    Small,
+    /// 24 px, bold, as Spotify's.
+    Large,
 }
 
 /// The full screen player.

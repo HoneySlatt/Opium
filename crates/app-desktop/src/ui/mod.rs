@@ -165,9 +165,9 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 let color = if response.hovered() {
                     theme.text
                 } else {
-                    theme.subtext0
+                    theme.text_a(0.8)
                 };
-                paint_icon(ui, icons::LEFT, rect.center(), 16.0, color);
+                paint_icon(ui, icons::LEFT, rect.center(), 20.0, color);
                 if cards {
                     round_off(ui, rect, theme.crust);
                 }

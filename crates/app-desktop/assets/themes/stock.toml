@@ -18,6 +18,7 @@ cards = "covers"          # covers | tiles
 favourite = "star"        # star | check
 now_playing = "lyrics"    # lyrics | cover
 rows = "single"           # single | stacked
+headings = "small"        # small | large
 
 [colors]
 light = false

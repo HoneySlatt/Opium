@@ -289,6 +289,15 @@ pub const FORWARD_FILL: Icon = Icon {
     name: "forward_fill",
     svg: r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white"><path d="M2.5 6.3v11.4a.8.8 0 0 0 1.25.66L11.5 13v4.7a.8.8 0 0 0 1.25.66l8.5-5.7a.8.8 0 0 0 0-1.32l-8.5-5.7a.8.8 0 0 0-1.25.66V11L3.75 5.64a.8.8 0 0 0-1.25.66z"/></svg>"##,
 };
+/// Spotify's previous and next: a triangle against a bar.
+pub const SKIP_BACK: Icon = Icon {
+    name: "skip-back",
+    svg: r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="white" d="M19 4.8v14.4a.8.8 0 0 1-1.24.67L7.6 13.1a1.3 1.3 0 0 1 0-2.2l10.16-6.77A.8.8 0 0 1 19 4.8z"/><rect fill="white" x="4" y="4" width="2.4" height="16" rx="1.2"/></svg>"##,
+};
+pub const SKIP_FORWARD: Icon = Icon {
+    name: "skip-forward",
+    svg: r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g transform="translate(24 0) scale(-1 1)"><path fill="white" d="M19 4.8v14.4a.8.8 0 0 1-1.24.67L7.6 13.1a1.3 1.3 0 0 1 0-2.2l10.16-6.77A.8.8 0 0 1 19 4.8z"/><rect fill="white" x="4" y="4" width="2.4" height="16" rx="1.2"/></g></svg>"##,
+};
 pub const BACK_FILL: Icon = Icon {
     name: "back_fill",
     svg: r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white"><g transform="translate(24 0) scale(-1 1)"><path d="M2.5 6.3v11.4a.8.8 0 0 0 1.25.66L11.5 13v4.7a.8.8 0 0 0 1.25.66l8.5-5.7a.8.8 0 0 0 0-1.32l-8.5-5.7a.8.8 0 0 0-1.25.66V11L3.75 5.64a.8.8 0 0 0-1.25.66z"/></g></svg>"##,

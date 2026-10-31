@@ -304,9 +304,9 @@ fn more(
     let title = text(
         ui,
         &shelf.title,
-        font(18.0, Weight::SemiBold),
+        super::search::heading(theme),
         theme.text,
-        400.0,
+        600.0,
     );
     let y = at.y + 11.0;
     let chevron = pos2(at.x + title.size().x + 4.0 + 8.0, y + 1.0);
