@@ -543,15 +543,33 @@ fn services(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect) {
         service_logo(ui, theme, provider, tile, connected);
 
         let (label, enabled) = button_state;
-        // The button first, so the words know how much room is left.
+        // The buttons first, so the words know how much room is left: Sign
+        // Out, while signed in, then the sign-in's.
         let g = text(ui, label, font(12.5, Weight::Medium), theme.text, 300.0);
-        let button_left = right - g.size().x - 28.0;
+        let mut button_left = right - g.size().x - 28.0;
         if button(ui, theme, right, y, label, enabled) {
             match i {
                 0 => app.sign_in(),
                 1 => app.sign_in_soundcloud(),
                 _ => app.navidrome_editing = true,
             }
+        }
+        if connected {
+            let now = ui.input(|i| i.time);
+            let out = if app.sign_out_asked(provider, now) {
+                // Asked once: shown till the moment passes.
+                ui.ctx()
+                    .request_repaint_after(std::time::Duration::from_millis(500));
+                "Sign Out, sure?"
+            } else {
+                "Sign Out"
+            };
+            let out_right = button_left - 8.0;
+            let g = text(ui, out, font(12.5, Weight::Medium), theme.text, 300.0);
+            if button(ui, theme, out_right, y, out, true) {
+                app.sign_out(provider, now);
+            }
+            button_left = out_right - g.size().x - 28.0;
         }
         let mut state_right = button_left - 14.0;
         if connected {

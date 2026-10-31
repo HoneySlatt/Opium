@@ -476,6 +476,8 @@ pub struct App {
     unliked: HashMap<ItemId, Track>,
     /// Paused while the song was still loading: it starts paused.
     hold_paused: bool,
+    /// Sign Out clicked once, for which service and when.
+    sign_out_asked: Option<(ProviderKind, f64)>,
     /// What is known to be a favourite or not: set by the user here, or read
     /// from the service. It wins over `favourite_songs`.
     favourites_known: HashMap<ItemId, bool>,
@@ -679,6 +681,7 @@ impl App {
             favourite_songs: Default::default(),
             unliked: HashMap::new(),
             hold_paused: false,
+            sign_out_asked: None,
             library_songs: Default::default(),
             radio_from: None,
             new_playlist: None,
@@ -1053,7 +1056,6 @@ impl App {
         }
         self.settings.save();
         self.backend.send(Request::SetService { provider, on });
-        let of_it = |id: &ItemId| id.provider == provider;
         match provider {
             ProviderKind::AppleMusic => {
                 self.connection = if on {
@@ -1073,6 +1075,47 @@ impl App {
             self.arrived();
             return;
         }
+        self.leave_library(provider);
+    }
+
+    /// Sign out of `provider`: its sign-in and its browser go from the disk
+    /// (signing in again asks for the password), its music from the library.
+    /// Asked twice, the first time to make sure: `true` once signed out.
+    pub fn sign_out(&mut self, provider: ProviderKind, now: f64) -> bool {
+        let sure = self
+            .sign_out_asked
+            .is_some_and(|(p, at)| p == provider && now - at < 4.0);
+        if !sure {
+            self.sign_out_asked = Some((provider, now));
+            return false;
+        }
+        self.sign_out_asked = None;
+        self.backend.send(Request::SignOut(provider));
+        match provider {
+            ProviderKind::AppleMusic => self.connection = Connection::NotSignedIn,
+            ProviderKind::SoundCloud => self.soundcloud = SoundCloudState::NotSignedIn,
+            ProviderKind::Navidrome => self.navidrome = SoundCloudState::NotSignedIn,
+        }
+        self.leave_library(provider);
+        let name = match provider {
+            ProviderKind::AppleMusic => "Apple Music",
+            ProviderKind::SoundCloud => "SoundCloud",
+            ProviderKind::Navidrome => "Navidrome",
+        };
+        self.notify(format!("Signed out of {name}"), now);
+        true
+    }
+
+    /// Whether Sign Out was clicked once for `provider`, lately: the next
+    /// click signs out.
+    pub fn sign_out_asked(&self, provider: ProviderKind, now: f64) -> bool {
+        self.sign_out_asked
+            .is_some_and(|(p, at)| p == provider && now - at < 4.0)
+    }
+
+    /// `provider`'s songs, lists, albums and artists out of the library.
+    fn leave_library(&mut self, provider: ProviderKind) {
+        let of_it = |id: &ItemId| id.provider == provider;
         self.songs.retain(|t| !of_it(&t.id));
         self.library_songs.retain(|id| !of_it(id));
         self.songs_coming.remove(&provider);

@@ -62,6 +62,9 @@ pub enum Request {
     /// Sign in to SoundCloud in the browser, then connect and load its library.
     SignInSoundCloud,
     ReconnectSoundCloud,
+    /// Sign out of a service: its sign-in, its browser profile and what was
+    /// kept of its library go from the disk.
+    SignOut(ProviderKind),
     /// Sign in to a Navidrome server; the password makes the token kept,
     /// and goes no further.
     SignInNavidrome {
@@ -417,6 +420,31 @@ fn keep_navidrome(credentials: &navidrome::Credentials) -> Result<(), String> {
     write_private(&navidrome_file(), json.as_bytes()).map_err(|e| e.to_string())
 }
 
+/// What a sign-in left on the disk, gone: the tokens, the browser profile
+/// (its cookies), and the library kept from the account.
+fn forget_sign_in(provider: ProviderKind) {
+    let gone = |path: PathBuf| {
+        let _ = if path.is_dir() {
+            std::fs::remove_dir_all(&path)
+        } else {
+            std::fs::remove_file(&path)
+        };
+    };
+    match provider {
+        ProviderKind::AppleMusic => {
+            gone(apple_music_dir().join("media-user-token"));
+            gone(apple_music_dir().join("browser-profile"));
+        }
+        ProviderKind::SoundCloud => {
+            gone(soundcloud_dir().join("tokens.json"));
+            gone(soundcloud_dir().join("datadome"));
+            gone(soundcloud_dir().join("browser-profile"));
+        }
+        ProviderKind::Navidrome => gone(navidrome_file()),
+    }
+    cache::clear();
+}
+
 /// Connect to the Navidrome server kept, telling the UI how it went.
 async fn connect_navidrome(replies: &Replies) -> Option<Arc<Navidrome>> {
     let kept = std::fs::read_to_string(navidrome_file())
@@ -665,6 +693,8 @@ async fn run(
     let mut library_wanted = false;
     // Turned off meanwhile: a connection made before is dropped as it comes.
     let mut turned_off: std::collections::HashSet<ProviderKind> = off.iter().copied().collect();
+    // Signed out of meanwhile, until signed in again.
+    let mut signed_out = std::collections::HashSet::new();
     let cdm = widevine::locate()
         .ok_or_else(|| "no Widevine module found: install Brave, Chrome or Firefox".to_owned())
         .and_then(|path| widevine::Cdm::open(&path).map_err(|e| e.to_string()));
@@ -682,7 +712,7 @@ async fn run(
                     Arrived::SoundCloud(..) => ProviderKind::SoundCloud,
                     Arrived::Navidrome(..) => ProviderKind::Navidrome,
                 };
-                if turned_off.contains(&provider) {
+                if turned_off.contains(&provider) || signed_out.contains(&provider) {
                     continue;
                 }
                 match came {
@@ -732,6 +762,7 @@ async fn run(
                 continue;
             }
             Request::Reconnect => {
+                signed_out.remove(&ProviderKind::AppleMusic);
                 let arrived_tx = arrived_tx.clone();
                 tokio::spawn(async move {
                     let _ = arrived_tx.send(Arrived::Apple(connect(&replies).await, false));
@@ -783,6 +814,18 @@ async fn run(
                 }
                 continue;
             }
+            Request::SignOut(provider) => {
+                // A connection on its way is dropped as it comes.
+                signed_out.insert(provider);
+                loading.stop(provider);
+                match provider {
+                    ProviderKind::AppleMusic => apple = None,
+                    ProviderKind::SoundCloud => sc = None,
+                    ProviderKind::Navidrome => nd = None,
+                }
+                tokio::task::spawn_blocking(move || forget_sign_in(provider));
+                continue;
+            }
             Request::SignInSoundCloud => {
                 let again = again.clone();
                 tokio::spawn(async move {
@@ -796,6 +839,7 @@ async fn run(
                 continue;
             }
             Request::ReconnectSoundCloud => {
+                signed_out.remove(&ProviderKind::SoundCloud);
                 let arrived_tx = arrived_tx.clone();
                 tokio::spawn(async move {
                     let _ = arrived_tx.send(Arrived::SoundCloud(
@@ -810,6 +854,7 @@ async fn run(
                 user,
                 password,
             } => {
+                signed_out.remove(&ProviderKind::Navidrome);
                 let result = navidrome::Credentials::new(&url, &user, &password);
                 drop(password);
                 let credentials = match result {
@@ -1018,6 +1063,7 @@ async fn run(
             | Request::StationTracks(_) => {}
             Request::SignIn
             | Request::Reconnect
+            | Request::SignOut(_)
             | Request::SignInSoundCloud
             | Request::ReconnectSoundCloud
             | Request::SignInNavidrome { .. }
