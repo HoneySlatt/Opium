@@ -138,7 +138,22 @@ fun App(core: Core, library: Library, playback: io.github.honeyslatt.music.playb
         },
     )
 
-    BackHandler(enabled = nav.canPop && !npOpen) { nav.pop() }
+    // The page shown, and the transition to it, which the back gesture
+    // seeks through: the page follows the finger, the one before it
+    // under it, and goes once let go (or comes back, the gesture called off).
+    val shown = Triple(nav.tab, nav.stack.size, nav.page)
+    val pages = remember { androidx.compose.animation.core.SeekableTransitionState(shown) }
+    LaunchedEffect(shown) { pages.animateTo(shown) }
+    androidx.activity.compose.PredictiveBackHandler(enabled = nav.canPop && !npOpen) { progress ->
+        val back = Triple(nav.tab, nav.stack.size - 1, nav.stack[nav.stack.size - 2])
+        try {
+            progress.collect { pages.seekTo(it.progress, back) }
+            nav.pop()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            scope.launch { pages.animateTo(shown) }
+            throw e
+        }
+    }
     BackHandler(enabled = npOpen) { npOpen = false }
     androidx.compose.runtime.CompositionLocalProvider(
         LocalNowPlaying provides NowPlayingMark(now?.id, playing),
@@ -176,10 +191,8 @@ fun App(core: Core, library: Library, playback: io.github.honeyslatt.music.playb
                 }
             },
         ) {
-            AnimatedContent(
-                targetState = Triple(nav.tab, nav.stack.size, nav.page),
+            androidx.compose.animation.core.rememberTransition(pages, label = "pages").AnimatedContent(
                 transitionSpec = { push(initialState, targetState, spotify) },
-                label = "pages",
             ) { (tab, _, page) ->
                 Page(tab, page, context, account, browse)
             }
