@@ -109,6 +109,22 @@ fn fill(
             n += read_into(consumer, &mut out[n..], gain, &ramp, channels);
         }
     }
+    // The ring ran dry while sounding (the network fell behind): what it had
+    // fades out rather than cut, and what comes once it fills again fades
+    // in, as after a pause.
+    if n < out.len() && !stopping && *gain > 0.0 {
+        let frames = n / channels;
+        let fade = frames.min((RAMP * sample_rate as f32) as usize).max(1);
+        for (k, frame) in out[..n]
+            .chunks_exact_mut(channels)
+            .skip(frames.saturating_sub(fade))
+            .enumerate()
+        {
+            let left = 1.0 - (k + 1) as f32 / fade as f32;
+            frame.iter_mut().for_each(|s| *s *= left);
+        }
+        *gain = 0.0;
+    }
     out[n..].fill(0.0);
     state
         .played
@@ -482,6 +498,28 @@ mod tests {
     use spa::sys::*;
 
     #[test]
+    fn a_ring_run_dry_fades_out_then_back_in() {
+        let (mut producer, mut consumer) = rtrb::RingBuffer::new(1024);
+        for _ in 0..100 {
+            producer.push(1.0).unwrap();
+        }
+        let state = OutputState::new(1.0);
+        let mut gain = 1.0;
+        let mut out = [0.5; 200];
+        // At 1 kHz the fade is 5 frames long.
+        fill(&mut consumer, &state, &mut gain, &mut out, 1, 1_000);
+        assert_eq!(out[94], 1.0);
+        assert!(out[95] < 1.0 && out[99] == 0.0 && out[150] == 0.0);
+        assert_eq!(gain, 0.0);
+        // Back: it fades in.
+        producer.push(1.0).unwrap();
+        producer.push(1.0).unwrap();
+        let mut out = [0.0; 2];
+        fill(&mut consumer, &state, &mut gain, &mut out, 1, 1_000);
+        assert!(out[0] > 0.0 && out[0] < 1.0);
+    }
+
+    #[test]
     fn a_track_taken_out_of_what_follows_is_skipped_without_a_gap() {
         let (mut producer, mut consumer) = rtrb::RingBuffer::new(32);
         // Mono: the end of the one playing, the one taken out, the new next.
@@ -492,9 +530,9 @@ mod tests {
         state.cut_len.store(4, Ordering::Relaxed);
         state.cut_at.store(4, Ordering::Relaxed);
         let mut gain = 1.0;
-        let mut out = [0.0; 8];
+        let mut out = [0.0; 6];
         fill(&mut consumer, &state, &mut gain, &mut out, 1, 48_000);
-        assert_eq!(out, [1.0, 2.0, 3.0, 4.0, 100.0, 101.0, 0.0, 0.0]);
+        assert_eq!(out, [1.0, 2.0, 3.0, 4.0, 100.0, 101.0]);
         assert_eq!(state.cut_at.load(Ordering::Relaxed), u64::MAX);
         assert_eq!(state.played.load(Ordering::Relaxed), 6);
     }
