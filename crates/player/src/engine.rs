@@ -185,6 +185,8 @@ pub(crate) struct Engine {
     recovering: Option<Recovering>,
     /// Samples pushed into the ring since the output was opened.
     written: u64,
+    /// A seek waits for the output to drop what it held.
+    flushing: bool,
     /// Decoded samples that didn't fit in the ring yet.
     pending: Vec<f32>,
     pending_at: usize,
@@ -211,6 +213,7 @@ impl Engine {
             switch: None,
             recovering: None,
             written: 0,
+            flushing: false,
             pending: Vec::new(),
             pending_at: 0,
             status,
@@ -251,7 +254,11 @@ impl Engine {
     /// command wakes it at once, so with nothing playing it rests, while a
     /// track playing out of a full ring is watched closely for its end.
     fn idle(&self) -> Duration {
-        if self.recovering.is_some() || self.opening.is_some() || self.switch.is_some() {
+        if self.recovering.is_some()
+            || self.opening.is_some()
+            || self.switch.is_some()
+            || self.flushing
+        {
             IDLE
         } else if self.sink.is_none() {
             Duration::from_secs(1)
@@ -317,11 +324,24 @@ impl Engine {
                 self.opening = None;
                 self.skip_when_opened = false;
                 self.switch = None;
-                // Already in the ring behind the playing one: taken back out
-                // the way a seek to where it plays does.
-                if self.segments.len() > 1 {
-                    let at = self.position();
-                    self.seek(at);
+                // Already in the ring behind the playing one: the output
+                // drops it on reaching it, the one playing untouched.
+                if self.segments.len() > 1
+                    && let Some(sink) = &self.sink
+                {
+                    let boundary = self.segments[1].start_frame * sink.channels;
+                    let len = self.written.saturating_sub(boundary);
+                    if sink.state.cut_at.load(Ordering::Acquire) == u64::MAX {
+                        sink.state.cut_len.store(len, Ordering::Release);
+                        sink.state.cut_at.store(boundary, Ordering::Release);
+                    } else {
+                        // Another one taken out before it was reached: both go.
+                        sink.state.cut_len.fetch_add(len, Ordering::AcqRel);
+                    }
+                    self.written = boundary;
+                    self.segments.truncate(1);
+                    self.pending.clear();
+                    self.pending_at = 0;
                 }
                 self.next = None;
             }
@@ -380,6 +400,7 @@ impl Engine {
     fn try_start(&mut self, mut item: Item, at: Duration) -> Result<(), Box<(Item, crate::Error)>> {
         self.fade_out();
         self.sink = None;
+        self.flushing = false;
         self.segments.clear();
         self.pending.clear();
         self.pending_at = 0;
@@ -493,17 +514,40 @@ impl Engine {
         self.pending.clear();
         self.pending_at = 0;
 
-        // The output drops what it holds the next time it runs.
+        // The output drops what it holds the next time it runs, a cut
+        // waiting in it included.
+        sink.state.cut_at.store(u64::MAX, Ordering::Release);
+        sink.state.cut_len.store(0, Ordering::Release);
         sink.state.flush.store(true, Ordering::Release);
-        let deadline = Instant::now() + Duration::from_millis(500);
+        let deadline = Instant::now() + Duration::from_millis(50);
         while sink.state.flush.load(Ordering::Acquire) && Instant::now() < deadline {
             std::thread::sleep(Duration::from_millis(1));
         }
+        front.base_time = actual;
+        front.decoded_all = false;
+        // Counted from here meanwhile, for the position shown.
+        front.start_frame = sink.played();
+        // An output not running yet (starting, its device gone a moment)
+        // drops it later: nothing is pushed until it has, or it would be
+        // dropped too, and the track never be heard to its end.
+        self.flushing = true;
+        self.flushed();
+    }
+
+    /// Once the output dropped what it held: the track goes on from what
+    /// it has played.
+    fn flushed(&mut self) {
+        let (Some(sink), Some(front)) = (&self.sink, self.segments.front_mut()) else {
+            self.flushing = false;
+            return;
+        };
+        if !self.flushing || sink.state.flush.load(Ordering::Acquire) {
+            return;
+        }
+        self.flushing = false;
         let played = sink.played();
         self.written = played * sink.channels;
         front.start_frame = played;
-        front.base_time = actual;
-        front.decoded_all = false;
     }
 
     /// The last segment finished decoding: the next track joins it in the ring if
@@ -529,7 +573,8 @@ impl Engine {
     }
 
     fn can_decode(&self) -> bool {
-        self.sink.as_ref().is_some_and(|s| s.producer.slots() > 0)
+        !self.flushing
+            && self.sink.as_ref().is_some_and(|s| s.producer.slots() > 0)
             && (self.pending_at < self.pending.len()
                 || self.segments.back().is_some_and(|s| !s.decoded_all))
     }
@@ -538,6 +583,10 @@ impl Engine {
     /// has drained.
     fn advance(&mut self) {
         self.recover();
+        self.flushed();
+        if self.flushing {
+            return;
+        }
         let Some(sink) = &self.sink else { return };
         let played = sink.played();
 
@@ -571,7 +620,7 @@ impl Engine {
     /// Decode into the ring until it is full or there is nothing left to decode.
     fn pump(&mut self) {
         loop {
-            if self.shared.retired() {
+            if self.shared.retired() || self.flushing {
                 return;
             }
             let Some(sink) = &mut self.sink else { return };

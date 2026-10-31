@@ -25,6 +25,11 @@ pub(crate) struct OutputState {
     pub played: AtomicU64,
     /// Set by the engine to drop everything buffered; cleared by the output.
     pub flush: AtomicBool,
+    /// Where, in samples played, a track taken back out of what follows
+    /// begins (`u64::MAX`: none), and how long it is: the output drops it
+    /// on reaching it, the track playing untouched until then.
+    pub cut_at: AtomicU64,
+    pub cut_len: AtomicU64,
     pub paused: AtomicBool,
     /// `f32` bits.
     pub volume: AtomicU32,
@@ -47,6 +52,7 @@ impl OutputState {
         Self {
             volume: AtomicU32::new(volume.to_bits()),
             node_id: AtomicU32::new(spa::sys::SPA_ID_INVALID),
+            cut_at: AtomicU64::new(u64::MAX),
             ..Self::default()
         }
     }
@@ -76,35 +82,31 @@ fn fill(
     let stopping = flush || state.paused.load(Ordering::Relaxed);
     let target = if stopping { 0.0 } else { volume };
     let step = 1.0 / (RAMP * sample_rate as f32);
+    let ramp = Ramp {
+        target,
+        step,
+        stopping,
+    };
     let mut n = 0;
     if !(stopping && *gain == 0.0) {
-        n = consumer.slots().min(out.len());
-        n -= n % channels;
-        if let Ok(chunk) = consumer.read_chunk(n) {
-            let (a, b) = chunk.as_slices();
-            let mut src = a.iter().chain(b);
-            let mut read = 0;
-            for frame in out[..n].chunks_exact_mut(channels) {
-                // Faded out: the rest stays in the ring.
-                if stopping && *gain == 0.0 {
-                    break;
-                }
-                if *gain != target {
-                    *gain = if *gain < target {
-                        (*gain + step).min(target)
-                    } else {
-                        (*gain - step).max(target)
-                    };
-                }
-                for dst in frame {
-                    let s = *src.next().unwrap_or(&0.0);
-                    // At full volume, and steady, untouched.
-                    *dst = if *gain == 1.0 { s } else { s * *gain };
-                }
-                read += channels;
-            }
-            chunk.commit(read);
-            n = read;
+        // Up to where a track taken out of what follows begins, if it is in
+        // this stretch: there the rest of it goes, and what follows it now
+        // comes straight after, without a gap.
+        let at = state.played.load(Ordering::Relaxed) * channels as u64;
+        let cut = state.cut_at.load(Ordering::Acquire);
+        if cut != u64::MAX && at >= cut {
+            drop_cut(consumer, state);
+        }
+        let room = match state.cut_at.load(Ordering::Acquire) {
+            u64::MAX => out.len(),
+            cut => usize::try_from(cut - at)
+                .unwrap_or(usize::MAX)
+                .min(out.len()),
+        };
+        n = read_into(consumer, &mut out[..room], gain, &ramp, channels);
+        if n == room && room < out.len() {
+            drop_cut(consumer, state);
+            n += read_into(consumer, &mut out[n..], gain, &ramp, channels);
         }
     }
     out[n..].fill(0.0);
@@ -118,6 +120,61 @@ fn fill(
         }
         state.flush.store(false, Ordering::Release);
     }
+}
+
+/// Where the gain goes, and how fast.
+struct Ramp {
+    target: f32,
+    step: f32,
+    stopping: bool,
+}
+
+/// Read what the ring holds into `out`, through the gain; how much.
+fn read_into(
+    consumer: &mut Consumer<f32>,
+    out: &mut [f32],
+    gain: &mut f32,
+    ramp: &Ramp,
+    channels: usize,
+) -> usize {
+    let mut n = consumer.slots().min(out.len());
+    n -= n % channels;
+    let Ok(chunk) = consumer.read_chunk(n) else {
+        return 0;
+    };
+    let (a, b) = chunk.as_slices();
+    let mut src = a.iter().chain(b);
+    let mut read = 0;
+    for frame in out[..n].chunks_exact_mut(channels) {
+        // Faded out: the rest stays in the ring.
+        if ramp.stopping && *gain == 0.0 {
+            break;
+        }
+        if *gain != ramp.target {
+            *gain = if *gain < ramp.target {
+                (*gain + ramp.step).min(ramp.target)
+            } else {
+                (*gain - ramp.step).max(ramp.target)
+            };
+        }
+        for dst in frame {
+            let s = *src.next().unwrap_or(&0.0);
+            // At full volume, and steady, untouched.
+            *dst = if *gain == 1.0 { s } else { s * *gain };
+        }
+        read += channels;
+    }
+    chunk.commit(read);
+    read
+}
+
+/// At the cut: what was taken out goes from the ring.
+fn drop_cut(consumer: &mut Consumer<f32>, state: &OutputState) {
+    let len = usize::try_from(state.cut_len.swap(0, Ordering::AcqRel)).unwrap_or(usize::MAX);
+    if let Ok(chunk) = consumer.read_chunk(len.min(consumer.slots())) {
+        chunk.commit_all();
+    }
+    state.cut_at.store(u64::MAX, Ordering::Release);
 }
 
 pub(crate) struct Output {
@@ -423,6 +480,24 @@ fn run(
 mod tests {
     use super::*;
     use spa::sys::*;
+
+    #[test]
+    fn a_track_taken_out_of_what_follows_is_skipped_without_a_gap() {
+        let (mut producer, mut consumer) = rtrb::RingBuffer::new(32);
+        // Mono: the end of the one playing, the one taken out, the new next.
+        for s in [1.0, 2.0, 3.0, 4.0, 10.0, 11.0, 12.0, 13.0, 100.0, 101.0] {
+            producer.push(s).unwrap();
+        }
+        let state = OutputState::new(1.0);
+        state.cut_len.store(4, Ordering::Relaxed);
+        state.cut_at.store(4, Ordering::Relaxed);
+        let mut gain = 1.0;
+        let mut out = [0.0; 8];
+        fill(&mut consumer, &state, &mut gain, &mut out, 1, 48_000);
+        assert_eq!(out, [1.0, 2.0, 3.0, 4.0, 100.0, 101.0, 0.0, 0.0]);
+        assert_eq!(state.cut_at.load(Ordering::Relaxed), u64::MAX);
+        assert_eq!(state.played.load(Ordering::Relaxed), 6);
+    }
 
     #[test]
     fn a_five_one_file_keeps_its_speakers() {
