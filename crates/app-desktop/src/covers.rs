@@ -60,6 +60,9 @@ pub fn write_motion(url: &str, size: u32, bytes: &[u8]) -> Option<PathBuf> {
 type Signer = Arc<dyn Fn(&str) -> Option<String> + Send + Sync>;
 static SIGNER: std::sync::RwLock<Option<Signer>> = std::sync::RwLock::new(None);
 
+/// What a server's cover address holds (see `navidrome::Navidrome::sign`).
+const SERVER_COVER: &str = "/rest/getCoverArt.view?";
+
 /// Covers are signed by `signer` from now on, or by none.
 pub fn set_signer(signer: Option<Signer>) {
     *SIGNER.write().unwrap_or_else(|e| e.into_inner()) = signer;
@@ -248,8 +251,16 @@ impl BytesLoader for CoverLoader {
     }
 
     fn load(&self, ctx: &egui::Context, uri: &str) -> BytesLoadResult {
-        if !uri.starts_with("https://") {
+        // A server's covers (often plain http at home) are signed here as
+        // they are fetched: egui's own loader would ask without the sign-in.
+        let server = uri.contains(SERVER_COVER);
+        if !uri.starts_with("https://") && !(server && uri.starts_with("http://")) {
             return Err(LoadError::NotSupported);
+        }
+        // The server not connected yet (its covers shown from the library
+        // kept): asked again once it is, not failed for good meanwhile.
+        if server && SIGNER.read().unwrap_or_else(|e| e.into_inner()).is_none() {
+            return Ok(BytesPoll::Pending { size: None });
         }
         let mut loaded = self.loaded.lock();
         if let Some(entry) = loaded.get(uri) {
