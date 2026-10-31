@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -96,6 +97,44 @@ class Browse(private val core: Core, private val scope: CoroutineScope) {
 
 /** How a page shows its hero shelf. */
 private enum class Hero { Picks, Editorial, Stations }
+
+/**
+ * Spotify's Home: the account and chips at the top, Home, New and Radio
+ * being one tab, as its All, Music and Podcasts.
+ */
+@Composable
+fun SpotifyHome(c: LibraryContext, browse: Browse, account: @Composable () -> Unit) {
+    var which by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableIntStateOf(0) }
+    val chips: @Composable () -> Unit = {
+        androidx.compose.foundation.layout.Row(
+            Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+        ) {
+            account()
+            listOf("Home", "New", "Radio").forEachIndexed { i, label ->
+                val on = which == i
+                Box(
+                    Modifier
+                        .height(34.dp)
+                        .press(androidx.compose.foundation.shape.RoundedCornerShape(17.dp)) { which = i }
+                        .background(if (on) roles.accent else roles.surface2, androidx.compose.foundation.shape.RoundedCornerShape(17.dp))
+                        .padding(horizontal = 16.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    BasicText(label, style = geist(14.sp, FontWeight.Medium).copy(color = if (on) roles.onAccent else roles.text))
+                }
+            }
+        }
+    }
+    androidx.compose.runtime.CompositionLocalProvider(io.github.honeyslatt.music.ui.components.LocalTitleChips provides chips) {
+        when (which) {
+            0 -> HomePage(c, browse, account)
+            1 -> NewPage(c, browse, account)
+            else -> RadioPage(c, browse, account)
+        }
+    }
+}
 
 @Composable
 fun HomePage(c: LibraryContext, browse: Browse, account: @Composable () -> Unit) {

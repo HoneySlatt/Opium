@@ -51,6 +51,10 @@ import io.github.honeyslatt.music.ui.theme.roles
 /** A button of a page's bar; it is told where it is, for a menu. */
 data class BarAction(val icon: ImageVector, val label: String, val onClick: (androidx.compose.ui.geometry.Rect) -> Unit)
 
+/** Spotify's Home has chips where the large title goes, the account
+ *  among them: what to draw there, when a page is under it. */
+val LocalTitleChips = androidx.compose.runtime.compositionLocalOf<(@Composable () -> Unit)?> { null }
+
 /** Room left under a page for the bottom chrome. */
 private val Under = ChromeHeight + 58.dp + 10.dp + 24.dp
 
@@ -73,16 +77,17 @@ fun ListPage(
     ScrollsToTop(nav) { state.animateScrollToItem(0) }
     val titleAt = if (nav.canPop) 2 else 1
     val scrolled by remember(titleAt) { derivedStateOf { state.firstVisibleItemIndex > titleAt } }
+    val chips = LocalTitleChips.current
     Box(Modifier.fillMaxSize().background(roles.base)) {
         LazyColumn(Modifier.fillMaxSize(), state = state) {
             item { Spacer(Modifier.windowInsetsTopHeight(WindowInsets.statusBars)) }
             // A pushed page's title sits under the bar and its back button.
             if (nav.canPop) item { Spacer(Modifier.height(52.dp)) }
-            if (largeTitle) item { LargeTitle(title, fold = fold) }
+            if (chips != null) item { chips() } else if (largeTitle) item { LargeTitle(title, fold = fold) }
             content()
             item { Spacer(Modifier.height(Under)) }
         }
-        NavBar(nav, title, scrolled, actions, account)
+        NavBar(nav, title, scrolled, actions, if (chips != null) null else account)
     }
 }
 

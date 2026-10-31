@@ -71,6 +71,7 @@ import io.github.honeyslatt.music.ui.library.Songs
 import io.github.honeyslatt.music.ui.nav.Navigator
 import io.github.honeyslatt.music.ui.nav.Route
 import io.github.honeyslatt.music.ui.nav.Tab
+import io.github.honeyslatt.music.ui.theme.look
 import io.github.honeyslatt.music.ui.theme.roles
 
 /** The app: the page of the current tab, under the bottom chrome. */
@@ -81,6 +82,8 @@ fun App(core: Core, library: Library, playback: io.github.honeyslatt.music.playb
     // The services connected, for the source chips.
     val services = ProviderKind.entries.filter { core.connection(it).collectAsStateWithLifecycle().value is Connection.Connected }
     var settingsOpen by remember { mutableStateOf(false) }
+    // The devices to play on, from the mini player in Spotify's layout.
+    var devicesOpen by remember { mutableStateOf(false) }
     // The account's picture on Apple Music, once connected.
     val profile by core.appleProfile.collectAsStateWithLifecycle()
     val picture = profile?.picture
@@ -148,7 +151,11 @@ fun App(core: Core, library: Library, playback: io.github.honeyslatt.music.playb
         ) { (tab, _, page) ->
             Page(tab, page, context, account, browse)
         }
-        BottomChrome(nav, mini, Modifier.align(Alignment.BottomCenter))
+        if (look.mobile.tabs == io.github.honeyslatt.music.core.model.Tabs.THREE) {
+            io.github.honeyslatt.music.ui.chrome.SpotifyBottom(nav, mini, playback, { devicesOpen = true }, Modifier.align(Alignment.BottomCenter))
+        } else {
+            BottomChrome(nav, mini, Modifier.align(Alignment.BottomCenter))
+        }
         // Now Playing rises from the mini player over 440 ms, and goes back
         // down with a swipe.
         AnimatedVisibility(
@@ -158,6 +165,7 @@ fun App(core: Core, library: Library, playback: io.github.honeyslatt.music.playb
         ) {
             SwipeDown({ npOpen = false }) { NowPlaying(playback, npActions) }
         }
+        io.github.honeyslatt.music.ui.nowplaying.DevicesSheet(devicesOpen, playback) { devicesOpen = false }
         io.github.honeyslatt.music.ui.settings.SettingsSheet(settingsOpen, core, settings, connecting::start) { settingsOpen = false }
         ActionSheets(actions)
         io.github.honeyslatt.music.ui.nowplaying.PairingHost(playback.devices)
@@ -182,7 +190,11 @@ private fun push(from: Triple<Tab, Int, Route>, to: Triple<Tab, Int, Route>): Co
 private fun Page(tab: Tab, page: Route, c: LibraryContext, account: @Composable () -> Unit, browse: Browse) {
     when (page) {
         Route.Root -> when (tab) {
-            Tab.Home -> HomePage(c, browse, account)
+            Tab.Home -> if (look.mobile.tabs == io.github.honeyslatt.music.core.model.Tabs.THREE) {
+                io.github.honeyslatt.music.ui.browse.SpotifyHome(c, browse, account)
+            } else {
+                HomePage(c, browse, account)
+            }
             Tab.New -> NewPage(c, browse, account)
             Tab.Radio -> RadioPage(c, browse, account)
             Tab.Library -> LibraryRoot(c)
