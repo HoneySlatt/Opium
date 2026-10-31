@@ -9,7 +9,7 @@ pub mod text;
 pub mod theme;
 
 pub use provider::{Error, Provider, Result};
-pub use queue::{Queue, Repeat};
+pub use queue::{Handoff, Queue, Repeat};
 
 #[cfg(feature = "ffi")]
 uniffi::setup_scaffolding!();

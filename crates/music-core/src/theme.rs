@@ -173,9 +173,9 @@ pub fn parse(source: &str) -> Result<ThemeFile, String> {
     // The layout: the shared choices, then each platform's table.
     let mut shared = file.layout;
     let desktop: DesktopLayout = match shared.remove("desktop") {
-        Some(table) => table.try_into().map_err(|e: toml::de::Error| {
-            format!("layout.desktop: {}", e.message())
-        })?,
+        Some(table) => table
+            .try_into()
+            .map_err(|e: toml::de::Error| format!("layout.desktop: {}", e.message()))?,
         None => DesktopLayout::default(),
     };
     let mobile: MobileLayout = match shared.remove("mobile") {
@@ -194,9 +194,11 @@ pub fn parse(source: &str) -> Result<ThemeFile, String> {
         None => (Palette::STOCK, Some(Palette::STOCK_LIGHT)),
         Some(mut table) => {
             let light = match table.remove("light") {
-                Some(toml::Value::Table(light)) => {
-                    Some(Palette::STOCK_LIGHT.over(&light).map_err(|e| format!("colors.light: {e}"))?)
-                }
+                Some(toml::Value::Table(light)) => Some(
+                    Palette::STOCK_LIGHT
+                        .over(&light)
+                        .map_err(|e| format!("colors.light: {e}"))?,
+                ),
                 Some(flag) => {
                     table.insert("light".into(), flag);
                     None
@@ -513,7 +515,8 @@ mod tests {
 
     #[test]
     fn light_colours_go_over_stocks_light_ones() {
-        let theme = parse("[colors]\nbase = \"#000000\"\n[colors.light]\naccent = \"#123456\"").unwrap();
+        let theme =
+            parse("[colors]\nbase = \"#000000\"\n[colors.light]\naccent = \"#123456\"").unwrap();
         let light = theme.light_colors.unwrap();
         assert!(light.light);
         assert_eq!(light.accent, 0x123456);

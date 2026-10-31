@@ -1,6 +1,6 @@
 use rand::seq::SliceRandom;
 
-use crate::model::Track;
+use crate::model::{ItemId, Track};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
@@ -9,6 +9,24 @@ pub enum Repeat {
     Off,
     All,
     One,
+}
+
+/// A queue to play from here on, where another device left it, or where
+/// it was when the music last stopped.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct Handoff {
+    /// The queue's songs in their own order, the play order over them, and
+    /// where in that the song playing is.
+    pub tracks: Vec<Track>,
+    pub order: Vec<u32>,
+    pub at: u32,
+    pub shuffle: bool,
+    pub repeat: Repeat,
+    pub position_ms: u64,
+    pub playing: bool,
+    /// The station of songs it went on with, if any.
+    pub station: Option<ItemId>,
 }
 
 /// How many songs the queue holds at most, as the history: a list longer

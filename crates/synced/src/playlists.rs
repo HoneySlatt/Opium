@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 use music_core::model::Track;
 use serde::{Deserialize, Serialize};
 
-use crate::{Stamp, place};
+use crate::{Latest, Stamp, latest, place};
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Playlists {
@@ -40,21 +40,6 @@ struct Entry {
     /// Taken out: its song is no longer kept.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     removed: bool,
-}
-
-/// A value and when it was given: the one given last wins.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-struct Latest<T> {
-    at: Stamp,
-    value: T,
-}
-
-fn latest<T>(mine: &mut Option<Latest<T>>, theirs: Option<Latest<T>>) {
-    if let Some(theirs) = theirs
-        && mine.as_ref().is_none_or(|m| theirs.at > m.at)
-    {
-        *mine = Some(theirs);
-    }
 }
 
 /// A playlist as shown.

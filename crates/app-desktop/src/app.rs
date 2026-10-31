@@ -531,6 +531,9 @@ pub struct App {
     pub history: Vec<Track>,
     /// What this computer keeps in common with the other devices.
     pub kept: synced::Kept,
+    /// The last stop on another device shown here, so that it is taken up
+    /// once.
+    followed: Option<synced::Stamp>,
     pub queue: Queue,
     tracks: HashMap<Token, Track>,
     /// The listed track each token plays the server's copy of, when it does.
@@ -728,6 +731,7 @@ impl App {
             lyrics_page: std::env::var_os("MUSIC_SCREENSHOT_LYRICS").is_some(),
             history: kept.history(),
             kept,
+            followed: None,
             queue: Queue::new(),
             tracks: HashMap::new(),
             stands_for: HashMap::new(),
@@ -2576,17 +2580,54 @@ impl App {
         }
     }
 
-    /// Show what played when the app last closed, paused where it was; it
-    /// is fetched only once played, the services being still on their way.
+    /// Show where the music last stopped, here or on another device,
+    /// paused; it is fetched only once played, the services being still on
+    /// their way. The session kept here before the devices shared it is
+    /// taken in first, if none is shared yet.
     fn resume_session(&mut self) {
-        let Some(session) = std::fs::read_to_string(crate::settings::dir().join("session.json"))
-            .ok()
-            .and_then(|text| {
+        if self.kept.session().is_none() {
+            let path = crate::settings::dir().join("session.json");
+            let at = std::fs::metadata(&path)
+                .and_then(|m| m.modified())
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok());
+            let session = std::fs::read_to_string(&path).ok().and_then(|text| {
                 serde_json::from_str::<connect::Handoff>(&navidrome::scrub_kept(&text)).ok()
-            })
-        else {
+            });
+            if let (Some(session), Some(at)) = (session, at) {
+                self.kept.take_old_session(session, at.as_millis() as u64);
+            }
+        }
+        if let Some((session, stamp)) = self.kept.session() {
+            self.followed = Some(stamp);
+            self.show_session(session);
+        }
+    }
+
+    /// Another device stopped later than this one did, or moved on: what
+    /// shows here follows, paused, unless music plays or loads here.
+    fn follow_session(&mut self) {
+        let Some((session, stamp)) = self.kept.session() else {
             return;
         };
+        if stamp.device == self.kept.me()
+            || self.followed.as_ref() == Some(&stamp)
+            || self.is_playing()
+            || self.pending_play.is_some()
+        {
+            return;
+        }
+        self.followed = Some(stamp);
+        if self.status.token.is_some() {
+            self.player.stop();
+        }
+        self.queued_next = None;
+        self.next_ready = false;
+        self.now_stands_for = None;
+        self.show_session(session);
+    }
+
+    fn show_session(&mut self, session: connect::Handoff) {
         let order = session.order.into_iter().map(|i| i as usize).collect();
         self.queue
             .restore(session.tracks, order, session.at as usize, session.shuffle);
@@ -2600,11 +2641,14 @@ impl App {
             .map(|t| (t.id.clone(), Duration::from_millis(session.position_ms)));
     }
 
-    /// Keep what plays for the next time the app opens: the queue and
-    /// where it is; written off the interface's thread, but at once when
-    /// the app closes.
+    /// Keep what plays for the next time the app opens, here or on another
+    /// device: the queue and where it is; written off the interface's
+    /// thread, but at once when the app closes.
     fn keep_session(&self, closing: bool) {
-        crate::settings::keep_json("session.json", self.handoff(), closing);
+        self.devices.node.share(self.kept.left(self.handoff()));
+        if closing {
+            self.kept.flush();
+        }
     }
 
     fn now_title(&self, token: Option<Token>) -> String {
@@ -4045,7 +4089,10 @@ impl App {
                 }
                 // Themes go from here to the phone, not back.
                 Event::Themes { .. } => {}
-                Event::Synced => self.history = self.kept.history(),
+                Event::Synced => {
+                    self.history = self.kept.history();
+                    self.follow_session();
+                }
             }
         }
     }

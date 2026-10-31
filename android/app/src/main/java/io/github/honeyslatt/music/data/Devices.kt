@@ -11,7 +11,7 @@ import io.github.honeyslatt.music.core.ConnectListener
 import io.github.honeyslatt.music.core.connect.Command
 import io.github.honeyslatt.music.core.connect.Device
 import io.github.honeyslatt.music.core.connect.Event
-import io.github.honeyslatt.music.core.connect.Handoff
+import io.github.honeyslatt.music.core.model.Handoff
 import io.github.honeyslatt.music.core.connect.Peer
 import io.github.honeyslatt.music.core.connect.Playing
 import io.github.honeyslatt.music.core.model.Track
@@ -64,7 +64,7 @@ class Devices(context: Context) {
     /** What to tell the user: paired, or why not. */
     val notices: SharedFlow<String> = _notices.asSharedFlow()
 
-    /** A device asked for something, or handed its music over. */
+    /** A device asked for something, handed its music over, or what is kept in common changed. */
     var heard: ((Event) -> Unit)? = null
 
     /** The themes a device shares, all of them. */
@@ -75,6 +75,7 @@ class Devices(context: Context) {
             ?.takeIf { it.isNotBlank() } ?: Build.MODEL,
         context.filesDir.path,
         java.io.File(context.filesDir, "history.json").path,
+        java.io.File(context.filesDir, "session.json").path,
         object : ConnectListener {
             override fun heard(event: Event) {
                 main.post { take(event) }
@@ -98,6 +99,12 @@ class Devices(context: Context) {
         node.clearHistory()
         _history.value = node.history()
     }
+
+    /** Where the music last stopped, here or on another device. */
+    fun session(): io.github.honeyslatt.music.core.LastSession? = node.session()
+
+    /** The music stopped here, or moved on, at `session`; written before it returns: off the main thread. */
+    fun left(session: Handoff) = node.left(session)
 
     init {
         read()
@@ -141,7 +148,10 @@ class Devices(context: Context) {
             }
             is Event.Asked, is Event.Handed -> heard?.invoke(event)
             is Event.Themes -> themesShared?.invoke(event.themes)
-            Event.Synced -> _history.value = node.history()
+            Event.Synced -> {
+                _history.value = node.history()
+                heard?.invoke(event)
+            }
         }
     }
 

@@ -22,7 +22,7 @@ import io.github.honeyslatt.music.core.PlayQueue
 import io.github.honeyslatt.music.core.QueueRepeat
 import io.github.honeyslatt.music.core.connect.Command
 import io.github.honeyslatt.music.core.connect.Event
-import io.github.honeyslatt.music.core.connect.Handoff
+import io.github.honeyslatt.music.core.model.Handoff
 import io.github.honeyslatt.music.core.connect.Peer
 import io.github.honeyslatt.music.core.connect.Playing
 import io.github.honeyslatt.music.core.model.AudioQuality
@@ -780,18 +780,18 @@ class Playback(private val context: Context, private val core: Core, private val
         return Handoff(s.tracks, s.order, s.at, queue.shuffle(), repeatOf(queue.repeat()), herePosition.toULong(), player.isPlaying, station)
     }
 
-    /** Where what plays is kept when the app closes. */
-    private val sessionFile = java.io.File(context.filesDir, "session.json").path
-
-    /** Keep what plays for the next time the app opens: the queue and where it is. */
     /** One at a time, in the order asked: an older one never written over a newer one, nor beside it. */
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     private val keeping = kotlinx.coroutines.Dispatchers.IO.limitedParallelism(1)
 
+    /** Keep what plays for the next time the app opens, here or on another device: the queue and where it is. */
     fun keepSession() {
         val session = handoff()
-        scope.launch(keeping) { io.github.honeyslatt.music.core.keepSession(sessionFile, session) }
+        scope.launch(keeping) { devices.left(session) }
     }
+
+    /** The last stop on another device shown here, so that it is taken up once. */
+    private var followed: Pair<String, ULong>? = null
 
     /** Take over a queue as kept or handed over: its songs, its order, its station. */
     private fun adopt(h: Handoff) {
@@ -809,9 +809,27 @@ class Playback(private val context: Context, private val core: Core, private val
         station = h.station
     }
 
-    /** Show what played when the app last closed, paused where it was; made playable once played. */
+    /** Show where the music last stopped, here or on another device, paused; made playable once played. */
     private fun resumeSession() {
-        val h = io.github.honeyslatt.music.core.keptSession(sessionFile) ?: return
+        val last = devices.session() ?: return
+        followed = last.device to last.at
+        show(last.handoff)
+    }
+
+    /** Another device stopped later than this phone did, or moved on: what shows here follows, paused, unless music plays or loads here. */
+    private fun followSession() {
+        val last = devices.session() ?: return
+        if (last.here || followed == last.device to last.at || player.isPlaying || _loading.value) return
+        followed = last.device to last.at
+        // What this phone had ready goes: the song shown is made playable once played.
+        generation++
+        lining?.cancel()
+        player.stop()
+        player.clearMediaItems()
+        show(last.handoff)
+    }
+
+    private fun show(h: Handoff) {
         adopt(h)
         queue.current()?.let { t ->
             _now.value = t
@@ -914,6 +932,7 @@ class Playback(private val context: Context, private val core: Core, private val
             when (event) {
                 is Event.Asked -> obey(event.from, event.command)
                 is Event.Handed -> take(event.from, event.handoff)
+                Event.Synced -> followSession()
                 else -> {}
             }
         }

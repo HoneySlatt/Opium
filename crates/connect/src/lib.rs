@@ -24,8 +24,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
+pub use music_core::Handoff;
 use music_core::Repeat;
-use music_core::model::{ItemId, Station, Track};
+use music_core::model::{Station, Track};
 use serde::{Deserialize, Serialize};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, oneshot};
@@ -159,23 +160,6 @@ pub enum Command {
     },
     /// Stop, and hand what played over to the device asking.
     HandOver,
-}
-
-/// A queue to play from here on, where another device left it.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
-pub struct Handoff {
-    /// The queue's songs in their own order, the play order over them, and
-    /// where in that the song playing is.
-    pub tracks: Vec<Track>,
-    pub order: Vec<u32>,
-    pub at: u32,
-    pub shuffle: bool,
-    pub repeat: Repeat,
-    pub position_ms: u64,
-    pub playing: bool,
-    /// The station of songs it went on with, if any.
-    pub station: Option<ItemId>,
 }
 
 /// Another device, as this one knows it.
@@ -1113,7 +1097,7 @@ mod tests {
 
     fn track(id: &str) -> Track {
         Track {
-            id: ItemId::new(music_core::model::ProviderKind::AppleMusic, id),
+            id: music_core::model::ItemId::new(music_core::model::ProviderKind::AppleMusic, id),
             title: id.into(),
             artists: Vec::new(),
             album: None,

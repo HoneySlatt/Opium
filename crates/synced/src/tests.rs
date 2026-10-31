@@ -287,3 +287,51 @@ fn kept_on_disk_from_one_launch_to_the_next() {
     }
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+fn session(songs: &[u32], at: u32, position_ms: u64) -> Handoff {
+    Handoff {
+        tracks: songs.iter().copied().map(track).collect(),
+        order: (0..songs.len() as u32).collect(),
+        at,
+        shuffle: false,
+        repeat: music_core::Repeat::Off,
+        position_ms,
+        playing: true,
+        station: None,
+    }
+}
+
+fn last(s: &State) -> Option<(u64, String)> {
+    s.shared
+        .session
+        .as_ref()
+        .map(|l| (l.value.position_ms, l.at.device.clone()))
+}
+
+#[test]
+fn where_the_music_last_stopped_is_the_device_that_played_last() {
+    let (mut a, mut b) = (device("a"), device("b"));
+    a.left(session(&[1, 2], 0, 30_000), 1000);
+    meet(&mut a, &mut b);
+    // `b`, alone, plays on and stops later.
+    b.left(session(&[1, 2], 1, 42_000), 5000);
+    meet(&mut a, &mut b);
+    assert_eq!(last(&a), Some((42_000, "b".into())));
+    let kept = &a.shared.session.as_ref().unwrap().value;
+    assert_eq!(kept.at, 1);
+    // Taken up again, it starts paused.
+    assert!(!kept.playing);
+}
+
+#[test]
+fn a_device_opened_and_closed_without_playing_doesnt_pass_for_the_last() {
+    let (mut a, mut b) = (device("a"), device("b"));
+    a.left(session(&[1], 0, 10_000), 1000);
+    meet(&mut a, &mut b);
+    b.left(session(&[3], 0, 20_000), 5000);
+    // `a` opens and closes, still where it was, with `b`'s stop unheard of.
+    let (change, changed) = a.left(session(&[1], 0, 10_000), 9000);
+    assert!(!changed && change.is_empty());
+    meet(&mut a, &mut b);
+    assert_eq!(last(&a), Some((20_000, "b".into())));
+}

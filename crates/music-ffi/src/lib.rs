@@ -1050,19 +1050,9 @@ pub fn whole_album(copies: Vec<Vec<Track>>) -> Vec<Track> {
     music_core::dedupe::album_tracks(&slices)
 }
 
-/// Keep what played when the app closed: the queue and where it was.
-#[uniffi::export]
-pub fn keep_session(path: String, session: connect::Handoff) {
-    let Ok(bytes) = serde_json::to_vec(&session) else {
-        return;
-    };
-    let partial = format!("{path}.part");
-    let _ = std::fs::write(&partial, bytes).and_then(|()| std::fs::rename(&partial, &path));
-}
-
-/// What played when the app last closed, if anything did.
-#[uniffi::export]
-pub fn kept_session(path: String) -> Option<connect::Handoff> {
+/// What played when the app last closed, as kept before the devices shared
+/// it, if anything did.
+fn kept_session(path: String) -> Option<connect::Handoff> {
     serde_json::from_str(&navidrome::scrub_kept(&std::fs::read_to_string(path).ok()?)).ok()
 }
 
@@ -1129,6 +1119,16 @@ pub struct QueueSnapshot {
     pub at: u32,
 }
 
+/// Where the music last stopped, and on which device; `device` and `at` say
+/// which stop it is.
+#[derive(uniffi::Record)]
+pub struct LastSession {
+    pub handoff: connect::Handoff,
+    pub here: bool,
+    pub device: String,
+    pub at: u64,
+}
+
 /// What Music Connect says, told to the app as it comes; from the node's
 /// own threads.
 #[uniffi::export(with_foreign)]
@@ -1144,17 +1144,27 @@ pub struct Connect(connect::Node, synced::Kept);
 #[uniffi::export]
 impl Connect {
     /// Go on the network as `name`, keeping the pairings and what is kept
-    /// in common in `dir`; the first time, the songs played are those kept
-    /// before in `history`.
+    /// in common in `dir`; the songs played and where the music stopped as
+    /// kept before in `history` and `session` are taken in.
     #[uniffi::constructor]
     pub fn new(
         name: String,
         dir: String,
         history: String,
+        session: String,
         listener: Arc<dyn ConnectListener>,
     ) -> Arc<Self> {
         let dir = std::path::Path::new(&dir);
-        let kept = synced::Kept::open(dir, || kept(&history));
+        let kept = synced::Kept::open(dir, || self::kept(&history));
+        if kept.session().is_none() {
+            let at = std::fs::metadata(&session)
+                .and_then(|m| m.modified())
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok());
+            if let (Some(old), Some(at)) = (kept_session(session), at) {
+                kept.take_old_session(old, at.as_millis() as u64);
+            }
+        }
         let node = connect::Node::start(
             name,
             connect::DeviceKind::Phone,
@@ -1179,6 +1189,24 @@ impl Connect {
     /// The history cleared, on every device.
     pub fn clear_history(&self) {
         self.0.share(self.1.clear_history());
+    }
+
+    /// Where the music last stopped, here or on another device.
+    pub fn session(&self) -> Option<LastSession> {
+        let me = self.1.me();
+        self.1.session().map(|(handoff, stamp)| LastSession {
+            handoff,
+            here: stamp.device == me,
+            device: stamp.device,
+            at: stamp.at,
+        })
+    }
+
+    /// The music stopped here, or moved on, at `session`: told the devices,
+    /// and on disk before this returns, the app being maybe on its way out.
+    pub fn left(&self, session: connect::Handoff) {
+        self.0.share(self.1.left(session));
+        self.1.flush();
     }
 
     pub fn me(&self) -> connect::Device {

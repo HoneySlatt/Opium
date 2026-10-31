@@ -1,5 +1,6 @@
-//! What the user's devices keep in common: the songs played lately, and the
-//! playlists made in Music itself.
+//! What the user's devices keep in common: the songs played lately, the
+//! playlists made in Music itself, and where the music last stopped, on
+//! whichever device.
 //!
 //! Each device keeps its own copy, and changes it while alone. When two
 //! meet, each takes the other's in, and they come out the same whatever was
@@ -16,6 +17,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard, mpsc};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use music_core::Handoff;
 use music_core::model::Track;
 use serde::{Deserialize, Serialize};
 
@@ -32,6 +34,24 @@ pub struct Stamp {
     pub device: String,
 }
 
+/// A value and when it was given: the one given last wins.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct Latest<T> {
+    pub at: Stamp,
+    pub value: T,
+}
+
+/// `theirs` instead of `mine` if given later: whether it was.
+pub(crate) fn latest<T>(mine: &mut Option<Latest<T>>, theirs: Option<Latest<T>>) -> bool {
+    if let Some(theirs) = theirs
+        && mine.as_ref().is_none_or(|m| theirs.at > m.at)
+    {
+        *mine = Some(theirs);
+        return true;
+    }
+    false
+}
+
 /// All that is kept in common, or some changes to it: what one device
 /// sends another.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -40,6 +60,10 @@ pub struct Shared {
     pub history: History,
     #[serde(default)]
     pub playlists: Playlists,
+    /// The queue and where in it the music last stopped, paused or left:
+    /// the device that played last says.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    session: Option<Latest<Handoff>>,
 }
 
 impl Shared {
@@ -51,13 +75,15 @@ impl Shared {
     pub fn merge(&mut self, other: Shared) -> bool {
         let history = self.history.merge(other.history);
         let playlists = self.playlists.merge(other.playlists);
-        history || playlists
+        let session = latest(&mut self.session, other.session);
+        history || playlists || session
     }
 
     fn newest(&self) -> u64 {
         self.history
             .newest()
             .max(self.playlists.newest())
+            .max(self.session.as_ref().map(|s| &s.at))
             .map_or(0, |s| s.at)
     }
 }
@@ -66,7 +92,8 @@ impl Shared {
 #[derive(Clone)]
 pub struct Kept {
     state: Arc<Mutex<State>>,
-    save: mpsc::Sender<()>,
+    /// Asks for the copy to be written; with a sender, told once it is.
+    save: mpsc::Sender<Option<mpsc::Sender<()>>>,
 }
 
 struct State {
@@ -123,6 +150,27 @@ impl State {
     fn apply(&mut self, change: Shared) -> (Shared, bool) {
         let changed = self.merge(change.clone());
         (change, changed)
+    }
+
+    /// The music stopped, or moved on, at `session`: a change only if it
+    /// isn't where it last stopped already, so that a device opened and
+    /// closed without playing doesn't pass for the last one played.
+    fn left(&mut self, mut session: Handoff, now: u64) -> (Shared, bool) {
+        // Taken up again, it starts paused.
+        session.playing = false;
+        if self
+            .shared
+            .session
+            .as_ref()
+            .is_some_and(|s| s.value == session)
+        {
+            return (Shared::default(), false);
+        }
+        let at = self.stamp(now);
+        self.apply(Shared {
+            session: Some(Latest { at, value: session }),
+            ..Shared::default()
+        })
     }
 
     fn played(&mut self, track: Track, now: u64) -> (Shared, bool) {
@@ -238,7 +286,7 @@ impl Kept {
             .name("synced-save".into())
             .spawn(move || keep(&kept, &path, &saves));
         if fresh {
-            let _ = save.send(());
+            let _ = save.send(None);
         }
         Self { state, save }
     }
@@ -261,6 +309,16 @@ impl Kept {
         lock(&self.state).shared.playlists.get(id)
     }
 
+    /// Where the music last stopped, and on which device: its id in the
+    /// stamp, [`Kept::me`] if here.
+    pub fn session(&self) -> Option<(Handoff, Stamp)> {
+        lock(&self.state)
+            .shared
+            .session
+            .as_ref()
+            .map(|s| (s.value.clone(), s.at.clone()))
+    }
+
     /// Everything kept: what a device gets on meeting this one.
     pub fn everything(&self) -> Shared {
         lock(&self.state).shared.clone()
@@ -270,7 +328,7 @@ impl Kept {
     pub fn merge(&self, other: Shared) -> bool {
         let changed = lock(&self.state).merge(other);
         if changed {
-            let _ = self.save.send(());
+            let _ = self.save.send(None);
         }
         changed
     }
@@ -278,7 +336,7 @@ impl Kept {
     fn change(&self, make: impl FnOnce(&mut State) -> (Shared, bool)) -> Shared {
         let (change, changed) = make(&mut lock(&self.state));
         if changed {
-            let _ = self.save.send(());
+            let _ = self.save.send(None);
         }
         change
     }
@@ -291,6 +349,42 @@ impl Kept {
 
     pub fn clear_history(&self) -> Shared {
         self.change(|s| s.clear_history(now()))
+    }
+
+    /// The music stopped here, or moved on, at `session`.
+    pub fn left(&self, session: Handoff) -> Shared {
+        self.change(|s| s.left(session, now()))
+    }
+
+    /// Where the music stopped as kept here before the devices shared it,
+    /// `at` (the file's time) in ms since 1970: taken if none is shared
+    /// yet, so that of the devices' own the latest wins as they meet.
+    pub fn take_old_session(&self, session: Handoff, at: u64) {
+        self.change(|s| {
+            if s.shared.session.is_some() {
+                return (Shared::default(), false);
+            }
+            let at = Stamp {
+                at,
+                device: s.me.clone(),
+            };
+            let session = Handoff {
+                playing: false,
+                ..session
+            };
+            s.apply(Shared {
+                session: Some(Latest { at, value: session }),
+                ..Shared::default()
+            })
+        });
+    }
+
+    /// On disk now, before the app closes; a few seconds at most.
+    pub fn flush(&self) {
+        let (done, wait) = mpsc::channel();
+        if self.save.send(Some(done)).is_ok() {
+            let _ = wait.recv_timeout(std::time::Duration::from_secs(3));
+        }
     }
 
     /// A new playlist; its id with the change.
@@ -327,9 +421,12 @@ impl Kept {
 
 /// Write the copy to `path` each time it changed, once the changes in a
 /// row are in: until no copy is left to change.
-fn keep(state: &Mutex<State>, path: &Path, saves: &mpsc::Receiver<()>) {
-    while saves.recv().is_ok() {
-        while saves.try_recv().is_ok() {}
+fn keep(state: &Mutex<State>, path: &Path, saves: &mpsc::Receiver<Option<mpsc::Sender<()>>>) {
+    while let Ok(first) = saves.recv() {
+        let mut waiting: Vec<mpsc::Sender<()>> = first.into_iter().collect();
+        while let Ok(more) = saves.try_recv() {
+            waiting.extend(more);
+        }
         let bytes = {
             let state = lock(state);
             serde_json::to_vec(&Saved {
@@ -339,6 +436,9 @@ fn keep(state: &Mutex<State>, path: &Path, saves: &mpsc::Receiver<()>) {
         };
         if let Ok(bytes) = bytes {
             write(path, &bytes);
+        }
+        for done in waiting {
+            let _ = done.send(());
         }
     }
 }

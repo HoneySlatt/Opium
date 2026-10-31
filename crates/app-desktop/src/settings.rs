@@ -135,42 +135,6 @@ pub fn dir() -> PathBuf {
     config.join("music")
 }
 
-/// Keep `value` as JSON in `name` under [`dir`], written aside and moved
-/// over, on a thread of its own unless `now`. Writes of a file wait for one
-/// another, and one overtaken by a later one is dropped: what stays is the
-/// last asked for.
-pub fn keep_json<T: Serialize + Send + 'static>(name: &'static str, value: T, now: bool) {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static ASKED: AtomicU64 = AtomicU64::new(0);
-    static WRITTEN: std::sync::Mutex<Vec<(&str, u64)>> = std::sync::Mutex::new(Vec::new());
-    let asked = ASKED.fetch_add(1, Ordering::Relaxed) + 1;
-    let write = move || {
-        let mut written = WRITTEN.lock().unwrap_or_else(|e| e.into_inner());
-        let last = match written.iter_mut().find(|(n, _)| *n == name) {
-            Some((_, last)) => last,
-            None => {
-                written.push((name, 0));
-                &mut written.last_mut().expect("just pushed").1
-            }
-        };
-        if *last > asked {
-            return;
-        }
-        *last = asked;
-        let Ok(bytes) = serde_json::to_vec(&value) else {
-            return;
-        };
-        // What was played says much of the user, and a cover's address may
-        // carry a server's sign-in: for the user's eyes only.
-        let _ = crate::backend::write_private(&dir().join(name), &bytes);
-    };
-    if now {
-        write();
-    } else {
-        std::thread::spawn(write);
-    }
-}
-
 fn path() -> PathBuf {
     dir().join("settings.toml")
 }
