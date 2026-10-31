@@ -122,7 +122,7 @@ fun SpotifyNowPlaying(playback: Playback, actions: NpActions) {
                     Spacer(Modifier.height(24.dp))
                 }
             }
-            Sheet(queueOpen, "Queue", onClose = { queueOpen = false }) { Box(Modifier.height(560.dp)) { QueueView(playback) } }
+            Sheet(queueOpen, "Queue", onClose = { queueOpen = false }) { Box(Modifier.height(560.dp)) { SpotifyQueueView(playback) } }
             Sheet(signalOpen, "Signal Path", onClose = { signalOpen = false }) { SignalPath(playback, t) }
             DevicesSheet(devicesOpen, playback) { devicesOpen = false }
         }

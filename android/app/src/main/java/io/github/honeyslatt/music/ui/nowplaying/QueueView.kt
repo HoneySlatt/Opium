@@ -108,6 +108,89 @@ fun QueueView(playback: Playback) {
     }
 }
 
+/**
+ * Spotify's queue: the song playing, in green; what plays next, or what
+ * played; Shuffle, Repeat and the sleep timer along the foot, green while on.
+ */
+@androidx.annotation.OptIn(UnstableApi::class)
+@Composable
+fun SpotifyQueueView(playback: Playback) {
+    val np = LocalNp.current
+    val now by playback.now.collectAsStateWithLifecycle()
+    val upcoming by playback.upcoming.collectAsStateWithLifecycle()
+    val history by playback.history.collectAsStateWithLifecycle()
+    val shuffle by playback.shuffleOn.collectAsStateWithLifecycle()
+    val repeat by playback.repeat.collectAsStateWithLifecycle()
+    val sleep by playback.sleep.collectAsStateWithLifecycle()
+    var showHistory by remember { mutableStateOf(false) }
+    val list = if (showHistory) history else upcoming
+    val head = geist(16.sp, FontWeight.Bold).copy(color = np.fg)
+    Column(Modifier.fillMaxSize()) {
+        LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
+            now?.let { t ->
+                item { BasicText("Now playing", Modifier.padding(bottom = 8.dp), style = head) }
+                item {
+                    Row(Modifier.fillMaxWidth().height(60.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Cover(t.artwork, 44.dp, RoundedCornerShape(2.dp), Modifier.size(44.dp))
+                        Column(Modifier.weight(1f)) {
+                            Line(t.title, geist(15.5.sp).copy(color = roles.accent))
+                            Line(t.artists.joinToString(", "), geist(13.sp).copy(color = np.sub))
+                        }
+                    }
+                }
+            }
+            item {
+                Row(Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    BasicText(if (showHistory) "Recently played" else "Next in queue", Modifier.weight(1f), style = head)
+                    if (list.isNotEmpty()) {
+                        Box(Modifier.press { if (showHistory) playback.clearHistory() else playback.clearUpcoming() }.padding(horizontal = 8.dp, vertical = 4.dp)) {
+                            BasicText("Clear", style = geist(14.sp, FontWeight.SemiBold).copy(color = np.sub))
+                        }
+                    }
+                    Box(Modifier.press { showHistory = !showHistory }.padding(start = 8.dp, top = 4.dp, bottom = 4.dp)) {
+                        BasicText(if (showHistory) "Queue" else "History", style = geist(14.sp, FontWeight.SemiBold).copy(color = np.sub))
+                    }
+                }
+            }
+            itemsIndexed(list, key = { i, t -> "$i" + t.id.id }) { i, track ->
+                QueueRow(track, removable = !showHistory, onPlay = {
+                    if (showHistory) playback.play(listOf(track), 0) else playback.jump(i)
+                }) { playback.removeUpcoming(i) }
+            }
+            if (list.isEmpty()) {
+                item {
+                    BasicText(
+                        if (showHistory) "Songs you finish or skip show up here." else "The queue ends here.",
+                        Modifier.padding(top = 10.dp),
+                        style = geist(13.sp).copy(color = np.sub),
+                    )
+                }
+            }
+        }
+        Row(Modifier.fillMaxWidth().padding(top = 10.dp)) {
+            Labelled(Icons.Shuffle, "Shuffle", shuffle, Modifier.weight(1f)) { playback.setShuffle(!shuffle) }
+            Labelled(if (repeat == QueueRepeat.ONE) Icons.Repeat1 else Icons.Repeat, "Repeat", repeat != QueueRepeat.OFF, Modifier.weight(1f)) { playback.cycleRepeat() }
+            val actions = LocalActions.current
+            val anchor = rememberAnchor()
+            Labelled(Icons.Clock, "Timer", sleep != null, Modifier.weight(1f).anchor(anchor)) { actions?.sleepMenu(anchor.rect) }
+        }
+    }
+}
+
+/** An icon over its label, both green while on. */
+@Composable
+private fun Labelled(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, on: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    val color = if (on) roles.accent else LocalNp.current.fg
+    Column(
+        modifier.height(60.dp).press(RoundedCornerShape(10.dp), onClick = onClick),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Glyph(icon, color, 24.dp)
+        BasicText(label, Modifier.padding(top = 5.dp), style = geist(12.sp, FontWeight.Medium).copy(color = color))
+    }
+}
+
 @Composable
 private fun Toggle(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, on: Boolean, modifier: Modifier, onClick: () -> Unit) {
     val np = LocalNp.current
