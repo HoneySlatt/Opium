@@ -54,7 +54,8 @@ class SoundCloudWeb(private val context: Context) : SoundCloudBrowser {
         val done = CompletableDeferred<Unit>()
         _check.value = done
         try {
-            done.await()
+            // Not passed within ten minutes: the change is sent again, and refused if still asked.
+            withTimeoutOrNull(600_000) { done.await() }
         } finally {
             _check.value = null
         }

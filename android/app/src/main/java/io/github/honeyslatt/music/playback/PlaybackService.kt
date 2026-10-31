@@ -27,7 +27,7 @@ class PlaybackService : MediaLibraryService() {
         super.onCreate()
         val playback = (application as MusicApp).playback
         val here = QueuePlayer(playback, this, scope)
-        val far = RemotePlayer(playback)
+        val far = RemotePlayer(playback, applicationContext)
         val open = PendingIntent.getActivity(
             this,
             0,

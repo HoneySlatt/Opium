@@ -172,7 +172,13 @@ class Core(context: Context) {
     }
 
     private suspend fun connect(kind: ProviderKind): Connection {
-        val kept = vault.read(kind.vaultName) ?: return Connection.Off.also { connections.getValue(kind).value = it }
+        val kept = vault.read(kind.vaultName)
+        if (kept == null) {
+            // Kept but unreadable (its key gone, as after a restore): signed out, and told so.
+            if (!vault.has(kind.vaultName)) return Connection.Off.also { connections.getValue(kind).value = it }
+            vault.delete(kind.vaultName)
+            return Connection.Failed("Sign in again").also { connections.getValue(kind).value = it }
+        }
         return attempt(kind) {
             when (kind) {
                 ProviderKind.APPLE_MUSIC -> session.connectApple(kept)

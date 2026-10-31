@@ -20,7 +20,7 @@ import io.github.honeyslatt.music.ui.components.at
  * The volume keys stay the phone's, but in the app (see MainActivity).
  */
 @UnstableApi
-class RemotePlayer(private val playback: Playback) : SimpleBasePlayer(Looper.getMainLooper()) {
+class RemotePlayer(private val playback: Playback, private val context: android.content.Context) : SimpleBasePlayer(Looper.getMainLooper()) {
     /** What the device plays changed. */
     fun changed() = invalidateState()
 
@@ -57,7 +57,7 @@ class RemotePlayer(private val playback: Playback) : SimpleBasePlayer(Looper.get
             .setTitle(t.title)
             .setArtist(t.artists.joinToString(", "))
             .setAlbumTitle(t.album)
-            .setArtworkUri(t.artwork?.at(600)?.let(Uri::parse))
+            .setArtworkUri(t.artwork?.let { ArtProvider.uri(context, it.at(600)) })
             .build()
         val id = "${t.id.provider}:${t.id.id}"
         val item = MediaItemData.Builder(id)

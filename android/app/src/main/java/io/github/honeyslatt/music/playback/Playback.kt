@@ -876,7 +876,7 @@ class Playback(private val context: Context, private val core: Core, private val
                     .setTitle(track.title)
                     .setArtist(track.artists.joinToString(", "))
                     .setAlbumTitle(track.album)
-                    .setArtworkUri(track.artwork?.at(600)?.let(Uri::parse))
+                    .setArtworkUri(track.artwork?.let { ArtProvider.uri(context, it.at(600)) })
                     .build(),
             )
         if (track.id.id in stations) return liveSource(core.session.liveStation(track.id), item)

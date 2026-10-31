@@ -12,21 +12,28 @@ import java.util.concurrent.ConcurrentHashMap
 import okhttp3.Request
 
 /**
- * The covers Android Auto shows while browsing: it reads them from a
- * content URI rather than the web. Only covers the app has offered are
- * served, downloaded once and kept in the cache.
+ * The covers Android Auto, the lock screen and the notification show: they
+ * read them from a content URI rather than the web, so that no other app
+ * sees the covers' addresses (a server's carries its sign-in). Only covers
+ * the app has offered since it started are served, under keys drawn at
+ * random, so that no app can tell which covers were looked at; they are
+ * downloaded once and kept in the cache.
  */
 class ArtProvider : ContentProvider() {
     companion object {
-        /** By key, the covers offered since the app started. */
+        /** By key, the covers offered since the app started; and their keys. */
         private val offered = ConcurrentHashMap<String, String>()
+        private val keys = ConcurrentHashMap<String, String>()
+        private val random = java.security.SecureRandom()
 
-        /** The URI Android Auto reads the cover at `url` from. */
+        /** The URI the cover at `url` is read from. */
         fun uri(context: Context, url: String): Uri {
-            val key = "%016x".format(url.fold(-0x340d631b7bdddcdbL) { h, c -> (h xor c.code.toLong()) * 0x100000001b3L })
-            offered[key] = url
+            val key = keys.getOrPut(url) { "%016x".format(random.nextLong()).also { offered[it] = url } }
             return Uri.parse("content://${context.packageName}.art/$key")
         }
+
+        /** Where the cover at `url` is kept: by its address, across launches. */
+        private fun kept(url: String) = "%016x".format(url.fold(-0x340d631b7bdddcdbL) { h, c -> (h xor c.code.toLong()) * 0x100000001b3L })
 
         /** How many covers are kept: the oldest go past it. */
         private const val KEPT = 500
@@ -43,12 +50,13 @@ class ArtProvider : ContentProvider() {
     }
 
     override fun openFile(uri: Uri, mode: String): ParcelFileDescriptor {
-        val key = uri.lastPathSegment?.takeIf { it.matches(Regex("[0-9a-f]{16}")) } ?: throw FileNotFoundException()
+        val url = uri.lastPathSegment?.let { offered[it] } ?: throw FileNotFoundException()
+        val key = kept(url)
         val file = File(dir, key)
         if (!file.exists()) {
-            val url = offered[key] ?: throw FileNotFoundException()
             dir.mkdirs()
-            val part = File(dir, "$key.part")
+            // Its own name: two asking at once don't write the same file.
+            val part = File(dir, "$key.${"%08x".format(random.nextInt())}.part")
             // Out of reach: said as the one failure a provider may give.
             try {
                 Http.client.newCall(Request.Builder().url(url).build()).execute().use { response ->

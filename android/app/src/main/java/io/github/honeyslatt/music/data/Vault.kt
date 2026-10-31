@@ -31,10 +31,17 @@ class Vault(context: Context) {
         }.generateKey()
     }
 
+    /** Whole or not at all: written aside, then put in place. */
+    @Synchronized
     fun write(name: String, text: String) {
         val cipher = Cipher.getInstance(TRANSFORMATION).apply { init(Cipher.ENCRYPT_MODE, key()) }
         val sealed = cipher.doFinal(text.toByteArray())
-        File(dir, name).writeBytes(cipher.iv + sealed)
+        val part = File(dir, "$name.part")
+        part.outputStream().use { out ->
+            out.write(cipher.iv + sealed)
+            out.fd.sync()
+        }
+        part.renameTo(File(dir, name))
     }
 
     /** What was kept under `name`; nothing when it can't be read. */

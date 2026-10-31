@@ -307,7 +307,18 @@ class CarLibrary(private val app: MusicApp, private val scope: CoroutineScope) :
     private fun isCar(session: MediaSession, controller: MediaSession.ControllerInfo) =
         session.isAutoCompanionController(controller) || session.isAutomotiveController(controller) || controller.packageName == "com.google.android.projection.gearhead"
 
+    /**
+     * The car, the system (lock screen, notification, Bluetooth) and the app
+     * itself browse the library and change it; any other app only controls
+     * what plays, without seeing the library or the account.
+     */
     override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
+        val trusted = controller.isTrusted || isCar(session, controller) || controller.packageName == app.packageName
+        if (!trusted) {
+            return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+                .setAvailableSessionCommands(androidx.media3.session.SessionCommands.EMPTY)
+                .build()
+        }
         val available = MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon().apply { commands.forEach(::add) }.build()
         return MediaSession.ConnectionResult.AcceptedResultBuilder(session).setAvailableSessionCommands(available).build()
     }
