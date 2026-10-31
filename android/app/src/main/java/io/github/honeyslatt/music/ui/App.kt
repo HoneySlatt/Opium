@@ -163,7 +163,13 @@ fun App(core: Core, library: Library, playback: io.github.honeyslatt.music.playb
             enter = slideInVertically(tween(440, easing = Standard)) { it },
             exit = slideOutVertically(tween(400, easing = Standard)) { it },
         ) {
-            SwipeDown({ npOpen = false }) { NowPlaying(playback, npActions) }
+            SwipeDown({ npOpen = false }) {
+                if (look.mobile.nowPlaying == io.github.honeyslatt.music.core.model.MobileNowPlaying.SPOTIFY) {
+                    io.github.honeyslatt.music.ui.nowplaying.SpotifyNowPlaying(playback, npActions)
+                } else {
+                    NowPlaying(playback, npActions)
+                }
+            }
         }
         io.github.honeyslatt.music.ui.nowplaying.DevicesSheet(devicesOpen, playback) { devicesOpen = false }
         io.github.honeyslatt.music.ui.settings.SettingsSheet(settingsOpen, core, settings, connecting::start) { settingsOpen = false }
