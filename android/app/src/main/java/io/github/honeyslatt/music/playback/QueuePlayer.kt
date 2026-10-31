@@ -31,6 +31,7 @@ class QueuePlayer(
 ) : ForwardingSimpleBasePlayer(playback.player) {
     init {
         scope.launch { playback.upcoming.collect { invalidateState() } }
+        scope.launch { playback.loading.collect { invalidateState() } }
     }
 
     private val queueCommands = listOf(
@@ -52,10 +53,25 @@ class QueuePlayer(
             .removeAll(Player.COMMAND_SET_SHUFFLE_MODE, Player.COMMAND_SET_REPEAT_MODE)
             .build()
         val playlist = state.playlist
+        val upcoming = playback.upcoming.value.mapIndexed(::queued)
+        // A song picked is on its way, the player stopped for it: shown
+        // coming. An empty idle session would send the car back from Now
+        // Playing to where it browsed.
+        val coming = playback.coming
+        if (coming != null) {
+            return state.buildUpon()
+                .setAvailableCommands(commands)
+                .setPlaylist(listOf(item(coming.uid(), coming, 600)) + upcoming)
+                .setCurrentMediaItemIndex(0)
+                .setPlaybackState(Player.STATE_BUFFERING)
+                .setPlayWhenReady(true, Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST)
+                .setPlayerError(null)
+                .setContentPositionMs(0)
+                .build()
+        }
         // Nothing made playable yet: nothing to list.
         if (playlist.isEmpty()) return state.buildUpon().setAvailableCommands(commands).build()
         val current = playlist[state.currentMediaItemIndex.coerceIn(0, playlist.lastIndex)]
-        val upcoming = playback.upcoming.value.mapIndexed(::queued)
         return state.buildUpon()
             .setAvailableCommands(commands)
             .setPlaylist(listOf(current) + upcoming)
@@ -64,15 +80,19 @@ class QueuePlayer(
     }
 
     /** The `k`-th song to come, as the queue lists it. */
-    private fun queued(k: Int, track: Track): MediaItemData {
-        val id = "${track.id.provider}:${track.id.id}"
+    private fun queued(k: Int, track: Track) = item("queue-$k-${track.uid()}", track, 240)
+
+    private fun Track.uid() = "${id.provider}:${id.id}"
+
+    private fun item(uid: String, track: Track, art: Int): MediaItemData {
+        val id = track.uid()
         val metadata = MediaMetadata.Builder()
             .setTitle(track.title)
             .setArtist(track.artists.joinToString(", "))
             .setAlbumTitle(track.album)
-            .setArtworkUri(track.artwork?.let { ArtProvider.uri(context, it.at(240)) })
+            .setArtworkUri(track.artwork?.let { ArtProvider.uri(context, it.at(art)) })
             .build()
-        return MediaItemData.Builder("queue-$k-$id")
+        return MediaItemData.Builder(uid)
             .setMediaItem(MediaItem.Builder().setMediaId(id).setMediaMetadata(metadata).build())
             .setMediaMetadata(metadata)
             .setDurationUs(track.duration?.toMillis()?.let { it * 1000 } ?: C.TIME_UNSET)

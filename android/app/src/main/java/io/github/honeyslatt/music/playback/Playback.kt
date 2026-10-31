@@ -123,6 +123,9 @@ class Playback(private val context: Context, private val core: Core, private val
 
     /** The current song is still being made playable. */
     val loading: StateFlow<Boolean> = shown(_loading) { false }
+
+    /** This phone's song on its way, read at once, as the player stops for it. */
+    val coming: Track? get() = _now.value?.takeIf { _loading.value }
     val upcoming: StateFlow<List<Track>> = shown(_upcoming) { it.upcoming }
     val history: StateFlow<List<Track>> = shown(_history) { emptyList() }
     val shuffleOn: StateFlow<Boolean> = shown(_shuffle) { it.playing?.shuffle == true }
@@ -633,10 +636,12 @@ class Playback(private val context: Context, private val core: Core, private val
         changed()
         val mine = ++generation
         lining?.cancel()
-        player.stop()
-        player.clearMediaItems()
+        // On its way before the player stops, for the session to show it
+        // coming rather than nothing (see QueuePlayer).
         _now.value = track
         _loading.value = true
+        player.stop()
+        player.clearMediaItems()
         tell()
         scope.launch {
             val source = try {
