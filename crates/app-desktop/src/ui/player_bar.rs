@@ -243,7 +243,7 @@ fn right_side(app: &mut App, ui: &mut Ui, theme: &Theme, inner: Rect) -> f32 {
     area.left()
 }
 
-fn volume_slider(app: &mut App, ui: &mut Ui, theme: &Theme, shown: &crate::app::Shown) {
+pub(super) fn volume_slider(app: &mut App, ui: &mut Ui, theme: &Theme, shown: &crate::app::Shown) {
     // A device whose volume isn't to be set from here: its own knob sets it.
     let sense = if shown.volume.is_some() {
         Sense::click_and_drag()
@@ -290,7 +290,7 @@ fn volume_slider(app: &mut App, ui: &mut Ui, theme: &Theme, shown: &crate::app::
 }
 
 /// The playing position, or where the seek hairline is being dragged to.
-fn shown_position(app: &App, ui: &Ui) -> Duration {
+pub(super) fn shown_position(app: &App, ui: &Ui) -> Duration {
     ui.ctx()
         .data(|d| d.get_temp::<Duration>(Id::unique("seek-preview")))
         .unwrap_or(app.shown().position)

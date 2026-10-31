@@ -419,6 +419,237 @@ pub fn playlist(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
     page(app, ui, pad, Some(header), tracks, listing)
 }
 
+/// The banner's height, down to under the cover, in Spotify's layout.
+const BANNER: f32 = 52.0 + 24.0 + 232.0 + 24.0;
+/// The row of buttons under it.
+const ACTIONS: f32 = 104.0;
+
+/// Where the banner's cover goes.
+fn banner_art(content: Rect, pad: f32) -> Rect {
+    Rect::from_min_size(
+        pos2(content.left() + pad, content.top() + BANNER - 24.0 - 232.0),
+        vec2(232.0, 232.0),
+    )
+}
+
+/// Spotify's header: a band of the cover's colour darkening downwards, the
+/// cover at its bottom left, beside it what it is, the title in large type
+/// and a line of details; under the band, a large round Play and the other
+/// buttons on the colour fading into the page.
+fn banner_header(
+    ui: &mut Ui,
+    theme: &Theme,
+    content: Rect,
+    pad: f32,
+    header: Option<&Header>,
+    colors: Option<[Color32; 3]>,
+) -> Option<HeaderAction> {
+    let color = colors.map_or(theme.surface1, |[c, _, _]| c);
+    let band = Rect::from_min_size(content.min, vec2(content.width(), BANNER));
+    let shade = |c: Color32, p: f32| mix(Color32::BLACK, c, p);
+    vertical_gradient(ui, band, color, shade(color, 0.5));
+    let fade = Rect::from_min_size(band.left_bottom(), vec2(content.width(), 232.0));
+    vertical_gradient(
+        ui,
+        fade,
+        mix(shade(color, 0.4), theme.base, 0.8),
+        theme.base,
+    );
+
+    let art = banner_art(content, pad);
+    ui.painter().add(
+        egui::Shadow {
+            offset: [0, 8],
+            blur: 24,
+            spread: 0,
+            color: Color32::from_black_alpha(130),
+        }
+        .as_shape(art, 4.0),
+    );
+    artwork(ui, header.and_then(|h| h.art.clone()), art, 4.0, theme);
+    let header = header?;
+    let mut action = None;
+
+    // What it is, the title as large as it fits, the details.
+    let x = art.right() + 24.0;
+    let room = (content.right() - pad - x).max(0.0);
+    let white = Color32::WHITE;
+    let kind = text(ui, header.kind, font(14.0, Weight::Medium), white, room);
+    let title_font = [96.0, 72.0, 56.0, 40.0, 32.0]
+        .into_iter()
+        .map(|size| font(size, Weight::Bold))
+        .find(|f| {
+            text(ui, &header.title, f.clone(), white, f32::INFINITY)
+                .size()
+                .x
+                <= room
+        })
+        .unwrap_or(font(32.0, Weight::Bold));
+    let title = text(ui, &header.title, title_font, white, room);
+    let details = banner_details(header);
+    let bottom = art.bottom();
+    let line_y = bottom - 10.0;
+    // The artist (or the playlist's maker) first, linked, with their photo.
+    let mut lx = x;
+    if let Some(by) = &header.by {
+        if header.by_art.is_some() {
+            let avatar = Rect::from_center_size(pos2(lx + 12.0, line_y), vec2(24.0, 24.0));
+            artwork(ui, header.by_art.clone(), avatar, 12.0, theme);
+            lx = avatar.right() + 6.0;
+        }
+        let g = text(ui, by, font(14.0, Weight::Bold), white, room - (lx - x));
+        let link = Rect::from_min_size(pos2(lx, line_y - g.size().y / 2.0), g.size());
+        if let Some(id) = &header.by_link {
+            let hit = ui
+                .interact(link, egui::Id::unique("banner-by"), Sense::click())
+                .on_hover_cursor(egui::CursorIcon::PointingHand);
+            if hit.hovered() {
+                ui.painter()
+                    .hline(link.x_range(), link.bottom(), egui::Stroke::new(1.0, white));
+            }
+            if hit.clicked() {
+                action = Some(HeaderAction::OpenArtist(id.clone()));
+            }
+        }
+        lx = link.right();
+        paint_text(ui, g, link.left(), line_y, egui::Align::Min, white);
+    }
+    if !details.is_empty() {
+        let line = if header.by.is_some() {
+            format!(" • {details}")
+        } else {
+            details
+        };
+        let soft = Color32::from_white_alpha(200);
+        let g = text(
+            ui,
+            &line,
+            font(14.0, Weight::Regular),
+            soft,
+            (x + room - lx).max(0.0),
+        );
+        paint_text(ui, g, lx, line_y, egui::Align::Min, soft);
+    }
+    let mut y = line_y - 12.0 - 8.0;
+    if let Some(d) = &header.description {
+        let soft = Color32::from_white_alpha(170);
+        let g = text(
+            ui,
+            d.lines().next().unwrap_or_default(),
+            font(14.0, Weight::Regular),
+            soft,
+            room,
+        );
+        let gh = g.size().y;
+        paint_text(ui, g, x, y - gh / 2.0, egui::Align::Min, soft);
+        y -= gh + 8.0;
+    }
+    let h = title.size().y;
+    paint_text(ui, title, x, y - h / 2.0, egui::Align::Min, white);
+    y -= h + 2.0;
+    paint_text(ui, kind, x, y - 8.0, egui::Align::Min, white);
+
+    // The buttons: Play, large and round in the accent, then the others.
+    let mid = band.bottom() + ACTIONS / 2.0;
+    let play = Rect::from_center_size(pos2(content.left() + pad + 28.0, mid), vec2(56.0, 56.0));
+    let response = ui
+        .interact(play, egui::Id::unique("banner-play"), Sense::click())
+        .on_hover_text("Play")
+        .on_hover_cursor(egui::CursorIcon::PointingHand);
+    let grow = if response.hovered() { 2.0 } else { 0.0 };
+    let fill = if response.hovered() {
+        mix(theme.accent, Color32::WHITE, 0.85)
+    } else {
+        theme.accent
+    };
+    ui.painter().circle_filled(play.center(), 28.0 + grow, fill);
+    paint_icon(ui, icons::PLAY_FILL, play.center(), 24.0, theme.on_accent());
+    if response.clicked() {
+        action = Some(HeaderAction::Play { shuffle: false });
+    }
+    let mut bx = play.right() + 16.0;
+    let mut button = |ui: &mut Ui, icon, size, color, tip: &str| {
+        let rect = Rect::from_min_size(pos2(bx, mid - 20.0), vec2(40.0, 40.0));
+        bx = rect.right() + 8.0;
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
+        super::icon_button(&mut child, theme, icon, 40.0, size, color, true)
+            .on_hover_text(tip)
+            .clicked()
+    };
+    if button(ui, icons::SHUFFLE, 26.0, theme.subtext0, "Shuffle") {
+        action = Some(HeaderAction::Play { shuffle: true });
+    }
+    if let Some((kind, id, on)) = &header.favourite {
+        let (icon, color, tip) = if *on {
+            (icons::CIRCLE_CHECK, theme.accent, "Remove from Favourites")
+        } else {
+            (icons::CIRCLE_PLUS, theme.subtext0, "Favourite")
+        };
+        if button(ui, icon, 28.0, color, tip) {
+            action = Some(HeaderAction::Favourite(*kind, id.clone()));
+        }
+    }
+    if header.add.is_some() && button(ui, icons::PLUS, 26.0, theme.subtext0, "Add to Library") {
+        action = Some(HeaderAction::AddToLibrary);
+    }
+    if header.description.is_some() && button(ui, icons::MORE, 26.0, theme.subtext0, "Notes") {
+        action = Some(HeaderAction::ShowNotes);
+    }
+    action
+}
+
+/// The header's details as Spotify writes them: `2026 • 12 songs, 43 min`.
+fn banner_details(header: &Header) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    for (_, label) in &header.meta {
+        if label.is_empty() {
+            continue;
+        }
+        let label = if label.starts_with(|c: char| c.is_ascii_digit()) {
+            label
+                .to_lowercase()
+                .replace("tracks…", "songs…")
+                .replace(" tracks", " songs")
+                .replace(" track", " song")
+        } else {
+            // HIP-HOP/RAP, LOSSLESS, DOLBY ATMOS: each word capitalised.
+            let mut after_letter = false;
+            label
+                .chars()
+                .map(|c| {
+                    let out = if after_letter {
+                        c.to_lowercase().next().unwrap_or(c)
+                    } else {
+                        c
+                    };
+                    after_letter = c.is_alphabetic();
+                    out
+                })
+                .collect()
+        };
+        // A count and a length read as one, as Spotify's.
+        if label.ends_with("min") && parts.last().is_some_and(|p| p.contains("song")) {
+            let last = parts.pop().unwrap_or_default();
+            parts.push(format!("{last}, {label}"));
+        } else {
+            parts.push(label);
+        }
+    }
+    parts.join(" • ")
+}
+
+/// `rect` from `top` at its top to `bottom` at its bottom.
+fn vertical_gradient(ui: &Ui, rect: Rect, top: Color32, bottom: Color32) {
+    let mut mesh = egui::Mesh::default();
+    mesh.colored_vertex(rect.left_top(), top);
+    mesh.colored_vertex(rect.right_top(), top);
+    mesh.colored_vertex(rect.right_bottom(), bottom);
+    mesh.colored_vertex(rect.left_bottom(), bottom);
+    mesh.add_triangle(0, 1, 2);
+    mesh.add_triangle(0, 2, 3);
+    ui.painter().add(mesh);
+}
+
 /// Cider's details: genre, year, track count; then the quality, which is this
 /// app's business.
 fn album_header(album: &Album, tracks: &[Track], favourite: bool) -> Header {
@@ -500,12 +731,21 @@ fn page(
     } else {
         (tracks, None)
     };
-    let search_row = if listing.searchable { SEARCH_ROW } else { 0.0 };
-    let table_top = ART_TOP + art_size(pad) + 34.0 + search_row;
-    // Albums have no column titles, as in Cider.
+    let banner = theme.layout.header == crate::theme::Header::Banner;
+    let search_row = if listing.searchable && !banner {
+        SEARCH_ROW
+    } else {
+        0.0
+    };
+    let table_top = if banner {
+        BANNER + ACTIONS
+    } else {
+        ART_TOP + art_size(pad) + 34.0 + search_row
+    };
+    // Albums have no column titles, as in Cider; Spotify gives them some.
     let head = match listing.columns {
-        Kind::Album { .. } => 0.0,
-        Kind::Playlist => tracks::HEAD_SPACE,
+        Kind::Album { .. } if !banner => 0.0,
+        _ => tracks::HEAD_SPACE,
     };
     let rows = tracks.len();
     let foot = match &listing.album {
@@ -524,11 +764,19 @@ fn page(
                 ui.allocate_exact_size(vec2(ui.available_width(), total), Sense::hover());
             let left = content.left() + pad;
             let width = content.width() - 2.0 * pad;
-            let action = hero(ui, &theme, content, pad, header.as_ref(), colors);
+            let action = if banner {
+                banner_header(ui, &theme, content, pad, header.as_ref(), colors)
+            } else {
+                hero(ui, &theme, content, pad, header.as_ref(), colors)
+            };
             // The cover moves, where Apple made it move.
-            let art = art_rect(content, pad);
+            let (art, radius) = if banner {
+                (banner_art(content, pad), 4.0)
+            } else {
+                (art_rect(content, pad), 10.0)
+            };
             let motion = header.as_ref().and_then(|h| h.motion.as_deref());
-            super::motion_over(app, ui, "album", motion, art, 10.0, art.width());
+            super::motion_over(app, ui, "album", motion, art, radius, art.width());
             match action {
                 Some(HeaderAction::Play { shuffle }) => {
                     app.play_shuffled_or_not(tracks.to_vec(), shuffle, ui.input(|i| i.time));
@@ -556,14 +804,14 @@ fn page(
             };
             let table = content.top() + table_top;
             if listing.searchable {
-                let search = super::page_search(
-                    app,
-                    ui,
-                    &theme,
-                    left + width,
-                    table - search_row + 4.0,
-                    "Search in Playlist",
-                );
+                // In Spotify's layout, on the right of the buttons' row.
+                let top = if banner {
+                    content.top() + BANNER + (ACTIONS - 32.0) / 2.0
+                } else {
+                    table - search_row + 4.0
+                };
+                let search =
+                    super::page_search(app, ui, &theme, left + width, top, "Search in Playlist");
                 if search.changed {
                     app.detail_selected = None;
                 }

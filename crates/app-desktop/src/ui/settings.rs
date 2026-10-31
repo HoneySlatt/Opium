@@ -29,9 +29,9 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
     let width = (ui.available_width() - 2.0 * pad).min(MAX_WIDTH);
     let paired = app.devices.peers.iter().filter(|p| p.paired).count().max(1);
     let total = BODY_TOP
-        + 10.0 * (GROUP_HEAD + GROUP_GAP)
+        + 11.0 * (GROUP_HEAD + GROUP_GAP)
         + 3.0 * ROW
-        + THEMES
+        + THEMES * (1 + theme_rows()) as f32
         + (12 + paired) as f32 * ROW
         + 104.0;
     let output = egui::ScrollArea::vertical()
@@ -202,7 +202,24 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
                 left,
                 y,
                 width,
-                "Appearance",
+                "Theme",
+                "How the window is laid out and coloured. Each TOML file in ~/.config/music/themes/ is one more.",
+            );
+            let card = Rect::from_min_size(
+                pos2(left, y),
+                vec2(width, THEMES * theme_rows() as f32),
+            );
+            panel(ui, &theme, card, 1);
+            themes(app, ui, &theme, card);
+            y = card.bottom() + GROUP_GAP;
+
+            y = group(
+                ui,
+                &theme,
+                left,
+                y,
+                width,
+                "Colours",
                 "Amane recolours Music along with the rest of the desktop.",
             );
             let card = Rect::from_min_size(pos2(left, y), vec2(width, THEMES));
@@ -698,15 +715,85 @@ fn lyrics_sites(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect) {
     );
 }
 
+/// The theme cards side by side.
+const THEMES_PER_ROW: usize = 3;
+
+/// How many rows of theme cards there are.
+fn theme_rows() -> usize {
+    Theme::catalogue().len().div_ceil(THEMES_PER_ROW)
+}
+
+/// The themes to choose from, three to a row.
+fn themes(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect) {
+    let chosen = app.theme_id().to_string();
+    let inner = card.shrink(14.0);
+    let gap = 12.0;
+    let n = THEMES_PER_ROW as f32;
+    let w = (inner.width() - (n - 1.0) * gap) / n;
+    let h = THEMES - 28.0;
+    for (i, (id, name, file)) in Theme::catalogue().into_iter().enumerate() {
+        let (row, col) = (i / THEMES_PER_ROW, i % THEMES_PER_ROW);
+        let rect = Rect::from_min_size(
+            pos2(
+                inner.left() + col as f32 * (w + gap),
+                inner.top() + row as f32 * (h + 28.0),
+            ),
+            vec2(w, h),
+        );
+        // In the colours chosen, as it would show.
+        let shown = file.as_ref().ok().map(|t| match app.appearance() {
+            Appearance::Amane => Theme::amane().map_or(t.clone(), |c| t.recoloured(&c)),
+            Appearance::Stock => t.clone(),
+        });
+        let detail = match &file {
+            Ok(t) => layout_line(t),
+            Err(why) => why.clone(),
+        };
+        if option_card(
+            ui,
+            theme,
+            rect,
+            &id,
+            &name,
+            &detail,
+            shown.as_ref(),
+            chosen == id,
+        ) {
+            app.set_theme(&id, ui.ctx());
+        }
+    }
+}
+
+/// What a theme's layout is like, in a few words.
+fn layout_line(t: &Theme) -> String {
+    use crate::theme::{PlayerBar, Sidebar, Window};
+    let parts = [
+        match t.layout.window {
+            Window::Flat => "Edge to edge",
+            Window::Cards => "Cards",
+        },
+        match t.layout.sidebar {
+            Sidebar::Navigation => "pages on the left",
+            Sidebar::Library => "library on the left",
+        },
+        match t.layout.player_bar {
+            PlayerBar::Floating => "floating player",
+            PlayerBar::Docked => "player along the bottom",
+        },
+    ];
+    parts.join(", ")
+}
+
 fn appearance(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect) {
     let amane = Theme::amane();
     let chosen = app.appearance();
+    let own = Theme::named(app.theme_id()).unwrap_or(Theme::STOCK);
     let options = [
         (
             Appearance::Stock,
-            "Stock",
-            "Carbonfox's black and Apple Music's pink.",
-            Some(Theme::STOCK),
+            "The theme's",
+            "The colours the theme comes with.",
+            Some(own.clone()),
         ),
         (
             Appearance::Amane,
@@ -716,7 +803,7 @@ fn appearance(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect) {
             } else {
                 "Amane's theme file isn't there yet."
             },
-            amane,
+            amane.map(|c| own.recoloured(&c)),
         ),
     ];
     let inner = card.shrink(14.0);
@@ -726,66 +813,131 @@ fn appearance(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect) {
             pos2(inner.left() + i as f32 * (w + 12.0), inner.top()),
             vec2(w, inner.height()),
         );
-        let enabled = colors.is_some();
-        let response = ui.interact(rect, Id::unique(("theme-option", name)), Sense::click());
-        let on = chosen == kind;
-        if enabled && response.hovered() && !on {
-            ui.painter().rect_filled(rect, 12.0, theme.hover());
-        }
-        let border = if on {
-            Stroke::new(2.0, theme.accent)
-        } else {
-            Stroke::new(1.0, theme.line())
-        };
-        ui.painter()
-            .rect_stroke(rect, 12.0, border, egui::StrokeKind::Inside);
-        let preview = Rect::from_min_size(rect.min + vec2(10.0, 10.0), vec2(w - 20.0, 74.0));
-        let x = preview.left();
-        let mut y = preview.bottom() + 10.0;
-        match &colors {
-            Some(c) => paint_preview(ui, preview, c),
-            None => {
-                ui.painter().rect_filled(preview, 8.0, theme.text_a(0.04));
-            }
-        }
-        let g = text(ui, name, font(13.5, Weight::SemiBold), theme.text, w - 20.0);
-        paint_text(ui, g, x, y + 9.0, egui::Align::Min, theme.text);
-        y += 18.0;
-        let muted = theme.muted();
-        let g = text(ui, detail, font(12.0, Weight::Regular), muted, w - 20.0);
-        paint_text(ui, g, x, y + 9.0, egui::Align::Min, muted);
-        y += 18.0 + 4.0;
-        if let Some(c) = &colors {
-            for (k, color) in [c.base, c.surface1, c.text, c.accent, c.mauve]
-                .into_iter()
-                .enumerate()
-            {
-                let swatch = Rect::from_min_size(pos2(x + k as f32 * 18.0, y), vec2(14.0, 14.0));
-                ui.painter().rect(
-                    swatch,
-                    4.0,
-                    color,
-                    Stroke::new(1.0, theme.line()),
-                    egui::StrokeKind::Inside,
-                );
-            }
-        }
-        if enabled
-            && response
-                .on_hover_cursor(egui::CursorIcon::PointingHand)
-                .clicked()
-            && !on
-        {
+        if option_card(
+            ui,
+            theme,
+            rect,
+            name,
+            name,
+            detail,
+            colors.as_ref(),
+            chosen == kind,
+        ) {
             app.set_appearance(kind, ui.ctx());
         }
     }
 }
 
-/// A small picture of the app in `c`'s colours: the sidebar, a title, a line,
-/// the player bar.
+/// A choice drawn as a card: a small picture of the app, its name, a line,
+/// its colours. Whether it was chosen just now.
+#[allow(clippy::too_many_arguments)]
+fn option_card(
+    ui: &mut Ui,
+    theme: &Theme,
+    rect: Rect,
+    salt: &str,
+    name: &str,
+    detail: &str,
+    colors: Option<&Theme>,
+    on: bool,
+) -> bool {
+    let w = rect.width();
+    let enabled = colors.is_some();
+    let response = ui.interact(rect, Id::unique(("theme-option", salt)), Sense::click());
+    if enabled && response.hovered() && !on {
+        ui.painter().rect_filled(rect, 12.0, theme.hover());
+    }
+    let border = if on {
+        Stroke::new(2.0, theme.accent)
+    } else {
+        Stroke::new(1.0, theme.line())
+    };
+    ui.painter()
+        .rect_stroke(rect, 12.0, border, egui::StrokeKind::Inside);
+    let preview = Rect::from_min_size(rect.min + vec2(10.0, 10.0), vec2(w - 20.0, 74.0));
+    let x = preview.left();
+    let mut y = preview.bottom() + 10.0;
+    match colors {
+        Some(c) => paint_preview(ui, preview, c),
+        None => {
+            ui.painter().rect_filled(preview, 8.0, theme.text_a(0.04));
+        }
+    }
+    let g = text(ui, name, font(13.5, Weight::SemiBold), theme.text, w - 20.0);
+    paint_text(ui, g, x, y + 9.0, egui::Align::Min, theme.text);
+    y += 18.0;
+    let muted = theme.muted();
+    let g = text(ui, detail, font(12.0, Weight::Regular), muted, w - 20.0);
+    paint_text(ui, g, x, y + 9.0, egui::Align::Min, muted);
+    y += 18.0 + 4.0;
+    if let Some(c) = colors {
+        for (k, color) in [c.base, c.surface1, c.text, c.accent, c.mauve]
+            .into_iter()
+            .enumerate()
+        {
+            let swatch = Rect::from_min_size(pos2(x + k as f32 * 18.0, y), vec2(14.0, 14.0));
+            ui.painter().rect(
+                swatch,
+                4.0,
+                color,
+                Stroke::new(1.0, theme.line()),
+                egui::StrokeKind::Inside,
+            );
+        }
+    }
+    let clicked = response
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text(detail)
+        .clicked();
+    enabled && clicked && !on
+}
+
+/// A small picture of the app in `c`'s colours and layout: the sidebar, a
+/// title, a line, the player bar.
 fn paint_preview(ui: &Ui, rect: Rect, c: &Theme) {
+    use crate::theme::{PlayerBar, Window};
     let p = ui.painter();
     let at = |fx: f32, fy: f32| pos2(rect.left() + fx * rect.width(), rect.top() + fy);
+    if c.layout.window == Window::Cards {
+        // Cards on crust: the library, the page, the player under them.
+        p.rect_filled(rect, 8.0, c.crust);
+        let gap = 4.0;
+        let bottom = rect.bottom() - 18.0;
+        let side = Rect::from_min_max(
+            rect.min + vec2(gap, gap + 8.0),
+            pos2(rect.left() + 0.26 * rect.width(), bottom),
+        );
+        let page = Rect::from_min_max(
+            pos2(side.right() + gap, side.top()),
+            pos2(rect.right() - gap, bottom),
+        );
+        p.rect_filled(side, 4.0, c.base);
+        p.rect_filled(page, 4.0, c.base);
+        p.rect_filled(
+            Rect::from_center_size(
+                pos2(rect.center().x, rect.top() + 6.0),
+                vec2(0.3 * rect.width(), 6.0),
+            ),
+            3.0,
+            c.surface1,
+        );
+        p.rect_filled(
+            Rect::from_min_size(page.min + vec2(8.0, 8.0), vec2(0.3 * page.width(), 7.0)),
+            3.5,
+            c.text,
+        );
+        p.circle_filled(pos2(page.left() + 14.0, page.top() + 30.0), 6.0, c.accent);
+        p.circle_filled(pos2(rect.center().x, rect.bottom() - 9.0), 4.0, c.text);
+        p.rect_filled(
+            Rect::from_center_size(
+                pos2(rect.center().x, rect.bottom() - 3.0),
+                vec2(0.36 * rect.width(), 2.0),
+            ),
+            1.0,
+            c.surface2,
+        );
+        return;
+    }
     p.rect_filled(rect, 8.0, c.base);
     p.rect_filled(
         Rect::from_min_max(
@@ -810,10 +962,17 @@ fn paint_preview(ui: &Ui, rect: Rect, c: &Theme) {
         3.0,
         c.subtext0,
     );
-    let bar = Rect::from_min_max(
-        pos2(rect.left() + 0.36 * rect.width(), rect.bottom() - 22.0),
-        pos2(rect.right() - 0.10 * rect.width(), rect.bottom() - 10.0),
-    );
+    let bar = if c.layout.player_bar == PlayerBar::Docked {
+        Rect::from_min_max(
+            pos2(rect.left() + 0.28 * rect.width(), rect.bottom() - 14.0),
+            pos2(rect.right(), rect.bottom()),
+        )
+    } else {
+        Rect::from_min_max(
+            pos2(rect.left() + 0.36 * rect.width(), rect.bottom() - 22.0),
+            pos2(rect.right() - 0.10 * rect.width(), rect.bottom() - 10.0),
+        )
+    };
     p.rect_filled(bar, 6.0, c.mantle);
     p.rect_filled(
         Rect::from_min_size(bar.min, vec2(0.4 * bar.width(), bar.height())),

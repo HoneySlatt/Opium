@@ -3,9 +3,11 @@
 mod artist;
 mod detail;
 mod devices;
+mod dock;
 mod drawer;
 mod grid;
 mod home;
+mod library;
 mod library_artist;
 mod lyrics;
 mod menu;
@@ -15,10 +17,12 @@ mod player_bar;
 mod playlist_dialog;
 mod search;
 mod settings;
+mod side;
 mod sidebar;
 mod signal;
 mod songs;
 mod tracks;
+mod window_bar;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -33,7 +37,12 @@ use crate::app::{App, Page, SignalAnchor};
 use crate::color::alpha;
 use crate::fonts::{Weight, font};
 use crate::icons::{self, Icon};
-use crate::theme::Theme;
+use crate::theme::{Panel, PlayerBar, Sidebar, Theme, TopBar, Window};
+
+/// The gap between cards, in a theme of cards.
+pub const GAP: f32 = 8.0;
+/// The cards' corners.
+pub const RADIUS: f32 = 8.0;
 
 /// Below this window width the sidebar collapses and padding tightens.
 pub const NARROW: f32 = 1100.0;
@@ -60,28 +69,124 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     let narrow = ui.available_width() < NARROW;
     let collapsed = app.sidebar_collapsed || narrow;
     let theme = app.theme.clone();
+    let layout = theme.layout;
+    let cards = layout.window == Window::Cards;
+    // Between the cards, and around them.
+    let gap = if cards { GAP } else { 0.0 };
+    let margin = |left: f32, right: f32, top: f32| {
+        egui::Frame::new()
+            .fill(theme.crust)
+            .inner_margin(egui::Margin {
+                left: left as i8,
+                right: right as i8,
+                top: top as i8,
+                bottom: gap as i8,
+            })
+    };
 
+    let window_bar = layout.top_bar == TopBar::Window;
+    if window_bar {
+        egui::Panel::top("window-bar")
+            .exact_size(window_bar::HEIGHT)
+            .resizable(false)
+            .show_separator_line(false)
+            .frame(egui::Frame::new().fill(theme.crust))
+            .show(ui, |ui| window_bar::show(app, ui));
+    }
+    // Under the window's bar, the cards keep only the gap.
+    let top = if window_bar { 0.0 } else { gap };
+    if layout.player_bar == PlayerBar::Docked {
+        egui::Panel::bottom("dock")
+            .exact_size(dock::HEIGHT)
+            .resizable(false)
+            .show_separator_line(false)
+            .frame(egui::Frame::new().fill(theme.crust))
+            .show(ui, |ui| dock::show(app, ui));
+    }
+
+    let library = layout.sidebar == Sidebar::Library;
+    let width = match (library, collapsed) {
+        (true, true) => library::COLLAPSED,
+        (true, false) => library::WIDTH,
+        (false, true) => 68.0,
+        (false, false) => 232.0,
+    };
     egui::Panel::left("sidebar")
-        .exact_size(if collapsed { 68.0 } else { 232.0 })
+        .exact_size(width + gap)
         .resizable(false)
         .show_separator_line(false)
-        .frame(egui::Frame::new().fill(theme.crust))
-        .show(ui, |ui| sidebar::show(app, ui, collapsed));
+        .frame(margin(gap, 0.0, top))
+        .show(ui, |ui| {
+            let rect = ui.max_rect();
+            if cards {
+                ui.painter().rect_filled(rect, RADIUS, theme.base);
+            }
+            if library {
+                library::show(app, ui, collapsed);
+            } else {
+                sidebar::show(app, ui, collapsed);
+            }
+            if cards {
+                round_off(ui, rect, theme.crust);
+            }
+        });
+
+    // The column beside the page: the song playing, or the queue.
+    let side = layout.panel == Panel::Side && !narrow;
+    if side && let Some(shows) = app.side {
+        egui::Panel::right("side")
+            .exact_size(side::WIDTH + gap)
+            .resizable(false)
+            .show_separator_line(false)
+            .frame(margin(0.0, gap, top))
+            .show(ui, |ui| {
+                let rect = ui.max_rect();
+                ui.painter().rect_filled(rect, RADIUS, theme.base);
+                side::show(app, ui, shows);
+                if cards {
+                    round_off(ui, rect, theme.crust);
+                }
+            });
+    }
 
     egui::CentralPanel::no_frame()
-        .frame(egui::Frame::new().fill(theme.base))
+        .frame(if cards {
+            margin(gap, gap, top)
+        } else {
+            egui::Frame::new().fill(theme.base)
+        })
         .show(ui, |ui| {
             let main = ui.max_rect();
-            let scrolled = page(app, ui, narrow);
-            // The sidebar's right hairline, over the page: a cover's colours
-            // at the top of it would hide it otherwise.
-            ui.painter()
-                .vline(main.left(), main.y_range(), Stroke::new(1.0, theme.line()));
-            top_bar(app, ui, main, scrolled);
-            drawer::show(app, ui, main);
-            player_bar::show(app, ui, main);
+            if cards {
+                ui.painter().rect_filled(main, RADIUS, theme.base);
+            }
+            let lyrics = app.lyrics_page && layout.lyrics == crate::theme::Lyrics::Page;
+            let scrolled = if lyrics {
+                lyrics_page(app, ui, main);
+                0.0
+            } else {
+                page(app, ui, narrow)
+            };
+            if !cards && !library {
+                // The sidebar's right hairline, over the page: a cover's
+                // colours at the top of it would hide it otherwise.
+                ui.painter()
+                    .vline(main.left(), main.y_range(), Stroke::new(1.0, theme.line()));
+            }
+            if !lyrics {
+                top_bar(app, ui, main, scrolled);
+            }
+            if layout.panel == Panel::Drawer || narrow {
+                drawer::show(app, ui, main);
+            }
+            if layout.player_bar == PlayerBar::Floating {
+                player_bar::show(app, ui, main);
+            }
             signal::show(app, ui, main);
             toast(app, ui, main);
+            if cards {
+                round_off(ui, main, theme.crust);
+            }
         });
 
     playlist_dialog::show(app, ui.ctx());
@@ -187,6 +292,10 @@ fn top_bar(app: &mut App, ui: &mut Ui, main: Rect, scrolled: f32) {
         );
         let pos = bar.center() - title.size() / 2.0;
         ui.painter().galley(pos, title, alpha(theme.text, solid));
+    }
+    // Back, forward and the drawer's buttons are in the window's bar then.
+    if theme.layout.top_bar == TopBar::Window {
+        return;
     }
 
     let mut left = ui.new_child(
@@ -320,6 +429,85 @@ fn top_bar(app: &mut App, ui: &mut Ui, main: Rect, scrolled: f32) {
             _ => app.now.is_some().then_some(SignalAnchor::TopBar),
         };
     }
+}
+
+/// Paint `rect`'s corners over in `color`, so that it reads as a card with
+/// [`RADIUS`] corners whatever was drawn in it. Above the page, under the
+/// player bar, menus and windows.
+fn round_off(ui: &Ui, rect: Rect, color: Color32) {
+    let painter = ui.ctx().layer_painter(egui::LayerId::new(
+        egui::Order::Middle,
+        egui::Id::unique(("round-off", rect.min.x as i32, rect.min.y as i32)),
+    ));
+    let r = RADIUS;
+    let corners = [
+        (rect.left_top(), vec2(1.0, 1.0)),
+        (rect.right_top(), vec2(-1.0, 1.0)),
+        (rect.left_bottom(), vec2(1.0, -1.0)),
+        (rect.right_bottom(), vec2(-1.0, -1.0)),
+    ];
+    for (corner, inward) in corners {
+        let center = corner + inward * r;
+        let mut mesh = Mesh::default();
+        mesh.colored_vertex(corner, color);
+        let steps = 8;
+        for i in 0..=steps {
+            let a = i as f32 / steps as f32 * std::f32::consts::FRAC_PI_2;
+            // From the corner's one side round to the other.
+            let point = center - vec2(inward.x * a.cos(), inward.y * a.sin()) * r;
+            mesh.colored_vertex(point, color);
+            if i > 0 {
+                mesh.add_triangle(0, i, i + 1);
+            }
+        }
+        painter.add(mesh);
+    }
+}
+
+/// The lyrics over the whole page, on the colour of the song's cover.
+fn lyrics_page(app: &mut App, ui: &mut Ui, main: Rect) {
+    let theme = app.theme.clone();
+    let shown = app.shown();
+    let color = shown
+        .track
+        .as_ref()
+        .and_then(thumb_url)
+        .and_then(|url| app.palette(&url))
+        // Darker than a header's band, for white words.
+        .map(|[c, _, _]| {
+            crate::color::mix(crate::palette::fit_header(c, false), Color32::BLACK, 0.62)
+        })
+        .unwrap_or(theme.surface1);
+    ui.painter().rect_filled(main, 0.0, color);
+    // Over the cover's colour, the words are white.
+    let on_cover = Theme {
+        text: Color32::WHITE,
+        subtext0: Color32::from_white_alpha(200),
+        ..theme
+    };
+    let pad = if main.width() < 900.0 {
+        32.0
+    } else {
+        0.18 * main.width()
+    };
+    let body = Rect::from_min_max(
+        pos2(main.left() + pad, main.top() + 40.0),
+        pos2(
+            (main.right() - pad).min(main.left() + pad + 1000.0),
+            main.bottom(),
+        ),
+    );
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(body));
+    child.set_clip_rect(main);
+    lyrics::show(
+        app,
+        &mut child,
+        &on_cover,
+        body,
+        34.0,
+        body.height(),
+        "page-lyrics",
+    );
 }
 
 fn toast(app: &mut App, ui: &mut Ui, main: Rect) {

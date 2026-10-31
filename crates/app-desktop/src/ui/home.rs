@@ -88,6 +88,7 @@ fn page(app: &mut App, ui: &mut Ui, pad: f32, which: Which) -> f32 {
         + 104.0;
 
     let mut refresh = false;
+    let mut go = None;
     let output = egui::ScrollArea::vertical()
         .id_salt(salt)
         .auto_shrink(false)
@@ -100,15 +101,23 @@ fn page(app: &mut App, ui: &mut Ui, pad: f32, which: Which) -> f32 {
                 Rect::from_min_size(content.min, vec2(content.width(), 460.0)),
             );
             let left = content.left() + pad;
-            let g = text(ui, title, font(22.0, Weight::Bold), theme.text, width);
-            paint_text(
-                ui,
-                g,
-                left,
-                content.top() + TITLE_Y,
-                egui::Align::Min,
-                theme.text,
-            );
+            if theme.layout.sidebar == crate::theme::Sidebar::Library {
+                // No pages in that sidebar: the three are chips, as
+                // Spotify's All, Music and Podcasts.
+                if let Some(page) = chips(ui, &theme, pos2(left, content.top() + TITLE_Y), which) {
+                    go = Some(page);
+                }
+            } else {
+                let g = text(ui, title, font(22.0, Weight::Bold), theme.text, width);
+                paint_text(
+                    ui,
+                    g,
+                    left,
+                    content.top() + TITLE_Y,
+                    egui::Align::Min,
+                    theme.text,
+                );
+            }
             let button = Rect::from_center_size(
                 pos2(left + width - 16.0, content.top() + TITLE_Y),
                 vec2(32.0, 32.0),
@@ -226,10 +235,55 @@ fn page(app: &mut App, ui: &mut Ui, pad: f32, which: Which) -> f32 {
     if refresh {
         app.refresh(which);
     }
+    if let Some(page) = go {
+        app.go(page);
+    }
     if let Some(title) = see_all {
         app.go(Page::Shelf(which, title));
     }
     output.state.clamped_offset().y
+}
+
+/// Home, New and Radio as chips from `at` (their left, centred on its y), the
+/// page shown filled. The one clicked.
+fn chips(ui: &Ui, theme: &Theme, at: egui::Pos2, which: Which) -> Option<Page> {
+    let mut x = at.x;
+    let f = font(14.0, Weight::Regular);
+    let mut clicked = None;
+    for (kind, label, page) in [
+        (Which::Home, "Home", Page::Home),
+        (Which::New, "New", Page::New),
+        (Which::Radio, "Radio", Page::Radio),
+    ] {
+        let w = text(ui, label, f.clone(), theme.text, 200.0).size().x;
+        let rect = Rect::from_min_size(pos2(x, at.y - 16.0), vec2(w + 24.0, 32.0));
+        x = rect.right() + 8.0;
+        let response = ui
+            .interact(rect, Id::unique(("home-chip", label)), Sense::click())
+            .on_hover_cursor(egui::CursorIcon::PointingHand);
+        let on = kind == which;
+        let (fill, ink) = if on {
+            (theme.text, theme.base)
+        } else if response.hovered() {
+            (theme.surface2, theme.text)
+        } else {
+            (theme.surface1, theme.text)
+        };
+        ui.painter().rect_filled(rect, 16.0, fill);
+        let g = text(ui, label, f.clone(), ink, 200.0);
+        paint_text(
+            ui,
+            g,
+            rect.center().x,
+            rect.center().y,
+            egui::Align::Center,
+            ink,
+        );
+        if response.clicked() && !on {
+            clicked = Some(page);
+        }
+    }
+    clicked
 }
 
 /// A chevron after a shelf's title when its covers run past the width, as

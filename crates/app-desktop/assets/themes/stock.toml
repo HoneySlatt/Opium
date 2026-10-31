@@ -1,0 +1,33 @@
+# Stock: Cider's layout, Carbonfox's black and Apple Music's pink.
+#
+# A theme is a file like this one in ~/.config/music/themes/, named
+# anything.toml. Whatever it leaves out is Stock's, so a theme can be as
+# short as one line. Music reads it again as soon as it changes.
+name = "Stock"
+
+[layout]
+window = "flat"           # flat | cards
+sidebar = "navigation"    # navigation | library
+top_bar = "page"          # page | window
+player_bar = "floating"   # floating | docked
+panel = "drawer"          # drawer | side
+header = "cover"          # cover | banner
+lyrics = "drawer"         # drawer | page
+
+[colors]
+light = false
+base = "#161616"      # the page
+mantle = "#1e1e1e"    # the player bar, the drawer, menus
+crust = "#101010"     # the sidebar; behind the cards
+surface0 = "#242424"
+surface1 = "#2e2e2e"
+surface2 = "#3a3a3a"
+overlay0 = "#6e7074"
+overlay1 = "#9a9ca0"
+text = "#f2f4f8"
+subtext0 = "#b6b8bb"
+accent = "#fa2d48"
+mauve = "#fb5c74"     # the accent's glow
+red = "#ff453a"
+green = "#4ade80"
+yellow = "#fbbf24"

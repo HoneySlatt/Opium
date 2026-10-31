@@ -109,6 +109,14 @@ pub enum SearchScope {
     Library,
 }
 
+/// What the column beside the page shows, in a theme that has one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Side {
+    NowPlaying,
+    Queue,
+    History,
+}
+
 /// The queue drawer's tabs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum DrawerTab {
@@ -225,6 +233,8 @@ enum Waiting {
 pub enum SignalAnchor {
     /// The waveform button in the top bar: the popover opens below it.
     TopBar,
+    /// The quality under the song in the docked player: above it.
+    PlayerBar,
 }
 
 impl SignalAnchor {
@@ -481,6 +491,10 @@ pub struct App {
     pub signal_open: Option<SignalAnchor>,
     pub now_playing: bool,
     pub drawer_tab: DrawerTab,
+    /// The column beside the page, when it shows.
+    pub side: Option<Side>,
+    /// The lyrics over the page, in a theme that shows them there.
+    pub lyrics_page: bool,
     /// Tracks that were playing before, most recent last.
     pub history: Vec<Track>,
     pub queue: Queue,
@@ -662,6 +676,8 @@ impl App {
             page_search_open: false,
             searched: None,
             drawer_tab: DrawerTab::default(),
+            side: Some(Side::NowPlaying),
+            lyrics_page: std::env::var_os("MUSIC_SCREENSHOT_LYRICS").is_some(),
             history: read_history(),
             queue: Queue::new(),
             tracks: HashMap::new(),
@@ -792,8 +808,9 @@ impl App {
     // ---- Navigation ----
 
     pub fn go(&mut self, page: Page) {
-        // A page shows under Now Playing: it makes way.
+        // A page shows under Now Playing and the lyrics: they make way.
         self.now_playing = false;
+        self.lyrics_page = false;
         if page != self.page {
             self.back.push(std::mem::replace(&mut self.page, page));
             self.forward.clear();
@@ -1052,6 +1069,20 @@ impl App {
         let theme = resolve_theme(&self.settings);
         theme.apply(ctx);
         self.theme = theme;
+    }
+
+    /// Choose the theme by its id; redraws at once.
+    pub fn set_theme(&mut self, id: &str, ctx: &egui::Context) {
+        self.settings.theme = (id != "stock").then(|| id.to_string());
+        self.settings.save();
+        let theme = resolve_theme(&self.settings);
+        theme.apply(ctx);
+        self.theme = theme;
+    }
+
+    /// The chosen theme's id.
+    pub fn theme_id(&self) -> &str {
+        self.settings.theme.as_deref().unwrap_or("stock")
     }
 
     pub fn appearance(&self) -> crate::settings::Appearance {
@@ -1693,6 +1724,20 @@ impl App {
         }
     }
 
+    /// The page the queue was played from, if it was.
+    pub fn playing_from(&self) -> Option<&Page> {
+        self.playing_from.as_ref()
+    }
+
+    /// Show what the side column shows, or close it when it already does.
+    pub fn toggle_side(&mut self, side: Side) {
+        self.side = if self.side == Some(side) {
+            None
+        } else {
+            Some(side)
+        };
+    }
+
     pub fn can_go_back(&self) -> bool {
         !self.back.is_empty()
     }
@@ -1716,7 +1761,12 @@ impl App {
     }
 
     pub fn page_title(&self) -> String {
-        match &self.page {
+        self.title_of(&self.page)
+    }
+
+    /// What a page is called.
+    pub fn title_of(&self, page: &Page) -> String {
+        match page {
             Page::Home => "Home".into(),
             Page::New => "New".into(),
             Page::Radio => "Radio".into(),
@@ -4108,6 +4158,7 @@ impl eframe::App for App {
             self.go(page);
             // Going to a page closes Now Playing: the screenshot may want it.
             self.now_playing = std::env::var_os("MUSIC_SCREENSHOT_NP").is_some();
+            self.lyrics_page = std::env::var_os("MUSIC_SCREENSHOT_LYRICS").is_some();
         }
         // Play a row of the open playlist, or of Songs, once it has loaded.
         if self.screenshot.is_some() {
@@ -4170,21 +4221,45 @@ fn keep_history(history: Vec<Track>) {
     crate::settings::keep_json("history.json", history, false);
 }
 
-/// Stock, or Amane's theme when it is chosen (or, until it is chosen either
-/// way, when its file exists). A missing or invalid file falls back to Stock.
+/// The theme chosen (Stock if it is gone or broken), in its own colours or
+/// in Amane's when they are chosen (or, until it is chosen either way, when
+/// Amane's file exists). A missing or invalid Amane file leaves the theme's.
 fn resolve_theme(settings: &crate::settings::Settings) -> Theme {
     use crate::settings::Appearance;
+    let theme = settings
+        .theme
+        .as_deref()
+        .and_then(Theme::named)
+        .unwrap_or(Theme::STOCK);
     match settings.appearance {
-        Some(Appearance::Stock) => Theme::STOCK,
-        Some(Appearance::Amane) | None => Theme::amane().unwrap_or(Theme::STOCK),
+        Some(Appearance::Stock) => theme,
+        Some(Appearance::Amane) | None => match Theme::amane() {
+            Some(colors) => theme.recoloured(&colors),
+            None => theme,
+        },
     }
 }
 
-/// Watch Amane's theme file the way Kopuz watches its palette: check its
-/// modification time every second and wake the UI when it changes.
+/// Watch Amane's theme file and the theme files the way Kopuz watches its
+/// palette: check when they last changed every second and wake the UI when
+/// one did.
 fn watch_theme(ctx: egui::Context, changed: Arc<AtomicBool>) {
-    let path = Theme::amane_path();
-    let modified = move || std::fs::metadata(&path).and_then(|m| m.modified()).ok();
+    let amane = Theme::amane_path();
+    let themes = Theme::themes_dir();
+    let modified = move || {
+        let mut times: Vec<_> = std::fs::read_dir(&themes)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|e| (e.path(), e.metadata().and_then(|m| m.modified()).ok()))
+            .collect();
+        times.push((
+            amane.clone(),
+            std::fs::metadata(&amane).and_then(|m| m.modified()).ok(),
+        ));
+        times.sort();
+        times
+    };
     std::thread::Builder::new()
         .name("theme-watch".into())
         .spawn(move || {

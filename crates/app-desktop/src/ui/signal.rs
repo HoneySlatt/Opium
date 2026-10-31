@@ -331,6 +331,7 @@ pub fn show(app: &mut App, ui: &mut Ui, main: Rect) {
     let x = (anchor_rect.right() - WIDTH).clamp(main.left() + 8.0, main.right() - WIDTH - 8.0);
     let y = match anchor {
         SignalAnchor::TopBar => anchor_rect.bottom() + 6.0,
+        SignalAnchor::PlayerBar => anchor_rect.top() - 6.0 - height,
     }
     .clamp(
         main.top() + 8.0,

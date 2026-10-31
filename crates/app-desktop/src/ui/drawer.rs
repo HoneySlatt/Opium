@@ -353,7 +353,7 @@ fn playing_next(app: &App, ui: &mut Ui, theme: &Theme) -> Action {
     action
 }
 
-fn history(app: &App, ui: &mut Ui, theme: &Theme) {
+pub(super) fn history(app: &App, ui: &mut Ui, theme: &Theme) {
     if app.history.is_empty() {
         note(ui, theme, "Tracks you finish or skip show up here.");
         return;

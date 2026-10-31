@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Appearance {
-    /// Carbonfox's black with Apple Music's pink.
+    /// The theme's own (Stock's: Carbonfox's black with Apple Music's pink).
     Stock,
     /// Whatever Amane's theme switch last wrote to `~/.config/music/theme.toml`.
     Amane,
@@ -24,6 +24,9 @@ pub struct Settings {
     pub search_source: Option<music_core::model::ProviderKind>,
     /// Unset: Amane when its theme file exists, Stock otherwise.
     pub appearance: Option<Appearance>,
+    /// The theme's id: a built-in one, or a file's stem in
+    /// `~/.config/music/themes/`. Unset or gone, Stock.
+    pub theme: Option<String>,
     /// The interface scale, 1.0 for 100 % (which draws at [`SCALE_UNIT`]);
     /// Ctrl +, Ctrl − and Ctrl 0 change it. `None` is 100 %.
     pub ui_scale: Option<f32>,

@@ -384,7 +384,7 @@ fn account(app: &mut App, ui: &mut Ui, theme: &Theme, full: Rect, collapsed: boo
 }
 
 /// A 30 px disc with an accent-to-mauve gradient and the initial.
-fn avatar_disc(ui: &Ui, theme: &Theme, center: egui::Pos2, name: &str) {
+pub(super) fn avatar_disc(ui: &Ui, theme: &Theme, center: egui::Pos2, name: &str) {
     let mut mesh = egui::Mesh::default();
     let steps = 32;
     mesh.colored_vertex(center, mix(theme.accent, theme.mauve, 0.5));
