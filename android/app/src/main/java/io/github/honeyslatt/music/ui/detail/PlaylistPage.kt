@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -74,6 +75,8 @@ fun PlaylistPage(c: LibraryContext, id: ItemId, known: Playlist? = null) {
     val favourites = playlist?.favourites == true
     val page = if (favourites) favouritesPage(roles.dark) else rememberPageColour(playlist?.artwork)
     val name = playlist?.name ?: "Playlist"
+    val banner = io.github.honeyslatt.music.ui.theme.look.layout.header == io.github.honeyslatt.music.core.model.Header.BANNER
+    val profile by c.core.appleProfile.collectAsStateWithLifecycle()
     DetailPage(
         c.nav,
         name,
@@ -95,9 +98,16 @@ fun PlaylistPage(c: LibraryContext, id: ItemId, known: Playlist? = null) {
                 artwork = playlist?.artwork,
                 motion = null,
                 title = name,
-                byline = playlist?.curator ?: playlist?.id?.provider?.takeIf { it != ProviderKind.APPLE_MUSIC }?.label(),
+                // Spotify's says whose it is, and how long, under the title.
+                byline = playlist?.curator
+                    ?: (if (banner && playlist?.editable == true) profile?.name else null)
+                    ?: playlist?.id?.provider?.takeIf { it != ProviderKind.APPLE_MUSIC }?.label(),
                 onByline = null,
-                meta = {},
+                meta = {
+                    if (banner && complete && tracks.isNotEmpty()) {
+                        BasicText(countAndLength(tracks), style = geist(14.sp).copy(color = roles.sub))
+                    }
+                },
                 art = if (favourites) {
                     {
                         Box(
@@ -121,7 +131,7 @@ fun PlaylistPage(c: LibraryContext, id: ItemId, known: Playlist? = null) {
             }
         }
         item { SearchReveal(searching, query, "Search in Playlist") { query = it } }
-        item { PlayShuffle(tracks.isNotEmpty(), { c.playback.play(tracks, 0) }, { c.playback.shuffle(tracks) }) }
+        item { io.github.honeyslatt.music.ui.library.PlayRow(c, tracks) }
         item { Spacer(Modifier.height(8.dp)) }
         if (tracks.isEmpty()) item { Empty(loaded.listing(), "No songs", "This playlist is empty.") }
         items(tracks.withIndex().toList(), key = { (i, t) -> "$i" + t.id.id }) { (i, track) ->

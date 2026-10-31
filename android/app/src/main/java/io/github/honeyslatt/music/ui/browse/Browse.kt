@@ -371,7 +371,7 @@ fun ShelfPage(c: LibraryContext, shelf: Shelf) {
     if (shelf.songs.isNotEmpty()) {
         ListPage(c.nav, shelf.title) {
             item {
-                io.github.honeyslatt.music.ui.library.PlayShuffle(true, { c.playback.play(shelf.songs, 0) }, { c.playback.shuffle(shelf.songs) })
+                io.github.honeyslatt.music.ui.library.PlayRow(c, shelf.songs)
             }
             items(shelf.songs.size) { i -> io.github.honeyslatt.music.ui.components.TrackRow(shelf.songs[i]) { c.playback.play(shelf.songs, i) } }
         }

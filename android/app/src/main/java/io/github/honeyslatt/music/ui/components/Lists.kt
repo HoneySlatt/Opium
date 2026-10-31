@@ -332,17 +332,21 @@ fun TrackRow(track: Track, inPlaylist: Playlist? = null, onRemoved: () -> Unit =
                 Bars(Color.White, mark.playing, width = 16.dp)
             }
         }
+        // Spotify's rows: no hairlines, the E badge before the artists, the
+        // menu's dots upright.
+        val stacked = io.github.honeyslatt.music.ui.theme.look.layout.rows == io.github.honeyslatt.music.core.model.Rows.STACKED
         Row(
-            Modifier.weight(1f).fillMaxHeight().underline(roles.line).padding(end = 12.dp),
+            Modifier.weight(1f).fillMaxHeight().then(if (stacked) Modifier else Modifier.underline(roles.line)).padding(end = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                     Line(track.title, geist(16.sp).copy(color = if (now) roles.tint else roles.text), Modifier.weight(1f, fill = false))
-                    if (track.explicit) ExplicitBadge()
+                    if (track.explicit && !stacked) ExplicitBadge()
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    if (track.explicit && stacked) ExplicitBadge()
                     if (track.id.provider != ProviderKind.APPLE_MUSIC) ServiceLogo(track.id.provider, 12.dp)
                     Line(track.artists.joinToString(", "), geist(13.5.sp).copy(color = roles.sub))
                 }
@@ -350,7 +354,7 @@ fun TrackRow(track: Track, inPlaylist: Playlist? = null, onRemoved: () -> Unit =
             Box(
                 Modifier.size(44.dp).anchor(more).press(CircleShape) { actions?.trackMenu(track, more.rect, inPlaylist, onRemoved) },
                 contentAlignment = Alignment.Center,
-            ) { Glyph(Icons.More, roles.text, 20.dp) }
+            ) { Glyph(if (stacked) io.github.honeyslatt.music.ui.MoreIcons.MoreVertical else Icons.More, if (stacked) roles.sub else roles.text, 20.dp) }
         }
     }
 }

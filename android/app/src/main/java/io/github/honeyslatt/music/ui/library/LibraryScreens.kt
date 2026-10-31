@@ -15,6 +15,11 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.layout.fillMaxSize
+import io.github.honeyslatt.music.ui.components.anchor
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -372,6 +377,13 @@ fun Songs(c: LibraryContext) {
             some.filter { matches(query, it.title, it.artists.joinToString(", "), it.album) }.sortedBy(order)
         }
     }
+    if (io.github.honeyslatt.music.ui.theme.look.layout.header == io.github.honeyslatt.music.core.model.Header.BANNER) {
+        LikedSongs(c, listing, shown, source, { source = it }, searching, { searching = !searching }, query, { query = it }, order) {
+            order = it
+            c.core.setSetting("songs-sort", it.name)
+        }
+        return
+    }
     ListPage(
         c.nav,
         "Songs",
@@ -388,7 +400,7 @@ fun Songs(c: LibraryContext) {
     ) {
         item { SearchReveal(searching, query, "Search Songs") { query = it } }
         item { SourceChips(sources, source, c.services) { source = it } }
-        item { PlayShuffle(shown.isNotEmpty(), { c.playback.play(shown, 0) }, { c.playback.shuffle(shown) }) }
+        item { PlayRow(c, shown) }
         if (shown.isEmpty()) item { Empty(listing, "No songs here", "Nothing matches this source.") }
         itemsIndexed(shown, key = { _, t -> t.id.provider.name + t.id.id }) { i, track -> TrackRow(track) { c.playback.play(shown, i) } }
         if (shown.isNotEmpty()) {
@@ -400,6 +412,131 @@ fun Songs(c: LibraryContext) {
                 )
             }
         }
+    }
+}
+
+/**
+ * The library's songs as Spotify's Liked Songs: a playlist's page with
+ * the violet heart, the user and the count; the services to list in a
+ * menu by the buttons instead of chips.
+ */
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+@Composable
+private fun LikedSongs(
+    c: LibraryContext,
+    listing: io.github.honeyslatt.music.data.Listing<Track>,
+    shown: List<Track>,
+    source: ProviderKind?,
+    setSource: (ProviderKind?) -> Unit,
+    searching: Boolean,
+    toggleSearch: () -> Unit,
+    query: String,
+    setQuery: (String) -> Unit,
+    order: SongSort,
+    setOrder: (SongSort) -> Unit,
+) {
+    val menus = LocalMenus.current
+    val profile by c.core.appleProfile.collectAsStateWithLifecycle()
+    io.github.honeyslatt.music.ui.detail.DetailPage(
+        c.nav,
+        "Songs",
+        Color(0xFF5038A0),
+        listOf(
+            BarAction(Icons.Search, "Search Songs") { toggleSearch() },
+            BarAction(Icons.Sort, "Sort") { rect -> menus.sort(rect, SongSort.entries, order, SongSort::label, setOrder) },
+        ),
+    ) {
+        item {
+            io.github.honeyslatt.music.ui.detail.DetailHeader(
+                artwork = null,
+                motion = null,
+                title = "Songs",
+                byline = profile?.name,
+                onByline = null,
+                meta = {
+                    BasicText(
+                        if (listing.done) songs(shown.size) else "${songs(shown.size)} so far…",
+                        style = geist(14.sp).copy(color = roles.sub),
+                    )
+                },
+                art = {
+                    Box(
+                        Modifier.fillMaxSize().background(Brush.linearGradient(Loved), RoundedCornerShape(4.dp)),
+                        contentAlignment = Alignment.Center,
+                    ) { Glyph(io.github.honeyslatt.music.ui.MoreIcons.HeartFill, Color.White, 96.dp) }
+                },
+            )
+        }
+        item { SearchReveal(searching, query, "Search Songs") { setQuery(it) } }
+        item {
+            Box(Modifier.fillMaxWidth()) {
+                // All the services, or one, from a menu, as on the desktop.
+                if (c.services.size > 1) {
+                    val anchor = io.github.honeyslatt.music.ui.components.rememberAnchor()
+                    Row(
+                        Modifier.align(Alignment.CenterStart).padding(start = 16.dp, top = 10.dp)
+                            .anchor(anchor)
+                            .press(RoundedCornerShape(8.dp)) {
+                                menus.sort(anchor.rect, listOf<ProviderKind?>(null) + c.services, source, { it?.label() ?: "All services" }, setSource)
+                            },
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        BasicText(source?.label() ?: "All services", style = geist(14.sp, FontWeight.Medium).copy(color = roles.sub))
+                        Glyph(Icons.Down, roles.sub, 16.dp)
+                    }
+                }
+                Box(Modifier.align(Alignment.CenterEnd)) { PlayRow(c, shown) }
+            }
+        }
+        if (shown.isEmpty()) item { Empty(listing, "No songs here", "Nothing matches this source.") }
+        itemsIndexed(shown, key = { _, t -> t.id.provider.name + t.id.id }) { i, track -> TrackRow(track) { c.playback.play(shown, i) } }
+    }
+}
+
+/**
+ * Play and Shuffle under a page's header. In a theme with Spotify's banner,
+ * Shuffle is a switch, green with a dot while on, and Play a round button
+ * in the accent that plays `tracks` as shuffle is, or pauses and goes on
+ * while one of them plays.
+ */
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+@Composable
+fun PlayRow(c: LibraryContext, tracks: List<Track>) {
+    if (io.github.honeyslatt.music.ui.theme.look.layout.header != io.github.honeyslatt.music.core.model.Header.BANNER) {
+        PlayShuffle(tracks.isNotEmpty(), { c.playback.play(tracks, 0) }, { c.playback.shuffle(tracks) })
+        return
+    }
+    val playback = c.playback
+    val shuffling by playback.shuffleOn.collectAsStateWithLifecycle()
+    val now by playback.now.collectAsStateWithLifecycle()
+    val playing by playback.playing.collectAsStateWithLifecycle()
+    val here = now != null && tracks.any { it.id == now?.id }
+    Row(
+        Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.End),
+    ) {
+        Box(
+            Modifier.size(48.dp).press(CircleShape) { playback.setShuffle(!shuffling) },
+            contentAlignment = Alignment.Center,
+        ) {
+            Glyph(Icons.Shuffle, if (shuffling) roles.accent else roles.sub, 28.dp)
+            if (shuffling) {
+                Box(Modifier.align(Alignment.BottomCenter).padding(bottom = 2.dp).size(4.dp).background(roles.accent, CircleShape))
+            }
+        }
+        Box(
+            Modifier.size(56.dp).press(CircleShape, shrink = 0.94f) {
+                when {
+                    tracks.isEmpty() -> {}
+                    here -> playback.toggle()
+                    shuffling -> playback.shuffle(tracks)
+                    else -> playback.play(tracks, 0)
+                }
+            }.background(roles.accent, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) { Glyph(if (here && playing) Icons.Pause else Icons.Play, roles.onAccent, 26.dp) }
     }
 }
 

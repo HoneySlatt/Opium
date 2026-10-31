@@ -125,7 +125,7 @@ fun AlbumPage(c: LibraryContext, id: ItemId) {
                 },
             )
         }
-        item { PlayShuffle(tracks.isNotEmpty(), { c.playback.play(tracks, 0) }, { c.playback.shuffle(tracks) }) }
+        item { io.github.honeyslatt.music.ui.library.PlayRow(c, tracks) }
         item { Spacer(Modifier.height(12.dp)) }
         if (tracks.isEmpty()) item { Empty(loaded.listing(), "No songs", "This album has no songs here.") }
         itemsIndexed(tracks, key = { i, t -> "$i" + t.id.id }) { i, track ->

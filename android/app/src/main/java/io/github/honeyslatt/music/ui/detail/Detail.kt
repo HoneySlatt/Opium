@@ -33,6 +33,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import io.github.honeyslatt.music.ui.components.ExplicitBadge
 import androidx.compose.ui.draw.clip
 import io.github.honeyslatt.music.ui.components.anchor
@@ -80,6 +81,10 @@ fun DetailPage(
     actions: List<BarAction> = emptyList(),
     content: LazyListScope.() -> Unit,
 ) {
+    if (io.github.honeyslatt.music.ui.theme.look.layout.header == io.github.honeyslatt.music.core.model.Header.BANNER) {
+        BannerPage(nav, title, page, actions, content)
+        return
+    }
     Tinted(page) {
         val state = rememberLazyListState()
         val solid by remember { derivedStateOf { state.firstVisibleItemIndex > 0 } }
@@ -94,15 +99,50 @@ fun DetailPage(
     }
 }
 
+/** A banner page's cover colour, which its header goes by. */
+val LocalBanner = androidx.compose.runtime.compositionLocalOf<Color?> { null }
+
+/**
+ * Spotify's page: the theme's colours, the cover's colour fading into
+ * them behind the top, scrolling with it; the bar taking that colour once
+ * scrolled.
+ */
 @Composable
-private fun Bar(nav: Navigator, title: String, solid: Boolean, actions: List<BarAction>) {
+private fun BannerPage(nav: Navigator, title: String, page: Color, actions: List<BarAction>, content: LazyListScope.() -> Unit) {
+    val state = rememberLazyListState()
+    val solid by remember { derivedStateOf { state.firstVisibleItemIndex > 0 } }
+    val base = roles.base
+    androidx.compose.runtime.CompositionLocalProvider(LocalBanner provides page) {
+        Box(Modifier.fillMaxSize().background(base)) {
+            val fade = with(androidx.compose.ui.platform.LocalDensity.current) { 4000.dp.toPx() }
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(560.dp)
+                    .graphicsLayer {
+                        // Up with the page, gone once its top is.
+                        translationY = if (state.firstVisibleItemIndex == 0) -state.firstVisibleItemScrollOffset.toFloat() else -fade
+                    }
+                    .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(page, androidx.compose.ui.graphics.lerp(page, base, 0.55f), base))),
+            )
+            LazyColumn(Modifier.fillMaxSize(), state = state) {
+                content()
+                item { Spacer(Modifier.height(ChromeHeight + 58.dp + 34.dp)) }
+            }
+            Bar(nav, title, solid, actions, solidFill = androidx.compose.ui.graphics.lerp(page, Color.Black, 0.45f))
+        }
+    }
+}
+
+@Composable
+private fun Bar(nav: Navigator, title: String, solid: Boolean, actions: List<BarAction>, solidFill: Color = roles.base) {
     val fade by animateFloatAsState(if (solid) 1f else 0f, label = "bar")
     // Over the cover, the buttons sit on capsules; on the solid bar, on fills.
     val fill = if (solid) roles.surface else roles.capsule
     Box(
         Modifier
             .fillMaxWidth()
-            .background(roles.base.copy(alpha = fade))
+            .background(solidFill.copy(alpha = fade))
             .then(if (solid) Modifier.underline(roles.line) else Modifier)
             .windowInsetsPadding(WindowInsets.statusBars)
             .height(52.dp)
@@ -141,6 +181,10 @@ fun DetailHeader(
     meta: @Composable () -> Unit,
     art: (@Composable () -> Unit)? = null,
 ) {
+    if (LocalBanner.current != null) {
+        BannerHeader(artwork, title, byline, onByline, meta, art)
+        return
+    }
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
         if (motion != null) {
             FullBleed(artwork, motion)
@@ -168,6 +212,47 @@ fun DetailHeader(
                         .then(if (onByline != null) Modifier.press(RoundedCornerShape(6.dp), onClick = onByline) else Modifier),
                 ) {
                     Line(byline, geist(20.sp).copy(color = roles.text.copy(alpha = 0.78f)))
+                }
+            }
+            Row(
+                Modifier.padding(top = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) { meta() }
+        }
+    }
+}
+
+/** Spotify's header: the cover centred, then the title, the byline and the
+ *  details on the left. */
+@Composable
+private fun BannerHeader(
+    artwork: Artwork?,
+    title: String,
+    byline: String?,
+    onByline: (() -> Unit)?,
+    meta: @Composable () -> Unit,
+    art: (@Composable () -> Unit)?,
+) {
+    Column(Modifier.fillMaxWidth()) {
+        Spacer(Modifier.windowInsetsTopHeight(WindowInsets.statusBars))
+        Spacer(Modifier.height(56.dp))
+        val shape = RoundedCornerShape(4.dp)
+        Box(
+            Modifier.align(Alignment.CenterHorizontally).size(260.dp)
+                .shadow(28.dp, shape, ambientColor = Color.Black.copy(alpha = 0.5f), spotColor = Color.Black.copy(alpha = 0.5f)),
+        ) {
+            if (art != null) art() else Cover(artwork, 260.dp, shape, Modifier.size(260.dp))
+        }
+        Spacer(Modifier.height(22.dp))
+        Column(Modifier.padding(horizontal = 16.dp)) {
+            BasicText(title, style = geist(26.sp, FontWeight.Bold, -0.01f).copy(color = roles.text))
+            if (byline != null) {
+                Box(
+                    Modifier.padding(top = 8.dp)
+                        .then(if (onByline != null) Modifier.press(RoundedCornerShape(6.dp), onClick = onByline) else Modifier),
+                ) {
+                    Line(byline, geist(14.sp, FontWeight.Bold).copy(color = roles.text))
                 }
             }
             Row(
