@@ -14,7 +14,8 @@ use crate::theme::{Lyrics, Panel, Theme};
 
 use super::menu::{TrackFacts, track_menu};
 use super::{
-    artwork, explicit_badge, format_time, icon_button, paint_icon, paint_text, text, thumb_url,
+    explicit_badge, fading_artwork, format_time, icon_button, paint_icon, paint_text, text,
+    thumb_url,
 };
 
 const HEIGHT: f32 = 72.0;
@@ -88,7 +89,7 @@ fn now_playing(app: &mut App, ui: &mut Ui, theme: &Theme, area: Rect) {
         return;
     };
     let art = Rect::from_min_size(pos2(area.left(), area.center().y - 28.0), vec2(56.0, 56.0));
-    artwork(ui, thumb_url(&track), art, 4.0, theme);
+    fading_artwork(ui, "dock", thumb_url(&track), art, 4.0, theme);
     // The cover opens Now Playing, as the floating bar's does.
     let open = ui.interact(art, Id::unique("dock-art"), Sense::click());
     let station = track.id.id.starts_with("ra.");

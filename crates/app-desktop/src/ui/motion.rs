@@ -1,7 +1,7 @@
 //! How what's shown comes in, as the theme's motion has it: Apple Music's
 //! fades in rising a little, Spotify's only fades, quicker.
 
-use egui::{Id, Ui, UiBuilder, vec2};
+use egui::{Color32, Id, Ui, UiBuilder, vec2};
 
 use crate::theme::{Motion, Theme};
 
@@ -61,4 +61,33 @@ pub fn arriving<R>(
         child.set_opacity(t);
     }
     content(&mut child)
+}
+
+/// Another theme or appearance: the window starts in the base colour of
+/// the one before and the new one shows through it, as it fades.
+pub fn theme_change(ui: &Ui, theme: &Theme) {
+    let id = Id::unique("theme-change");
+    let now = ui.input(|i| i.time);
+    let from = ui.data_mut(|d| {
+        let kept = d.get_temp::<(Theme, Option<(Color32, f64)>)>(id);
+        let from = match kept {
+            Some((shown, from)) if &shown == theme => from,
+            Some((before, _)) => Some((before.base, now)),
+            None => None,
+        };
+        d.insert_temp(id, (theme.clone(), from));
+        from
+    });
+    let Some((base, at)) = from else { return };
+    let t = ((now - at) as f32 / 0.38).clamp(0.0, 1.0);
+    if t >= 1.0 {
+        return;
+    }
+    let veil = egui::LayerId::new(egui::Order::Foreground, Id::unique("theme-veil"));
+    ui.ctx().layer_painter(veil).rect_filled(
+        ui.ctx().content_rect(),
+        0.0,
+        crate::color::alpha(base, 1.0 - t * t * (3.0 - 2.0 * t)),
+    );
+    ui.ctx().request_repaint();
 }

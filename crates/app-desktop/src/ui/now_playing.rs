@@ -260,7 +260,7 @@ pub fn show_cover(app: &mut App, ui: &mut Ui) {
                 None => {
                     let size = if pixels > 1200.0 { 3000 } else { 1500 };
                     let url = track.artwork.as_ref().map(|a| a.url(size));
-                    super::artwork(ui, url, art, 8.0, &theme);
+                    super::fading_artwork(ui, "now-playing", url, art, 8.0, &theme);
                 }
             }
 

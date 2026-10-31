@@ -156,7 +156,7 @@ fn now_playing(app: &mut App, ui: &mut Ui, theme: &Theme) {
             let (rect, _) = ui.allocate_exact_size(vec2(width + 8.0, width + 16.0), Sense::hover());
             let art = Rect::from_min_size(pos2(left, rect.top()), vec2(width - 8.0, width - 8.0));
             let url = track.artwork.as_ref().map(|a| a.url(720));
-            artwork(ui, url, art, 8.0, theme);
+            super::fading_artwork(ui, "side", url, art, 8.0, theme);
 
             // Title and artists, the favourite beside them.
             let (rect, _) = ui.allocate_exact_size(vec2(width + 8.0, 64.0), Sense::hover());

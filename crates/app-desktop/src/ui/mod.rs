@@ -51,6 +51,7 @@ pub const NARROW: f32 = 1100.0;
 pub const TOP_BAR: f32 = 52.0;
 
 pub fn show(app: &mut App, ui: &mut Ui) {
+    motion::theme_change(ui, &app.theme);
     // Before the pages, so that their arrow keys don't see these too.
     player_shortcuts(app, ui);
     mouse_navigation(app, ui);
@@ -1224,6 +1225,45 @@ pub fn artwork(ui: &Ui, url: Option<String>, rect: Rect, radius: f32, theme: &Th
             .show_loading_spinner(false)
             .paint_at(ui, rect);
     }
+}
+
+/// A cover that fades in over the one before when the song changes, as
+/// the player's: `salt` tells one such place from another.
+pub fn fading_artwork(
+    ui: &Ui,
+    salt: &str,
+    url: Option<String>,
+    rect: Rect,
+    radius: f32,
+    theme: &Theme,
+) {
+    let id = egui::Id::unique(("fading-cover", salt));
+    let now = ui.input(|i| i.time);
+    let (before, at) = ui.data_mut(|d| {
+        let kept = d.get_temp::<(Option<String>, Option<String>, f64)>(id);
+        let (before, at) = match kept {
+            Some((shown, before, at)) if shown == url => (before, at),
+            Some((shown, _, _)) => (shown, now),
+            None => (None, f64::NEG_INFINITY),
+        };
+        d.insert_temp(id, (url.clone(), before.clone(), at));
+        (before, at)
+    });
+    let t = ((now - at) / 0.3).clamp(0.0, 1.0) as f32;
+    let (Some(before), Some(new)) = (before, url.clone()) else {
+        return artwork(ui, url, rect, radius, theme);
+    };
+    if t >= 1.0 {
+        return artwork(ui, url, rect, radius, theme);
+    }
+    artwork(ui, Some(before), rect, radius, theme);
+    crate::covers::seen(ui.ctx(), &new);
+    egui::Image::new(new)
+        .corner_radius(CornerRadius::same(radius as u8))
+        .show_loading_spinner(false)
+        .tint(egui::Color32::from_white_alpha((t * 255.0) as u8))
+        .paint_at(ui, rect);
+    ui.ctx().request_repaint();
 }
 
 /// The animated cover at `master` over the still one in `rect`, once it

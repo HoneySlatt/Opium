@@ -25,6 +25,8 @@ import io.github.honeyslatt.music.ui.connect.Welcome
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import io.github.honeyslatt.music.ui.theme.MusicTheme
 import kotlinx.coroutines.launch
 
@@ -61,6 +63,18 @@ class MainActivity : ComponentActivity() {
         return super.onKeyDown(keyCode, event)
     }
 
+    /** The window as it shows, for a theme to fade from; null if it couldn't be copied. */
+    private suspend fun snapshot(): android.graphics.Bitmap? {
+        val view = window.decorView
+        if (view.width == 0 || view.height == 0) return null
+        val bitmap = android.graphics.Bitmap.createBitmap(view.width, view.height, android.graphics.Bitmap.Config.ARGB_8888)
+        return kotlinx.coroutines.suspendCancellableCoroutine { done ->
+            android.view.PixelCopy.request(window, bitmap, { result ->
+                done.resumeWith(Result.success(bitmap.takeIf { result == android.view.PixelCopy.SUCCESS }))
+            }, android.os.Handler(mainLooper))
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
@@ -75,7 +89,20 @@ class MainActivity : ComponentActivity() {
             val connecting = remember { Connecting() }
             var welcomed by remember { mutableStateOf(app.core.welcomed) }
             LaunchedEffect(Unit) { app.start() }
-            MusicTheme(appearance, app.themes.current(themes, chosen)) {
+            // Another theme or appearance: the screen as it was, taken before
+            // the new one is drawn, fades away over it.
+            var applied by remember { mutableStateOf(chosen to appearance) }
+            var veil by remember { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
+            val fade = remember { androidx.compose.animation.core.Animatable(0f) }
+            LaunchedEffect(chosen, appearance) {
+                if (applied == chosen to appearance) return@LaunchedEffect
+                veil = snapshot()?.asImageBitmap()
+                fade.snapTo(1f)
+                applied = chosen to appearance
+                fade.animateTo(0f, androidx.compose.animation.core.tween(380))
+                veil = null
+            }
+            MusicTheme(applied.second, app.themes.current(themes, applied.first)) {
                 Box(Modifier.fillMaxSize()) {
                     if (welcomed) {
                         App(app.core, app.library, app.playback, app.settings, connecting)
@@ -86,6 +113,14 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     ConnectHost(connecting, app.core)
+                    veil?.let {
+                        androidx.compose.foundation.Image(
+                            it,
+                            null,
+                            Modifier.fillMaxSize().graphicsLayer { alpha = fade.value },
+                            contentScale = androidx.compose.ui.layout.ContentScale.FillBounds,
+                        )
+                    }
                 }
             }
         }

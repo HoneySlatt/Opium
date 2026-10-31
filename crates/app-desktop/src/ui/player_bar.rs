@@ -15,7 +15,9 @@ use crate::theme::Theme;
 
 use super::menu::{TrackFacts, track_menu};
 
-use super::{artwork, explicit_badge, format_time, icon_button, paint_text, text, thumb_url};
+use super::{
+    explicit_badge, fading_artwork, format_time, icon_button, paint_text, text, thumb_url,
+};
 
 pub fn show(app: &mut App, ui: &mut Ui, main: Rect) {
     let theme = app.theme.clone();
@@ -306,7 +308,7 @@ fn now_playing(app: &mut App, ui: &mut Ui, theme: &Theme, lcd: Rect) {
         pos2(lcd.left() + 2.0, lcd.center().y - 15.0),
         vec2(30.0, 30.0),
     );
-    artwork(ui, thumb_url(&track), art, 3.0, theme);
+    fading_artwork(ui, "player-bar", thumb_url(&track), art, 3.0, theme);
     // The track's menu, as in the lists, over the artwork and the words (a
     // station has none). The artwork and the album link sense clicks of their
     // own, so they carry the menu too.
