@@ -57,6 +57,14 @@ impl Columns {
         }
     }
 
+    /// With the small artwork before each title.
+    pub fn with_thumbs(self) -> Self {
+        Self {
+            thumbs: true,
+            ..self
+        }
+    }
+
     /// An album's tracks, as Cider lists them: number, title, length; the
     /// artist only when it changes from track to track.
     pub fn album(left: f32, width: f32, with_artist: bool) -> Self {

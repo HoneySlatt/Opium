@@ -414,7 +414,13 @@ fn shelf_of(
     );
 
     let mut row_ui = ui.new_child(egui::UiBuilder::new().max_rect(row));
-    row_ui.set_clip_rect(row.intersect(ui.clip_rect()));
+    // Room for a tile around the covers, in a theme of tiles.
+    let around = if theme.layout.cards == crate::theme::Cards::Tiles {
+        10.0
+    } else {
+        0.0
+    };
+    row_ui.set_clip_rect(row.expand(around).intersect(ui.clip_rect()));
     let mut clicked = None;
     for (i, card) in cards.iter().enumerate() {
         let x = row.left() + i as f32 * stride - offset;
@@ -935,7 +941,13 @@ pub(super) fn song_columns(
     );
 
     let mut row_ui = ui.new_child(egui::UiBuilder::new().max_rect(row));
-    row_ui.set_clip_rect(row.intersect(ui.clip_rect()));
+    // Room for a tile around the covers, in a theme of tiles.
+    let around = if theme.layout.cards == crate::theme::Cards::Tiles {
+        10.0
+    } else {
+        0.0
+    };
+    row_ui.set_clip_rect(row.expand(around).intersect(ui.clip_rect()));
     let mut play = None;
     let mut chosen = None;
     for (i, track) in songs.iter().enumerate() {
