@@ -1729,6 +1729,21 @@ impl App {
         }
     }
 
+    /// Ask for the library's albums, unless they were asked for already:
+    /// the library sidebar lists them without their page being opened.
+    pub fn want_library_albums(&mut self) {
+        if self.library_albums.first_ask() {
+            self.backend.send(Request::LibraryAlbums);
+        }
+    }
+
+    /// The same for the library's artists.
+    pub fn want_library_artists(&mut self) {
+        if self.library_artists.first_ask() {
+            self.backend.send(Request::LibraryArtists);
+        }
+    }
+
     /// Spotify's Play on a page: pause or go on when the page is what plays,
     /// else play `tracks` from it, shuffled if shuffle is on.
     pub fn play_page(&mut self, tracks: Vec<Track>, seed: f64) {

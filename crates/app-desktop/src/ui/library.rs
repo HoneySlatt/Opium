@@ -229,6 +229,7 @@ pub fn show(app: &mut App, ui: &mut Ui, collapsed: bool) {
             .filter(|&i| !app.playlists[i].favourites)
             .collect(),
         Filter::Albums => {
+            app.want_library_albums();
             let copies = app.copies(0);
             app.albums_in_order()
                 .iter()
@@ -237,6 +238,7 @@ pub fn show(app: &mut App, ui: &mut Ui, collapsed: bool) {
                 .collect()
         }
         Filter::Artists => {
+            app.want_library_artists();
             let copies = app.copies(1);
             (0..app.library_artists.items.len())
                 .filter(|i| !copies.contains(i))
