@@ -44,6 +44,11 @@ import io.github.honeyslatt.music.ui.components.ExplicitBadge
 import io.github.honeyslatt.music.ui.components.anchor
 import io.github.honeyslatt.music.ui.components.rememberAnchor
 import io.github.honeyslatt.music.ui.components.underline
+import io.github.honeyslatt.music.ui.components.label
+import io.github.honeyslatt.music.ui.components.sort
+import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -134,6 +139,28 @@ fun SearchPage(c: LibraryContext) {
         active = false
         query = ""
     }
+    if (tiles) {
+        SpotifySearch(
+            c,
+            query,
+            { query = it },
+            library,
+            {
+                library = it
+                c.core.setSetting("search-scope", if (it) "library" else "catalog")
+            },
+            source,
+            { source = it },
+            results,
+            recent,
+            { recent = it; keepSearched(c.core.searched, it) },
+            keep,
+        ) {
+            active = false
+            query = ""
+        }
+        return
+    }
     // The title folds the source chips.
     ListPage(c.nav, "Search", fold = sourcesFold(c.services, sources) { sources = !sources }) {
         item { SearchReveal(true, query, if (library) "Your Library" else "Artists, Songs, Lyrics and More", focusOnOpen = tiles) { query = it } }
@@ -159,6 +186,262 @@ fun SearchPage(c: LibraryContext) {
             }
             r !is Loading.Ready -> item { Empty(r.listing(), "", "") }
             else -> results(c, r.value, library, source, words, { name -> Fold(name in unfolded) { unfolded = if (name in unfolded) unfolded - name else unfolded + name } }) { keep(it, library) }
+        }
+    }
+}
+
+/**
+ * Spotify's search: Back and a grey field; before a word, the recent
+ * searches, each with its ×; after, chips (the library, the kinds, the
+ * service) over one list of what matches, each saying what it is.
+ */
+@Composable
+private fun SpotifySearch(
+    c: LibraryContext,
+    query: String,
+    setQuery: (String) -> Unit,
+    library: Boolean,
+    setLibrary: (Boolean) -> Unit,
+    source: ProviderKind?,
+    setSource: (ProviderKind?) -> Unit,
+    results: Loading<SearchResults>?,
+    recent: List<RecentlySearched>,
+    setRecent: (List<RecentlySearched>) -> Unit,
+    keep: (Searched, Boolean) -> Unit,
+    onBack: () -> Unit,
+) {
+    // A kind of result alone, or all of them mixed.
+    var kind by rememberSaveable { mutableStateOf<String?>(null) }
+    Column(Modifier.fillMaxSize().background(roles.base)) {
+        Spacer(Modifier.windowInsetsTopHeight(androidx.compose.foundation.layout.WindowInsets.statusBars))
+        Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 16.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(48.dp).press(CircleShape, onClick = onBack), contentAlignment = Alignment.Center) {
+                Glyph(Icons.Left, roles.text, 24.dp)
+            }
+            SpotifyField(query, setQuery, Modifier.weight(1f))
+        }
+        androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxSize()) {
+            val r = results
+            if (r != null) {
+                item { Filters(c, library, setLibrary, kind, { kind = it }, source, setSource) }
+            }
+            when {
+                r == null -> spotifyRecent(c, recent, setRecent, keep)
+                r !is Loading.Ready -> item { Empty(r.listing(), "", "") }
+                else -> spotifyResults(c, r.value, library, source, query.trim(), kind) { keep(it, library) }
+            }
+            item { Spacer(Modifier.height(io.github.honeyslatt.music.ui.chrome.ChromeHeight + 120.dp)) }
+        }
+    }
+}
+
+/** The grey field, focused when it opens empty, with its × once typed in. */
+@Composable
+private fun SpotifyField(value: String, onChange: (String) -> Unit, modifier: Modifier) {
+    val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+    androidx.compose.runtime.LaunchedEffect(Unit) { if (value.isEmpty()) runCatching { focus.requestFocus() } }
+    Row(
+        modifier.height(46.dp).background(roles.surface2, RoundedCornerShape(6.dp)).padding(start = 14.dp, end = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        val style = geist(16.sp, FontWeight.Medium).copy(color = roles.text)
+        androidx.compose.foundation.text.BasicTextField(
+            value,
+            onChange,
+            Modifier.weight(1f).focusRequester(focus),
+            textStyle = style,
+            singleLine = true,
+            cursorBrush = androidx.compose.ui.graphics.SolidColor(roles.accent),
+            decorationBox = { inner ->
+                Box {
+                    if (value.isEmpty()) BasicText("What do you want to listen to?", style = style.copy(color = roles.sub))
+                    inner()
+                }
+            },
+        )
+        if (value.isNotEmpty()) {
+            Box(Modifier.size(40.dp).press(CircleShape) { onChange("") }, contentAlignment = Alignment.Center) {
+                Glyph(Icons.X, roles.text, 18.dp)
+            }
+        }
+    }
+}
+
+/** Your Library, the kinds of result, and the service when there are several. */
+@Composable
+private fun Filters(
+    c: LibraryContext,
+    library: Boolean,
+    setLibrary: (Boolean) -> Unit,
+    kind: String?,
+    setKind: (String?) -> Unit,
+    source: ProviderKind?,
+    setSource: (ProviderKind?) -> Unit,
+) {
+    val menus = io.github.honeyslatt.music.ui.components.LocalMenus.current
+    Row(
+        Modifier.horizontalScroll(androidx.compose.foundation.rememberScrollState()).padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        io.github.honeyslatt.music.ui.components.Chip("Your Library", null, library) { setLibrary(!library) }
+        listOf("Songs", "Artists", "Albums", "Playlists").forEach { k ->
+            io.github.honeyslatt.music.ui.components.Chip(k, null, kind == k) { setKind(if (kind == k) null else k) }
+        }
+        if (c.services.size > 1) {
+            val anchor = rememberAnchor()
+            val shape = RoundedCornerShape(17.dp)
+            Row(
+                Modifier.height(34.dp).anchor(anchor)
+                    .press(shape, shrink = 0.96f) {
+                        menus.sort(anchor.rect, listOf<ProviderKind?>(null) + c.services, source, { it?.label() ?: "All services" }, setSource)
+                    }
+                    .background(roles.surface, shape)
+                    .padding(start = 14.dp, end = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Line(source?.label() ?: "All services", geist(14.sp, FontWeight.Medium).copy(color = roles.text))
+                Glyph(Icons.Down, roles.text, 16.dp)
+            }
+        }
+    }
+}
+
+/** The recent searches, each with its ×, and a button to clear them all. */
+private fun androidx.compose.foundation.lazy.LazyListScope.spotifyRecent(
+    c: LibraryContext,
+    recent: List<RecentlySearched>,
+    setRecent: (List<RecentlySearched>) -> Unit,
+    keep: (Searched, Boolean) -> Unit,
+) {
+    if (recent.isEmpty()) return
+    item {
+        BasicText("Recent searches", Modifier.padding(start = 16.dp, top = 12.dp, bottom = 8.dp), style = geist(18.sp, FontWeight.Bold).copy(color = roles.text))
+    }
+    items(recent, key = { it.item.id().let { id -> "${id.provider}:${id.id}" } }) { entry ->
+        SearchedRow(c, entry, onRemove = { setRecent(recent.filter { it.item.id() != entry.item.id() }) }) { keep(entry.item, entry.library) }
+    }
+    item {
+        Box(Modifier.fillMaxWidth().padding(top = 20.dp), contentAlignment = Alignment.Center) {
+            val shape = RoundedCornerShape(18.dp)
+            Box(
+                Modifier.height(36.dp).press(shape, shrink = 0.96f) { setRecent(emptyList()) }
+                    .border(1.dp, roles.text.copy(alpha = 0.5f), shape)
+                    .padding(horizontal = 18.dp),
+                contentAlignment = Alignment.Center,
+            ) { BasicText("Clear recent searches", style = geist(14.sp, FontWeight.SemiBold).copy(color = roles.text)) }
+        }
+    }
+}
+
+/**
+ * What matches, in one list as Spotify's: the top artist, then a few songs,
+ * albums, artists and playlists; all of one kind when its chip is on.
+ */
+private fun androidx.compose.foundation.lazy.LazyListScope.spotifyResults(
+    c: LibraryContext,
+    r: SearchResults,
+    library: Boolean,
+    source: ProviderKind?,
+    words: String,
+    kind: String?,
+    keep: (Searched) -> Unit,
+) {
+    if (r.tracks.isEmpty() && r.albums.isEmpty() && r.artists.isEmpty() && r.playlists.isEmpty()) {
+        item { NoResults(library, source, words) }
+        return
+    }
+    fun take(k: String, n: Int) = if (kind == k) Int.MAX_VALUE else if (kind == null) n else 0
+    fun artist(a: Artist) = if (library) Route.LibraryArtist(a) else Route.Artist(a.id)
+    val artists = r.artists.take(take("Artists", 1))
+    items(artists.size) { i ->
+        val a = artists[i]
+        ResultRow(a.artwork, a.name, false, "Artist", round = true) {
+            keep(Searched.ArtistOpened(a))
+            c.nav.push(artist(a))
+        }
+    }
+    val songs = r.tracks.take(take("Songs", 5))
+    items(songs.size) { i ->
+        val t = songs[i]
+        val actions = LocalActions.current
+        val now = io.github.honeyslatt.music.ui.components.LocalNowPlaying.current.id == t.id
+        ResultRow(t.artwork, t.title, t.explicit, kindLine("Song", t.artists.joinToString(", "), kind), now = now, menu = { actions?.trackMenu(t, it) }) {
+            keep(Searched.SongPlayed(t))
+            c.playback.play(r.tracks, i)
+        }
+    }
+    val albums = r.albums.take(take("Albums", 4))
+    items(albums.size) { i ->
+        val a = albums[i]
+        val actions = LocalActions.current
+        ResultRow(a.artwork, a.title, a.explicit, kindLine("Album", a.artists.joinToString(", "), kind), menu = { actions?.albumMenu(a, it) }) {
+            keep(Searched.AlbumOpened(a))
+            c.nav.push(Route.Album(a.id))
+        }
+    }
+    // Mixed, the other artists after the albums, the top one above.
+    if (kind == null) {
+        val more = r.artists.drop(1).take(3)
+        items(more.size) { i ->
+            ResultRow(more[i].artwork, more[i].name, false, "Artist", round = true) {
+                keep(Searched.ArtistOpened(more[i]))
+                c.nav.push(artist(more[i]))
+            }
+        }
+    }
+    val playlists = r.playlists.take(take("Playlists", 4))
+    items(playlists.size) { i ->
+        val p = playlists[i]
+        val actions = LocalActions.current
+        ResultRow(p.artwork, p.name, false, kindLine("Playlist", p.curator, kind), menu = { actions?.playlistMenu(p, it) }) {
+            keep(Searched.PlaylistOpened(p))
+            c.nav.push(Route.Playlist(p.id, p))
+        }
+    }
+}
+
+/** `Song • Artist` in the mixed list; only who, under its kind's chip. */
+private fun kindLine(what: String, by: String?, kind: String?): String =
+    if (kind != null) by?.ifEmpty { null } ?: what else listOfNotNull(what, by?.ifEmpty { null }).joinToString(" • ")
+
+/** A result as Spotify lists it: its picture (round for an artist), its
+ *  title, the E and what it is; its menu, or `trailing`, on the right. */
+@Composable
+private fun ResultRow(
+    artwork: io.github.honeyslatt.music.core.model.Artwork?,
+    title: String,
+    explicit: Boolean,
+    line: String,
+    round: Boolean = false,
+    now: Boolean = false,
+    menu: ((androidx.compose.ui.geometry.Rect) -> Unit)? = null,
+    trailing: (@Composable () -> Unit)? = null,
+    onOpen: () -> Unit,
+) {
+    val anchor = rememberAnchor()
+    val more = rememberAnchor()
+    Row(
+        Modifier.fillMaxWidth().height(66.dp).anchor(anchor)
+            .press(onLongClick = menu?.let { m -> { m(anchor.rect) } }, onClick = onOpen)
+            .padding(start = 16.dp, end = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Cover(artwork, 52.dp, if (round) CircleShape else RoundedCornerShape(2.dp), Modifier.size(52.dp))
+        Column(Modifier.weight(1f)) {
+            Line(title, geist(16.sp).copy(color = if (now) roles.tint else roles.text))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                if (explicit) ExplicitBadge()
+                Line(line, geist(13.5.sp).copy(color = roles.sub))
+            }
+        }
+        when {
+            trailing != null -> trailing()
+            menu != null -> Box(Modifier.size(44.dp).anchor(more).press(CircleShape) { menu(more.rect) }, contentAlignment = Alignment.Center) {
+                Glyph(io.github.honeyslatt.music.ui.MoreIcons.MoreVertical, roles.sub, 20.dp)
+            }
+            else -> Spacer(Modifier.width(12.dp))
         }
     }
 }
@@ -287,7 +570,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.recentSearches(
  * whom, and whether it came from the library; a song has its menu.
  */
 @Composable
-private fun SearchedRow(c: LibraryContext, entry: RecentlySearched, onOpen: () -> Unit) {
+private fun SearchedRow(c: LibraryContext, entry: RecentlySearched, onRemove: (() -> Unit)? = null, onOpen: () -> Unit) {
     val actions = LocalActions.current
     val anchor = rememberAnchor()
     val more = rememberAnchor()
@@ -302,7 +585,7 @@ private fun SearchedRow(c: LibraryContext, entry: RecentlySearched, onOpen: () -
         val song: Boolean,
         val open: () -> Unit,
     )
-    fun line(kind: String, by: String?) = listOfNotNull(kind, by?.ifEmpty { null }).joinToString(" · ")
+    fun line(kind: String, by: String?) = listOfNotNull(kind, by?.ifEmpty { null }).joinToString(if (onRemove != null) " • " else " · ")
     val s = when (val i = entry.item) {
         is Searched.AlbumOpened -> i.album.let { a ->
             Shown(
@@ -328,6 +611,26 @@ private fun SearchedRow(c: LibraryContext, entry: RecentlySearched, onOpen: () -
                 c.nav.push(Route.Playlist(p.id, p))
             }
         }
+    }
+    // Spotify's: as its results, an × to forget it rather than a menu.
+    if (onRemove != null) {
+        ResultRow(
+            s.artwork,
+            s.title,
+            s.explicit,
+            if (entry.library) "${s.what} • Your Library" else s.what,
+            round = s.round,
+            menu = s.menu,
+            trailing = {
+                Box(Modifier.size(44.dp).press(CircleShape, onClick = onRemove), contentAlignment = Alignment.Center) {
+                    Glyph(Icons.X, roles.sub, 18.dp)
+                }
+            },
+        ) {
+            onOpen()
+            s.open()
+        }
+        return
     }
     Row(
         Modifier
@@ -376,20 +679,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.results(
     keep: (Searched) -> Unit,
 ) {
     if (r.tracks.isEmpty() && r.albums.isEmpty() && r.artists.isEmpty() && r.playlists.isEmpty()) {
-        item {
-            Empty(
-                io.github.honeyslatt.music.data.Listing<Unit>(done = true),
-                "No results",
-                "Nothing ${
-                    when {
-                        library -> "in your library"
-                        source == ProviderKind.APPLE_MUSIC -> "on Apple Music"
-                        source == ProviderKind.SOUND_CLOUD -> "on SoundCloud"
-                        else -> "on Apple Music or SoundCloud"
-                    }
-                } matches “$words”.",
-            )
-        }
+        item { NoResults(library, source, words) }
         return
     }
     fun artist(a: Artist) = if (library) Route.LibraryArtist(a) else Route.Artist(a.id)
@@ -467,6 +757,22 @@ private fun androidx.compose.foundation.lazy.LazyListScope.results(
             }
         }
     }
+}
+
+@Composable
+private fun NoResults(library: Boolean, source: ProviderKind?, words: String) {
+    Empty(
+        io.github.honeyslatt.music.data.Listing<Unit>(done = true),
+        "No results",
+        "Nothing ${
+            when {
+                library -> "in your library"
+                source == ProviderKind.APPLE_MUSIC -> "on Apple Music"
+                source == ProviderKind.SOUND_CLOUD -> "on SoundCloud"
+                else -> "on Apple Music or SoundCloud"
+            }
+        } matches “$words”.",
+    )
 }
 
 /** A segmented control: the choice on a raised pill. */
