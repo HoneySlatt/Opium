@@ -28,6 +28,7 @@ pub struct Layout {
     pub cards: Cards,
     pub favourite: Favourite,
     pub now_playing: NowPlaying,
+    pub rows: Rows,
 }
 
 impl Layout {
@@ -43,6 +44,7 @@ impl Layout {
         cards: Cards::Covers,
         favourite: Favourite::Star,
         now_playing: NowPlaying::Lyrics,
+        rows: Rows::Single,
     };
 }
 
@@ -153,6 +155,17 @@ pub enum Favourite {
     Star,
     /// A check in the accent, as Spotify's saved songs.
     Check,
+}
+
+/// How a song's row in a list reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Rows {
+    /// On one line, the artists in a column of their own.
+    #[default]
+    Single,
+    /// The artists under the title, as Spotify's.
+    Stacked,
 }
 
 /// The full screen player.

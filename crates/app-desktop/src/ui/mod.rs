@@ -58,7 +58,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         // Spotify's full screen keeps the player along the bottom.
         if cover && layout.player_bar == PlayerBar::Docked {
             egui::Panel::bottom("dock")
-                .exact_size(dock::HEIGHT)
+                .exact_size(dock::height(app))
                 .resizable(false)
                 .show_separator_line(false)
                 .frame(egui::Frame::new().fill(app.theme.crust))
@@ -112,7 +112,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     let top = if window_bar { 0.0 } else { gap };
     if layout.player_bar == PlayerBar::Docked {
         egui::Panel::bottom("dock")
-            .exact_size(dock::HEIGHT)
+            .exact_size(dock::height(app))
             .resizable(false)
             .show_separator_line(false)
             .frame(egui::Frame::new().fill(theme.crust))
@@ -286,6 +286,15 @@ fn placeholder(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
 
 fn top_bar(app: &mut App, ui: &mut Ui, main: Rect, scrolled: f32) {
     let theme = app.theme.clone();
+    // Under a banner, the page draws Spotify's bar itself, with its Play.
+    if theme.layout.header == crate::theme::Header::Banner
+        && matches!(
+            app.page,
+            Page::Album(_) | Page::Playlist(_) | Page::Artist(_)
+        )
+    {
+        return;
+    }
     let bar = Rect::from_min_size(main.min, vec2(main.width(), TOP_BAR));
     let solid =
         ui.ctx()
@@ -444,6 +453,72 @@ fn top_bar(app: &mut App, ui: &mut Ui, main: Rect, scrolled: f32) {
             _ => app.now.is_some().then_some(SignalAnchor::TopBar),
         };
     }
+}
+
+/// How tall Spotify's bar over a scrolled page is.
+pub const BANNER_BAR: f32 = 64.0;
+
+/// Spotify's bar over a page scrolled past its banner, `shown` of the way
+/// in: the page's colour, a round Play and the title, over the page. A
+/// child of `ui` on the bar's layer, for what goes under it, and whether
+/// Play was clicked.
+pub fn banner_bar(
+    ui: &mut Ui,
+    theme: &Theme,
+    main: Rect,
+    color: Color32,
+    title: &str,
+    shown: f32,
+) -> (Ui, bool) {
+    let bar = Rect::from_min_size(main.min, vec2(main.width(), BANNER_BAR));
+    let mut layer = ui.new_child(egui::UiBuilder::new().max_rect(main).layer_id(
+        egui::LayerId::new(egui::Order::Middle, egui::Id::unique("banner-bar")),
+    ));
+    if shown <= 0.0 {
+        return (layer, false);
+    }
+    layer.set_opacity(shown);
+    let fill = crate::color::mix(Color32::BLACK, color, 0.6);
+    layer.painter().rect_filled(bar, 0.0, fill);
+    // The bar takes the clicks over it.
+    layer.interact(bar, egui::Id::unique("banner-bar-bg"), Sense::click());
+    let play = Rect::from_center_size(
+        pos2(main.left() + 40.0 + 24.0, bar.center().y),
+        vec2(48.0, 48.0),
+    );
+    let response = layer
+        .interact(play, egui::Id::unique("banner-bar-play"), Sense::click())
+        .on_hover_text("Play")
+        .on_hover_cursor(egui::CursorIcon::PointingHand);
+    let accent = if response.hovered() {
+        crate::color::mix(theme.accent, Color32::WHITE, 0.85)
+    } else {
+        theme.accent
+    };
+    layer.painter().circle_filled(play.center(), 24.0, accent);
+    paint_icon(
+        &layer,
+        icons::PLAY_FILL,
+        play.center(),
+        20.0,
+        theme.on_accent(),
+    );
+    let g = text(
+        &layer,
+        title,
+        font(24.0, Weight::Bold),
+        Color32::WHITE,
+        main.width() - 200.0,
+    );
+    paint_text(
+        &layer,
+        g,
+        play.right() + 12.0,
+        bar.center().y,
+        egui::Align::Min,
+        Color32::WHITE,
+    );
+    (layer, response.clicked())
 }
 
 /// Paint `rect`'s corners over in `color`, so that it reads as a card with

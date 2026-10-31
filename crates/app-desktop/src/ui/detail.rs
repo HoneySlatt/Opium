@@ -37,6 +37,8 @@ struct Header {
     add: Option<Collection>,
     /// The cover's animated version, when there is one.
     motion: Option<String>,
+    /// How long it all lasts, which Spotify's banner says.
+    length: Option<Duration>,
 }
 
 /// What a click in the header asked for.
@@ -237,6 +239,7 @@ pub fn album(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
                         .can_add_album(&album.id)
                         .then(|| Collection::Album(album.clone())),
                     motion: album.motion.clone(),
+                    length: total_length(&tracks),
                     ..album_header(
                         album,
                         &tracks,
@@ -405,6 +408,7 @@ pub fn playlist(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
         }),
         add: Some(Collection::Playlist(playlist.clone())).filter(|p| app.can_add_to_library(p)),
         motion: None,
+        length: total_length(&tracks),
     };
     let listing = Listing {
         columns: Kind::Playlist,
@@ -598,44 +602,61 @@ fn banner_header(
     action
 }
 
-/// The header's details as Spotify writes them: `2026 • 12 songs, 43 min`.
+/// The header's details as Spotify writes them: `2026 • 12 songs, 43 min
+/// 7 sec`, then the quality's badge. No genre, as Spotify.
 fn banner_details(header: &Header) -> String {
     let mut parts: Vec<String> = Vec::new();
-    for (_, label) in &header.meta {
-        if label.is_empty() {
+    for (icon, label) in &header.meta {
+        if label.is_empty() || *icon == Some(icons::MIC) {
             continue;
         }
-        let label = if label.starts_with(|c: char| c.is_ascii_digit()) {
-            label
+        let digits = label.starts_with(|c: char| c.is_ascii_digit());
+        // A length of the details': said whole after the count instead.
+        if *icon == Some(icons::CLOCK) && !label.chars().all(|c| c.is_ascii_digit()) {
+            continue;
+        }
+        if digits && label.contains("TRACK") {
+            let count = label
                 .to_lowercase()
-                .replace("tracks…", "songs…")
                 .replace(" tracks", " songs")
-                .replace(" track", " song")
+                .replace(" track", " song");
+            parts.push(match header.length {
+                Some(length) => format!("{count}, {}", spoken_length(length)),
+                None => count,
+            });
+        } else if digits {
+            parts.push(label.clone());
         } else {
-            // HIP-HOP/RAP, LOSSLESS, DOLBY ATMOS: each word capitalised.
+            // LOSSLESS, DOLBY ATMOS: each word capitalised.
             let mut after_letter = false;
-            label
-                .chars()
-                .map(|c| {
-                    let out = if after_letter {
-                        c.to_lowercase().next().unwrap_or(c)
-                    } else {
-                        c
-                    };
-                    after_letter = c.is_alphabetic();
-                    out
-                })
-                .collect()
-        };
-        // A count and a length read as one, as Spotify's.
-        if label.ends_with("min") && parts.last().is_some_and(|p| p.contains("song")) {
-            let last = parts.pop().unwrap_or_default();
-            parts.push(format!("{last}, {label}"));
-        } else {
-            parts.push(label);
+            parts.push(
+                label
+                    .chars()
+                    .map(|c| {
+                        let out = if after_letter {
+                            c.to_lowercase().next().unwrap_or(c)
+                        } else {
+                            c
+                        };
+                        after_letter = c.is_alphabetic();
+                        out
+                    })
+                    .collect(),
+            );
         }
     }
     parts.join(" • ")
+}
+
+/// `37 min 3 sec`, `1 hr 12 min`.
+fn spoken_length(total: Duration) -> String {
+    let secs = total.as_secs();
+    let (hours, minutes, seconds) = (secs / 3600, secs / 60 % 60, secs % 60);
+    if hours > 0 {
+        format!("{hours} hr {minutes} min")
+    } else {
+        format!("{minutes} min {seconds} sec")
+    }
 }
 
 /// `rect` from `top` at its top to `bottom` at its bottom.
@@ -695,6 +716,7 @@ fn album_header(album: &Album, tracks: &[Track], favourite: bool) -> Header {
         )),
         add: None,
         motion: None,
+        length: None,
     }
 }
 
@@ -935,7 +957,34 @@ fn page(
     if let Some(position) = tracks::keyboard(ui, tracks.len(), &mut app.detail_selected) {
         app.play_list(tracks.to_vec(), position);
     }
-    output.state.clamped_offset().y
+    let offset = output.state.clamped_offset().y;
+    if banner && let Some(header) = &header {
+        // Past the banner, Spotify's bar with its Play, and the column
+        // titles kept under it.
+        let main = output.inner_rect;
+        let shown = ((offset - (BANNER - 2.0 * super::BANNER_BAR)) / 48.0).clamp(0.0, 1.0);
+        let color = colors.map_or(theme.surface1, |[c, _, _]| c);
+        let (mut layer, play) = super::banner_bar(ui, &theme, main, color, &header.title, shown);
+        if play {
+            app.play_shuffled_or_not(tracks.to_vec(), false, ui.input(|i| i.time));
+        }
+        if offset > table_top - super::BANNER_BAR {
+            let left = main.left() + pad;
+            let width = main.width() - 2.0 * pad;
+            let top = main.top() + super::BANNER_BAR;
+            layer.painter().rect_filled(
+                Rect::from_min_size(pos2(main.left(), top), vec2(main.width(), tracks::HEAD)),
+                0.0,
+                theme.base,
+            );
+            let columns = match listing.columns {
+                Kind::Album { with_artist } => Columns::album(left, width, with_artist),
+                Kind::Playlist => Columns::new(left, width, true),
+            };
+            tracks::head(&mut layer, &theme, &columns, top, left, width, None);
+        }
+    }
+    offset
 }
 
 /// The cover's colours behind, the artwork, and the text beside it.

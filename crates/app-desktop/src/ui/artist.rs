@@ -735,7 +735,17 @@ fn show_banner(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
                 );
             }
         });
-    output.state.clamped_offset().y
+    let offset = output.state.clamped_offset().y;
+    if let Some(artist) = &artist {
+        let shown = ((offset - (hero - 2.0 * super::BANNER_BAR)) / 48.0).clamp(0.0, 1.0);
+        let color = colors.map_or(theme.surface1, |[c, _, _]| c);
+        let main = output.inner_rect;
+        let (_, play) = super::banner_bar(ui, &theme, main, color, &artist.artist.name, shown);
+        if play {
+            app.play_shuffled_or_not(artist.top_songs.clone(), false, ui.input(|i| i.time));
+        }
+    }
+    offset
 }
 
 /// The height of a popular song's row.

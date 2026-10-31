@@ -15,6 +15,7 @@ glow = "grey"
 cards = "tiles"
 favourite = "check"
 now_playing = "cover"
+rows = "stacked"
 
 [colors]
 light = false

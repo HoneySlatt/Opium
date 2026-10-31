@@ -17,13 +17,51 @@ use super::{
     artwork, explicit_badge, format_time, icon_button, paint_icon, paint_text, text, thumb_url,
 };
 
-pub const HEIGHT: f32 = 80.0;
+const HEIGHT: f32 = 80.0;
+/// The strip under the bar while another device plays.
+const STRIP: f32 = 28.0;
+
+/// How tall the bar is: taller by its strip while another device plays.
+pub fn height(app: &App) -> f32 {
+    if app.shown().on.is_some() {
+        HEIGHT + STRIP
+    } else {
+        HEIGHT
+    }
+}
 
 pub fn show(app: &mut App, ui: &mut Ui) {
     let theme = app.theme.clone();
-    let bar = ui.max_rect();
+    let mut bar = ui.max_rect();
     // Clicks on the bar's background must not reach what is under it.
     ui.interact(bar, Id::unique("dock-bg"), Sense::click());
+    // Another device playing: Spotify's strip in the accent says which.
+    if let Some(device) = app.shown().on {
+        let strip = Rect::from_min_max(
+            pos2(bar.left() + 8.0, bar.bottom() - STRIP),
+            pos2(bar.right() - 8.0, bar.bottom() - 4.0),
+        );
+        ui.painter().rect_filled(strip, 4.0, theme.accent);
+        let ink = theme.on_accent();
+        let label = format!("Playing on {}", device.name);
+        let g = text(
+            ui,
+            &label,
+            font(13.0, Weight::Bold),
+            ink,
+            strip.width() - 40.0,
+        );
+        let x = strip.right() - 12.0 - g.size().x;
+        paint_text(ui, g, x, strip.center().y, egui::Align::Min, ink);
+        paint_icon(
+            ui,
+            icons::SPEAKER,
+            pos2(x - 14.0, strip.center().y),
+            14.0,
+            ink,
+        );
+        bar.max.y -= STRIP;
+    }
     let third = (bar.width() * 0.3).min(420.0);
     let song = Rect::from_min_max(
         bar.min + vec2(8.0, 0.0),
@@ -124,10 +162,8 @@ fn now_playing(app: &mut App, ui: &mut Ui, theme: &Theme, area: Rect) {
     y += 20.0;
 
     // The artists, which open the first one's page.
-    let mut artists = track.artists.join(", ");
-    if let Some(device) = &shown.on {
-        artists = format!("On {} · {artists}", device.name);
-    }
+    // Where it plays is in the strip under the bar.
+    let artists = track.artists.join(", ");
     let g = text(
         ui,
         &artists,

@@ -17,6 +17,7 @@ glow = "accent"          # accent | grey
 cards = "covers"          # covers | tiles
 favourite = "star"        # star | check
 now_playing = "lyrics"    # lyrics | cover
+rows = "single"           # single | stacked
 
 [colors]
 light = false

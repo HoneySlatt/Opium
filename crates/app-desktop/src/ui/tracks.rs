@@ -21,6 +21,7 @@ pub const HEAD_SPACE: f32 = HEAD + 5.0;
 /// Column x ranges inside a row, after the design's grid:
 /// `36px 3fr 2fr 2fr 52px 36px`, gap 14, padding 10; without the album,
 /// `36px 4fr 2fr 52px 36px`. No source column, as in Cider.
+#[derive(Clone, Copy)]
 pub struct Columns {
     number: (f32, f32),
     title: (f32, f32),
@@ -54,6 +55,23 @@ impl Columns {
             album,
             duration: take(52.0),
             thumbs: true,
+        }
+    }
+
+    /// The artist's column given to the title, whose row says them under
+    /// it, in a theme of stacked rows.
+    fn for_theme(self, theme: &Theme) -> Self {
+        if theme.layout.rows != crate::theme::Rows::Stacked {
+            return self;
+        }
+        let title = match self.artist {
+            Some((_, a1)) => (self.title.0, a1),
+            None => self.title,
+        };
+        Self {
+            title,
+            artist: None,
+            ..self
         }
     }
 
@@ -102,6 +120,7 @@ pub fn head(
     width: f32,
     sort: Option<Option<(SortKey, bool)>>,
 ) -> Option<SortKey> {
+    let columns = &columns.for_theme(theme);
     let y = top + HEAD / 2.0;
     let f = font(11.5, Weight::Medium);
     let mut heads = vec![(columns.title, "Title", Some(SortKey::Title))];
@@ -220,6 +239,8 @@ pub fn row(
     track: &Track,
     state: RowState,
 ) -> RowAction {
+    let stacked = theme.layout.rows == crate::theme::Rows::Stacked;
+    let columns = &columns.for_theme(theme);
     let response = ui.interact(
         rect,
         Id::unique((state.list, "row", state.position)),
@@ -284,10 +305,11 @@ pub fn row(
         t0
     };
     let title_color = if state.now { theme.accent } else { theme.text };
-    let max = t1
-        - tx
-        - if track.explicit { 18.0 } else { 0.0 }
-        - if state.favourite { 17.0 } else { 0.0 };
+    let max = if stacked {
+        t1 - tx
+    } else {
+        t1 - tx - if track.explicit { 18.0 } else { 0.0 } - if state.favourite { 17.0 } else { 0.0 }
+    };
     let title = text(
         ui,
         &track.title,
@@ -296,14 +318,63 @@ pub fn row(
         max,
     );
     let title_end = tx + title.size().x;
-    paint_text(ui, title, tx, y, egui::Align::Min, title_color);
-    let mut end = title_end;
-    if track.explicit {
-        explicit_badge(ui, theme, pos2(title_end + 6.0 + 6.0, y));
-        end += 6.0 + 12.0;
-    }
-    if state.favourite {
-        favourite_star(ui, theme, pos2(end + 6.0 + 6.0, y));
+    if stacked {
+        // The title over the E badge and the artists, the favourite's mark
+        // by the length, as Spotify's.
+        paint_text(ui, title, tx, y - 9.0, egui::Align::Min, title_color);
+        let mut ax = tx;
+        if track.explicit {
+            explicit_badge(ui, theme, pos2(tx + 6.0, y + 10.0));
+            ax += 12.0 + 5.0;
+        }
+        let g = text(
+            ui,
+            &track.artists.join(", "),
+            font(12.5, Weight::Regular),
+            theme.subtext0,
+            (t1 - ax).max(0.0),
+        );
+        let link = Rect::from_min_size(pos2(ax, y + 10.0 - g.size().y / 2.0), g.size());
+        let mut color = theme.subtext0;
+        if !track.id.id.starts_with("i.") {
+            let hit = ui.interact(
+                link,
+                Id::unique((state.list, "artist", state.position)),
+                Sense::click(),
+            );
+            if hit.hovered() {
+                color = theme.text;
+                ui.painter()
+                    .hline(link.x_range(), link.bottom(), Stroke::new(1.0, color));
+            }
+            if hit
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .clicked()
+            {
+                action = RowAction::Menu(TrackChoice::GoToArtist);
+            }
+        }
+        let g = text(
+            ui,
+            &track.artists.join(", "),
+            font(12.5, Weight::Regular),
+            color,
+            (t1 - ax).max(0.0),
+        );
+        paint_text(ui, g, ax, y + 10.0, egui::Align::Min, color);
+        if state.favourite {
+            favourite_star(ui, theme, pos2(columns.duration.0 - 14.0, y));
+        }
+    } else {
+        paint_text(ui, title, tx, y, egui::Align::Min, title_color);
+        let mut end = title_end;
+        if track.explicit {
+            explicit_badge(ui, theme, pos2(title_end + 6.0 + 6.0, y));
+            end += 6.0 + 12.0;
+        }
+        if state.favourite {
+            favourite_star(ui, theme, pos2(end + 6.0 + 6.0, y));
+        }
     }
 
     // The artist and the album, each a link to its page.
