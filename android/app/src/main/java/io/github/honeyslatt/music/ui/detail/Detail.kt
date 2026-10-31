@@ -102,17 +102,20 @@ fun DetailPage(
 /** A banner page's cover colour, which its header goes by. */
 val LocalBanner = androidx.compose.runtime.compositionLocalOf<Color?> { null }
 
+/** A banner page's actions, which go left of Shuffle and Play rather than in the bar. */
+val LocalBannerActions = androidx.compose.runtime.compositionLocalOf<List<BarAction>> { emptyList() }
+
 /**
  * Spotify's page: the theme's colours, the cover's colour fading into
- * them behind the top, scrolling with it; the bar taking that colour once
- * scrolled.
+ * them behind the top, scrolling with it; the bar, only Back and the
+ * title, taking that colour once scrolled.
  */
 @Composable
 private fun BannerPage(nav: Navigator, title: String, page: Color, actions: List<BarAction>, content: LazyListScope.() -> Unit) {
     val state = rememberLazyListState()
     val solid by remember { derivedStateOf { state.firstVisibleItemIndex > 0 } }
     val base = roles.base
-    androidx.compose.runtime.CompositionLocalProvider(LocalBanner provides page) {
+    androidx.compose.runtime.CompositionLocalProvider(LocalBanner provides page, LocalBannerActions provides actions) {
         Box(Modifier.fillMaxSize().background(base)) {
             val fade = with(androidx.compose.ui.platform.LocalDensity.current) { 4000.dp.toPx() }
             Box(
@@ -129,7 +132,7 @@ private fun BannerPage(nav: Navigator, title: String, page: Color, actions: List
                 content()
                 item { Spacer(Modifier.height(ChromeHeight + 58.dp + 34.dp)) }
             }
-            Bar(nav, title, solid, actions, solidFill = androidx.compose.ui.graphics.lerp(page, Color.Black, 0.45f))
+            Bar(nav, title, solid, emptyList(), solidFill = androidx.compose.ui.graphics.lerp(page, Color.Black, 0.45f))
         }
     }
 }

@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -469,12 +470,12 @@ private fun LikedSongs(
         }
         item { SearchReveal(searching, query, "Search Songs") { setQuery(it) } }
         item {
-            Box(Modifier.fillMaxWidth()) {
+            PlayRow(c, shown) {
                 // All the services, or one, from a menu, as on the desktop.
                 if (c.services.size > 1) {
                     val anchor = io.github.honeyslatt.music.ui.components.rememberAnchor()
                     Row(
-                        Modifier.align(Alignment.CenterStart).padding(start = 16.dp, top = 10.dp)
+                        Modifier.padding(start = 9.dp, end = 4.dp)
                             .anchor(anchor)
                             .press(RoundedCornerShape(8.dp)) {
                                 menus.sort(anchor.rect, listOf<ProviderKind?>(null) + c.services, source, { it?.label() ?: "All services" }, setSource)
@@ -486,7 +487,6 @@ private fun LikedSongs(
                         Glyph(Icons.Down, roles.sub, 16.dp)
                     }
                 }
-                Box(Modifier.align(Alignment.CenterEnd)) { PlayRow(c, shown) }
             }
         }
         if (shown.isEmpty()) item { Empty(listing, "No songs here", "Nothing matches this source.") }
@@ -496,13 +496,14 @@ private fun LikedSongs(
 
 /**
  * Play and Shuffle under a page's header. In a theme with Spotify's banner,
- * Shuffle is a switch, green with a dot while on, and Play a round button
- * in the accent that plays `tracks` as shuffle is, or pauses and goes on
- * while one of them plays.
+ * the page's actions come first on the left, after `lead`; Shuffle is a
+ * switch, green with a dot while on, and Play a round button in the accent
+ * that plays `tracks` as shuffle is, or pauses and goes on while one of
+ * them plays.
  */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
-fun PlayRow(c: LibraryContext, tracks: List<Track>) {
+fun PlayRow(c: LibraryContext, tracks: List<Track>, lead: @Composable () -> Unit = {}) {
     if (io.github.honeyslatt.music.ui.theme.look.layout.header != io.github.honeyslatt.music.core.model.Header.BANNER) {
         PlayShuffle(tracks.isNotEmpty(), { c.playback.play(tracks, 0) }, { c.playback.shuffle(tracks) })
         return
@@ -513,10 +514,13 @@ fun PlayRow(c: LibraryContext, tracks: List<Track>) {
     val playing by playback.playing.collectAsStateWithLifecycle()
     val here = now != null && tracks.any { it.id == now?.id }
     Row(
-        Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 8.dp),
+        // The first icon's glyph lines up with the title above.
+        Modifier.fillMaxWidth().padding(start = 7.dp, end = 16.dp, top = 4.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.End),
     ) {
+        lead()
+        io.github.honeyslatt.music.ui.detail.LocalBannerActions.current.forEach { RowAction(it) }
+        Spacer(Modifier.weight(1f))
         Box(
             Modifier.size(48.dp).press(CircleShape) { playback.setShuffle(!shuffling) },
             contentAlignment = Alignment.Center,
@@ -526,6 +530,7 @@ fun PlayRow(c: LibraryContext, tracks: List<Track>) {
                 Box(Modifier.align(Alignment.BottomCenter).padding(bottom = 2.dp).size(4.dp).background(roles.accent, CircleShape))
             }
         }
+        Spacer(Modifier.width(16.dp))
         Box(
             Modifier.size(56.dp).press(CircleShape, shrink = 0.94f) {
                 when {
@@ -537,6 +542,26 @@ fun PlayRow(c: LibraryContext, tracks: List<Track>) {
             }.background(roles.accent, CircleShape),
             contentAlignment = Alignment.Center,
         ) { Glyph(if (here && playing) Icons.Pause else Icons.Play, roles.onAccent, 26.dp) }
+    }
+}
+
+/** A page's action as Spotify draws it by Play: a bare icon; added, a green
+ *  disc with a check; a playlist starred, a green star. */
+@Composable
+private fun RowAction(a: BarAction) {
+    val anchor = io.github.honeyslatt.music.ui.components.rememberAnchor()
+    Box(
+        Modifier.size(44.dp).anchor(anchor).press(CircleShape) { a.onClick(anchor.rect) },
+        contentAlignment = Alignment.Center,
+    ) {
+        when (a.icon) {
+            Icons.Check -> Box(Modifier.size(26.dp).background(roles.accent, CircleShape), contentAlignment = Alignment.Center) {
+                Glyph(Icons.Check, roles.onAccent, 16.dp)
+            }
+            Icons.Plus -> Glyph(Icons.Pluscircle, roles.sub, 28.dp)
+            Icons.Starf -> Glyph(Icons.Starf, roles.accent, 26.dp)
+            else -> Glyph(a.icon, roles.sub, 26.dp)
+        }
     }
 }
 

@@ -286,12 +286,9 @@ private fun Footer(playback: Playback, t: Track, onDevices: () -> Unit, onQueue:
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
 private fun LyricsCard(playback: Playback, t: Track, page: Color, onOpen: () -> Unit) {
-    var has by remember(t.id) { mutableStateOf(true) }
-    if (!has) {
-        // Asked once out of sight, to know whether there are any.
-        Box(Modifier.size(0.dp)) { Lyrics(playback, t, calm = false) { has = it } }
-        return
-    }
+    // Asked once per song: the card shows only once lyrics are known to be there.
+    val has by produceState(false, t.id) { value = LyricsSource.find(t)?.lines?.isNotEmpty() == true }
+    if (!has) return
     val shape = RoundedCornerShape(12.dp)
     Column(
         Modifier.fillMaxWidth().background(lerp(page, Color.Black, 0.2f), shape).press(shape, onClick = onOpen).padding(16.dp),
@@ -302,7 +299,11 @@ private fun LyricsCard(playback: Playback, t: Track, page: Color, onOpen: () -> 
                 Glyph(MoreIcons.Expand, Color.White, 16.dp)
             }
         }
-        Box(Modifier.fillMaxWidth().height(260.dp).padding(top = 8.dp)) { Lyrics(playback, t, calm = false) { has = it } }
+        Box(Modifier.fillMaxWidth().height(260.dp).padding(top = 8.dp)) {
+            Lyrics(playback, t, calm = false) {}
+            // A tap anywhere opens them, rather than seeking to a line.
+            Box(Modifier.matchParentSize().pointerInput(Unit) { detectTapGestures { onOpen() } })
+        }
     }
 }
 

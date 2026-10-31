@@ -38,6 +38,31 @@ fun AlbumTrackRow(number: Int, track: Track, last: Boolean, onClick: () -> Unit 
     val actions = LocalActions.current
     val anchor = rememberAnchor()
     val more = rememberAnchor()
+    if (io.github.honeyslatt.music.ui.theme.look.layout.rows == io.github.honeyslatt.music.core.model.Rows.STACKED) {
+        // Spotify's: no number nor hairline, the E and the artists under
+        // the title, the menu's dots upright.
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = 60.dp)
+                .anchor(anchor)
+                .press(onLongClick = { actions?.trackMenu(track, anchor.rect) }, onClick = onClick)
+                .padding(start = 16.dp, end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            androidx.compose.foundation.layout.Column(Modifier.weight(1f)) {
+                Line(track.title, geist(16.sp).copy(color = if (now) roles.tint else roles.text))
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    if (track.explicit) ExplicitBadge()
+                    Line(track.artists.joinToString(", "), geist(13.5.sp).copy(color = roles.sub))
+                }
+            }
+            Box(Modifier.size(44.dp).anchor(more).press { actions?.trackMenu(track, more.rect) }, contentAlignment = Alignment.Center) {
+                Glyph(io.github.honeyslatt.music.ui.MoreIcons.MoreVertical, roles.sub, 20.dp)
+            }
+        }
+        return
+    }
     Row(
         Modifier
             .fillMaxWidth()
