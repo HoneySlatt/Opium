@@ -59,7 +59,7 @@ class ArtProvider : ContentProvider() {
             val part = File(dir, "$key.${"%08x".format(random.nextInt())}.part")
             // Out of reach: said as the one failure a provider may give.
             try {
-                Http.client.newCall(Request.Builder().url(url).build()).execute().use { response ->
+                Http.client.newCall(Request.Builder().url(io.github.honeyslatt.music.data.Covers.sign(url)).build()).execute().use { response ->
                     if (!response.isSuccessful) throw FileNotFoundException("HTTP ${response.code}")
                     part.outputStream().use { out -> (response.body ?: throw FileNotFoundException()).byteStream().copyTo(out) }
                 }

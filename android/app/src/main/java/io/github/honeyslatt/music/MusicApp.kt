@@ -38,12 +38,16 @@ class MusicApp : Application(), coil3.SingletonImageLoader.Factory {
 
     /** Covers fade in as they come, rather than appearing at once. */
     override fun newImageLoader(context: coil3.PlatformContext): coil3.ImageLoader =
-        coil3.ImageLoader.Builder(context).crossfade(220).build()
+        coil3.ImageLoader.Builder(context)
+            .crossfade(220)
+            .components { add(io.github.honeyslatt.music.data.Covers.Signing()) }
+            .build()
 
     override fun onCreate() {
         super.onCreate()
         Tls.init(this)
         core = Core(this)
+        io.github.honeyslatt.music.data.Covers.sign = { core.session.signedCover(it) }
         settings = io.github.honeyslatt.music.data.Settings(this)
         themes = io.github.honeyslatt.music.data.Themes(this)
         library = Library(core, scope)

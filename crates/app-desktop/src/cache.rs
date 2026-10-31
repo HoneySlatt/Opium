@@ -30,8 +30,8 @@ fn file(name: &str) -> Option<PathBuf> {
 
 /// What was kept under `name`, if anything readable was.
 pub fn read<T: DeserializeOwned>(name: &str) -> Option<T> {
-    let bytes = std::fs::read(file(name)?).ok()?;
-    serde_json::from_slice(&bytes).ok()
+    let text = std::fs::read_to_string(file(name)?).ok()?;
+    serde_json::from_str(&navidrome::scrub_kept(&text)).ok()
 }
 
 /// Keep `value` under `name`, replacing the old one whole: written aside, then

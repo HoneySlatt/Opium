@@ -123,7 +123,9 @@ impl Mpris {
                     while let Some(change) = changes_rx.recv().await {
                         if let Some(url) = &change.cover
                             && crate::covers::read(url).is_none()
-                            && let Ok(resp) = ehttp::fetch_blocking(&ehttp::Request::get(url))
+                            && let Ok(resp) = ehttp::fetch_blocking(&ehttp::Request::get(
+                                crate::covers::signed(url),
+                            ))
                             && resp.ok
                         {
                             crate::covers::write(url, &resp.bytes);

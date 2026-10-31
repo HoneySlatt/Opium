@@ -648,6 +648,13 @@ async fn sign_in() -> Result<(), String> {
     write_private(&dir.join("media-user-token"), token.as_bytes()).map_err(|e| e.to_string())
 }
 
+/// The server's covers signed by `nd` as they are fetched, or by none.
+fn sign_covers_with(nd: &Option<Arc<Navidrome>>) {
+    crate::covers::set_signer(nd.clone().map(|nd| {
+        Arc::new(move |url: &str| nd.sign(url)) as Arc<dyn Fn(&str) -> Option<String> + Send + Sync>
+    }));
+}
+
 /// A connection made while requests went on.
 /// With whether its library then loads (once the library was asked for).
 enum Arrived {
@@ -733,6 +740,7 @@ async fn run(
                     }
                     Arrived::Navidrome(server, load) => {
                         nd = server;
+                        sign_covers_with(&nd);
                         if let Some(nd) = nd.clone().filter(|_| load && library_wanted) {
                             loading.start(ProviderKind::Navidrome, load_navidrome_library(nd, replies));
                         }
@@ -786,6 +794,7 @@ async fn run(
                     }
                     (ProviderKind::Navidrome, false) => {
                         nd = None;
+                        sign_covers_with(&nd);
                         loading.stop(provider);
                     }
                     // Turned on: its library loads once it is connected.
@@ -821,7 +830,10 @@ async fn run(
                 match provider {
                     ProviderKind::AppleMusic => apple = None,
                     ProviderKind::SoundCloud => sc = None,
-                    ProviderKind::Navidrome => nd = None,
+                    ProviderKind::Navidrome => {
+                        nd = None;
+                        sign_covers_with(&nd);
+                    }
                 }
                 tokio::task::spawn_blocking(move || forget_sign_in(provider));
                 continue;
@@ -871,6 +883,7 @@ async fn run(
                         replies.send(Reply::Navidrome(Ok(Some(server.user().to_owned()))));
                         let server = Arc::new(server);
                         nd = Some(server.clone());
+                        sign_covers_with(&nd);
                         loading.start(
                             ProviderKind::Navidrome,
                             load_navidrome_library(server, replies),
@@ -992,7 +1005,7 @@ async fn run(
                     // The cover is often kept already, the page showing it.
                     let bytes = match crate::covers::read(&url) {
                         Some(bytes) => Some(bytes),
-                        None => match http.get(&url).send().await {
+                        None => match http.get(crate::covers::signed(&url)).send().await {
                             Ok(resp) => resp.bytes().await.ok().map(|b| b.to_vec()),
                             Err(_) => None,
                         },

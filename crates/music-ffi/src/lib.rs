@@ -194,6 +194,15 @@ impl Session {
         .await
     }
 
+    /// Where to fetch the cover at `url` from: signed, if it is the
+    /// server's (kept and shown, its address carries no sign-in).
+    pub fn signed_cover(&self, url: String) -> String {
+        self.services()
+            .navidrome
+            .and_then(|nd| nd.sign(&url))
+            .unwrap_or(url)
+    }
+
     /// What the app keeps to sign in to a Navidrome server again: the
     /// address, the user and a salted token, never the password, as JSON.
     pub fn navidrome_credentials(
@@ -977,9 +986,9 @@ fn keep<T: serde::Serialize>(path: &str, items: &[T]) {
 
 /// What was kept at `path`: nothing if nothing readable was.
 fn kept<T: serde::de::DeserializeOwned>(path: &str) -> Vec<T> {
-    std::fs::read(path)
+    std::fs::read_to_string(path)
         .ok()
-        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .and_then(|text| serde_json::from_str(&navidrome::scrub_kept(&text)).ok())
         .unwrap_or_default()
 }
 
@@ -1054,7 +1063,7 @@ pub fn keep_session(path: String, session: connect::Handoff) {
 /// What played when the app last closed, if anything did.
 #[uniffi::export]
 pub fn kept_session(path: String) -> Option<connect::Handoff> {
-    serde_json::from_slice(&std::fs::read(path).ok()?).ok()
+    serde_json::from_str(&navidrome::scrub_kept(&std::fs::read_to_string(path).ok()?)).ok()
 }
 
 #[uniffi::export]

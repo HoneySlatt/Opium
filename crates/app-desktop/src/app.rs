@@ -2571,9 +2571,11 @@ impl App {
     /// Show what played when the app last closed, paused where it was; it
     /// is fetched only once played, the services being still on their way.
     fn resume_session(&mut self) {
-        let Some(session) = std::fs::read(crate::settings::dir().join("session.json"))
+        let Some(session) = std::fs::read_to_string(crate::settings::dir().join("session.json"))
             .ok()
-            .and_then(|b| serde_json::from_slice::<connect::Handoff>(&b).ok())
+            .and_then(|text| {
+                serde_json::from_str::<connect::Handoff>(&navidrome::scrub_kept(&text)).ok()
+            })
         else {
             return;
         };
@@ -4491,9 +4493,9 @@ impl eframe::App for App {
 
 /// The songs played, as kept when the app last closed.
 fn read_history() -> Vec<Track> {
-    std::fs::read(crate::settings::dir().join("history.json"))
+    std::fs::read_to_string(crate::settings::dir().join("history.json"))
         .ok()
-        .and_then(|b| serde_json::from_slice(&b).ok())
+        .and_then(|text| serde_json::from_str(&navidrome::scrub_kept(&text)).ok())
         .unwrap_or_default()
 }
 

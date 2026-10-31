@@ -55,6 +55,26 @@ pub fn write_motion(url: &str, size: u32, bytes: &[u8]) -> Option<PathBuf> {
     Some(path)
 }
 
+/// Signs a server's cover as it is fetched: kept and shown, its address
+/// carries no sign-in (see `navidrome::Navidrome::sign`).
+type Signer = Arc<dyn Fn(&str) -> Option<String> + Send + Sync>;
+static SIGNER: std::sync::RwLock<Option<Signer>> = std::sync::RwLock::new(None);
+
+/// Covers are signed by `signer` from now on, or by none.
+pub fn set_signer(signer: Option<Signer>) {
+    *SIGNER.write().unwrap_or_else(|e| e.into_inner()) = signer;
+}
+
+/// Where to fetch the cover at `url` from: signed, if it is a server's.
+pub fn signed(url: &str) -> String {
+    SIGNER
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .and_then(|sign| sign(url))
+        .unwrap_or_else(|| url.to_owned())
+}
+
 /// Covers fetched at once: scrolling fast through a library asks for
 /// hundreds, which would each get threads of their own.
 const FETCHERS: usize = 6;
@@ -271,13 +291,15 @@ impl BytesLoader for CoverLoader {
             if let Some(bytes) = read(&uri) {
                 return finish(uri, Ok(bytes.into()));
             }
-            let result = match ehttp::fetch_blocking(&ehttp::Request::get(uri.clone())) {
+            let from = signed(&uri);
+            let result = match ehttp::fetch_blocking(&ehttp::Request::get(&from)) {
                 Ok(r) if r.ok => {
                     write(&uri, &r.bytes);
                     Ok(r.bytes.into())
                 }
                 Ok(r) => Err(format!("{uri}: {} {}", r.status, r.status_text)),
-                Err(e) => Err(format!("{uri}: {e}")),
+                // Said without the sign-in it was fetched with.
+                Err(e) => Err(format!("{uri}: {}", e.replace(&from, &uri))),
             };
             finish(uri, result);
         }));

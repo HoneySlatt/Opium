@@ -26,7 +26,7 @@ object CoverColours {
     private val washes = ConcurrentHashMap<Pair<String, Boolean>, List<Int>>()
 
     private fun bytes(url: String): ByteArray? = runCatching {
-        http.newCall(Request.Builder().url(url).build()).execute().use { it.body?.bytes() }
+        http.newCall(Request.Builder().url(io.github.honeyslatt.music.data.Covers.sign(url)).build()).execute().use { it.body?.bytes() }
     }.getOrNull()
 
     private fun colour(rgb: Int) = Color(0xFF000000.toInt() or rgb)

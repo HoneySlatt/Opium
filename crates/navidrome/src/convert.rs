@@ -13,21 +13,27 @@ pub(crate) fn id(id: &str) -> ItemId {
     ItemId::new(ProviderKind::Navidrome, id)
 }
 
-/// Where the server's pictures are: their URLs carry the sign-in, as every
-/// request does.
+/// Where the server's pictures are, and the sign-in every request carries.
 pub(crate) struct Urls {
     pub base: String,
     pub auth: String,
 }
 
+/// Where a cover's address ends and its sign-in would begin.
+pub(crate) const COVER: &str = "/rest/getCoverArt.view?";
+
 impl Urls {
-    /// A cover by its id, at the size asked.
+    /// A cover by its id, at the size asked: without the sign-in, which is
+    /// added only as it is fetched (see `Navidrome::sign`), so that an
+    /// address kept (the history, the library on disk, another device) or
+    /// handed to another program never carries it.
     pub(crate) fn cover(&self, cover: Option<&str>) -> Option<Artwork> {
         let cover = cover.filter(|c| !c.is_empty())?;
         Some(Artwork {
             url_template: format!(
-                "{}/rest/getCoverArt.view?id={cover}&size={{size}}&{}",
-                self.base, self.auth
+                "{}{COVER}id={}&size={{size}}",
+                self.base,
+                crate::encode(cover)
             ),
             background: None,
         })
@@ -223,7 +229,7 @@ mod tests {
         assert_eq!(t.artists, ["First", "Second"]);
         assert_eq!(
             t.artwork.unwrap().url(300),
-            "http://server/rest/getCoverArt.view?id=al-1&size=300&u=me&t=x&s=y"
+            "http://server/rest/getCoverArt.view?id=al-1&size=300"
         );
     }
 

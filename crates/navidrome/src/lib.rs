@@ -86,6 +86,45 @@ impl Credentials {
     }
 }
 
+/// `url`, a cover of the server at `base`, signed with `auth`.
+fn signed_cover(base: &str, auth: &str, url: &str) -> Option<String> {
+    let rest = url.strip_prefix(base)?.strip_prefix(convert::COVER)?;
+    let kept: Vec<&str> = rest
+        .split('&')
+        .filter(|p| {
+            !["u=", "t=", "s=", "v=", "c="]
+                .iter()
+                .any(|k| p.starts_with(k))
+        })
+        .collect();
+    Some(format!("{base}{}{}&{auth}", convert::COVER, kept.join("&")))
+}
+
+/// Kept JSON (the history, a session, a library list) with every cover of
+/// a server in it unsigned: kept before covers were kept so, they carried
+/// the sign-in.
+pub fn scrub_kept(json: &str) -> String {
+    let mut out = String::with_capacity(json.len());
+    let mut rest = json;
+    while let Some(at) = rest.find(convert::COVER) {
+        let start = at + convert::COVER.len();
+        out.push_str(&rest[..start]);
+        let end = rest[start..].find('"').map_or(rest.len(), |e| start + e);
+        let kept: Vec<&str> = rest[start..end]
+            .split('&')
+            .filter(|p| {
+                !["u=", "t=", "s=", "v=", "c="]
+                    .iter()
+                    .any(|k| p.starts_with(k))
+            })
+            .collect();
+        out.push_str(&kept.join("&"));
+        rest = &rest[end..];
+    }
+    out.push_str(rest);
+    out
+}
+
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
@@ -192,6 +231,13 @@ impl Navidrome {
 
     pub fn user(&self) -> &str {
         &self.credentials.user
+    }
+
+    /// A cover's address of this server, signed to be fetched now; `None`
+    /// for any other address. One kept from before covers were kept
+    /// unsigned is signed anew, its old sign-in left out.
+    pub fn sign(&self, url: &str) -> Option<String> {
+        signed_cover(&self.credentials.url, &self.urls.auth, url)
     }
 
     /// `view` with `query`, signed; its body, or the server's refusal.
@@ -739,6 +785,45 @@ impl Provider for Navidrome {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_cover_is_signed_only_as_it_is_fetched() {
+        let auth = "u=me&t=x&s=y&v=1.16.1&c=music";
+        assert_eq!(
+            super::signed_cover(
+                "http://nas",
+                auth,
+                "http://nas/rest/getCoverArt.view?id=al-1&size=300"
+            ),
+            Some(
+                "http://nas/rest/getCoverArt.view?id=al-1&size=300&u=me&t=x&s=y&v=1.16.1&c=music"
+                    .into()
+            )
+        );
+        // Kept from before, signed: signed anew, once.
+        assert_eq!(
+            super::signed_cover(
+                "http://nas",
+                auth,
+                "http://nas/rest/getCoverArt.view?id=al-1&size=300&u=old&t=o&s=o"
+            ),
+            Some(
+                "http://nas/rest/getCoverArt.view?id=al-1&size=300&u=me&t=x&s=y&v=1.16.1&c=music"
+                    .into()
+            )
+        );
+        assert_eq!(
+            super::signed_cover("http://nas", auth, "https://is1-ssl.mzstatic.com/a.jpg"),
+            None
+        );
+        assert_eq!(
+            super::scrub_kept(
+                r#"{"a":"http://nas/rest/getCoverArt.view?id=1&size={size}&u=me&t=x&s=y","b":"https://x/y"}"#
+            ),
+            r#"{"a":"http://nas/rest/getCoverArt.view?id=1&size={size}","b":"https://x/y"}"#
+        );
+    }
+
     use super::*;
 
     #[test]
