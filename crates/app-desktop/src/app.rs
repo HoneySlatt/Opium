@@ -49,8 +49,11 @@ pub enum Shelves {
 /// A list that arrives page by page, fetched on first visit.
 pub struct Streamed<T> {
     pub items: Vec<T>,
+    /// Every service that lists it has answered all of it, not the first.
     pub done: bool,
     requested: bool,
+    /// The services that have.
+    answered: std::collections::HashSet<ProviderKind>,
     /// Moves on with every change, for what is built from the items.
     pub version: u64,
 }
@@ -61,6 +64,7 @@ impl<T> Default for Streamed<T> {
             items: Vec::new(),
             done: false,
             requested: false,
+            answered: Default::default(),
             version: 0,
         }
     }
@@ -81,13 +85,25 @@ impl<T> Streamed<T> {
         self.version = VERSIONS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
-    /// A service's page, or with `whole` its whole list, replacing its
-    /// items only: those `of_it` says are.
-    fn arrived_from(&mut self, items: Vec<T>, done: bool, whole: bool, of_it: impl Fn(&T) -> bool) {
+    /// `provider`'s page, or with `whole` its whole list, replacing its
+    /// items only: those `of_it` says are. Done once every one of
+    /// `listing` has answered.
+    fn arrived_from(
+        &mut self,
+        provider: ProviderKind,
+        (items, done, whole): (Vec<T>, bool, bool),
+        listing: &[ProviderKind],
+        of_it: impl Fn(&T) -> bool,
+    ) {
         if whole {
             self.items.retain(|item| !of_it(item));
         }
-        self.extend(items, done);
+        if done {
+            self.answered.insert(provider);
+        } else {
+            self.answered.remove(&provider);
+        }
+        self.extend(items, listing.iter().all(|p| self.answered.contains(p)));
     }
 }
 
@@ -953,6 +969,29 @@ impl App {
         .collect()
     }
 
+    /// The services whose albums, artists and recent additions are listed
+    /// (Apple Music's and the server's), signed in or on their way to.
+    fn listing_services(&self) -> Vec<ProviderKind> {
+        let mut listing = Vec::new();
+        if self.service_on(ProviderKind::AppleMusic)
+            && matches!(
+                self.connection,
+                Connection::Connecting | Connection::Connected
+            )
+        {
+            listing.push(ProviderKind::AppleMusic);
+        }
+        if self.service_on(ProviderKind::Navidrome)
+            && matches!(
+                self.navidrome,
+                SoundCloudState::Connecting | SoundCloudState::Connected(_)
+            )
+        {
+            listing.push(ProviderKind::Navidrome);
+        }
+        listing
+    }
+
     /// Turn a service on, loading its library again, or off: its songs,
     /// albums, artists and playlists leave the library, and it is asked
     /// nothing more, its sign-in kept.
@@ -1001,16 +1040,25 @@ impl App {
         self.songs_view.order_key = None;
         self.songs_view.selected = None;
         self.playlists.retain(|p| !of_it(&p.id));
+        let listing = self.listing_services();
         self.library_albums
-            .arrived_from(Vec::new(), true, true, |a| of_it(&a.id));
+            .arrived_from(provider, (Vec::new(), true, true), &listing, |a| {
+                of_it(&a.id)
+            });
         self.library_artists
-            .arrived_from(Vec::new(), true, true, |a| of_it(&a.id));
-        self.recently_added
-            .arrived_from(Vec::new(), true, true, |c| match c {
+            .arrived_from(provider, (Vec::new(), true, true), &listing, |a| {
+                of_it(&a.id)
+            });
+        self.recently_added.arrived_from(
+            provider,
+            (Vec::new(), true, true),
+            &listing,
+            |c| match c {
                 Collection::Album(a) => of_it(&a.id),
                 Collection::Playlist(p) => of_it(&p.id),
                 Collection::Station(s) => of_it(&s.id),
-            });
+            },
+        );
         self.searches.clear();
         self.server_songs = None;
         self.whole_albums.clear();
@@ -3216,17 +3264,29 @@ impl App {
                     albums,
                     done,
                     whole,
-                } => self
-                    .library_albums
-                    .arrived_from(albums, done, whole, |a| a.id.provider == provider),
+                } => {
+                    let listing = self.listing_services();
+                    self.library_albums.arrived_from(
+                        provider,
+                        (albums, done, whole),
+                        &listing,
+                        |a| a.id.provider == provider,
+                    );
+                }
                 Reply::LibraryArtists {
                     provider,
                     artists,
                     done,
                     whole,
-                } => self
-                    .library_artists
-                    .arrived_from(artists, done, whole, |a| a.id.provider == provider),
+                } => {
+                    let listing = self.listing_services();
+                    self.library_artists.arrived_from(
+                        provider,
+                        (artists, done, whole),
+                        &listing,
+                        |a| a.id.provider == provider,
+                    );
+                }
                 Reply::AlbumExtras { id, result } => {
                     let loaded = match result {
                         Ok(extras) => Loaded::Ready(extras),
@@ -3288,12 +3348,17 @@ impl App {
                 } => {
                     // Apple Music's come page by page; the server's whole.
                     let whole = provider != ProviderKind::AppleMusic;
-                    self.recently_added
-                        .arrived_from(items, done, whole, |c| match c {
+                    let listing = self.listing_services();
+                    self.recently_added.arrived_from(
+                        provider,
+                        (items, done, whole),
+                        &listing,
+                        |c| match c {
                             Collection::Album(a) => a.id.provider == provider,
                             Collection::Playlist(p) => p.id.provider == provider,
                             Collection::Station(s) => s.id.provider == provider,
-                        });
+                        },
+                    );
                 }
                 Reply::Album { id, result } => {
                     let loaded = match result.map(|b| *b) {

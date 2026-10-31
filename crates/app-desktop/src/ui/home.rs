@@ -152,9 +152,10 @@ fn page(app: &mut App, ui: &mut Ui, pad: f32, which: Which) -> f32 {
                             vec2(HERO, HERO + HERO_FOOT),
                         );
                         if card.right() <= left + width {
-                            ui.painter().rect_filled(card, 12.0, theme.hover());
+                            super::loading::shape(ui, &theme, card, 12.0);
                         }
                     }
+                    super::loading::spinner(ui, &theme, pos2(left + width / 2.0, y + 120.0));
                     return;
                 }
                 Ok(Some(shelves)) => shelves,

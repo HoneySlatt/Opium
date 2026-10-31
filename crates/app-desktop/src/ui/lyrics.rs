@@ -115,7 +115,15 @@ pub fn show(
         return;
     };
     let lyrics = match app.lyrics(&track) {
-        Loaded::Loading => return,
+        Loaded::Loading => {
+            // Lines in grey for Spotify's; the spinner for Apple Music's.
+            for (i, w) in [0.9, 0.7, 0.82, 0.55, 0.75].into_iter().enumerate() {
+                let at = body.left_top() + PAD + vec2(0.0, i as f32 * 48.0);
+                let size = vec2((body.width() - 2.0 * PAD.x) * w, 26.0);
+                super::loading::shape(ui, theme, Rect::from_min_size(at, size), 6.0);
+            }
+            return super::loading::spinner(ui, theme, body.center());
+        }
         Loaded::Ready(Some(lyrics)) => lyrics.clone(),
         Loaded::Ready(None) => {
             return empty(

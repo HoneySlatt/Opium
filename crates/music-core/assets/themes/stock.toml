@@ -14,6 +14,7 @@ rows = "single"           # single | stacked
 cards = "covers"          # covers | tiles
 favourite = "star"        # star | check
 headings = "small"        # small | large
+motion = "apple"          # apple | spotify
 
 [layout.desktop]
 window = "flat"           # flat | cards

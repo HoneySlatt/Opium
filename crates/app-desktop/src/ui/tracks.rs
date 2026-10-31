@@ -512,12 +512,13 @@ fn bars(ui: &Ui, theme: &Theme, center: egui::Pos2, moving: bool) {
     }
 }
 
-/// Grey placeholder rows while a list loads.
+/// A list on its way: its rows in grey, or the spinner over them.
 pub fn skeleton(ui: &Ui, theme: &Theme, top: f32, left: f32, width: f32, rows: usize) {
     for i in 0..rows {
         let rect = Rect::from_min_size(pos2(left, top + i as f32 * (ROW + 2.0)), vec2(width, ROW));
-        ui.painter().rect_filled(rect, 8.0, theme.hover());
+        super::loading::shape(ui, theme, rect, 8.0);
     }
+    super::loading::spinner(ui, theme, pos2(left + width / 2.0, top + ROW));
 }
 
 /// The rows of `count` that the viewport shows, for a list starting at `top`

@@ -151,7 +151,7 @@ private fun androidx.compose.foundation.lazy.grid.LazyGridScope.collections(
     listing: Listing<*>,
 ) {
     if (items.isEmpty()) {
-        full { Empty(listing, "Nothing here yet", "Albums and playlists you add show here.") }
+        full { Empty(listing, "Nothing here yet", "Albums and playlists you add show here.", io.github.honeyslatt.music.ui.components.Shapes.Grid) }
         return
     }
     items(items) { item ->
@@ -181,12 +181,12 @@ private fun androidx.compose.foundation.lazy.grid.LazyGridScope.collections(
     }
 }
 
-/** A list still loading, failed, or empty. */
+/** A list still loading (in the shapes of what comes, for Spotify's), failed, or empty. */
 @Composable
-fun Empty(listing: Listing<*>, title: String, detail: String) {
+fun Empty(listing: Listing<*>, title: String, detail: String, shapes: io.github.honeyslatt.music.ui.components.Shapes = io.github.honeyslatt.music.ui.components.Shapes.Rows) {
     val (t, d) = when {
         listing.error != null -> "Couldn't load this" to listing.error
-        !listing.done -> "Loading…" to ""
+        !listing.done -> return io.github.honeyslatt.music.ui.components.Loader(shapes)
         else -> title to detail
     }
     androidx.compose.foundation.layout.Column(
@@ -310,7 +310,7 @@ fun Albums(c: LibraryContext) {
         full { SourceChips(sources, source, c.services) { source = it } }
         full { Spacer(Modifier.height(10.dp)) }
         if (shown.isEmpty()) {
-            full { Empty(c.lists.albums, "No albums here", "Nothing matches this source.") }
+            full { Empty(c.lists.albums, "No albums here", "Nothing matches this source.", io.github.honeyslatt.music.ui.components.Shapes.Grid) }
         }
         items(shown, key = { it.id.provider.name + it.id.id }) { album -> AlbumCard(c, album) }
     }

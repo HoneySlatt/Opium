@@ -155,9 +155,9 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
                 section_head(ui, &theme, left, y, "Albums");
                 let top = y + SECTION_HEAD;
                 for i in 0..grid.columns() {
-                    ui.painter()
-                        .rect_filled(grid.cell(i, left, top), 8.0, theme.hover());
+                    super::loading::shape(ui, &theme, grid.cell(i, left, top), 8.0);
                 }
+                super::loading::spinner(ui, &theme, pos2(left + width / 2.0, top + 60.0));
                 return;
             }
             for (title, albums) in &sections {

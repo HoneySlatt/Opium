@@ -176,7 +176,7 @@ fun RadioPage(c: LibraryContext, browse: Browse, account: @Composable () -> Unit
 private fun LazyListScope.shelves(c: LibraryContext, loading: Loading<List<Shelf>>, hero: Hero) {
     val shelves = (loading as? Loading.Ready)?.value
     if (shelves.isNullOrEmpty()) {
-        item { Empty(if (shelves == null) loading.listing() else Listing(done = true), "Nothing here yet", "Apple Music has nothing to show here.") }
+        item { Empty(if (shelves == null) loading.listing() else Listing(done = true), "Nothing here yet", "Apple Music has nothing to show here.", io.github.honeyslatt.music.ui.components.Shapes.Shelves) }
         return
     }
     for (shelf in shelves) {

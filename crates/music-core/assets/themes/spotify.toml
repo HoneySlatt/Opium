@@ -9,6 +9,7 @@ rows = "stacked"
 cards = "tiles"
 favourite = "check"
 headings = "large"
+motion = "spotify"
 
 [layout.desktop]
 window = "cards"

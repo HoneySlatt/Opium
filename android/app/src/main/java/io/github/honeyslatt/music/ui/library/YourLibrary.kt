@@ -135,7 +135,7 @@ fun YourLibrary(c: LibraryContext) {
                             Entry(
                                 null,
                                 "Songs",
-                                "Playlist • ${songs(c.lists.songs.items.size)}",
+                                if (c.lists.songs.items.isEmpty() && !c.lists.songs.done) "Playlist" else "Playlist • ${songs(c.lists.songs.items.size)}",
                                 pinned = true,
                                 tile = {
                                     Box(Modifier.size(64.dp).background(Brush.linearGradient(Loved), RoundedCornerShape(4.dp)), contentAlignment = Alignment.Center) {
@@ -168,6 +168,14 @@ fun YourLibrary(c: LibraryContext) {
                 Kind.Artists -> items(artists.filter { matches(query, it.name) }, key = { it.id.provider.name + it.id.id }) { a ->
                     Entry(a.artwork, a.name, "Artist", round = true) { c.nav.push(Route.LibraryArtist(a)) }
                 }
+            }
+            val listing = when (kind) {
+                Kind.Playlists -> c.lists.playlists
+                Kind.Albums -> c.lists.albums
+                Kind.Artists -> c.lists.artists
+            }
+            if (listing.items.isEmpty() && query.isBlank()) {
+                item { Empty(listing, "Nothing here yet", "${kind.label} you add show here.") }
             }
             item { Spacer(Modifier.height(ChromeHeight + 120.dp)) }
         }

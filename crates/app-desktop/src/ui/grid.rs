@@ -496,9 +496,9 @@ pub fn shelf(app: &mut App, ui: &mut Ui, pad: f32, which: Shelves, title: &str) 
                     return;
                 }
                 Ok(None) if loading => {
+                    super::loading::spinner(ui, &theme, pos2(left + width / 2.0, top + 60.0));
                     for i in 0..grid.columns * 2 {
-                        ui.painter()
-                            .rect_filled(grid.cell(i, left, top), 8.0, theme.hover());
+                        super::loading::shape(ui, &theme, grid.cell(i, left, top), 8.0);
                     }
                     return;
                 }
@@ -751,8 +751,9 @@ fn page(app: &mut App, ui: &mut Ui, pad: f32, kind: Kind) -> f32 {
                     } else {
                         8.0
                     };
-                    ui.painter().rect_filled(art, radius, theme.hover());
+                    super::loading::shape(ui, &theme, art, radius);
                 }
+                super::loading::spinner(ui, &theme, pos2(left + width / 2.0, top + 60.0));
                 return;
             }
             if shown.is_empty() {

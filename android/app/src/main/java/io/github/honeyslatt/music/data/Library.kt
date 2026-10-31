@@ -27,8 +27,22 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** A list of the library, as it loads. */
-data class Listing<T>(val items: List<T> = emptyList(), val done: Boolean = false, val error: String? = null)
+/**
+ * A list of the library, as it loads: done once every service asked for
+ * it (`waiting`) has answered, not the first.
+ */
+data class Listing<T>(
+    val items: List<T> = emptyList(),
+    val done: Boolean = false,
+    val error: String? = null,
+    val waiting: Set<ProviderKind> = emptySet(),
+) {
+    /** `provider` asked for the list. */
+    fun asked(provider: ProviderKind) = copy(waiting = waiting + provider, done = false)
+
+    /** `provider` answered all of it, or as much as it will. */
+    fun answered(provider: ProviderKind) = if (provider !in waiting) this else (waiting - provider).let { copy(waiting = it, done = it.isEmpty()) }
+}
 
 data class LibraryLists(
     val playlists: Listing<Playlist> = Listing(),
@@ -85,11 +99,11 @@ class Library(private val core: Core, private val scope: CoroutineScope) {
         loaded.removeAll { it.endsWith("-${provider.name}.json") }
         _lists.update { l ->
             l.copy(
-                playlists = l.playlists.copy(items = l.playlists.items.filter { it.id.provider != provider }),
-                albums = l.albums.copy(items = l.albums.items.filter { it.id.provider != provider }),
-                artists = l.artists.copy(items = l.artists.items.filter { it.id.provider != provider }),
-                songs = l.songs.copy(items = l.songs.items.filter { it.id.provider != provider }),
-                newestSongs = l.newestSongs.copy(items = l.newestSongs.items.filter { it.id.provider != provider }),
+                playlists = l.playlists.copy(items = l.playlists.items.filter { it.id.provider != provider }).answered(provider),
+                albums = l.albums.copy(items = l.albums.items.filter { it.id.provider != provider }).answered(provider),
+                artists = l.artists.copy(items = l.artists.items.filter { it.id.provider != provider }).answered(provider),
+                songs = l.songs.copy(items = l.songs.items.filter { it.id.provider != provider }).answered(provider),
+                newestSongs = l.newestSongs.copy(items = l.newestSongs.items.filter { it.id.provider != provider }).answered(provider),
                 recentlyAdded = l.recentlyAdded.copy(
                     items = l.recentlyAdded.items.filter {
                         when (it) {
@@ -98,7 +112,7 @@ class Library(private val core: Core, private val scope: CoroutineScope) {
                             is Collection.Station -> it.v1.id.provider
                         } != provider
                     },
-                ),
+                ).answered(provider),
             )
         }
     }
@@ -165,6 +179,7 @@ class Library(private val core: Core, private val scope: CoroutineScope) {
             { session.libraryTracks(provider, it).let { p -> p.items to p.next } },
         ) { f -> _lists.update { it.copy(songs = f(it.songs)) } }
         if (!ask) return
+        _lists.update { it.copy(recentlyAdded = it.recentlyAdded.asked(provider)) }
         // Apple's comes whole, in the order of what was added to last; the
         // others' by pages, up to three. Loaded again (the screen made anew),
         // they take the place of the last ones.
@@ -177,9 +192,8 @@ class Library(private val core: Core, private val scope: CoroutineScope) {
                     l.copy(
                         recentlyAdded = l.recentlyAdded.copy(
                             items = l.recentlyAdded.items.with(provider, fresh.toList()) { it.provider() },
-                            done = done,
                             error = error ?: l.recentlyAdded.error,
-                        ),
+                        ).let { if (done) it.answered(provider) else it },
                     )
                 }
             }
@@ -224,12 +238,13 @@ class Library(private val core: Core, private val scope: CoroutineScope) {
         set: ((Listing<T>) -> Listing<T>) -> Unit,
     ) {
         val file = File(core.kept, "$name-${provider.name}.json").path
+        if (ask) set { it.asked(provider) }
         scope.launch {
             // Shown once, whether the service answers yet or not.
             val shownKept = shown.getOrPut(file) {
                 scope.async {
                     val old = withContext(Dispatchers.IO) { kept(file) }
-                    if (old.isNotEmpty()) set { it.copy(items = it.items.with(provider, old, of), done = true) }
+                    if (old.isNotEmpty()) set { it.copy(items = it.items.with(provider, old, of), done = it.waiting.isEmpty()) }
                     old.isNotEmpty()
                 }
             }.await()
@@ -245,19 +260,20 @@ class Library(private val core: Core, private val scope: CoroutineScope) {
                 } catch (e: MusicException) {
                     failed = e.message ?: e.toString()
                 }
-                if (stepwise) set { l -> l.copy(items = if (failed == null) l.items.with(provider, fresh, of) else l.items, done = true, error = failed ?: l.error) }
+                if (stepwise) set { l -> l.copy(items = if (failed == null) l.items.with(provider, fresh, of) else l.items, error = failed ?: l.error).answered(provider) }
             } else {
                 pages(page) { items, done, error ->
                     fresh += items
                     failed = error
-                    if (stepwise) set { l -> l.copy(items = l.items.with(provider, fresh.toList(), of), done = done, error = error ?: l.error) }
+                    if (stepwise) set { l -> l.copy(items = l.items.with(provider, fresh.toList(), of), error = error ?: l.error).let { if (done) it.answered(provider) else it } }
                 }
             }
             if (failed != null) {
                 unloaded += provider
+                if (!stepwise) set { it.answered(provider) }
                 return@launch
             }
-            if (!stepwise) set { l -> l.copy(items = l.items.with(provider, fresh, of), done = true) }
+            if (!stepwise) set { l -> l.copy(items = l.items.with(provider, fresh, of)).answered(provider) }
             loaded += file
             withContext(Dispatchers.IO) { keep(file, fresh) }
         }

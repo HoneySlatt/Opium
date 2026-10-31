@@ -9,11 +9,11 @@
 use std::path::PathBuf;
 
 use egui::Color32;
+use music_core::theme::ThemeFile;
 pub use music_core::theme::{
-    Cards, Favourite, Glow, Header, Headings, LyricsPlace as Lyrics, NowPlaying, Panel,
+    Cards, Favourite, Glow, Header, Headings, LyricsPlace as Lyrics, Motion, NowPlaying, Panel,
     PlayerBar, Rows, Sidebar, TopBar, Window,
 };
-use music_core::theme::ThemeFile;
 
 use crate::color::{alpha, hex, luminance, mix};
 
@@ -34,6 +34,7 @@ pub struct Layout {
     pub now_playing: NowPlaying,
     pub rows: Rows,
     pub headings: Headings,
+    pub motion: Motion,
 }
 
 impl Layout {
@@ -51,6 +52,7 @@ impl Layout {
         now_playing: NowPlaying::Lyrics,
         rows: Rows::Single,
         headings: Headings::Small,
+        motion: Motion::Apple,
     };
 
     fn of(file: &ThemeFile) -> Layout {
@@ -69,6 +71,7 @@ impl Layout {
             now_playing: own.now_playing,
             rows: shared.rows,
             headings: shared.headings,
+            motion: shared.motion,
         }
     }
 }

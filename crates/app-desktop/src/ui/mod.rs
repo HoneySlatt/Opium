@@ -9,6 +9,7 @@ mod grid;
 mod home;
 mod library;
 mod library_artist;
+mod loading;
 mod lyrics;
 mod menu;
 mod now_playing;

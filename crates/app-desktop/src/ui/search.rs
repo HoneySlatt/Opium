@@ -252,7 +252,7 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, query: &str) -> f32 {
                 match &top {
                     Some(top) => top_card(app, ui, &theme, card, top, query),
                     None => {
-                        ui.painter().rect_filled(card, 12.0, theme.hover());
+                        super::loading::shape(ui, &theme, card, 12.0);
                     }
                 }
             }

@@ -82,9 +82,16 @@ private val LyricLine.startMs get() = start.toMillis()
 fun Lyrics(playback: Playback, track: Track, calm: Boolean, onFound: (Boolean) -> Unit) {
     val np = LocalNp.current
     val playing by playback.playing.collectAsStateWithLifecycle()
-    val lyrics by produceState<Lyrics?>(null, track.id) { value = LyricsSource.find(track) }
-    val l = lyrics
-    LaunchedEffect(l) { onFound(l?.lines?.isNotEmpty() == true) }
+    // Whether they were looked for yet, and what was found.
+    val lyrics by produceState<Pair<Boolean, Lyrics?>>(false to null, track.id) { value = true to LyricsSource.find(track) }
+    val (looked, l) = lyrics
+    LaunchedEffect(lyrics) { onFound(l?.lines?.isNotEmpty() == true) }
+    if (!looked) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            io.github.honeyslatt.music.ui.components.LyricsLoader(np.fg)
+        }
+        return
+    }
     if (l == null || l.lines.isEmpty()) {
         Column(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
             BasicText("No lyrics for this song", style = geist(19.sp, FontWeight.Bold).copy(color = np.fg, textAlign = TextAlign.Center))

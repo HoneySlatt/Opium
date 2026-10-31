@@ -234,6 +234,7 @@ pub struct Layout {
     pub cards: Cards,
     pub favourite: Favourite,
     pub headings: Headings,
+    pub motion: Motion,
 }
 
 /// The desktop's own choices.
@@ -323,6 +324,19 @@ choice!(
         Small,
         /// Larger and bold, as Spotify's.
         Large,
+    }
+);
+choice!(
+    /// How the apps move and wait.
+    Motion {
+        /// Apple Music's: pages slide over from the right on springs, the
+        /// cover grows from the player into Now Playing, a spinner while
+        /// something loads.
+        Apple,
+        /// Spotify's: pages fade in, what's pressed gives a little, songs
+        /// change by swiping the cover, grey shapes pulse while something
+        /// loads.
+        Spotify,
     }
 );
 choice!(

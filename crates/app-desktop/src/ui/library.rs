@@ -279,6 +279,39 @@ pub fn show(app: &mut App, ui: &mut Ui, collapsed: bool) {
                 }
             },
         );
+    // Their albums or artists on their way: rows in grey, or the spinner.
+    let coming = match filter {
+        Filter::Playlists => false,
+        Filter::Albums => !app.library_albums.done,
+        Filter::Artists => !app.library_artists.done,
+    };
+    if listed.is_empty() && coming && !collapsed {
+        let first = list.top() + pinned.len() as f32 * row_height;
+        for k in 0..6 {
+            let y = first + k as f32 * row_height + (row_height - 48.0) / 2.0;
+            let x = list.left() + 16.0;
+            let round = if filter == Filter::Artists { 24.0 } else { 4.0 };
+            super::loading::shape(
+                ui,
+                &theme,
+                Rect::from_min_size(pos2(x, y), vec2(48.0, 48.0)),
+                round,
+            );
+            super::loading::shape(
+                ui,
+                &theme,
+                Rect::from_min_size(pos2(x + 60.0, y + 8.0), vec2(140.0, 12.0)),
+                4.0,
+            );
+            super::loading::shape(
+                ui,
+                &theme,
+                Rect::from_min_size(pos2(x + 60.0, y + 28.0), vec2(90.0, 10.0)),
+                4.0,
+            );
+        }
+        super::loading::spinner(ui, &theme, pos2(list.center().x, first + 40.0));
+    }
     if let Some(page) = go {
         app.go(page);
     }
@@ -310,7 +343,11 @@ fn pinned(app: &App, filter: Filter) -> Vec<Row> {
             // playlist of favourites is listed with the others.
             vec![tile(
                 "Songs",
-                format!("Playlist · {} songs", app.songs.len()),
+                if app.songs.is_empty() && !app.songs_done {
+                    "Playlist".to_owned()
+                } else {
+                    format!("Playlist · {} songs", app.songs.len())
+                },
                 icons::HEART,
                 super::LOVED,
                 Page::Songs,

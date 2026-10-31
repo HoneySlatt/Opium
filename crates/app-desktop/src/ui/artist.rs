@@ -109,6 +109,7 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
                 return;
             }
             let Some(artist) = &artist else {
+                super::tracks::skeleton(ui, &theme, y + 40.0, left, width, 5);
                 return;
             };
             // The name and the buttons over the foot of the picture, white
@@ -367,6 +368,8 @@ fn show_banner(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
                 return;
             }
             let Some(artist) = &artist else {
+                let rows = top.bottom() + BANNER_ACTIONS + 40.0;
+                super::tracks::skeleton(ui, &theme, rows, left, width, 5);
                 return;
             };
             banner_name(ui, &artist.artist.name, left, width, top.bottom());
