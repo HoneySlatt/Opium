@@ -74,12 +74,30 @@ class Devices(context: Context) {
         android.provider.Settings.Global.getString(context.contentResolver, android.provider.Settings.Global.DEVICE_NAME)
             ?.takeIf { it.isNotBlank() } ?: Build.MODEL,
         context.filesDir.path,
+        java.io.File(context.filesDir, "history.json").path,
         object : ConnectListener {
             override fun heard(event: Event) {
                 main.post { take(event) }
             }
         },
     )
+
+    private val _history = MutableStateFlow(node.history())
+
+    /** The songs played lately, on this phone and the other devices, the last first. */
+    val history: StateFlow<List<Track>> = _history.asStateFlow()
+
+    /** `track` played here; the devices are told. */
+    fun played(track: Track) {
+        node.played(track)
+        _history.value = node.history()
+    }
+
+    /** The history cleared, on every device. */
+    fun clearHistory() {
+        node.clearHistory()
+        _history.value = node.history()
+    }
 
     init {
         read()
@@ -123,6 +141,7 @@ class Devices(context: Context) {
             }
             is Event.Asked, is Event.Handed -> heard?.invoke(event)
             is Event.Themes -> themesShared?.invoke(event.themes)
+            Event.Synced -> _history.value = node.history()
         }
     }
 

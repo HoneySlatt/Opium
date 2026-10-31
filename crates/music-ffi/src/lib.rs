@@ -1136,21 +1136,49 @@ pub trait ConnectListener: Send + Sync {
     fn heard(&self, event: connect::Event);
 }
 
-/// This phone on the network, as Music Connect: see the `connect` crate.
+/// This phone on the network, as Music Connect: see the `connect` crate;
+/// and what it keeps in common with the other devices: see `synced`.
 #[derive(uniffi::Object)]
-pub struct Connect(connect::Node);
+pub struct Connect(connect::Node, synced::Kept);
 
 #[uniffi::export]
 impl Connect {
-    /// Go on the network as `name`, keeping the pairings in `dir`.
+    /// Go on the network as `name`, keeping the pairings and what is kept
+    /// in common in `dir`; the first time, the songs played are those kept
+    /// before in `history`.
     #[uniffi::constructor]
-    pub fn new(name: String, dir: String, listener: Arc<dyn ConnectListener>) -> Arc<Self> {
-        Arc::new(Self(connect::Node::start(
+    pub fn new(
+        name: String,
+        dir: String,
+        history: String,
+        listener: Arc<dyn ConnectListener>,
+    ) -> Arc<Self> {
+        let dir = std::path::Path::new(&dir);
+        let kept = synced::Kept::open(dir, || kept(&history));
+        let node = connect::Node::start(
             name,
             connect::DeviceKind::Phone,
-            std::path::Path::new(&dir),
+            dir,
+            kept.clone(),
             move |event| listener.heard(event),
-        )))
+        );
+        Arc::new(Self(node, kept))
+    }
+
+    /// The songs played lately, here and on the other devices, the last
+    /// first.
+    pub fn history(&self) -> Vec<Track> {
+        self.1.history()
+    }
+
+    /// `track` played here: in the history, and told the devices.
+    pub fn played(&self, track: Track) {
+        self.0.share(self.1.played(track));
+    }
+
+    /// The history cleared, on every device.
+    pub fn clear_history(&self) {
+        self.0.share(self.1.clear_history());
     }
 
     pub fn me(&self) -> connect::Device {

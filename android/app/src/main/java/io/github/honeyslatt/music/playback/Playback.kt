@@ -116,9 +116,8 @@ class Playback(private val context: Context, private val core: Core, private val
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
 
-    /** What follows, in play order, and what played, most recent first. */
+    /** What follows, in play order. */
     private val _upcoming = MutableStateFlow<List<Track>>(emptyList())
-    private val _history = MutableStateFlow<List<Track>>(emptyList())
     private val _shuffle = MutableStateFlow(false)
     private val _repeat = MutableStateFlow(QueueRepeat.OFF)
 
@@ -144,7 +143,8 @@ class Playback(private val context: Context, private val core: Core, private val
     /** This phone's song on its way, read at once, as the player stops for it. */
     val coming: Track? get() = _now.value?.takeIf { _loading.value }
     val upcoming: StateFlow<List<Track>> = shown(_upcoming) { it.upcoming }
-    val history: StateFlow<List<Track>> = shown(_history) { emptyList() }
+    /** What played, here and on the other devices, most recent first. */
+    val history: StateFlow<List<Track>> = devices.history
     val shuffleOn: StateFlow<Boolean> = shown(_shuffle) { it.playing?.shuffle == true }
     val repeat: StateFlow<QueueRepeat> = shown(_repeat) { queueRepeat(it.playing?.repeat ?: Repeat.OFF) }
 
@@ -271,8 +271,7 @@ class Playback(private val context: Context, private val core: Core, private val
     }
 
     fun clearHistory() {
-        _history.value = emptyList()
-        keepHistory()
+        devices.clearHistory()
     }
 
     /** The station of songs playing, which goes on as the queue runs out. */
@@ -308,16 +307,7 @@ class Playback(private val context: Context, private val core: Core, private val
     }
 
     private fun played(track: Track) {
-        _history.value = (listOf(track) + _history.value.filter { it.id != track.id }).take(100)
-        keepHistory()
-    }
-
-    /** Where the songs played are kept, from one launch to the next. */
-    private val historyFile = java.io.File(context.filesDir, "history.json").path
-
-    private fun keepHistory() {
-        val history = _history.value
-        scope.launch(kotlinx.coroutines.Dispatchers.IO) { io.github.honeyslatt.music.core.keepTracks(historyFile, history) }
+        devices.played(track)
     }
 
     /** Bumped when the queue starts over, so late resolutions are dropped. */
@@ -340,7 +330,6 @@ class Playback(private val context: Context, private val core: Core, private val
     }
 
     init {
-        _history.value = io.github.honeyslatt.music.core.keptTracks(historyFile)
         Http.warm()
         player.addListener(object : Player.Listener {
 

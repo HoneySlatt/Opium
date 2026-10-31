@@ -7,6 +7,10 @@
 //! Devices are paired once, with a code one shows and the other's user
 //! types in; only paired devices are listened to, and what they say to
 //! each other is encrypted.
+//!
+//! What they keep in common (the history, Music's own playlists: see the
+//! `synced` crate) goes both ways each time two connect, and each change as
+//! it is made: a device off meanwhile catches up the next time.
 
 mod pair;
 mod store;
@@ -28,6 +32,7 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::time::timeout;
 
 use store::Store;
+use synced::{Kept, Shared};
 
 #[cfg(feature = "ffi")]
 uniffi::setup_scaffolding!();
@@ -222,6 +227,9 @@ pub enum Event {
         from: String,
         themes: Vec<SharedTheme>,
     },
+    /// What the devices keep in common changed, from another device: read
+    /// it again.
+    Synced,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -238,6 +246,8 @@ enum Message {
     Command(Command),
     Take(Handoff),
     Themes(Vec<SharedTheme>),
+    /// All this device keeps in common, as it connects, or a change to it.
+    Shared(Shared),
     Ping,
 }
 
@@ -313,6 +323,7 @@ struct Inner {
     /// Pairings that came to nothing in a row, and until when no other is
     /// taken: each doubles the wait.
     pairing_pause: Mutex<(u32, Option<Instant>)>,
+    kept: Kept,
     events: Box<dyn Fn(Event) + Send + Sync>,
     serial: AtomicU64,
     rt: tokio::runtime::Handle,
@@ -342,21 +353,24 @@ pub struct Node {
 }
 
 impl Node {
-    /// Go on the network as `name`, keeping the pairings in `dir`.
-    /// `events` is called from the node's own threads.
+    /// Go on the network as `name`, keeping the pairings in `dir`, and
+    /// sharing what `kept` keeps. `events` is called from the node's own
+    /// threads.
     pub fn start(
         name: String,
         kind: DeviceKind,
         dir: &Path,
+        kept: Kept,
         events: impl Fn(Event) + Send + Sync + 'static,
     ) -> Self {
-        Self::launch(name, kind, dir, Box::new(events), true)
+        Self::launch(name, kind, dir, kept, Box::new(events), true)
     }
 
     fn launch(
         name: String,
         kind: DeviceKind,
         dir: &Path,
+        kept: Kept,
         events: Box<dyn Fn(Event) + Send + Sync>,
         on_network: bool,
     ) -> Self {
@@ -380,6 +394,7 @@ impl Node {
             asking: Mutex::default(),
             showing: Mutex::default(),
             pairing_pause: Mutex::default(),
+            kept,
             events,
             serial: AtomicU64::new(0),
             rt: rt.handle().clone(),
@@ -479,7 +494,7 @@ impl Node {
             }
             local.playing = Some((playing.clone(), now));
         }
-        self.inner.broadcast(&Message::Playing(playing));
+        self.inner.broadcast(&Message::Playing(playing), None);
     }
 
     /// Tell the others what comes up here, once it changed.
@@ -492,7 +507,7 @@ impl Node {
             }
             local.upcoming = upcoming.clone();
         }
-        self.inner.broadcast(&Message::Upcoming(upcoming));
+        self.inner.broadcast(&Message::Upcoming(upcoming), None);
     }
 
     /// Share these themes with the devices, now and as they connect, once
@@ -505,7 +520,15 @@ impl Node {
             }
             local.themes = themes.clone();
         }
-        self.inner.broadcast(&Message::Themes(themes));
+        self.inner.broadcast(&Message::Themes(themes), None);
+    }
+
+    /// Tell the devices connected of a change made here to what they keep
+    /// in common; those not connected hear of it as they connect.
+    pub fn share(&self, change: Shared) {
+        if !change.is_empty() {
+            self.inner.broadcast(&Message::Shared(change), None);
+        }
     }
 
     /// Ask `to`'s player for something; false if it isn't connected.
@@ -585,9 +608,13 @@ impl Inner {
         serde_json::to_vec(message).unwrap_or_default().into()
     }
 
-    fn broadcast(&self, message: &Message) {
+    /// Send `message` to the devices connected, but `not_to`.
+    fn broadcast(&self, message: &Message, not_to: Option<&str>) {
         let bytes = Self::encode(message);
-        for seen in lock(&self.seen).values() {
+        for (id, seen) in lock(&self.seen).iter() {
+            if Some(id.as_str()) == not_to {
+                continue;
+            }
             if let Some(link) = &seen.link {
                 let _ = link.tx.send(bytes.clone());
             }
@@ -744,6 +771,7 @@ impl Inner {
                 let _ = tx.send(Self::encode(&Message::Themes(local.themes.clone())));
             }
         }
+        let _ = tx.send(Self::encode(&Message::Shared(self.kept.everything())));
         drop(tx);
 
         let (mut read, mut write) = stream.into_split();
@@ -824,6 +852,14 @@ impl Inner {
                 from: from.to_owned(),
                 themes,
             }),
+            Message::Shared(shared) => {
+                // New here: the other devices connected may not have it
+                // either.
+                if self.kept.merge(shared.clone()) {
+                    (self.events)(Event::Synced);
+                    self.broadcast(&Message::Shared(shared), Some(from));
+                }
+            }
             Message::Ping => {}
         }
     }
@@ -1075,6 +1111,24 @@ fn discover(inner: &Arc<Inner>, port: u16) -> Result<mdns_sd::ServiceDaemon, mdn
 mod tests {
     use super::*;
 
+    fn track(id: &str) -> Track {
+        Track {
+            id: ItemId::new(music_core::model::ProviderKind::AppleMusic, id),
+            title: id.into(),
+            artists: Vec::new(),
+            album: None,
+            album_id: None,
+            duration: None,
+            track_number: None,
+            disc_number: None,
+            artwork: None,
+            explicit: false,
+            quality: None,
+            in_library: false,
+            library_id: None,
+        }
+    }
+
     fn playing(position_ms: u64, playing: bool) -> Playing {
         Playing {
             position_ms,
@@ -1105,6 +1159,7 @@ mod tests {
             "A".into(),
             DeviceKind::Phone,
             &dir.join("a"),
+            Kept::open(&dir.join("a"), Vec::new),
             Box::new(move |e| {
                 let _ = atx.send(e);
             }),
@@ -1114,6 +1169,7 @@ mod tests {
             "B".into(),
             DeviceKind::Computer,
             &dir.join("b"),
+            Kept::open(&dir.join("b"), Vec::new),
             Box::new(move |e| {
                 let _ = btx.send(e);
             }),
@@ -1178,17 +1234,31 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("connect-test-{}", std::process::id()));
         let (a_dir, b_dir) = (dir.join("a"), dir.join("b"));
         let (tx, rx) = std::sync::mpsc::channel();
+        let (a_kept, b_kept) = (Kept::open(&a_dir, Vec::new), Kept::open(&b_dir, Vec::new));
+        // Played on A before they connect.
+        a_kept.played(track("1"));
+        let (a_tx, a_rx) = std::sync::mpsc::channel();
         let a = Node::launch(
             "A".into(),
             DeviceKind::Phone,
             &a_dir,
-            Box::new(|_| {}),
+            a_kept.clone(),
+            Box::new(move |e| {
+                let _ = a_tx.send(e);
+            }),
             false,
         );
         let events = Box::new(move |e| {
             let _ = tx.send(e);
         });
-        let b = Node::launch("B".into(), DeviceKind::Computer, &b_dir, events, false);
+        let b = Node::launch(
+            "B".into(),
+            DeviceKind::Computer,
+            &b_dir,
+            b_kept.clone(),
+            events,
+            false,
+        );
         let key = [9; 32];
         lock(&a.inner.store).pair(b.me(), key);
         lock(&b.inner.store).pair(a.me(), key);
@@ -1209,20 +1279,31 @@ mod tests {
             std::thread::sleep(Duration::from_millis(20));
         }
         assert!(a.send(&b.me().id, Command::Next));
-        // The themes as it connected, and the command.
-        let (mut got, mut themes) = (None, None);
-        while got.is_none() || themes.is_none() {
+        // The themes and the history as it connected, and the command.
+        let (mut got, mut themes, mut synced) = (None, None, false);
+        while got.is_none() || themes.is_none() || !synced {
             match rx
                 .recv_timeout(Duration::from_secs(5))
                 .expect("B heard nothing")
             {
                 Event::Asked { command, .. } => got = Some(command),
                 Event::Themes { themes: t, .. } => themes = Some(t),
+                Event::Synced => synced = true,
                 _ => continue,
             }
         }
         assert_eq!(got, Some(Command::Next));
         assert_eq!(themes, Some(vec![theme]));
+        assert_eq!(b_kept.history(), a_kept.history());
+        // Played on B once connected: A hears of it at once.
+        b.share(b_kept.played(track("2")));
+        while !matches!(
+            a_rx.recv_timeout(Duration::from_secs(5))
+                .expect("A heard nothing"),
+            Event::Synced
+        ) {}
+        assert_eq!(a_kept.history().len(), 2);
+        assert_eq!(a_kept.history()[0].id.id, "2");
         drop((a, b));
         let _ = std::fs::remove_dir_all(dir);
     }

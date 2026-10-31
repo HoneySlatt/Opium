@@ -261,9 +261,6 @@ impl SignalAnchor {
     }
 }
 
-/// How many played tracks the History tab keeps.
-const HISTORY: usize = 100;
-
 /// An album and its tracks.
 pub type AlbumPage = (Album, Arc<Vec<Track>>);
 
@@ -529,7 +526,11 @@ pub struct App {
     /// The lyrics over the page, in a theme that shows them there.
     pub lyrics_page: bool,
     /// Tracks that were playing before, most recent last.
+    /// The songs played lately here and on the other devices, the last
+    /// first, as `kept` has them.
     pub history: Vec<Track>,
+    /// What this computer keeps in common with the other devices.
+    pub kept: synced::Kept,
     pub queue: Queue,
     tracks: HashMap<Token, Track>,
     /// The listed track each token plays the server's copy of, when it does.
@@ -616,12 +617,18 @@ impl App {
         cc.egui_ctx.options_mut(|o| o.reduce_texture_memory = true);
         let backend = Backend::start(cc.egui_ctx.clone(), settings.services_off.clone());
         backend.send(Request::Library);
+        // The history kept before it was shared starts it, the last first.
+        let kept = synced::Kept::open(&crate::settings::dir(), || {
+            let mut history = read_history();
+            history.reverse();
+            history
+        });
         let mut app = Self {
             theme,
             backend,
             player: Player::new(),
             mpris: crate::mpris::Mpris::start(cc.egui_ctx.clone()),
-            devices: crate::devices::Devices::start(cc.egui_ctx.clone()),
+            devices: crate::devices::Devices::start(cc.egui_ctx.clone(), kept.clone()),
             remote: None,
             obeying: false,
             far_playing: HashMap::new(),
@@ -719,7 +726,8 @@ impl App {
                 _ => Some(settings.side.unwrap_or(Side::NowPlaying)),
             },
             lyrics_page: std::env::var_os("MUSIC_SCREENSHOT_LYRICS").is_some(),
-            history: read_history(),
+            history: kept.history(),
+            kept,
             queue: Queue::new(),
             tracks: HashMap::new(),
             stands_for: HashMap::new(),
@@ -3866,11 +3874,8 @@ impl App {
                     if let Some(previous) = self.now.take()
                         && started.as_ref().is_none_or(|s| s.id != previous.id)
                     {
-                        self.history.push(previous);
-                        if self.history.len() > HISTORY {
-                            self.history.remove(0);
-                        }
-                        keep_history(self.history.clone());
+                        self.devices.node.share(self.kept.played(previous));
+                        self.history = self.kept.history();
                     }
                     self.now = started;
                     self.now_stands_for = self.stands_for.get(&token).cloned();
@@ -4040,6 +4045,7 @@ impl App {
                 }
                 // Themes go from here to the phone, not back.
                 Event::Themes { .. } => {}
+                Event::Synced => self.history = self.kept.history(),
             }
         }
     }
@@ -4491,18 +4497,13 @@ impl eframe::App for App {
     }
 }
 
-/// The songs played, as kept when the app last closed.
+/// The songs played, as kept before the devices shared them, the first
+/// played first.
 fn read_history() -> Vec<Track> {
     std::fs::read_to_string(crate::settings::dir().join("history.json"))
         .ok()
         .and_then(|text| serde_json::from_str(&navidrome::scrub_kept(&text)).ok())
         .unwrap_or_default()
-}
-
-/// Keep the songs played for the next time the app opens, off the
-/// interface's thread.
-fn keep_history(history: Vec<Track>) {
-    crate::settings::keep_json("history.json", history, false);
 }
 
 /// The theme chosen (Stock if it is gone or broken), in its own colours or

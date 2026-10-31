@@ -359,7 +359,7 @@ pub(super) fn history(app: &App, ui: &mut Ui, theme: &Theme) {
         return;
     }
     ui.add_space(4.0);
-    for (k, track) in app.history.iter().rev().enumerate() {
+    for (k, track) in app.history.iter().enumerate() {
         row(ui, theme, track, RowKind::Past, &format!("hist-{k}"));
     }
 }
