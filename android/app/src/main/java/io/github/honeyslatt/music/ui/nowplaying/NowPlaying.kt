@@ -229,7 +229,7 @@ private val Calm = tween<Float>(CALM_MS)
  * gradient with the artwork; blurred and flat with the lyrics or the queue.
  */
 @Composable
-private fun Backdrop(t: Track, motion: String, flat: Boolean) {
+internal fun Backdrop(t: Track, motion: String, flat: Boolean) {
     val flatness by animateFloatAsState(if (flat) 1f else 0f, tween(400), label = "scrim")
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         Box(

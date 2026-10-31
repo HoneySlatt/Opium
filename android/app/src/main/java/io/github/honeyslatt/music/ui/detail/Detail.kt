@@ -185,7 +185,7 @@ fun DetailHeader(
     art: (@Composable () -> Unit)? = null,
 ) {
     if (LocalBanner.current != null) {
-        BannerHeader(artwork, title, byline, onByline, meta, art)
+        BannerHeader(artwork, motion, title, byline, onByline, meta, art)
         return
     }
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -226,11 +226,12 @@ fun DetailHeader(
     }
 }
 
-/** Spotify's header: the cover centred, then the title, the byline and the
- *  details on the left. */
+/** Spotify's header: the cover centred, moving when it has a video, then
+ *  the title, the byline and the details on the left. */
 @Composable
 private fun BannerHeader(
     artwork: Artwork?,
+    motion: String?,
     title: String,
     byline: String?,
     onByline: (() -> Unit)?,
@@ -246,6 +247,7 @@ private fun BannerHeader(
                 .shadow(28.dp, shape, ambientColor = Color.Black.copy(alpha = 0.5f), spotColor = Color.Black.copy(alpha = 0.5f)),
         ) {
             if (art != null) art() else Cover(artwork, 260.dp, shape, Modifier.size(260.dp))
+            if (motion != null) MotionArtwork(motion, Modifier.size(260.dp).clip(shape), crop = true)
         }
         Spacer(Modifier.height(22.dp))
         Column(Modifier.padding(horizontal = 16.dp)) {

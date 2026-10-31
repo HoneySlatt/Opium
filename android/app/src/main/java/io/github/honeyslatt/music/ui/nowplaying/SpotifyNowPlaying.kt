@@ -81,12 +81,16 @@ fun SpotifyNowPlaying(playback: Playback, actions: NpActions) {
     var signalOpen by remember { mutableStateOf(false) }
     var devicesOpen by remember { mutableStateOf(false) }
     val page = rememberPageColour(t.artwork)
-    val np = NpColours(Color.White, Color.White.copy(alpha = 0.7f), Color.White.copy(alpha = 0.3f), Color.White.copy(alpha = 0.14f))
+    val motion by produceState<String?>(null, t.albumId) { value = actions.motion(t) }
+    val np =NpColours(Color.White, Color.White.copy(alpha = 0.7f), Color.White.copy(alpha = 0.3f), Color.White.copy(alpha = 0.14f))
     CompositionLocalProvider(LocalNp provides np) {
         Box(
             Modifier.fillMaxSize().background(roles.base)
                 .background(Brush.verticalGradient(listOf(page, lerp(page, Color.Black, 0.55f), lerp(page, Color.Black, 0.8f)))),
         ) {
+            // Like Spotify's Canvas, the animated cover fills the screen behind.
+            val m = motion
+            if (m != null && !lyricsOpen) Backdrop(t, m, flat = false)
             if (lyricsOpen) {
                 FullLyrics(playback, t, page, playing) { lyricsOpen = false }
             } else {
@@ -96,13 +100,18 @@ fun SpotifyNowPlaying(playback: Playback, actions: NpActions) {
                     Header(t, actions)
                     Spacer(Modifier.height(36.dp))
                     val shape = RoundedCornerShape(8.dp)
-                    Cover(
-                        t.artwork,
-                        360.dp,
-                        shape,
-                        Modifier.fillMaxWidth().aspectRatio(1f)
-                            .shadow(24.dp, shape, ambientColor = Color.Black.copy(alpha = 0.4f), spotColor = Color.Black.copy(alpha = 0.4f)),
-                    )
+                    if (m != null) {
+                        // The cover's room left empty, the song and controls where they were.
+                        Spacer(Modifier.fillMaxWidth().aspectRatio(1f))
+                    } else {
+                        Cover(
+                            t.artwork,
+                            360.dp,
+                            shape,
+                            Modifier.fillMaxWidth().aspectRatio(1f)
+                                .shadow(24.dp, shape, ambientColor = Color.Black.copy(alpha = 0.4f), spotColor = Color.Black.copy(alpha = 0.4f)),
+                        )
+                    }
                     Spacer(Modifier.height(44.dp))
                     TitleAndSaved(t, actions, playback)
                     Position(playback, playing)
