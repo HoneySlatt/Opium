@@ -16,9 +16,7 @@ use crate::theme::Theme;
 
 use super::grid::{CARD_TEXT, CardClick, SHELF_HEAD, ShelfCard, cover_shelf, video_shelf};
 use super::tracks::{self, Columns, RowAction, RowState};
-use super::{
-    Blob, PageButton, artwork, page_buttons, paint_icon, paint_text, quality_label, text, wash,
-};
+use super::{Blob, PageButton, artwork, page_buttons, paint_icon, paint_text, text, wash};
 
 /// What the header shows.
 struct Header {
@@ -441,11 +439,14 @@ fn album_header(album: &Album, tracks: &[Track], favourite: bool) -> Header {
         Some(icons::NOTE),
         format!("{count} TRACK{}", if count == 1 { "" } else { "S" }),
     ));
-    if let Some(((label, _), provider)) = tracks
-        .iter()
-        .find_map(|t| quality_label(t).map(|q| (q, t.id.provider)))
-    {
-        meta.push((Some(icons::service(provider)), label));
+    // The service, and the badge its quality earns: none for a lossy
+    // stream, as in Apple Music.
+    if let Some(track) = tracks.first() {
+        let badge = tracks.iter().find_map(super::quality_badge);
+        meta.push((
+            Some(icons::service(track.id.provider)),
+            badge.map(str::to_uppercase).unwrap_or_default(),
+        ));
     }
     Header {
         kind: "Album",

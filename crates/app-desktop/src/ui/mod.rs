@@ -763,6 +763,18 @@ pub fn dolby_logo(ui: &Ui, center: Pos2, size: f32, color: Color32) {
     }
 }
 
+/// The badge a track's quality earns, as Apple Music gives them: Lossless or
+/// Dolby Atmos, none for a lossy stream.
+pub fn quality_badge(track: &music_core::model::Track) -> Option<&'static str> {
+    if plays_in_atmos(track) {
+        Some("Dolby Atmos")
+    } else if track.quality.as_ref()?.codec.is_lossless() {
+        Some("Lossless")
+    } else {
+        None
+    }
+}
+
 /// `AAC 256`, `FLAC 24/96`… from what the provider says it delivers.
 pub fn quality_label(track: &music_core::model::Track) -> Option<(String, bool)> {
     use music_core::model::Codec;
