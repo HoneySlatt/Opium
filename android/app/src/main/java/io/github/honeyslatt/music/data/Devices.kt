@@ -67,6 +67,9 @@ class Devices(context: Context) {
     /** A device asked for something, or handed its music over. */
     var heard: ((Event) -> Unit)? = null
 
+    /** The themes a device shares, all of them. */
+    var themesShared: ((List<io.github.honeyslatt.music.core.connect.SharedTheme>) -> Unit)? = null
+
     private val node = Connect(
         android.provider.Settings.Global.getString(context.contentResolver, android.provider.Settings.Global.DEVICE_NAME)
             ?.takeIf { it.isNotBlank() } ?: Build.MODEL,
@@ -113,6 +116,7 @@ class Devices(context: Context) {
                 _notices.tryEmit(event.error?.let { "Not paired with ${event.device.name}: $it" } ?: "Paired with ${event.device.name}")
             }
             is Event.Asked, is Event.Handed -> heard?.invoke(event)
+            is Event.Themes -> themesShared?.invoke(event.themes)
         }
     }
 

@@ -574,7 +574,8 @@ impl App {
         let settings = crate::settings::Settings::load();
         let theme = resolve_theme(&settings);
         theme.apply(&cc.egui_ctx);
-        let theme_changed = Arc::new(AtomicBool::new(false));
+        // Set, so that the first frame shares the themes with the phones.
+        let theme_changed = Arc::new(AtomicBool::new(true));
         watch_theme(cc.egui_ctx.clone(), theme_changed.clone());
         // Ctrl +, − and 0 are ours: 0 goes back to the scale that suits the screen.
         cc.egui_ctx.options_mut(|o| o.zoom_with_keyboard = false);
@@ -3819,8 +3820,30 @@ impl App {
                     self.obey(from, command, now);
                     self.obeying = false;
                 }
+                // Themes go from here to the phone, not back.
+                Event::Themes { .. } => {}
             }
         }
+    }
+
+    /// Share the theme files of `~/.config/music/themes/` with the paired
+    /// phones, which choose among them too.
+    fn share_themes(&self) {
+        let mut themes: Vec<connect::SharedTheme> = std::fs::read_dir(Theme::themes_dir())
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|entry| entry.path())
+            .filter(|path| path.extension().is_some_and(|e| e == "toml"))
+            .filter_map(|path| {
+                Some(connect::SharedTheme {
+                    id: path.file_stem()?.to_str()?.to_string(),
+                    source: std::fs::read_to_string(&path).ok()?,
+                })
+            })
+            .collect();
+        themes.sort_by(|a, b| a.id.cmp(&b.id));
+        self.devices.node.share_themes(themes);
     }
 
     /// Do what another device asked of this computer's player.
@@ -4133,6 +4156,7 @@ impl eframe::App for App {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.keep_volume(ctx);
         if self.theme_changed.swap(false, Ordering::Relaxed) {
+            self.share_themes();
             let theme = resolve_theme(&self.settings);
             if theme != self.theme {
                 theme.apply(ctx);

@@ -184,6 +184,15 @@ pub struct Peer {
     pub upcoming: Vec<Track>,
 }
 
+/// A theme file the desktop shares with the paired phones: its id (the
+/// file's stem) and its text, which the phone reads itself.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct SharedTheme {
+    pub id: String,
+    pub source: String,
+}
+
 /// What the app hears.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
@@ -204,6 +213,11 @@ pub enum Event {
         device: Device,
         error: Option<String>,
     },
+    /// A device shares its themes: all of them, those gone are gone there.
+    Themes {
+        from: String,
+        themes: Vec<SharedTheme>,
+    },
 }
 
 #[derive(Serialize, Deserialize)]
@@ -219,6 +233,7 @@ enum Message {
     Upcoming(Vec<Track>),
     Command(Command),
     Take(Handoff),
+    Themes(Vec<SharedTheme>),
     Ping,
 }
 
@@ -279,6 +294,7 @@ impl Link {
 struct Local {
     playing: Option<(Playing, Instant)>,
     upcoming: Vec<Track>,
+    themes: Vec<SharedTheme>,
 }
 
 struct Inner {
@@ -472,6 +488,19 @@ impl Node {
             local.upcoming = upcoming.clone();
         }
         self.inner.broadcast(&Message::Upcoming(upcoming));
+    }
+
+    /// Share these themes with the devices, now and as they connect, once
+    /// they changed.
+    pub fn share_themes(&self, themes: Vec<SharedTheme>) {
+        {
+            let mut local = lock(&self.inner.local);
+            if local.themes == themes {
+                return;
+            }
+            local.themes = themes.clone();
+        }
+        self.inner.broadcast(&Message::Themes(themes));
     }
 
     /// Ask `to`'s player for something; false if it isn't connected.
@@ -702,6 +731,9 @@ impl Inner {
                 let _ = tx.send(Self::encode(&Message::Playing(now)));
             }
             let _ = tx.send(Self::encode(&Message::Upcoming(local.upcoming.clone())));
+            if !local.themes.is_empty() {
+                let _ = tx.send(Self::encode(&Message::Themes(local.themes.clone())));
+            }
         }
         drop(tx);
 
@@ -778,6 +810,10 @@ impl Inner {
             Message::Take(handoff) => (self.events)(Event::Handed {
                 from: from.to_owned(),
                 handoff,
+            }),
+            Message::Themes(themes) => (self.events)(Event::Themes {
+                from: from.to_owned(),
+                themes,
             }),
             Message::Ping => {}
         }
@@ -1133,6 +1169,11 @@ mod tests {
         seen.addrs = vec![SocketAddr::from(([127, 0, 0, 1], b.port))];
         lock(&a.inner.seen).insert(b.me().id, seen);
         a.publish(playing(2000, true));
+        let theme = SharedTheme {
+            id: "mine".into(),
+            source: "name = \"Mine\"".into(),
+        };
+        a.share_themes(vec![theme.clone()]);
         a.inner.reach(&b.me().id);
         let deadline = Instant::now() + Duration::from_secs(5);
         while !b.peers().iter().any(|p| p.playing.is_some()) {
@@ -1140,16 +1181,20 @@ mod tests {
             std::thread::sleep(Duration::from_millis(20));
         }
         assert!(a.send(&b.me().id, Command::Next));
-        let got = loop {
+        // The themes as it connected, and the command.
+        let (mut got, mut themes) = (None, None);
+        while got.is_none() || themes.is_none() {
             match rx
                 .recv_timeout(Duration::from_secs(5))
                 .expect("B heard nothing")
             {
-                Event::Asked { command, .. } => break command,
+                Event::Asked { command, .. } => got = Some(command),
+                Event::Themes { themes: t, .. } => themes = Some(t),
                 _ => continue,
             }
-        };
-        assert_eq!(got, Command::Next);
+        }
+        assert_eq!(got, Some(Command::Next));
+        assert_eq!(themes, Some(vec![theme]));
         drop((a, b));
         let _ = std::fs::remove_dir_all(dir);
     }

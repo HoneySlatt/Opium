@@ -43,6 +43,7 @@ class MusicApp : Application() {
         themes = io.github.honeyslatt.music.data.Themes(this)
         library = Library(core, scope)
         devices = io.github.honeyslatt.music.data.Devices(this)
+        devices.themesShared = { themes.shared(it) }
         playback = io.github.honeyslatt.music.playback.Playback(this, core, scope, devices)
         // Back on a network (out of the metro, onto the Wi-Fi): the services
         // it kept out connect, and a song it stopped goes on.

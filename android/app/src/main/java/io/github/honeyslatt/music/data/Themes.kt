@@ -86,6 +86,15 @@ class Themes(context: Context) {
     private fun idOf(name: String) =
         name.lowercase().replace(Regex("[^a-z0-9._-]+"), "-").trim('-').ifEmpty { "theme" }
 
+    /** The desktop's themes, all of them: kept, replacing those of the same
+     *  id; those it sent before and no longer has, taken away. */
+    fun shared(themes: List<io.github.honeyslatt.music.core.connect.SharedTheme>) {
+        val before = prefs.getStringSet("desktop-themes", emptySet()).orEmpty()
+        val now = themes.filter { keep(it.id, it.source) == null }.map { idOf(it.id) }.toSet()
+        (before - now).forEach { remove(it) }
+        prefs.edit().putStringSet("desktop-themes", now).apply()
+    }
+
     /** Take a theme away; Stock again if it was in use. */
     fun remove(id: String) {
         File(dir, "$id.toml").delete()
