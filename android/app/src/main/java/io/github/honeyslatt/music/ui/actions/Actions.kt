@@ -73,6 +73,37 @@ class Actions(
     private val favourites = mutableStateMapOf<ItemId, Boolean>()
     private val asking = mutableSetOf<ItemId>()
 
+    /** The songs of Apple's playlist of favourites, read once page by page,
+     *  so that a list can mark them without asking for each. */
+    private var favouriteSongs by mutableStateOf<Set<ItemId>>(emptySet())
+    private var readingFavourites = false
+
+    /**
+     * Whether a song is saved, for Spotify's check in the lists: as known,
+     * else as Apple's playlist of favourites has it; a SoundCloud like is
+     * its library.
+     */
+    fun saved(track: Track): Boolean {
+        favourites[track.id]?.let { return it }
+        if (track.id.provider == ProviderKind.SOUND_CLOUD) return inLibrary(track)
+        if (!readingFavourites) {
+            library.lists.value.playlists.items.firstOrNull { it.favourites }?.let { playlist ->
+                readingFavourites = true
+                scope.launch {
+                    runCatching {
+                        var page: String? = null
+                        do {
+                            val got = session.playlistTracks(playlist.id, page)
+                            favouriteSongs = favouriteSongs + got.items.flatMap { listOfNotNull(it.id, it.libraryId) }
+                            page = got.next
+                        } while (page != null)
+                    }
+                }
+            }
+        }
+        return track.id in favouriteSongs || track.libraryId?.let { it in favouriteSongs } == true
+    }
+
     /** Songs added to the library, or taken out, since it loaded. */
     private val inLibraryNow = mutableStateMapOf<ItemId, Boolean>()
 

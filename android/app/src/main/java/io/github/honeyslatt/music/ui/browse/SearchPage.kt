@@ -366,7 +366,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.spotifyResults(
         val t = songs[i]
         val actions = LocalActions.current
         val now = io.github.honeyslatt.music.ui.components.LocalNowPlaying.current.id == t.id
-        ResultRow(t.artwork, t.title, t.explicit, kindLine("Song", t.artists.joinToString(", "), kind), now = now, menu = { actions?.trackMenu(t, it) }) {
+        ResultRow(t.artwork, t.title, t.explicit, kindLine("Song", t.artists.joinToString(", "), kind), now = now, song = t, menu = { actions?.trackMenu(t, it) }) {
             keep(Searched.SongPlayed(t))
             c.playback.play(r.tracks, i)
         }
@@ -415,6 +415,7 @@ private fun ResultRow(
     line: String,
     round: Boolean = false,
     now: Boolean = false,
+    song: io.github.honeyslatt.music.core.model.Track? = null,
     menu: ((androidx.compose.ui.geometry.Rect) -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
     onOpen: () -> Unit,
@@ -436,6 +437,7 @@ private fun ResultRow(
                 Line(line, geist(13.5.sp).copy(color = roles.sub))
             }
         }
+        song?.let { io.github.honeyslatt.music.ui.components.SavedMark(it) }
         when {
             trailing != null -> trailing()
             menu != null -> Box(Modifier.size(44.dp).anchor(more).press(CircleShape) { menu(more.rect) }, contentAlignment = Alignment.Center) {

@@ -84,14 +84,16 @@ private fun FoldMark(open: Boolean, size: androidx.compose.ui.unit.Dp) {
 @Composable
 fun SectionHeader(title: String, fold: Fold? = null, onOpen: (() -> Unit)? = null) {
     val tap = fold?.toggle ?: onOpen
+    // Spotify's: larger, at its pages' 16 dp edge.
+    val large = io.github.honeyslatt.music.ui.theme.look.layout.headings == io.github.honeyslatt.music.core.model.Headings.LARGE
     Row(
         Modifier
-            .padding(start = 20.dp, end = 20.dp, top = 26.dp, bottom = 12.dp)
+            .padding(start = if (large) 16.dp else 20.dp, end = 20.dp, top = 26.dp, bottom = 12.dp)
             .then(if (tap != null) Modifier.press(onClick = tap) else Modifier),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        Line(title, geist(21.sp, FontWeight.Bold, -0.01f).copy(color = roles.text))
+        Line(title, geist(if (large) 23.sp else 21.sp, FontWeight.Bold, -0.01f).copy(color = roles.text))
         when {
             fold != null -> FoldMark(fold.open, 20.dp)
             onOpen != null -> Glyph(Icons.Right, roles.muted, 20.dp)
@@ -293,6 +295,18 @@ fun CoverCard(
     }
 }
 
+/** Spotify's mark of a saved song in a list: a check on a disc in the
+ *  accent; nothing in a theme that marks favourites otherwise. */
+@Composable
+fun SavedMark(track: Track) {
+    if (io.github.honeyslatt.music.ui.theme.look.layout.favourite != io.github.honeyslatt.music.core.model.Favourite.CHECK) return
+    val actions = io.github.honeyslatt.music.ui.actions.LocalActions.current ?: return
+    if (!actions.saved(track)) return
+    Box(Modifier.size(18.dp).background(roles.accent, CircleShape), contentAlignment = Alignment.Center) {
+        Glyph(Icons.Check, roles.onAccent, 12.dp)
+    }
+}
+
 /** The small E of explicit songs and albums. */
 @Composable
 fun ExplicitBadge() {
@@ -351,6 +365,7 @@ fun TrackRow(track: Track, inPlaylist: Playlist? = null, onRemoved: () -> Unit =
                     Line(track.artists.joinToString(", "), geist(13.5.sp).copy(color = roles.sub))
                 }
             }
+            SavedMark(track)
             Box(
                 Modifier.size(44.dp).anchor(more).press(CircleShape) { actions?.trackMenu(track, more.rect, inPlaylist, onRemoved) },
                 contentAlignment = Alignment.Center,

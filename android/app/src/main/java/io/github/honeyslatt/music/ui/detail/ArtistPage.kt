@@ -301,9 +301,10 @@ private fun PopularRow(rank: Int, track: Track, onClick: () -> Unit) {
             Line(track.title, geist(16.sp).copy(color = if (now) roles.tint else roles.text))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                 if (track.explicit) ExplicitBadge()
-                track.album?.let { Line(bare(it),geist(13.5.sp).copy(color = roles.sub)) }
+                track.album?.let { Line(bare(it), geist(13.5.sp).copy(color = roles.sub)) }
             }
         }
+        io.github.honeyslatt.music.ui.components.SavedMark(track)
         Box(Modifier.size(44.dp).anchor(more).press(CircleShape) { menu?.trackMenu(track, more.rect) }, contentAlignment = Alignment.Center) {
             Glyph(io.github.honeyslatt.music.ui.MoreIcons.MoreVertical, roles.sub, 20.dp)
         }

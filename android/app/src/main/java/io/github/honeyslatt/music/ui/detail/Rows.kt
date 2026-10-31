@@ -57,6 +57,7 @@ fun AlbumTrackRow(number: Int, track: Track, last: Boolean, onClick: () -> Unit 
                     Line(track.artists.joinToString(", "), geist(13.5.sp).copy(color = roles.sub))
                 }
             }
+            io.github.honeyslatt.music.ui.components.SavedMark(track)
             Box(Modifier.size(44.dp).anchor(more).press { actions?.trackMenu(track, more.rect) }, contentAlignment = Alignment.Center) {
                 Glyph(io.github.honeyslatt.music.ui.MoreIcons.MoreVertical, roles.sub, 20.dp)
             }
