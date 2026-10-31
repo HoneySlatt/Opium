@@ -113,7 +113,7 @@ fun App(core: Core, library: Library, playback: io.github.honeyslatt.music.playb
         if (playback.isStation(track)) {
             null
         } else {
-            runCatching { core.session.lyrics(track, settings.lyricsSites, settings.sitesFirst) }.getOrNull()
+            runCatching { core.session.lyrics(track, settings.lyricsSites.filter { it in settings.lyricsSitesOn }, settings.sitesFirst) }.getOrNull()
         }
     }
     // An album's animated cover, asked once.

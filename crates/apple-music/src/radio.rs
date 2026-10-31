@@ -495,7 +495,17 @@ impl AppleMusic {
             .ok_or_else(|| Error::Playback(format!("the station has no stream: {assets}")))?;
         Ok(LiveAsset {
             master: master_url.to_owned(),
-            key_server: asset["keyServerUrl"].as_str().map(str::to_owned),
+            // The licence asks with the user's token: only of Apple.
+            key_server: asset["keyServerUrl"]
+                .as_str()
+                .filter(|url| {
+                    reqwest::Url::parse(url).is_ok_and(|u| {
+                        u.scheme() == "https"
+                            && u.host_str()
+                                .is_some_and(|h| h == "apple.com" || h.ends_with(".apple.com"))
+                    })
+                })
+                .map(str::to_owned),
         })
     }
 

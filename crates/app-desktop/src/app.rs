@@ -1684,15 +1684,24 @@ impl App {
         let mut all: Vec<lyrics::Source> = order.clone();
         all.extend(lyrics::Source::ALL.iter().filter(|s| !order.contains(s)));
         all.into_iter()
-            .map(|s| (s, !self.settings.lyrics_off.contains(&s)))
+            .map(|s| (s, self.lyrics_sites_on().contains(&s)))
             .collect()
     }
 
+    fn lyrics_sites_on(&self) -> Vec<lyrics::Source> {
+        self.settings
+            .lyrics_on
+            .clone()
+            .unwrap_or_else(|| vec![lyrics::Source::Lrclib])
+    }
+
     pub fn set_lyrics_site(&mut self, source: lyrics::Source, on: bool) {
-        self.settings.lyrics_off.retain(|s| *s != source);
-        if !on {
-            self.settings.lyrics_off.push(source);
+        let mut sites = self.lyrics_sites_on();
+        sites.retain(|s| *s != source);
+        if on {
+            sites.push(source);
         }
+        self.settings.lyrics_on = Some(sites);
         self.settings.save();
         self.lyrics_found_anew();
     }

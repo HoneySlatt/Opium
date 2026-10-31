@@ -50,8 +50,12 @@ const PAIRING: Duration = Duration::from_secs(120);
 /// A paired device in sight is reached again this often, and less as it
 /// keeps not answering.
 const REDIAL: Duration = Duration::from_secs(5);
-/// How long pairing is refused after a wrong code.
+/// How long pairing is refused after one that came to nothing, doubling
+/// with each in a row up to the most.
 const PAIRING_PAUSE: Duration = Duration::from_secs(30);
+const PAIRING_PAUSE_MAX: Duration = Duration::from_secs(3600);
+/// The most devices kept in sight: a network announcing more is ignored.
+const SEEN_MAX: usize = 64;
 /// A position this far from where it should be by now is told again.
 const DRIFT_MS: u64 = 1500;
 
@@ -306,9 +310,9 @@ struct Inner {
     asking: Mutex<Option<oneshot::Sender<String>>>,
     /// Showing a code: dropped, it calls pairing off.
     showing: Mutex<Option<oneshot::Sender<()>>>,
-    /// After a wrong code, no pairing until then: a code can't be guessed
-    /// by trying them all.
-    pairing_pause: Mutex<Option<Instant>>,
+    /// Pairings that came to nothing in a row, and until when no other is
+    /// taken: each doubles the wait.
+    pairing_pause: Mutex<(u32, Option<Instant>)>,
     events: Box<dyn Fn(Event) + Send + Sync>,
     serial: AtomicU64,
     rt: tokio::runtime::Handle,
@@ -432,7 +436,8 @@ impl Node {
             .map(|s| Peer {
                 device: s.device.clone(),
                 paired: paired.iter().any(|d| d.id == s.device.id),
-                connected: s.link.is_some(),
+                // A link gone quiet is a device gone, before it is dropped.
+                connected: s.link.as_ref().is_some_and(Link::alive),
                 nearby: s.link.is_some() || (s.announced && !s.addrs.is_empty()),
                 playing: s.playing.as_ref().map(|(p, at)| Playing {
                     position_ms: p.at(*at, now),
@@ -627,7 +632,7 @@ impl Inner {
                 s.dialing = false;
                 if result.is_err() && s.link.is_none() {
                     s.failures += 1;
-                    s.retry_at = Instant::now() + REDIAL * 2u32.pow(s.failures.min(6));
+                    s.retry_at = Instant::now() + REDIAL * 2u32.pow((s.failures - 1).min(6));
                 }
             }
         });
@@ -661,6 +666,10 @@ impl Inner {
         let prologue = prologue(&self.me.id, id);
         let keys = within(STEP, wire::handshake(&mut stream, true, &key, &prologue)).await?;
         lock(&self.store).update(&hello.device);
+        // Reached: once this connection ends, the next try comes soon.
+        if let Some(s) = lock(&self.seen).get_mut(id) {
+            s.failures = 0;
+        }
         self.talk(hello.device, stream, keys, true).await
     }
 
@@ -871,7 +880,10 @@ impl Inner {
 
     /// `peer` asks to pair: show a code, and pair if it is typed in there.
     async fn show_code(self: Arc<Self>, mut stream: TcpStream, peer: Device) -> io::Result<()> {
-        if lock(&self.pairing_pause).is_some_and(|until| Instant::now() < until) {
+        if lock(&self.pairing_pause)
+            .1
+            .is_some_and(|until| Instant::now() < until)
+        {
             return Err(failed("a wrong code was typed: try again in a moment"));
         }
         let (tx, mut called_off) = oneshot::channel::<()>();
@@ -909,7 +921,6 @@ impl Inner {
                 _ => false,
             };
             if !proved {
-                *lock(&self.pairing_pause) = Some(Instant::now() + PAIRING_PAUSE);
                 let _ = wire::write_json(&mut stream, &pair::Step::Refused).await;
                 return Err(failed("wrong code"));
             }
@@ -923,6 +934,19 @@ impl Inner {
         }
         .await;
         lock(&self.showing).take();
+        // A wrong code, or one never typed (a device on the network holding
+        // the code up): each such pairing doubles the wait before the next,
+        // up to an hour, so that codes can't be tried one after another.
+        {
+            let mut pause = lock(&self.pairing_pause);
+            if result.is_ok() {
+                *pause = (0, None);
+            } else {
+                pause.0 = (pause.0 + 1).min(8);
+                let wait = (PAIRING_PAUSE * 2u32.pow(pause.0 - 1)).min(PAIRING_PAUSE_MAX);
+                pause.1 = Some(Instant::now() + wait);
+            }
+        }
         (self.events)(Event::Paired {
             device: peer,
             error: result.as_ref().err().map(|e| e.to_string()),
@@ -955,9 +979,13 @@ impl Inner {
                     .map(|ip| SocketAddr::new(ip.into(), port))
                     .collect();
                 addrs.sort();
-                lock(&self.store).update(&device);
+                // A paired device's name is kept only once it proves itself
+                // (see `dial` and `answer`): anyone can announce anything.
                 {
                     let mut seen = lock(&self.seen);
+                    if !seen.contains_key(&id) && seen.len() >= SEEN_MAX {
+                        return;
+                    }
                     let s = seen
                         .entry(id.clone())
                         .or_insert_with(|| Seen::new(device.clone()));

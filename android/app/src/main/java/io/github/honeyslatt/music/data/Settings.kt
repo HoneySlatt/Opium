@@ -50,6 +50,25 @@ class Settings(context: Context) {
             sitesState.value = v
         }
 
+    private val sitesOnState = mutableStateOf(
+        prefs.getString("lyrics-sites-on", null)
+            ?.split(',')
+            ?.mapNotNull { runCatching { LyricsSite.valueOf(it) }.getOrNull() }
+            ?.toSet()
+            ?: setOf(LyricsSite.LRCLIB),
+    )
+
+    /**
+     * The sites asked: LRCLIB alone unless set, as the others are told,
+     * from China, of every song looked up.
+     */
+    var lyricsSitesOn: Set<LyricsSite>
+        get() = sitesOnState.value
+        set(v) {
+            prefs.edit().putString("lyrics-sites-on", v.joinToString(",") { it.name }).apply()
+            sitesOnState.value = v
+        }
+
     /** Ask the sites before the service. */
     var sitesFirst: Boolean
         get() = sitesFirstState.value

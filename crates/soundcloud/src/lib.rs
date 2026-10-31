@@ -289,7 +289,7 @@ impl SoundCloud {
                     let text = if (200..300).contains(&status) {
                         resp.text()
                             .await
-                            .map_err(|e| Error::Network(format!("{url}: {e}")))?
+                            .map_err(|e| Error::Network(format!("{url}: {}", e.without_url())))?
                     } else {
                         String::new()
                     };
@@ -362,7 +362,7 @@ impl SoundCloud {
             .header("Referer", format!("{WEB}/"))
             .send()
             .await
-            .map_err(|e| Error::Network(format!("SoundCloud sign-in: {e}")))?;
+            .map_err(|e| Error::Network(format!("SoundCloud sign-in: {}", e.without_url())))?;
         // Only a refresh token turned down signs out: SoundCloud busy, or its
         // bot wall, is said as such and tried again later.
         match resp.status().as_u16() {
@@ -379,7 +379,7 @@ impl SoundCloud {
         let grant: types::Grant = resp
             .json()
             .await
-            .map_err(|e| Error::Protocol(format!("SoundCloud sign-in: {e}")))?;
+            .map_err(|e| Error::Protocol(format!("SoundCloud sign-in: {}", e.without_url())))?;
         let renewed = Tokens {
             oauth: grant.access_token,
             refresh: grant.refresh_token.or(tokens.refresh),
@@ -396,7 +396,7 @@ impl SoundCloud {
             .get(url)
             .send()
             .await
-            .map_err(|e| Error::Network(format!("SoundCloud stream: {e}")))?;
+            .map_err(|e| Error::Network(format!("SoundCloud stream: {}", e.without_url())))?;
         if !resp.status().is_success() {
             return Err(Error::Protocol(format!(
                 "SoundCloud stream: HTTP {}",
@@ -411,7 +411,7 @@ impl SoundCloud {
         let bytes = resp
             .bytes()
             .await
-            .map_err(|e| Error::Network(format!("SoundCloud stream: {e}")))?;
+            .map_err(|e| Error::Network(format!("SoundCloud stream: {}", e.without_url())))?;
         Ok((bytes.to_vec(), content_type))
     }
 

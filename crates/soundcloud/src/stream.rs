@@ -389,7 +389,8 @@ impl SoundCloud {
 
     /// The licence for the CDM's `challenge`, as the web player asks for it.
     async fn license(&self, token: &str, challenge: Vec<u8>) -> Result<Vec<u8>> {
-        let failed = |e: reqwest::Error| Error::Network(format!("SoundCloud licence: {e}"));
+        let failed =
+            |e: reqwest::Error| Error::Network(format!("SoundCloud licence: {}", e.without_url()));
         let resp = self
             .http
             .post(LICENSE)
@@ -414,7 +415,8 @@ impl SoundCloud {
     /// first bytes say what it is.
     async fn original(&self, track: &types::Track) -> Result<Audio> {
         let at: types::Download = self.get(&format!("/tracks/{}/download", track.id)).await?;
-        let failed = |e: reqwest::Error| Error::Network(format!("SoundCloud download: {e}"));
+        let failed =
+            |e: reqwest::Error| Error::Network(format!("SoundCloud download: {}", e.without_url()));
         let mut resp = self
             .http
             .get(&at.redirect_uri)

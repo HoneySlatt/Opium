@@ -194,7 +194,7 @@ private fun Root(core: Core, settings: Settings, go: (SettingsPage) -> Unit) {
     Label("Lyrics")
     Group {
         GroupRow(first = true, onClick = { go(SettingsPage.LyricsSites) }) {
-            Words("Lyrics sites", settings.lyricsSites.joinToString(", ") { it.label })
+            Words("Lyrics sites", settings.lyricsSites.filter { it in settings.lyricsSitesOn }.joinToString(", ") { it.label }.ifEmpty { "None" })
             Glyph(Icons.Right, roles.muted, 18.dp)
         }
         GroupRow(first = false) {
@@ -383,7 +383,7 @@ private fun Service(core: Core, settings: Settings, kind: ProviderKind, onSignIn
     }
 }
 
-/** The lyrics sites, in the order they are asked; each moves up with its arrow. */
+/** The lyrics sites, in the order they are asked, each with its switch; each moves up with its arrow. */
 @Composable
 private fun LyricsSites(settings: Settings) {
     Group("Where a song’s lyrics come from when its service has none, in this order. Apple Music’s own lyrics, word by word, come first for every song it has.") {
@@ -406,6 +406,9 @@ private fun LyricsSites(settings: Settings) {
                         .background(roles.surface, CircleShape),
                     contentAlignment = Alignment.Center,
                 ) { Glyph(Icons.Up, roles.text, 18.dp) }
+                Switch(site in settings.lyricsSitesOn) { on ->
+                    settings.lyricsSitesOn = if (on) settings.lyricsSitesOn + site else settings.lyricsSitesOn - site
+                }
             }
         }
     }

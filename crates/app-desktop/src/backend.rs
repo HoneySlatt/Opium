@@ -503,6 +503,19 @@ impl Replies {
 impl Backend {
     /// Start, connecting to every service but those `off`.
     pub fn start(ctx: egui::Context, off: Vec<ProviderKind>) -> Self {
+        // What the app keeps, sign-ins and browser profiles among it, for the
+        // user's eyes only, folders made before included.
+        for dir in [
+            crate::settings::dir(),
+            apple_music_dir(),
+            apple_music_dir().join("browser-profile"),
+            soundcloud_dir(),
+            soundcloud_dir().join("browser-profile"),
+        ] {
+            if dir.exists() {
+                let _ = private_dir(&dir);
+            }
+        }
         let (requests, request_rx) = tokio::sync::mpsc::unbounded_channel();
         let again = requests.clone();
         let (tx, replies) = mpsc::channel();

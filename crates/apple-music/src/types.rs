@@ -15,7 +15,9 @@ pub struct Response<T> {
     pub meta: Option<Meta>,
 }
 
-pub(crate) fn readable<'de, D: Deserializer<'de>, T: DeserializeOwned>(d: D) -> Result<Vec<T>, D::Error> {
+pub(crate) fn readable<'de, D: Deserializer<'de>, T: DeserializeOwned>(
+    d: D,
+) -> Result<Vec<T>, D::Error> {
     let items = Vec::<serde_json::Value>::deserialize(d)?;
     Ok(items
         .into_iter()

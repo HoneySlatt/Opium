@@ -1279,7 +1279,10 @@ impl Provider for AppleMusic {
                 ..Shelf::default()
             });
         }
-        Ok(shelves.into_iter().filter(|s| !s.songs.is_empty() || !s.items.is_empty()).collect())
+        Ok(shelves
+            .into_iter()
+            .filter(|s| !s.songs.is_empty() || !s.items.is_empty())
+            .collect())
     }
 
     /// A station's next songs, about `count` of them. Apple hands out two a

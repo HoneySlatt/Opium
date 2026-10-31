@@ -60,8 +60,9 @@ pub struct Settings {
     pub soundcloud_originals: Option<bool>,
     /// The lyrics sites, in the order they are asked; all of them unless set.
     pub lyrics_order: Vec<lyrics::Source>,
-    /// The lyrics sites turned off.
-    pub lyrics_off: Vec<lyrics::Source>,
+    /// The lyrics sites turned on: LRCLIB alone unless set, as the others
+    /// are told, from China, of every song looked up.
+    pub lyrics_on: Option<Vec<lyrics::Source>>,
     /// The sites' lyrics before the service's own (off unless set).
     pub lyrics_sites_first: Option<bool>,
     /// A song mixed in Dolby Atmos plays as Apple's Spatial Audio, its
@@ -159,11 +160,9 @@ pub fn keep_json<T: Serialize + Send + 'static>(name: &'static str, value: T, no
         let Ok(bytes) = serde_json::to_vec(&value) else {
             return;
         };
-        let path = dir().join(name);
-        let partial = path.with_extension("json.part");
-        let _ = std::fs::create_dir_all(dir())
-            .and_then(|()| std::fs::write(&partial, bytes))
-            .and_then(|()| std::fs::rename(&partial, &path));
+        // What was played says much of the user, and a cover's address may
+        // carry a server's sign-in: for the user's eyes only.
+        let _ = crate::backend::write_private(&dir().join(name), &bytes);
     };
     if now {
         write();
@@ -177,23 +176,40 @@ fn path() -> PathBuf {
 }
 
 impl Settings {
-    /// Missing or unreadable settings are the defaults.
+    /// Missing settings are the defaults. Of a file that doesn't read
+    /// whole (a value this build doesn't know, a typo), every setting that
+    /// reads is kept, and the file as it was is kept beside, as
+    /// `settings.toml.bad`, before anything is written over it.
     pub fn load() -> Self {
-        std::fs::read_to_string(path())
-            .ok()
-            .and_then(|s| toml::from_str(&s).ok())
+        let Ok(text) = std::fs::read_to_string(path()) else {
+            return Self::default();
+        };
+        if let Ok(settings) = toml::from_str(&text) {
+            return settings;
+        }
+        let _ = std::fs::write(path().with_extension("toml.bad"), &text);
+        text.parse::<toml::Table>()
+            .map(Self::what_reads)
             .unwrap_or_default()
     }
 
+    /// The settings of `table` that read, each on its own.
+    fn what_reads(table: toml::Table) -> Self {
+        let readable: toml::Table = table
+            .into_iter()
+            .filter(|(key, value)| {
+                let mut alone = toml::Table::new();
+                alone.insert(key.clone(), value.clone());
+                Self::deserialize(alone).is_ok()
+            })
+            .collect();
+        Self::deserialize(readable).unwrap_or_default()
+    }
+
     pub fn save(&self) {
-        let path = path();
-        if let Some(dir) = path.parent() {
-            let _ = std::fs::create_dir_all(dir);
-        }
         // Written aside, then moved over: a crash midway leaves the last.
         if let Ok(s) = toml::to_string(self) {
-            let partial = path.with_extension("toml.part");
-            let _ = std::fs::write(&partial, s).and_then(|()| std::fs::rename(&partial, &path));
+            let _ = crate::backend::write_private(&path(), s.as_bytes());
         }
     }
 }
@@ -205,6 +221,16 @@ pub const SCALE_UNIT: f32 = 1.1;
 mod tests {
     use super::*;
     use crate::app::SearchScope;
+
+    #[test]
+    fn a_setting_that_doesnt_read_loses_only_itself() {
+        let text = "volume = 0.3\nrepeat = \"sometimes\"\nshuffle = true\n";
+        assert!(toml::from_str::<Settings>(text).is_err());
+        let kept = Settings::what_reads(text.parse().unwrap());
+        assert_eq!(kept.volume, Some(0.3));
+        assert_eq!(kept.shuffle, Some(true));
+        assert_eq!(kept.repeat, None);
+    }
 
     #[test]
     fn what_is_kept_reads_back_the_same() {
