@@ -70,6 +70,22 @@ class CarLibrary(private val app: MusicApp, private val scope: CoroutineScope) :
 
     private fun id(node: Node): String = "n${issued++}".also { nodes[it] = node }
 
+    /**
+     * The lists of songs shown, the latest few dozen: a song's id is its
+     * list's and its place in it, so that a list of thousands (Songs) takes
+     * one id rather than pushing every other one out.
+     */
+    private val songLists = object : LinkedHashMap<String, List<Track>>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<Track>>?) = size > 64
+    }
+
+    /** The song an id stands for: its list and its place in it. */
+    private fun song(id: String): Node.Song? {
+        val (list, index) = id.split('/', limit = 2).takeIf { it.size == 2 } ?: return null
+        val tracks = songLists[list] ?: return null
+        return index.toIntOrNull()?.takeIf { it in tracks.indices }?.let { Node.Song(tracks, it) }
+    }
+
     // ---- Browsing ----
 
     override fun onGetLibraryRoot(session: MediaLibrarySession, browser: MediaSession.ControllerInfo, params: LibraryParams?): ListenableFuture<LibraryResult<MediaItem>> {
@@ -174,8 +190,11 @@ class CarLibrary(private val app: MusicApp, private val scope: CoroutineScope) :
         return all
     }
 
-    private fun songs(tracks: List<Track>): List<MediaItem> = tracks.mapIndexed { i, t ->
-        playable(id(Node.Song(tracks, i)), t.title, t.artists.joinToString(", "), t.artwork, album = t.album)
+    private fun songs(tracks: List<Track>): List<MediaItem> {
+        val list = "l${issued++}".also { songLists[it] = tracks }
+        return tracks.mapIndexed { i, t ->
+            playable("$list/$i", t.title, t.artists.joinToString(", "), t.artwork, album = t.album)
+        }
     }
 
     private fun collection(c: Collection): MediaItem = when (c) {
@@ -277,7 +296,7 @@ class CarLibrary(private val app: MusicApp, private val scope: CoroutineScope) :
     private suspend fun play(id: String) {
         when (id) {
             SHUFFLE -> playback.shuffle(allSongs())
-            else -> when (val node = nodes[id]) {
+            else -> when (val node = nodes[id] ?: song(id)) {
                 is Node.Song -> playback.play(node.list, node.index)
                 is Node.OfStation -> playback.playStation(node.station)
                 is Node.OfAlbum -> playback.play(session.album(node.album.id).tracks, 0)
