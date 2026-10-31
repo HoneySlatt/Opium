@@ -1,6 +1,7 @@
 package io.github.honeyslatt.music
 
 import android.app.Application
+import coil3.request.crossfade
 import io.github.honeyslatt.music.core.Tls
 import io.github.honeyslatt.music.data.Core
 import io.github.honeyslatt.music.data.Library
@@ -13,7 +14,7 @@ import kotlinx.coroutines.launch
 import io.github.honeyslatt.music.core.model.ProviderKind
 import io.github.honeyslatt.music.data.Connection
 
-class MusicApp : Application() {
+class MusicApp : Application(), coil3.SingletonImageLoader.Factory {
     /** For work that outlives a screen: sign-ins, the library's loading. */
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     lateinit var core: Core
@@ -34,6 +35,10 @@ class MusicApp : Application() {
     @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     lateinit var playback: io.github.honeyslatt.music.playback.Playback
         private set
+
+    /** Covers fade in as they come, rather than appearing at once. */
+    override fun newImageLoader(context: coil3.PlatformContext): coil3.ImageLoader =
+        coil3.ImageLoader.Builder(context).crossfade(220).build()
 
     override fun onCreate() {
         super.onCreate()

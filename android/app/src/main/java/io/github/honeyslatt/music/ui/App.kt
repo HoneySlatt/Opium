@@ -72,6 +72,7 @@ import io.github.honeyslatt.music.ui.nav.Navigator
 import io.github.honeyslatt.music.ui.nav.Route
 import io.github.honeyslatt.music.ui.nav.Tab
 import io.github.honeyslatt.music.ui.theme.look
+import androidx.compose.animation.core.VisibilityThreshold
 import io.github.honeyslatt.music.ui.theme.roles
 
 /** The app: the page of the current tab, under the bottom chrome. */
@@ -144,9 +145,10 @@ fun App(core: Core, library: Library, playback: io.github.honeyslatt.music.playb
         LocalMenus provides menus,
     ) {
     Box(Modifier.fillMaxSize().background(roles.base)) {
+        val spotify = look.layout.motion == io.github.honeyslatt.music.core.model.Motion.SPOTIFY
         AnimatedContent(
             targetState = Triple(nav.tab, nav.stack.size, nav.page),
-            transitionSpec = { push(initialState, targetState) },
+            transitionSpec = { push(initialState, targetState, spotify) },
             label = "pages",
         ) { (tab, _, page) ->
             Page(tab, page, context, account, browse)
@@ -181,12 +183,23 @@ fun App(core: Core, library: Library, playback: io.github.honeyslatt.music.playb
     }
 }
 
-/** Pushes slide in from the right over 360 ms, pops back; tabs swap at once. */
-private fun push(from: Triple<Tab, Int, Route>, to: Triple<Tab, Int, Route>): ContentTransform {
-    val spec = tween<androidx.compose.ui.unit.IntOffset>(360, easing = Standard)
+/**
+ * Apple Music's: pushes slide in from the right on a spring that settles
+ * without bouncing, as iOS's, pops back. Spotify's: the page comes in a
+ * fade, from a little smaller, or larger going back. Tabs swap at once.
+ */
+private fun push(from: Triple<Tab, Int, Route>, to: Triple<Tab, Int, Route>, spotify: Boolean): ContentTransform {
+    val spec = androidx.compose.animation.core.spring(
+        dampingRatio = 1f,
+        stiffness = 300f,
+        visibilityThreshold = androidx.compose.ui.unit.IntOffset.VisibilityThreshold,
+    )
+    val deeper = to.second > from.second
     return when {
         from.first != to.first -> fadeIn(tween(120)) togetherWith fadeOut(tween(120))
-        to.second > from.second ->
+        spotify -> (fadeIn(tween(220, delayMillis = 40)) + androidx.compose.animation.scaleIn(tween(260, easing = Standard), if (deeper) 0.96f else 1.03f)) togetherWith
+            fadeOut(tween(140))
+        deeper ->
             slideInHorizontally(spec) { it } togetherWith slideOutHorizontally(spec) { -it * 28 / 100 }
         else -> slideInHorizontally(spec) { -it * 28 / 100 } togetherWith slideOutHorizontally(spec) { it }
     }

@@ -63,18 +63,28 @@ fun Modifier.press(
     onClick: () -> Unit,
 ): Modifier {
     val overlay = roles.press
-    val indication = remember(shape, shrink, overlay) { Press(shape, shrink, overlay) }
+    // Spotify's: whatever is held gives a little, and springs back.
+    val spotify = io.github.honeyslatt.music.ui.theme.look.layout.motion == io.github.honeyslatt.music.core.model.Motion.SPOTIFY
+    val give = if (spotify && shrink == 1f) 0.97f else shrink
+    val indication = remember(shape, give, overlay, spotify) { Press(shape, give, overlay, spotify) }
+    // A long press, felt.
+    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
     return combinedClickable(
         interactionSource = null,
         indication = indication,
-        onLongClick = onLongClick,
+        onLongClick = onLongClick?.let { long ->
+            {
+                haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                long()
+            }
+        },
         onClick = onClick,
     )
 }
 
-private data class Press(val shape: Shape, val shrink: Float, val overlay: Color) : IndicationNodeFactory {
+private data class Press(val shape: Shape, val shrink: Float, val overlay: Color, val bounce: Boolean) : IndicationNodeFactory {
     override fun create(interactionSource: InteractionSource): DelegatableNode =
-        PressNode(interactionSource, shape, shrink, overlay)
+        PressNode(interactionSource, shape, shrink, overlay, bounce)
 }
 
 private class PressNode(
@@ -82,6 +92,7 @@ private class PressNode(
     private val shape: Shape,
     private val shrink: Float,
     private val overlay: Color,
+    private val bounce: Boolean,
 ) : Modifier.Node(), DrawModifierNode {
     private val scale = Animatable(1f)
     private var pressed = false
@@ -99,7 +110,15 @@ private class PressNode(
 
     private fun held(on: Boolean) {
         pressed = on
-        if (shrink != 1f) coroutineScope.launch { scale.animateTo(if (on) shrink else 1f, tween(120)) }
+        if (shrink != 1f) {
+            coroutineScope.launch {
+                when {
+                    on -> scale.animateTo(shrink, tween(if (bounce) 90 else 120))
+                    bounce -> scale.animateTo(1f, androidx.compose.animation.core.spring(dampingRatio = 0.45f, stiffness = 700f))
+                    else -> scale.animateTo(1f, tween(120))
+                }
+            }
+        }
         invalidateDraw()
     }
 
