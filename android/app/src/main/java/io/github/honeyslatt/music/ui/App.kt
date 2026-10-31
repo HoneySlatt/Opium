@@ -197,7 +197,11 @@ private fun Page(tab: Tab, page: Route, c: LibraryContext, account: @Composable 
             }
             Tab.New -> NewPage(c, browse, account)
             Tab.Radio -> RadioPage(c, browse, account)
-            Tab.Library -> LibraryRoot(c)
+            Tab.Library -> if (look.mobile.library == io.github.honeyslatt.music.core.model.LibraryView.LIST) {
+                io.github.honeyslatt.music.ui.library.YourLibrary(c)
+            } else {
+                LibraryRoot(c)
+            }
             Tab.Search -> SearchPage(c)
         }
         Route.Playlists -> Playlists(c)

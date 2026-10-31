@@ -65,7 +65,7 @@ fun SpotifyBottom(nav: Navigator, mini: MiniState, playback: Playback, onDevices
     Column(
         modifier
             .fillMaxWidth()
-            .background(Brush.verticalGradient(0f to Color.Transparent, 0.35f to Color.Black.copy(alpha = 0.7f), 1f to Color.Black))
+            .background(Brush.verticalGradient(0f to Color.Transparent, 0.3f to Color.Black.copy(alpha = 0.85f), 0.55f to Color.Black))
             .windowInsetsPadding(WindowInsets.navigationBars),
     ) {
         if (look.mobile.miniPlayer == MiniStyle.CARD) {
