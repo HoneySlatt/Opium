@@ -243,8 +243,10 @@ pub fn show(
         let fade = edge_fade(rect.center().y, list, offset);
         opacity *= fade;
         let color = theme.text_a(opacity);
-        // Grown from its left edge, the text as laid out, only drawn larger.
-        let scale = 1.0 + (LIT - 1.0) * lit;
+        // Grown from its left edge: while it grows, the text as laid out
+        // drawn larger; once grown, laid out at its size, to stay sharp.
+        let grown = lit >= 0.999;
+        let scale = if grown { 1.0 } else { 1.0 + (LIT - 1.0) * lit };
         let grow = |shape: &mut egui::Shape| {
             let pivot = pos2(rect.left() + PAD.x, rect.center().y);
             shape.transform(egui::emath::TSTransform::new(
@@ -257,6 +259,11 @@ pub fn show(
             // by word as timed, else each word in its share of the line.
             Some(_) if on => {
                 let next = lyrics.lines.get(i + 1);
+                let (size, wrap) = if grown {
+                    (size * LIT, wrap * LIT)
+                } else {
+                    (size, wrap)
+                };
                 let galley = sung(ui, &words(line, next, position), size, wrap, theme, fade);
                 let top = rect.center().y - galley.size().y / 2.0;
                 let mut shape = egui::Shape::galley(pos2(rect.left() + PAD.x, top), galley, color);
