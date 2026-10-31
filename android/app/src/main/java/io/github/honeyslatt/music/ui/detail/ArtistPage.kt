@@ -1,6 +1,14 @@
 package io.github.honeyslatt.music.ui.detail
 
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.ui.graphics.graphicsLayer
+import io.github.honeyslatt.music.ui.components.ExplicitBadge
+import io.github.honeyslatt.music.ui.components.anchor
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.async
 import androidx.compose.foundation.background
@@ -76,6 +84,10 @@ fun ArtistPage(c: LibraryContext, id: ItemId) {
     val actions = LocalActions.current
     val artist = d?.artist
     val favourite = artist != null && actions?.isFavourite(artist) == true
+    if (io.github.honeyslatt.music.ui.theme.look.layout.header == io.github.honeyslatt.music.core.model.Header.BANNER) {
+        SpotifyArtistPage(c, loaded, motion, page, favourite)
+        return
+    }
     DetailPage(
         c.nav,
         artist?.name.orEmpty(),
@@ -122,6 +134,201 @@ private fun LazyListScope.artistShelf(c: LibraryContext, title: String, artists:
                     Spacer(Modifier.height(7.dp))
                     Line(a.name, geist(14.sp, FontWeight.Medium).copy(color = roles.text))
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Spotify's artist page: the photo, or video, fading into the page with the
+ * name large over its foot; Follow and the menu by Shuffle and Play; the
+ * popular songs numbered, the popular releases listed, the discography by
+ * chips, then the rest in shelves.
+ */
+@Composable
+private fun SpotifyArtistPage(c: LibraryContext, loaded: Loading<ArtistDetail>, motion: String?, page: Color, following: Boolean) {
+    val d = (loaded as? Loading.Ready)?.value
+    val artist = d?.artist
+    val actions = LocalActions.current
+    var more by remember(artist?.id) { mutableStateOf(false) }
+    var chosen by remember(artist?.id) { mutableStateOf(0) }
+    DetailPage(
+        c.nav,
+        artist?.name.orEmpty(),
+        page,
+        listOf(BarAction(Icons.More, "More") { rect -> d?.takeIf { it.topSongs.isNotEmpty() }?.let { actions?.artistMenu(it, rect) } }),
+    ) {
+        item { BannerHero(artist, motion) }
+        if (d == null) {
+            item { Empty(loaded.listing(), "", "") }
+            return@DetailPage
+        }
+        item {
+            io.github.honeyslatt.music.ui.library.PlayRow(c, d.topSongs) {
+                if (d.artist.id.provider == ProviderKind.APPLE_MUSIC) Follow(following) { actions?.toggleFavourite(d.artist) }
+            }
+        }
+        if (d.topSongs.isNotEmpty()) {
+            item { SectionHeader("Popular") }
+            val shown = d.topSongs.take(if (more) 10 else 5)
+            itemsIndexed(shown, key = { i, t -> "popular$i" + t.id.id }) { i, t -> PopularRow(i + 1, t) { c.playback.play(d.topSongs, i) } }
+            if (d.topSongs.size > 5) {
+                item {
+                    Box(Modifier.padding(start = 12.dp, top = 6.dp).press(RoundedCornerShape(8.dp)) { more = !more }.padding(horizontal = 8.dp, vertical = 6.dp)) {
+                        BasicText(if (more) "Show less" else "See more", style = geist(14.sp, FontWeight.Bold).copy(color = roles.sub))
+                    }
+                }
+            }
+        }
+        // The latest, then the essentials, as the desktop's popular releases.
+        val popular = (listOfNotNull(d.latest) + d.essentials.filter { it.id != d.latest?.id }).take(4)
+        if (popular.isNotEmpty()) {
+            item { SectionHeader("Popular releases") }
+            itemsIndexed(popular, key = { i, a -> "release$i" + a.id.id }) { i, a ->
+                ReleaseRow(a, latest = i == 0 && d.latest != null) { c.nav.push(Route.Album(a.id)) }
+            }
+        }
+        val releases = listOf("Albums" to d.albums, "Singles and EPs" to d.singles, "Compilations" to d.compilations).filter { it.second.isNotEmpty() }
+        if (releases.isNotEmpty()) {
+            val pick = chosen.coerceAtMost(releases.lastIndex)
+            item { SectionHeader("Discography") }
+            item {
+                Row(
+                    Modifier.horizontalScroll(androidx.compose.foundation.rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    releases.forEachIndexed { i, (label, _) -> io.github.honeyslatt.music.ui.components.Chip(label, null, i == pick) { chosen = i } }
+                }
+            }
+            item {
+                LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    items(releases[pick].second) { a ->
+                        io.github.honeyslatt.music.ui.components.CoverCard(a.artwork, bare(a.title), releaseLine(a), a.explicit, modifier = Modifier.width(150.dp)) {
+                            c.nav.push(Route.Album(a.id))
+                        }
+                    }
+                }
+            }
+        }
+        videoShelf("Music Videos", d.videos)
+        shelf("Featuring ${d.artist.name}", d.playlists.map { ShelfCover(it.artwork, it.name, it.curator) { c.nav.push(Route.Playlist(it.id)) } })
+        artistShelf(c, "Fans also like", d.similar)
+        shelf("Appears On", d.appearsOn.map { ShelfCover(it.artwork, it.title, it.artists.joinToString(", "), it.explicit) { c.nav.push(Route.Album(it.id)) } })
+    }
+}
+
+/** Spotify's `2023 • Album`. */
+private fun releaseLine(album: Album) = listOfNotNull(album.year?.toString(), album.kind()).joinToString(" • ")
+
+/** A title without Apple's ` - Single` or ` - EP`, which the line under it says. */
+private fun bare(title: String) = title.removeSuffix(" - Single").removeSuffix(" - EP")
+
+/** The photo, or video, the width across, fading out at its foot into the
+ *  page's colour behind; the name over it, as large as it reads. */
+@Composable
+private fun BannerHero(artist: Artist?, motion: String?) {
+    BoxWithConstraints(Modifier.fillMaxWidth().height(400.dp)) {
+        val width = maxWidth
+        Box(
+            Modifier.matchParentSize()
+                .graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }
+                .drawWithContent {
+                    drawContent()
+                    drawRect(
+                        Brush.verticalGradient(0.55f to Color.Black, 1f to Color.Transparent),
+                        blendMode = androidx.compose.ui.graphics.BlendMode.DstIn,
+                    )
+                },
+        ) {
+            Cover(artist?.artwork, width, RectangleShape, Modifier.fillMaxSize())
+            if (motion != null) MotionArtwork(motion, Modifier.fillMaxSize(), crop = true)
+        }
+        val name = artist?.name.orEmpty()
+        val size = when {
+            name.length <= 12 -> 52.sp
+            name.length <= 20 -> 42.sp
+            else -> 34.sp
+        }
+        BasicText(
+            name,
+            Modifier.align(Alignment.BottomStart).padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+            style = geist(size, FontWeight.Bold, -0.02f).copy(
+                color = Color.White,
+                shadow = androidx.compose.ui.graphics.Shadow(Color.Black.copy(alpha = 0.35f), blurRadius = 16f),
+            ),
+            maxLines = 2,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/** Follow, or Following: an outlined pill. */
+@Composable
+private fun Follow(following: Boolean, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(16.dp)
+    Box(
+        Modifier.padding(start = 9.dp, end = 4.dp).height(32.dp)
+            .press(shape, shrink = 0.96f, onClick = onClick)
+            .border(1.dp, roles.text.copy(alpha = 0.5f), shape)
+            .padding(horizontal = 16.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        BasicText(if (following) "Following" else "Follow", style = geist(14.sp, FontWeight.SemiBold).copy(color = roles.text))
+    }
+}
+
+/** A popular song: its rank, its cover, its title, the E and its album; the menu. */
+@Composable
+private fun PopularRow(rank: Int, track: Track, onClick: () -> Unit) {
+    val now = io.github.honeyslatt.music.ui.components.LocalNowPlaying.current.id == track.id
+    val menu = LocalActions.current
+    val anchor = io.github.honeyslatt.music.ui.components.rememberAnchor()
+    val more = io.github.honeyslatt.music.ui.components.rememberAnchor()
+    Row(
+        Modifier.fillMaxWidth().height(64.dp).anchor(anchor)
+            .press(onLongClick = { menu?.trackMenu(track, anchor.rect) }, onClick = onClick)
+            .padding(start = 16.dp, end = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        BasicText(
+            rank.toString(),
+            Modifier.width(18.dp),
+            style = geist(15.sp).copy(color = if (now) roles.tint else roles.sub, textAlign = androidx.compose.ui.text.style.TextAlign.Center),
+        )
+        Cover(track.artwork, 48.dp, RoundedCornerShape(2.dp), Modifier.size(48.dp))
+        Column(Modifier.weight(1f)) {
+            Line(track.title, geist(16.sp).copy(color = if (now) roles.tint else roles.text))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                if (track.explicit) ExplicitBadge()
+                track.album?.let { Line(bare(it),geist(13.5.sp).copy(color = roles.sub)) }
+            }
+        }
+        Box(Modifier.size(44.dp).anchor(more).press(CircleShape) { menu?.trackMenu(track, more.rect) }, contentAlignment = Alignment.Center) {
+            Glyph(io.github.honeyslatt.music.ui.MoreIcons.MoreVertical, roles.sub, 20.dp)
+        }
+    }
+}
+
+/** A popular release: its cover, its title, `Latest release • Single` or `2023 • Album`. */
+@Composable
+private fun ReleaseRow(album: Album, latest: Boolean, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().press(onClick = onClick).padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Cover(album.artwork, 76.dp, RoundedCornerShape(2.dp), Modifier.size(76.dp))
+        Column(Modifier.weight(1f)) {
+            BasicText(
+                bare(album.title),
+                style = geist(16.sp, FontWeight.Bold).copy(color = roles.text),
+                maxLines = 2,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            )
+            Row(Modifier.padding(top = 3.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                if (album.explicit) ExplicitBadge()
+                Line(if (latest) "Latest release • ${album.kind()}" else releaseLine(album), geist(13.5.sp).copy(color = roles.sub))
             }
         }
     }

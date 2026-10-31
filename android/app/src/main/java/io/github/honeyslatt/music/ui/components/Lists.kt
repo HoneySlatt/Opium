@@ -170,7 +170,7 @@ fun SourceChips(open: Boolean, selected: ProviderKind?, services: List<ProviderK
 }
 
 @Composable
-private fun Chip(label: String, logo: ProviderKind?, on: Boolean, onClick: () -> Unit) {
+fun Chip(label: String, logo: ProviderKind?, on: Boolean, onClick: () -> Unit) {
     val shape = RoundedCornerShape(17.dp)
     Row(
         Modifier
