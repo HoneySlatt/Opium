@@ -369,8 +369,13 @@ impl AppleMusic {
             .map_err(|e| Error::Protocol(format!("{path}: {e}")))
     }
 
-    /// Run a search request; the catalog and the library answer alike.
-    async fn search_at(&self, path: &str) -> Result<SearchResults> {
+    /// Run a search request; the catalog and the library answer alike, but
+    /// for their artists, read by `artist`.
+    async fn search_at(
+        &self,
+        path: &str,
+        artist: fn(types::Artist) -> Artist,
+    ) -> Result<SearchResults> {
         let Some(resp) = self.fetch::<types::SearchResponse>(path).await? else {
             return Ok(SearchResults::default());
         };
@@ -382,7 +387,7 @@ impl AppleMusic {
         Ok(SearchResults {
             tracks: all(r.songs, convert::track),
             albums: all(r.albums, convert::album),
-            artists: all(r.artists, convert::artist),
+            artists: all(r.artists, artist),
             playlists: all(r.playlists, convert::playlist),
         })
     }
@@ -773,17 +778,18 @@ impl Provider for AppleMusic {
             "/v1/catalog/{}/search?term={term}&types=songs,albums,artists,playlists&limit={SEARCH_LIMIT}",
             self.storefront
         );
-        self.search_at(&path).await
+        self.search_at(&path, convert::artist).await
     }
 
     async fn search_library(&self, query: &str) -> Result<SearchResults> {
         let term: String = url::form_urlencoded::byte_serialize(query.as_bytes()).collect();
         // The songs' albums too: without, a song found has none to open,
-        // nor its moving cover to show.
+        // nor its moving cover to show. The artists' catalog entries, for
+        // their photos, which the library's own lack.
         let path = format!(
-            "/v1/me/library/search?term={term}&types=library-songs,library-albums,library-artists,library-playlists&limit={SEARCH_LIMIT}&include%5Blibrary-songs%5D=albums"
+            "/v1/me/library/search?term={term}&types=library-songs,library-albums,library-artists,library-playlists&limit={SEARCH_LIMIT}&include%5Blibrary-songs%5D=albums&include%5Blibrary-artists%5D=catalog"
         );
-        self.search_at(&path).await
+        self.search_at(&path, convert::library_artist).await
     }
 
     async fn library_tracks(&self, cursor: Option<&Cursor>) -> Result<Page<Track>> {
