@@ -43,6 +43,10 @@ struct Header {
 
 /// What a click in the header asked for.
 enum HeaderAction {
+    /// Spotify's Play: pause what this page plays, or play it as shuffle is.
+    PlayPage,
+    /// Spotify's Shuffle, which only turns shuffle on or off.
+    ToggleShuffle,
     Play {
         shuffle: bool,
     },
@@ -440,6 +444,7 @@ fn banner_art(content: Rect, pad: f32) -> Rect {
 /// cover at its bottom left, beside it what it is, the title in large type
 /// and a line of details; under the band, a large round Play and the other
 /// buttons on the colour fading into the page.
+#[allow(clippy::too_many_arguments)]
 fn banner_header(
     ui: &mut Ui,
     theme: &Theme,
@@ -447,6 +452,8 @@ fn banner_header(
     pad: f32,
     header: Option<&Header>,
     colors: Option<[Color32; 3]>,
+    shuffle: bool,
+    here: bool,
 ) -> Option<HeaderAction> {
     let color = colors.map_or(theme.surface1, |[c, _, _]| c);
     let band = Rect::from_min_size(content.min, vec2(content.width(), BANNER));
@@ -573,9 +580,14 @@ fn banner_header(
         theme.accent
     };
     ui.painter().circle_filled(play.center(), 28.0 + grow, fill);
-    paint_icon(ui, icons::PLAY_FILL, play.center(), 24.0, theme.on_accent());
+    let icon = if here {
+        icons::PAUSE_FILL
+    } else {
+        icons::PLAY_FILL
+    };
+    paint_icon(ui, icon, play.center(), 24.0, theme.on_accent());
     if response.clicked() {
-        action = Some(HeaderAction::Play { shuffle: false });
+        action = Some(HeaderAction::PlayPage);
     }
     let mut bx = play.right() + 16.0;
     let mut button = |ui: &mut Ui, icon, size, color, tip: &str| {
@@ -586,8 +598,19 @@ fn banner_header(
             .on_hover_text(tip)
             .clicked()
     };
-    if button(ui, icons::SHUFFLE, 26.0, theme.subtext0, "Shuffle") {
-        action = Some(HeaderAction::Play { shuffle: true });
+    // Shuffle is a switch, green with a dot while on, as Spotify's.
+    // The first of the buttons after Play.
+    let shuffle_at = pos2(play.right() + 16.0 + 20.0, mid + 17.0);
+    let (color, tip) = if shuffle {
+        (theme.accent, "Turn shuffle off")
+    } else {
+        (theme.subtext0, "Turn shuffle on")
+    };
+    if button(ui, icons::SHUFFLE, 26.0, color, tip) {
+        action = Some(HeaderAction::ToggleShuffle);
+    }
+    if shuffle {
+        ui.painter().circle_filled(shuffle_at, 2.0, theme.accent);
     }
     if let Some((kind, id, on)) = &header.favourite {
         let (icon, color, tip) = if *on {
@@ -782,6 +805,7 @@ fn page(
     };
     let total = table_top + head + rows.max(1) as f32 * tracks::ROW + foot + 104.0;
     let colors = super::backdrop(app);
+    let (shuffle_on, here) = (app.shown().shuffle, app.page_playing());
     // Each album and playlist keeps its own place.
     let page = format!("{:?}", app.page);
     let output = egui::ScrollArea::vertical()
@@ -793,7 +817,16 @@ fn page(
             let left = content.left() + pad;
             let width = content.width() - 2.0 * pad;
             let action = if banner {
-                banner_header(ui, &theme, content, pad, header.as_ref(), colors)
+                banner_header(
+                    ui,
+                    &theme,
+                    content,
+                    pad,
+                    header.as_ref(),
+                    colors,
+                    shuffle_on,
+                    here,
+                )
             } else {
                 hero(ui, &theme, content, pad, header.as_ref(), colors)
             };
@@ -809,6 +842,10 @@ fn page(
                 Some(HeaderAction::Play { shuffle }) => {
                     app.play_shuffled_or_not(tracks.to_vec(), shuffle, ui.input(|i| i.time));
                 }
+                Some(HeaderAction::PlayPage) => {
+                    app.play_page(tracks.to_vec(), ui.input(|i| i.time))
+                }
+                Some(HeaderAction::ToggleShuffle) => app.toggle_shuffle(),
                 Some(HeaderAction::OpenArtist(id)) => app.go(Page::Artist(id)),
                 Some(HeaderAction::Favourite(kind, id)) => app.toggle_favourite(kind, id),
                 Some(HeaderAction::ShowNotes) => {
@@ -970,9 +1007,10 @@ fn page(
         let main = output.inner_rect;
         let shown = ((offset - (BANNER - 2.0 * super::BANNER_BAR)) / 48.0).clamp(0.0, 1.0);
         let color = colors.map_or(theme.surface1, |[c, _, _]| c);
-        let (mut layer, play) = super::banner_bar(ui, &theme, main, color, &header.title, shown);
+        let (mut layer, play) =
+            super::banner_bar(ui, &theme, main, color, &header.title, shown, here);
         if play {
-            app.play_shuffled_or_not(tracks.to_vec(), false, ui.input(|i| i.time));
+            app.play_page(tracks.to_vec(), ui.input(|i| i.time));
         }
         if offset > table_top - super::BANNER_BAR {
             let left = main.left() + pad;

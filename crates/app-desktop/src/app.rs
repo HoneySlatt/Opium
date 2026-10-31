@@ -1729,6 +1729,22 @@ impl App {
         }
     }
 
+    /// Spotify's Play on a page: pause or go on when the page is what plays,
+    /// else play `tracks` from it, shuffled if shuffle is on.
+    pub fn play_page(&mut self, tracks: Vec<Track>, seed: f64) {
+        if self.playing_from.as_ref() == Some(&self.page) && self.shown().track.is_some() {
+            self.toggle_play();
+        } else {
+            let shuffle = self.shown().shuffle;
+            self.play_shuffled_or_not(tracks, shuffle, seed);
+        }
+    }
+
+    /// The page shown is what plays, and it is playing.
+    pub fn page_playing(&self) -> bool {
+        self.playing_from.as_ref() == Some(&self.page) && self.is_playing()
+    }
+
     /// The page the queue was played from, if it was.
     pub fn playing_from(&self) -> Option<&Page> {
         self.playing_from.as_ref()

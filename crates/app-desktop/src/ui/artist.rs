@@ -413,26 +413,34 @@ fn show_banner(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
                 28.0 + if response.hovered() { 2.0 } else { 0.0 },
                 fill,
             );
-            paint_icon(ui, icons::PLAY_FILL, play.center(), 24.0, theme.on_accent());
+            let icon = if app.page_playing() {
+                icons::PAUSE_FILL
+            } else {
+                icons::PLAY_FILL
+            };
+            paint_icon(ui, icon, play.center(), 24.0, theme.on_accent());
             if response.clicked() {
-                app.play_shuffled_or_not(artist.top_songs.clone(), false, now);
+                app.play_page(artist.top_songs.clone(), now);
             }
             let shuffle =
                 Rect::from_center_size(pos2(play.right() + 16.0 + 20.0, mid), vec2(40.0, 40.0));
+            // Shuffle is a switch, green with a dot while on, as Spotify's.
+            let shuffling = app.shown().shuffle;
+            let (color, tip) = if shuffling {
+                (theme.accent, "Turn shuffle off")
+            } else {
+                (theme.subtext0, "Turn shuffle on")
+            };
             let mut child = ui.new_child(egui::UiBuilder::new().max_rect(shuffle));
-            if super::icon_button(
-                &mut child,
-                &theme,
-                icons::SHUFFLE,
-                40.0,
-                26.0,
-                theme.subtext0,
-                true,
-            )
-            .on_hover_text("Shuffle")
-            .clicked()
+            if super::icon_button(&mut child, &theme, icons::SHUFFLE, 40.0, 26.0, color, true)
+                .on_hover_text(tip)
+                .clicked()
             {
-                app.play_shuffled_or_not(artist.top_songs.clone(), true, now);
+                app.toggle_shuffle();
+            }
+            if shuffling {
+                ui.painter()
+                    .circle_filled(shuffle.center() + vec2(0.0, 17.0), 2.0, theme.accent);
             }
             let following = app.is_favourite(FavouriteKind::Artist, &artist.artist.id);
             let label = if following { "Following" } else { "Follow" };
@@ -740,9 +748,11 @@ fn show_banner(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
         let shown = ((offset - (hero - 2.0 * super::BANNER_BAR)) / 48.0).clamp(0.0, 1.0);
         let color = colors.map_or(theme.surface1, |[c, _, _]| c);
         let main = output.inner_rect;
-        let (_, play) = super::banner_bar(ui, &theme, main, color, &artist.artist.name, shown);
+        let here = app.page_playing();
+        let (_, play) =
+            super::banner_bar(ui, &theme, main, color, &artist.artist.name, shown, here);
         if play {
-            app.play_shuffled_or_not(artist.top_songs.clone(), false, ui.input(|i| i.time));
+            app.play_page(artist.top_songs.clone(), ui.input(|i| i.time));
         }
     }
     offset

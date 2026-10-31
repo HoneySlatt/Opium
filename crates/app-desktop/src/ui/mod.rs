@@ -497,6 +497,7 @@ pub fn banner_bar(
     color: Color32,
     title: &str,
     shown: f32,
+    playing: bool,
 ) -> (Ui, bool) {
     let bar = Rect::from_min_size(main.min, vec2(main.width(), BANNER_BAR));
     let mut layer = ui.new_child(egui::UiBuilder::new().max_rect(main).layer_id(
@@ -524,13 +525,12 @@ pub fn banner_bar(
         theme.accent
     };
     layer.painter().circle_filled(play.center(), 24.0, accent);
-    paint_icon(
-        &layer,
-        icons::PLAY_FILL,
-        play.center(),
-        20.0,
-        theme.on_accent(),
-    );
+    let icon = if playing {
+        icons::PAUSE_FILL
+    } else {
+        icons::PLAY_FILL
+    };
+    paint_icon(&layer, icon, play.center(), 20.0, theme.on_accent());
     let g = text(
         &layer,
         title,
