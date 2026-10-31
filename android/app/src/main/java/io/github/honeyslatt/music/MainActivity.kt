@@ -70,10 +70,12 @@ class MainActivity : ComponentActivity() {
         val app = application as MusicApp
         setContent {
             val appearance by app.core.appearance.collectAsStateWithLifecycle()
+            val themes by app.themes.all.collectAsStateWithLifecycle()
+            val chosen by app.themes.chosen.collectAsStateWithLifecycle()
             val connecting = remember { Connecting() }
             var welcomed by remember { mutableStateOf(app.core.welcomed) }
             LaunchedEffect(Unit) { app.start() }
-            MusicTheme(appearance) {
+            MusicTheme(appearance, app.themes.current(themes, chosen)) {
                 Box(Modifier.fillMaxSize()) {
                     if (welcomed) {
                         App(app.core, app.library, app.playback, app.settings, connecting)

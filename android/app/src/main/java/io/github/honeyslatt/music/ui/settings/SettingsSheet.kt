@@ -13,6 +13,11 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import io.github.honeyslatt.music.ui.theme.hasBoth
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
@@ -222,13 +227,21 @@ private fun Root(core: Core, settings: Settings, go: (SettingsPage) -> Unit) {
         }
     }
 
-    Label("Appearance")
-    val appearance by core.appearance.collectAsStateWithLifecycle()
-    Group {
-        listOf(Appearance.Automatic to "Follows the system", Appearance.Light to null, Appearance.Dark to null).forEachIndexed { i, (a, detail) ->
-            GroupRow(first = i == 0, onClick = { core.setAppearance(a) }) {
-                Words(a.name, detail)
-                if (appearance == a) Glyph(Icons.Check, roles.tint, 18.dp)
+    Theme()
+
+    // Only a theme with light colours beside its dark ones follows it.
+    val themes = (androidx.compose.ui.platform.LocalContext.current.applicationContext as io.github.honeyslatt.music.MusicApp).themes
+    val all by themes.all.collectAsStateWithLifecycle()
+    val chosen by themes.chosen.collectAsStateWithLifecycle()
+    if (themes.current(all, chosen).hasBoth) {
+        Label("Appearance")
+        val appearance by core.appearance.collectAsStateWithLifecycle()
+        Group {
+            listOf(Appearance.Automatic to "Follows the system", Appearance.Light to null, Appearance.Dark to null).forEachIndexed { i, (a, detail) ->
+                GroupRow(first = i == 0, onClick = { core.setAppearance(a) }) {
+                    Words(a.name, detail)
+                    if (appearance == a) Glyph(Icons.Check, roles.tint, 18.dp)
+                }
             }
         }
     }
@@ -238,6 +251,56 @@ private fun Root(core: Core, settings: Settings, go: (SettingsPage) -> Unit) {
         GroupRow(first = true) {
             Words("Music for Android", "GPL-3.0-or-later. The way to Apple Music’s web player comes from Kopuz (EUPL-1.2).")
             BasicText(BuildConfig.VERSION_NAME, style = geist(15.sp).copy(color = roles.sub))
+        }
+    }
+}
+
+/** The themes: Stock, Spotify and those imported or sent by the desktop,
+ *  each with its colours; then the import of a theme file. */
+@Composable
+private fun Theme() {
+    val themes = (androidx.compose.ui.platform.LocalContext.current.applicationContext as io.github.honeyslatt.music.MusicApp).themes
+    val all by themes.all.collectAsStateWithLifecycle()
+    val chosen by themes.chosen.collectAsStateWithLifecycle()
+    var problem by remember { mutableStateOf<String?>(null) }
+    val pick = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
+    ) { uri -> if (uri != null) problem = themes.import(uri) }
+    Label("Theme")
+    Group(problem ?: "A theme is a TOML file, the same as the desktop’s: those in its themes folder come here by themselves once paired.") {
+        all.forEachIndexed { i, entry ->
+            val file = entry.file
+            GroupRow(first = i == 0, onClick = if (file != null) ({ themes.choose(entry.id) }) else null) {
+                // Its colours, as on the desktop's cards.
+                Row(Modifier.width(54.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    val p = file?.colors
+                    listOfNotNull(p?.base, p?.surface1, p?.text, p?.accent).forEach { v ->
+                        Box(
+                            Modifier.size(12.dp).background(Color(0xFF000000.toInt() or v.toInt()), CircleShape)
+                                .border(1.dp, roles.line, CircleShape),
+                        )
+                    }
+                }
+                Words(
+                    entry.name,
+                    entry.problem ?: when {
+                        entry.builtIn -> "Built in"
+                        file?.lightColors != null -> "Light and dark"
+                        else -> "Imported"
+                    },
+                    if (file == null) roles.muted else roles.text,
+                )
+                if (chosen == entry.id) Glyph(Icons.Check, roles.tint, 18.dp)
+                if (!entry.builtIn) {
+                    Box(
+                        Modifier.size(32.dp).press(CircleShape) { themes.remove(entry.id) },
+                        contentAlignment = Alignment.Center,
+                    ) { Glyph(Icons.X, roles.muted, 16.dp) }
+                }
+            }
+        }
+        GroupRow(first = false, onClick = { problem = null; pick.launch(arrayOf("*/*")) }) {
+            Words("Import a theme…", colour = roles.tint)
         }
     }
 }

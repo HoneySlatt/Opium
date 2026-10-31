@@ -10,8 +10,8 @@ use std::path::PathBuf;
 
 use egui::Color32;
 pub use music_core::theme::{
-    Cards, Favourite, Glow, Header, Headings, Lyrics, NowPlaying, Panel, PlayerBar, Rows,
-    Sidebar, TopBar, Window,
+    Cards, Favourite, Glow, Header, Headings, LyricsPlace as Lyrics, NowPlaying, Panel,
+    PlayerBar, Rows, Sidebar, TopBar, Window,
 };
 use music_core::theme::ThemeFile;
 

@@ -1421,3 +1421,31 @@ pub extern "system" fn Java_io_github_honeyslatt_music_core_Tls_init<'caller>(
     env.with_env(|env| rustls_platform_verifier::android::init_with_env(env, context))
         .resolve::<jni::errors::ThrowRuntimeExAndDefault>()
 }
+
+/// A theme the app comes with.
+#[derive(uniffi::Record)]
+pub struct BuiltInTheme {
+    pub id: String,
+    pub file: music_core::theme::ThemeFile,
+}
+
+/// The themes that come with the app: Stock, then Spotify.
+#[uniffi::export]
+pub fn built_in_themes() -> Vec<BuiltInTheme> {
+    music_core::theme::BUILT_IN
+        .iter()
+        .filter_map(|(id, _)| {
+            Some(BuiltInTheme {
+                id: id.to_string(),
+                file: music_core::theme::built_in(id)?,
+            })
+        })
+        .collect()
+}
+
+/// A theme file imported or sent from the desktop, read; what is wrong with
+/// it if it can't be.
+#[uniffi::export]
+pub fn parse_theme(source: String) -> Result<music_core::theme::ThemeFile, MusicError> {
+    music_core::theme::parse(&source).map_err(|reason| MusicError::Failed { reason })
+}

@@ -246,7 +246,7 @@ pub struct DesktopLayout {
     pub top_bar: TopBar,
     pub player_bar: PlayerBar,
     pub panel: Panel,
-    pub lyrics: Lyrics,
+    pub lyrics: LyricsPlace,
     pub glow: Glow,
     pub now_playing: NowPlaying,
 }
@@ -259,7 +259,7 @@ pub struct MobileLayout {
     pub tabs: Tabs,
     pub mini_player: MiniPlayer,
     pub now_playing: MobileNowPlaying,
-    pub search: Search,
+    pub search: SearchView,
     pub library: LibraryView,
 }
 
@@ -374,8 +374,8 @@ choice!(
     }
 );
 choice!(
-    /// Where the desktop shows the lyrics.
-    Lyrics {
+    /// Where the desktop shows the lyrics (`Lyrics` is the model's).
+    LyricsPlace {
         /// In the drawer.
         Drawer,
         /// Over the whole page, on the cover's colour.
@@ -435,7 +435,7 @@ choice!(
 );
 choice!(
     /// The phone's Search tab before typing.
-    Search {
+    SearchView {
         /// The field and the recent searches, as Apple Music.
         Field,
         /// A white field over tiles of the catalogue's genres, as Spotify.

@@ -23,6 +23,10 @@ class MusicApp : Application() {
     lateinit var settings: io.github.honeyslatt.music.data.Settings
         private set
 
+    /** The themes to choose from, and the one chosen. */
+    lateinit var themes: io.github.honeyslatt.music.data.Themes
+        private set
+
     /** The user's other devices, through Music Connect. */
     lateinit var devices: io.github.honeyslatt.music.data.Devices
         private set
@@ -36,6 +40,7 @@ class MusicApp : Application() {
         Tls.init(this)
         core = Core(this)
         settings = io.github.honeyslatt.music.data.Settings(this)
+        themes = io.github.honeyslatt.music.data.Themes(this)
         library = Library(core, scope)
         devices = io.github.honeyslatt.music.data.Devices(this)
         playback = io.github.honeyslatt.music.playback.Playback(this, core, scope, devices)
