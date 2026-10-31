@@ -102,6 +102,12 @@ fun DetailPage(
 /** A banner page's cover colour, which its header goes by. */
 val LocalBanner = androidx.compose.runtime.compositionLocalOf<Color?> { null }
 
+/**
+ * How far a banner page's top is scrolled, in px (infinite once gone), for
+ * its cover to shrink and fade, as Spotify's; null without Spotify's motion.
+ */
+val LocalBannerScroll = androidx.compose.runtime.compositionLocalOf<(() -> Float)?> { null }
+
 /** A banner page's actions, which go left of Shuffle and Play rather than in the bar. */
 val LocalBannerActions = androidx.compose.runtime.compositionLocalOf<List<BarAction>> { emptyList() }
 
@@ -115,7 +121,13 @@ private fun BannerPage(nav: Navigator, title: String, page: Color, actions: List
     val state = rememberLazyListState()
     val solid by remember { derivedStateOf { state.firstVisibleItemIndex > 0 } }
     val base = roles.base
-    androidx.compose.runtime.CompositionLocalProvider(LocalBanner provides page, LocalBannerActions provides actions) {
+    val spotify = io.github.honeyslatt.music.ui.theme.look.layout.motion == io.github.honeyslatt.music.core.model.Motion.SPOTIFY
+    val scrolled = remember(state) { { if (state.firstVisibleItemIndex == 0) state.firstVisibleItemScrollOffset.toFloat() else Float.POSITIVE_INFINITY } }
+    androidx.compose.runtime.CompositionLocalProvider(
+        LocalBanner provides page,
+        LocalBannerActions provides actions,
+        LocalBannerScroll provides scrolled.takeIf { spotify },
+    ) {
         Box(Modifier.fillMaxSize().background(base)) {
             val fade = with(androidx.compose.ui.platform.LocalDensity.current) { 4000.dp.toPx() }
             Box(
@@ -242,8 +254,20 @@ private fun BannerHeader(
         Spacer(Modifier.windowInsetsTopHeight(WindowInsets.statusBars))
         Spacer(Modifier.height(56.dp))
         val shape = RoundedCornerShape(4.dp)
+        val scrolled = LocalBannerScroll.current
         Box(
-            Modifier.align(Alignment.CenterHorizontally).size(260.dp)
+            Modifier.align(Alignment.CenterHorizontally)
+                .graphicsLayer {
+                    // Scrolled, it stays behind a little, shrinks and fades.
+                    val y = scrolled?.invoke() ?: 0f
+                    val side = 260.dp.toPx()
+                    val t = (y / side).coerceIn(0f, 1f)
+                    translationY = y.coerceAtMost(side) * 0.55f
+                    scaleX = 1f - 0.3f * t
+                    scaleY = 1f - 0.3f * t
+                    alpha = 1f - t
+                }
+                .size(260.dp)
                 .shadow(28.dp, shape, ambientColor = Color.Black.copy(alpha = 0.5f), spotColor = Color.Black.copy(alpha = 0.5f)),
         ) {
             if (art != null) art() else Cover(artwork, 260.dp, shape, Modifier.size(260.dp))

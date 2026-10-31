@@ -227,11 +227,19 @@ private fun bare(title: String) = title.removeSuffix(" - Single").removeSuffix("
  *  page's colour behind; the name over it, as large as it reads. */
 @Composable
 private fun BannerHero(artist: Artist?, motion: String?) {
+    val scrolled = io.github.honeyslatt.music.ui.detail.LocalBannerScroll.current
     BoxWithConstraints(Modifier.fillMaxWidth().height(400.dp)) {
         val width = maxWidth
         Box(
             Modifier.matchParentSize()
-                .graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }
+                .graphicsLayer {
+                    compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen
+                    // Scrolled, the photo stays behind a little and fades.
+                    val y = scrolled?.invoke() ?: 0f
+                    val tall = size.height
+                    translationY = y.coerceAtMost(tall) * 0.5f
+                    alpha = 1f - (y / tall).coerceIn(0f, 1f) * 0.9f
+                }
                 .drawWithContent {
                     drawContent()
                     drawRect(
