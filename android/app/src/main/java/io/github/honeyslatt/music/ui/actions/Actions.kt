@@ -86,22 +86,25 @@ class Actions(
     fun saved(track: Track): Boolean {
         favourites[track.id]?.let { return it }
         if (track.id.provider == ProviderKind.SOUND_CLOUD) return inLibrary(track)
-        if (!readingFavourites) {
-            library.lists.value.playlists.items.firstOrNull { it.favourites }?.let { playlist ->
-                readingFavourites = true
-                scope.launch {
-                    runCatching {
-                        var page: String? = null
-                        do {
-                            val got = session.playlistTracks(playlist.id, page)
-                            favouriteSongs = favouriteSongs + got.items.flatMap { listOfNotNull(it.id, it.libraryId) }
-                            page = got.next
-                        } while (page != null)
-                    }
-                }
+        readFavouriteSongs()
+        return track.id in favouriteSongs || track.libraryId?.let { it in favouriteSongs } == true
+    }
+
+    /** Apple's playlist of favourites, read once the library lists it. */
+    private fun readFavouriteSongs() {
+        if (readingFavourites) return
+        val playlist = library.lists.value.playlists.items.firstOrNull { it.favourites } ?: return
+        readingFavourites = true
+        scope.launch {
+            runCatching {
+                var page: String? = null
+                do {
+                    val got = session.playlistTracks(playlist.id, page)
+                    favouriteSongs = favouriteSongs + got.items.flatMap { listOfNotNull(it.id, it.libraryId) }
+                    page = got.next
+                } while (page != null)
             }
         }
-        return track.id in favouriteSongs || track.libraryId?.let { it in favouriteSongs } == true
     }
 
     /** Songs added to the library, or taken out, since it loaded. */
@@ -116,14 +119,30 @@ class Actions(
 
     fun inLibrary(t: Track) = t.id.provider == ProviderKind.NAVIDROME || (inLibraryNow[t.id] ?: t.inLibrary)
 
-    /** Whether `id` is a favourite; asked of the service the first time. */
+    /**
+     * Whether `id` is a favourite; asked of the service the first time, and
+     * again a little later if it did not answer. Until it does, a song is
+     * one when Apple's playlist of favourites has it.
+     */
     fun isFavourite(kind: FavouriteKind, id: ItemId, said: Boolean? = null): Boolean {
         favourites[id]?.let { return it }
         if (said != null) return said
         if (id.provider != ProviderKind.NAVIDROME && asking.add(id)) {
             scope.launch {
-                runCatching { session.isFavourite(kind, id) }.getOrNull()?.let { favourites[id] = it }
+                for (wait in listOf(0L, 5_000L, 30_000L)) {
+                    kotlinx.coroutines.delay(wait)
+                    runCatching { session.isFavourite(kind, id) }.getOrNull()?.let {
+                        favourites[id] = it
+                        return@launch
+                    }
+                }
+                // Asked again the next time it is shown.
+                asking.remove(id)
             }
+        }
+        if (kind == FavouriteKind.SONG && id.provider == ProviderKind.APPLE_MUSIC) {
+            readFavouriteSongs()
+            return id in favouriteSongs
         }
         return false
     }
