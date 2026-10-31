@@ -58,6 +58,8 @@ import io.github.honeyslatt.music.ui.components.Line
 import io.github.honeyslatt.music.ui.components.Sheet
 import io.github.honeyslatt.music.ui.components.anchor
 import io.github.honeyslatt.music.ui.components.press
+import io.github.honeyslatt.music.ui.components.pop
+import androidx.compose.ui.graphics.graphicsLayer
 import io.github.honeyslatt.music.ui.components.rememberAnchor
 import io.github.honeyslatt.music.ui.detail.badge
 import io.github.honeyslatt.music.ui.detail.rememberPageColour
@@ -104,13 +106,28 @@ fun SpotifyNowPlaying(playback: Playback, actions: NpActions) {
                         // The cover's room left empty, the song and controls where they were.
                         Spacer(Modifier.fillMaxWidth().aspectRatio(1f))
                     } else {
-                        Cover(
-                            t.artwork,
-                            360.dp,
-                            shape,
-                            Modifier.fillMaxWidth().aspectRatio(1f)
-                                .shadow(24.dp, shape, ambientColor = Color.Black.copy(alpha = 0.4f), spotColor = Color.Black.copy(alpha = 0.4f)),
-                        )
+                        // Swiped, the cover goes and the next comes from the right.
+                        val swipe = rememberSongSwipe(t.id, nextShown = true)
+                        val upcoming by playback.upcoming.collectAsStateWithLifecycle()
+                        val gap = with(androidx.compose.ui.platform.LocalDensity.current) { 24.dp.toPx() }
+                        Box(Modifier.fillMaxWidth().aspectRatio(1f).songSwipe(swipe, gap, playback::next, playback::previousSong)) {
+                            upcoming.firstOrNull()?.let { next ->
+                                Cover(
+                                    next.artwork,
+                                    360.dp,
+                                    shape,
+                                    Modifier.matchParentSize().graphicsLayer { translationX = swipe.offset.value + swipe.span },
+                                )
+                            }
+                            Cover(
+                                t.artwork,
+                                360.dp,
+                                shape,
+                                Modifier.matchParentSize()
+                                    .graphicsLayer { translationX = swipe.offset.value }
+                                    .shadow(24.dp, shape, ambientColor = Color.Black.copy(alpha = 0.4f), spotColor = Color.Black.copy(alpha = 0.4f)),
+                            )
+                        }
                     }
                     Spacer(Modifier.height(44.dp))
                     TitleAndSaved(t, actions, playback)
@@ -170,9 +187,16 @@ private fun TitleAndSaved(t: Track, actions: NpActions, playback: Playback) {
         }
         if (!playback.isStation(t)) {
             val saved = menu?.isFavourite(FavouriteKind.SONG, t.id) == true
-            Box(Modifier.size(48.dp).press(CircleShape) { menu?.toggleFavourite(t) }, contentAlignment = Alignment.Center) {
+            val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
+            Box(
+                Modifier.size(48.dp).press(CircleShape) {
+                    haptics.performHapticFeedback(if (saved) androidx.compose.ui.hapticfeedback.HapticFeedbackType.ToggleOff else androidx.compose.ui.hapticfeedback.HapticFeedbackType.ToggleOn)
+                    menu?.toggleFavourite(t)
+                },
+                contentAlignment = Alignment.Center,
+            ) {
                 if (saved) {
-                    Box(Modifier.size(28.dp).background(roles.accent, CircleShape), contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(28.dp).pop(saved).background(roles.accent, CircleShape), contentAlignment = Alignment.Center) {
                         Glyph(Icons.Check, roles.onAccent, 17.dp)
                     }
                 } else {
@@ -243,7 +267,7 @@ private fun Transport(playback: Playback, playing: Boolean) {
             Modifier.size(72.dp).press(CircleShape, shrink = 0.94f) { playback.toggle() }.background(Color.White, CircleShape),
             contentAlignment = Alignment.Center,
         ) {
-            if (loading) Box(Modifier.size(28.dp)) else Glyph(if (playing) Icons.Pause else Icons.Play, Color.Black, 32.dp)
+            if (loading) Box(Modifier.size(28.dp)) else io.github.honeyslatt.music.ui.components.PlayPause(playing, Color.Black, 32.dp)
         }
         Box(Modifier.weight(1f))
         Box(Modifier.size(56.dp).press(CircleShape) { playback.next() }, contentAlignment = Alignment.Center) {

@@ -612,6 +612,12 @@ class Playback(private val context: Context, private val core: Core, private val
         }
     }
 
+    /** The song before, even midway through this one: what a swipe asks for. */
+    fun previousSong() {
+        if (remote.value == null && player.currentPosition > 3_000) player.seekTo(0)
+        previous()
+    }
+
     /** Back to the song's start, or to the one before when already there. */
     fun previous() = either({ Command.Previous }) {
         if (player.currentPosition > 3_000) {

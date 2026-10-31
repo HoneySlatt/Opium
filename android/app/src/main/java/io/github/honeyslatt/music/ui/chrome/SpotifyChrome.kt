@@ -20,6 +20,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import io.github.honeyslatt.music.ui.components.pop
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -124,6 +125,9 @@ fun MiniCard(state: MiniState, playback: Playback, onDevices: () -> Unit, modifi
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
+            val swipe = io.github.honeyslatt.music.ui.nowplaying.rememberSongSwipe(track.id)
+            SwipedSong(swipe, state, Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Cover(track.artwork, 40.dp, RoundedCornerShape(4.dp), Modifier.size(40.dp))
             Column(Modifier.weight(1f)) {
                 val artists = track.artists.joinToString(", ")
@@ -153,18 +157,24 @@ fun MiniCard(state: MiniState, playback: Playback, onDevices: () -> Unit, modifi
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+            }
+            }
             Box(
                 Modifier.size(40.dp).press(CircleShape, shrink = 0.9f, onClick = onDevices),
                 contentAlignment = Alignment.Center,
             ) { Glyph(MoreIcons.Devices, if (remote != null) green else Color.White, 22.dp) }
             if (!playback.isStation(track)) {
                 val saved = actions?.isFavourite(FavouriteKind.SONG, track.id) == true
+                val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
                 Box(
-                    Modifier.size(40.dp).press(CircleShape, shrink = 0.9f) { actions?.toggleFavourite(track) },
+                    Modifier.size(40.dp).press(CircleShape, shrink = 0.9f) {
+                        haptics.performHapticFeedback(if (saved) androidx.compose.ui.hapticfeedback.HapticFeedbackType.ToggleOff else androidx.compose.ui.hapticfeedback.HapticFeedbackType.ToggleOn)
+                        actions?.toggleFavourite(track)
+                    },
                     contentAlignment = Alignment.Center,
                 ) {
                     if (saved) {
-                        Box(Modifier.size(22.dp).background(green, CircleShape), contentAlignment = Alignment.Center) {
+                        Box(Modifier.size(22.dp).pop(saved).background(green, CircleShape), contentAlignment = Alignment.Center) {
                             Glyph(Icons.Check, roles.onAccent, 14.dp)
                         }
                     } else {
@@ -173,7 +183,7 @@ fun MiniCard(state: MiniState, playback: Playback, onDevices: () -> Unit, modifi
                 }
             }
             Box(Modifier.size(40.dp).press(CircleShape, shrink = 0.9f, onClick = state.onToggle), contentAlignment = Alignment.Center) {
-                if (state.loading) Spinner() else Glyph(if (state.playing) Icons.Pause else Icons.Play, Color.White, 24.dp)
+                if (state.loading) Spinner() else io.github.honeyslatt.music.ui.components.PlayPause(state.playing, Color.White, 24.dp)
             }
         }
         // The position along the foot.

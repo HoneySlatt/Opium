@@ -50,6 +50,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import io.github.honeyslatt.music.ui.chrome.coverFlight
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
@@ -183,6 +184,7 @@ fun NowPlaying(playback: Playback, actions: NpActions) {
                                 maxWidth,
                                 shape,
                                 Modifier
+                                    .coverFlight(io.github.honeyslatt.music.ui.chrome.LocalNpVisibility.current)
                                     .fillMaxWidth()
                                     .aspectRatio(1f)
                                     .scale(scale)
@@ -274,7 +276,9 @@ private fun Wash(track: Track, playing: Boolean) {
     val light = !roles.dark
     val base = roles.base
     val url = track.artwork?.at(120)
-    val colours by produceState(listOf(roles.accent, roles.mauve, roles.accent), url, light) {
+    // What's known at once, else the page's base until worked out; the
+    // colours fade from one song's to the next's.
+    val colours by produceState(CoverColours.knownWash(url, light) ?: listOf(base, base, base), url, light) {
         url?.let { CoverColours.wash(it, light) }?.let { value = it }
     }
     // There and back over 40 s, moved on 15 times a second: a few pixels a
@@ -289,7 +293,10 @@ private fun Wash(track: Track, playing: Boolean) {
             wash.floatValue = next.coerceIn(0f, 1f)
         }
     }
-    val (c1, c2, c3) = colours
+    val fade = tween<Color>(600)
+    val c1 by androidx.compose.animation.animateColorAsState(colours[0], fade, label = "wash1")
+    val c2 by androidx.compose.animation.animateColorAsState(colours[1], fade, label = "wash2")
+    val c3 by androidx.compose.animation.animateColorAsState(colours[2], fade, label = "wash3")
     val fill = lerp(c1, Color.Black, 0.2f)
     Box(
         Modifier.fillMaxSize().drawBehind {
@@ -419,7 +426,9 @@ private fun Controls(playback: Playback, t: Track, playing: Boolean, mode: NpMod
     }
     Row(Modifier.fillMaxWidth().padding(top = 26.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
         Transport(Icons.Rw, 36) { playback.previous() }
-        Transport(if (playing) Icons.Pause else Icons.Play, 46) { playback.toggle() }
+        Box(Modifier.size(84.dp, 72.dp).press(CircleShape, shrink = 0.86f) { playback.toggle() }, contentAlignment = Alignment.Center) {
+            io.github.honeyslatt.music.ui.components.PlayPause(playing, np.fg, 46.dp)
+        }
         Transport(Icons.Ff, 36) { playback.next() }
     }
     Row(Modifier.fillMaxWidth().padding(top = 30.dp), horizontalArrangement = Arrangement.SpaceAround) {

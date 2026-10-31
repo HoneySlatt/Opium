@@ -41,6 +41,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -94,7 +96,7 @@ fun App(core: Core, library: Library, playback: io.github.honeyslatt.music.playb
     val loading by playback.loading.collectAsStateWithLifecycle()
     val context = LibraryContext(core, nav, lists, services, account, animatedArtwork = settings.animatedArtwork, playback = playback, library = library)
     var npOpen by rememberSaveable { mutableStateOf(false) }
-    val mini = MiniState(now, playing, loading, playback::toggle, playback::next, playback::previous, onOpen = { npOpen = true })
+    val mini = MiniState(now, playing, loading, playback::toggle, playback::next, playback::previousSong, onOpen = { npOpen = true }, npOpen = npOpen && now != null)
     val scope = rememberCoroutineScope()
     val appContext = androidx.compose.ui.platform.LocalContext.current.applicationContext
     val hud = remember { Hud(scope) }
@@ -144,19 +146,54 @@ fun App(core: Core, library: Library, playback: io.github.honeyslatt.music.playb
         LocalActions provides actions,
         LocalMenus provides menus,
     ) {
-    Box(Modifier.fillMaxSize().background(roles.base)) {
+    androidx.compose.animation.SharedTransitionLayout(Modifier.fillMaxSize().background(roles.base)) {
         val spotify = look.layout.motion == io.github.honeyslatt.music.core.model.Motion.SPOTIFY
-        AnimatedContent(
-            targetState = Triple(nav.tab, nav.stack.size, nav.page),
-            transitionSpec = { push(initialState, targetState, spotify) },
-            label = "pages",
-        ) { (tab, _, page) ->
-            Page(tab, page, context, account, browse)
-        }
-        if (look.mobile.tabs == io.github.honeyslatt.music.core.model.Tabs.THREE) {
-            io.github.honeyslatt.music.ui.chrome.SpotifyBottom(nav, mini, playback, { devicesOpen = true }, Modifier.align(Alignment.BottomCenter))
-        } else {
-            BottomChrome(nav, mini, Modifier.align(Alignment.BottomCenter))
+        // Apple Music's: the page recedes, rounded and darkened, while Now
+        // Playing rises over it, and comes back as it is swiped down.
+        var npDrag by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+        val risen = androidx.compose.animation.core.animateFloatAsState(
+            if (npOpen && now != null) 1f else 0f,
+            tween(if (npOpen) 440 else 400, easing = Standard),
+            label = "risen",
+        )
+        // Read as drawn, not composed: the pages aren't recomposed for it.
+        val recede = { if (spotify) 0f else risen.value * (1f - npDrag) }
+        val corner = with(androidx.compose.ui.platform.LocalDensity.current) { 18.dp.toPx() }
+    androidx.compose.runtime.CompositionLocalProvider(io.github.honeyslatt.music.ui.chrome.LocalCoverFlight provides this.takeIf { !spotify }) {
+        Box(
+            Modifier.fillMaxSize().graphicsLayer {
+                val r = recede()
+                if (r > 0f) {
+                    val s = 1f - 0.07f * r
+                    scaleX = s
+                    scaleY = s
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(corner * r)
+                    clip = true
+                } else {
+                    scaleX = 1f
+                    scaleY = 1f
+                    clip = false
+                }
+            },
+        ) {
+            AnimatedContent(
+                targetState = Triple(nav.tab, nav.stack.size, nav.page),
+                transitionSpec = { push(initialState, targetState, spotify) },
+                label = "pages",
+            ) { (tab, _, page) ->
+                Page(tab, page, context, account, browse)
+            }
+            if (look.mobile.tabs == io.github.honeyslatt.music.core.model.Tabs.THREE) {
+                io.github.honeyslatt.music.ui.chrome.SpotifyBottom(nav, mini, playback, { devicesOpen = true }, Modifier.align(Alignment.BottomCenter))
+            } else {
+                BottomChrome(nav, mini, Modifier.align(Alignment.BottomCenter))
+            }
+            Box(
+                Modifier.fillMaxSize().drawBehind {
+                    val r = recede()
+                    if (r > 0f) drawRect(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.4f * r))
+                },
+            )
         }
         // Now Playing rises from the mini player over 440 ms, and goes back
         // down with a swipe.
@@ -165,12 +202,15 @@ fun App(core: Core, library: Library, playback: io.github.honeyslatt.music.playb
             enter = slideInVertically(tween(440, easing = Standard)) { it },
             exit = slideOutVertically(tween(400, easing = Standard)) { it },
         ) {
-            SwipeDown({ npOpen = false }) {
+            androidx.compose.runtime.LaunchedEffect(Unit) { npDrag = 0f }
+            androidx.compose.runtime.CompositionLocalProvider(io.github.honeyslatt.music.ui.chrome.LocalNpVisibility provides this) {
+            SwipeDown({ npOpen = false }, { npDrag = it }) {
                 if (look.mobile.nowPlaying == io.github.honeyslatt.music.core.model.MobileNowPlaying.SPOTIFY) {
                     io.github.honeyslatt.music.ui.nowplaying.SpotifyNowPlaying(playback, npActions)
                 } else {
                     NowPlaying(playback, npActions)
                 }
+            }
             }
         }
         io.github.honeyslatt.music.ui.nowplaying.DevicesSheet(devicesOpen, playback) { devicesOpen = false }
@@ -179,6 +219,7 @@ fun App(core: Core, library: Library, playback: io.github.honeyslatt.music.playb
         io.github.honeyslatt.music.ui.nowplaying.PairingHost(playback.devices)
         MenuHost(menus)
         HudHost(hud)
+    }
     }
     }
 }
@@ -238,11 +279,14 @@ private fun Page(tab: Tab, page: Route, c: LibraryContext, account: @Composable 
 
 /** A sheet that follows a drag down, and closes past a quarter of the screen. */
 @Composable
-private fun SwipeDown(onClose: () -> Unit, content: @Composable () -> Unit) {
+private fun SwipeDown(onClose: () -> Unit, onDrag: (Float) -> Unit, content: @Composable () -> Unit) {
     var drag by androidx.compose.runtime.remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
     val shown by androidx.compose.animation.core.animateFloatAsState(drag, label = "drag")
     androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
         val limit = constraints.maxHeight / 4f
+        // How far down, as a share of the screen, for the page behind.
+        val height = constraints.maxHeight.toFloat()
+        androidx.compose.runtime.LaunchedEffect(shown) { onDrag((shown / height).coerceIn(0f, 1f)) }
         Box(
             Modifier
                 .fillMaxSize()
