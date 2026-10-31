@@ -483,6 +483,41 @@ fn top_bar(app: &mut App, ui: &mut Ui, main: Rect, scrolled: f32) {
     }
 }
 
+/// Spotify's Liked Songs violet, for the library's songs.
+pub const LOVED: [Color32; 2] = [
+    Color32::from_rgb(0x45, 0x0a, 0xf5),
+    Color32::from_rgb(0xc4, 0xef, 0xd9),
+];
+
+/// A square of `from` at its top left to `to` at its bottom right.
+pub fn gradient(ui: &Ui, rect: Rect, from: Color32, to: Color32) {
+    let mut mesh = Mesh::default();
+    let corners = [
+        (rect.left_top(), 0.0),
+        (rect.right_top(), 0.5),
+        (rect.right_bottom(), 1.0),
+        (rect.left_bottom(), 0.5),
+    ];
+    for (point, t) in corners {
+        mesh.colored_vertex(point, crate::color::mix(to, from, t));
+    }
+    mesh.add_triangle(0, 1, 2);
+    mesh.add_triangle(0, 2, 3);
+    ui.painter().add(mesh);
+}
+
+/// The library's songs as Spotify draws Liked Songs: a white heart on violet.
+pub fn loved_tile(ui: &Ui, rect: Rect) {
+    gradient(ui, rect, LOVED[0], LOVED[1]);
+    paint_icon(
+        ui,
+        icons::HEART,
+        rect.center(),
+        rect.width() * 0.4,
+        Color32::WHITE,
+    );
+}
+
 /// How tall Spotify's bar over a scrolled page is.
 pub const BANNER_BAR: f32 = 64.0;
 

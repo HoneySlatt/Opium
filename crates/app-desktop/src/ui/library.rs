@@ -225,9 +225,7 @@ pub fn show(app: &mut App, ui: &mut Ui, collapsed: bool) {
     // The rows, only those in sight laid out.
     let pinned = pinned(app, filter);
     let listed: Vec<usize> = match filter {
-        Filter::Playlists => (0..app.playlists.len())
-            .filter(|&i| !app.playlists[i].favourites)
-            .collect(),
+        Filter::Playlists => (0..app.playlists.len()).collect(),
         Filter::Albums => {
             app.want_library_albums();
             let copies = app.copies(0);
@@ -302,37 +300,21 @@ fn pinned(app: &App, filter: Filter) -> Vec<Row> {
         page,
         playlist: None,
     };
-    // Spotify's Liked Songs violet, for the songs the user loves.
-    const LOVED: [Color32; 2] = [
-        Color32::from_rgb(0x45, 0x0a, 0xf5),
-        Color32::from_rgb(0xc4, 0xef, 0xd9),
-    ];
     const PLAIN: [Color32; 2] = [
         Color32::from_rgb(0x2a, 0x2a, 0x2a),
         Color32::from_rgb(0x50, 0x50, 0x50),
     ];
     match filter {
         Filter::Playlists => {
-            let favourites = match app.playlists.iter().find(|p| p.favourites) {
-                Some(p) => Page::Playlist(p.id.clone()),
-                None => Page::Favourites,
-            };
-            vec![
-                tile(
-                    "Favourite Songs",
-                    "Playlist".into(),
-                    icons::HEART,
-                    LOVED,
-                    favourites,
-                ),
-                tile(
-                    "Songs",
-                    format!("Library · {} songs", app.songs.len()),
-                    icons::NOTE,
-                    PLAIN,
-                    Page::Songs,
-                ),
-            ]
+            // The library's songs are Spotify's Liked Songs; Apple's own
+            // playlist of favourites is listed with the others.
+            vec![tile(
+                "Songs",
+                format!("Playlist · {} songs", app.songs.len()),
+                icons::HEART,
+                super::LOVED,
+                Page::Songs,
+            )]
         }
         Filter::Albums => vec![tile(
             "Recently Added",
@@ -432,7 +414,7 @@ fn row_ui(
             }
         }
         Art::Tile(icon, [from, to]) => {
-            gradient(ui, art, *from, *to);
+            super::gradient(ui, art, *from, *to);
             paint_icon(ui, *icon, art.center(), 20.0, Color32::WHITE);
         }
     }
@@ -476,23 +458,6 @@ fn row_ui(
         theme.subtext0,
     );
     response
-}
-
-/// A square of `from` at its top left to `to` at its bottom right.
-fn gradient(ui: &Ui, rect: Rect, from: Color32, to: Color32) {
-    let mut mesh = egui::Mesh::default();
-    let corners = [
-        (rect.left_top(), 0.0),
-        (rect.right_top(), 0.5),
-        (rect.right_bottom(), 1.0),
-        (rect.left_bottom(), 0.5),
-    ];
-    for (point, t) in corners {
-        mesh.colored_vertex(point, crate::color::mix(to, from, t));
-    }
-    mesh.add_triangle(0, 1, 2);
-    mesh.add_triangle(0, 2, 3);
-    ui.painter().add(mesh);
 }
 
 fn service(provider: ProviderKind) -> &'static str {

@@ -39,6 +39,8 @@ struct Header {
     motion: Option<String>,
     /// How long it all lasts, which Spotify's banner says.
     length: Option<Duration>,
+    /// The library's songs: Spotify's Liked Songs tile for a cover.
+    loved: bool,
 }
 
 /// What a click in the header asked for.
@@ -413,6 +415,7 @@ pub fn playlist(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
         add: Some(Collection::Playlist(playlist.clone())).filter(|p| app.can_add_to_library(p)),
         motion: None,
         length: total_length(&tracks),
+        loved: false,
     };
     let listing = Listing {
         columns: Kind::Playlist,
@@ -427,10 +430,72 @@ pub fn playlist(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
     page(app, ui, pad, Some(header), tracks, listing)
 }
 
+/// What the Songs page's banner asked for.
+pub(super) enum SongsBanner {
+    Play,
+    ToggleShuffle,
+}
+
+/// The Songs page's banner, as Spotify's Liked Songs: its tile, Playlist,
+/// the title, the user and the count; Play and Shuffle under it. Returns
+/// what was clicked and where the table starts.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn songs_banner(
+    ui: &mut Ui,
+    theme: &Theme,
+    content: Rect,
+    pad: f32,
+    count: usize,
+    shuffle: bool,
+    here: bool,
+) -> Option<SongsBanner> {
+    let user = std::env::var("USER").unwrap_or_default();
+    let mut chars = user.chars();
+    let user: String = chars
+        .next()
+        .map(|f| f.to_uppercase().chain(chars).collect())
+        .unwrap_or_default();
+    let header = Header {
+        kind: "Playlist",
+        title: "Songs".into(),
+        by: Some(user),
+        by_link: None,
+        by_art: None,
+        meta: vec![(
+            Some(icons::NOTE),
+            format!("{count} TRACK{}", if count == 1 { "" } else { "S" }),
+        )],
+        description: None,
+        art: None,
+        favourite: None,
+        add: None,
+        motion: None,
+        length: None,
+        loved: true,
+    };
+    match banner_header(
+        ui,
+        theme,
+        content,
+        pad,
+        Some(&header),
+        Some([SONGS_BAND; 3]),
+        shuffle,
+        here,
+    ) {
+        Some(HeaderAction::PlayPage) => Some(SongsBanner::Play),
+        Some(HeaderAction::ToggleShuffle) => Some(SongsBanner::ToggleShuffle),
+        _ => None,
+    }
+}
+
+/// The band behind Spotify's Liked Songs.
+pub(super) const SONGS_BAND: Color32 = Color32::from_rgb(0x50, 0x38, 0xa0);
+
 /// The banner's height, down to under the cover, in Spotify's layout.
-const BANNER: f32 = 52.0 + 24.0 + 232.0 + 24.0;
+pub(super) const BANNER: f32 = 52.0 + 24.0 + 232.0 + 24.0;
 /// The row of buttons under it.
-const ACTIONS: f32 = 104.0;
+pub(super) const ACTIONS: f32 = 104.0;
 
 /// Where the banner's cover goes.
 fn banner_art(content: Rect, pad: f32) -> Rect {
@@ -477,7 +542,11 @@ fn banner_header(
         }
         .as_shape(art, 4.0),
     );
-    artwork(ui, header.and_then(|h| h.art.clone()), art, 4.0, theme);
+    if header.is_some_and(|h| h.loved) {
+        super::loved_tile(ui, art);
+    } else {
+        artwork(ui, header.and_then(|h| h.art.clone()), art, 4.0, theme);
+    }
     let header = header?;
     let mut action = None;
 
@@ -746,6 +815,7 @@ fn album_header(album: &Album, tracks: &[Track], favourite: bool) -> Header {
         add: None,
         motion: None,
         length: None,
+        loved: false,
     }
 }
 

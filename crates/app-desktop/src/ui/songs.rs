@@ -17,9 +17,16 @@ const TABLE_TOP: f32 = 179.0;
 pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
     rebuild_order(app);
     let theme = app.theme.clone();
+    // Spotify's layout shows the songs as its Liked Songs playlist.
+    let banner = theme.layout.header == crate::theme::Header::Banner;
+    let table_offset = if banner {
+        super::detail::BANNER + super::detail::ACTIONS
+    } else {
+        TABLE_TOP
+    };
     let rows = app.songs_view.order.len();
     let foot = 18.0 + 16.0 + 18.0;
-    let total = TABLE_TOP + tracks::HEAD_SPACE + rows as f32 * tracks::ROW + foot + 104.0;
+    let total = table_offset + tracks::HEAD_SPACE + rows as f32 * tracks::ROW + foot + 104.0;
 
     let output = egui::ScrollArea::vertical()
         .id_salt("songs")
@@ -27,17 +34,21 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
         .show_viewport(ui, |ui, viewport| {
             let (content, _) =
                 ui.allocate_exact_size(vec2(ui.available_width(), total), Sense::hover());
-            glow(
-                ui,
-                &theme,
-                Rect::from_min_size(content.min, vec2(content.width(), 460.0)),
-            );
             let left = content.left() + pad;
             let width = content.width() - 2.0 * pad;
-            header(app, ui, &theme, content.top(), left, width);
+            if banner {
+                banner_header(app, ui, &theme, content, pad);
+            } else {
+                glow(
+                    ui,
+                    &theme,
+                    Rect::from_min_size(content.min, vec2(content.width(), 460.0)),
+                );
+                header(app, ui, &theme, content.top(), left, width);
+            }
 
             let columns = Columns::new(left, width, true);
-            let table_top = content.top() + TABLE_TOP;
+            let table_top = content.top() + table_offset;
             let sort = Some(app.songs_view.sort);
             if let Some(key) = tracks::head(ui, &theme, &columns, table_top, left, width, sort) {
                 app.songs_view.sort = tracks::cycle(app.songs_view.sort, key);
@@ -53,7 +64,7 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
             // Carried out after the rows: it may take songs out of the list
             // they index.
             let mut chosen = None;
-            for position in tracks::visible(viewport, TABLE_TOP + tracks::HEAD_SPACE, rows) {
+            for position in tracks::visible(viewport, table_offset + tracks::HEAD_SPACE, rows) {
                 let top = rows_top + position as f32 * tracks::ROW;
                 let rect = Rect::from_min_size(pos2(left, top), vec2(width, tracks::ROW));
                 let track = &app.songs[app.songs_view.order[position]];
@@ -107,7 +118,103 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
     if let Some(position) = tracks::keyboard(ui, rows, &mut app.songs_view.selected) {
         app.play_list(shown_tracks(app), position);
     }
-    output.state.clamped_offset().y
+    let offset = output.state.clamped_offset().y;
+    if banner {
+        // Past the banner, Spotify's bar with its Play, and the column
+        // titles kept under it, still sorting.
+        let main = output.inner_rect;
+        let bar = super::BANNER_BAR;
+        let shown = ((offset - (super::detail::BANNER - 2.0 * bar)) / 48.0).clamp(0.0, 1.0);
+        let here = app.page_playing();
+        let (mut layer, play) = super::banner_bar(
+            ui,
+            &theme,
+            main,
+            super::detail::SONGS_BAND,
+            "Songs",
+            shown,
+            here,
+        );
+        if play {
+            app.play_page(shown_tracks(app), ui.input(|i| i.time));
+        }
+        if offset > table_offset - bar {
+            let left = main.left() + pad;
+            let width = main.width() - 2.0 * pad;
+            let top = main.top() + bar;
+            layer.painter().rect_filled(
+                Rect::from_min_max(
+                    pos2(left - 16.0, top),
+                    pos2(left + width + 16.0, top + tracks::HEAD),
+                ),
+                0.0,
+                crate::color::mix(theme.surface0, theme.base, 0.5),
+            );
+            let columns = Columns::new(left, width, true);
+            let sort = Some(app.songs_view.sort);
+            if let Some(key) = tracks::head(&mut layer, &theme, &columns, top, left, width, sort) {
+                app.songs_view.sort = tracks::cycle(app.songs_view.sort, key);
+                app.songs_view.selected = None;
+            }
+        }
+    }
+    offset
+}
+
+/// Spotify's banner over the songs, then on the right of its buttons the
+/// search and, with more than one service, a menu of them.
+fn banner_header(app: &mut App, ui: &mut Ui, theme: &Theme, content: Rect, pad: f32) {
+    let count = app.songs_view.order.len();
+    let (shuffle, here) = (app.shown().shuffle, app.page_playing());
+    match super::detail::songs_banner(ui, theme, content, pad, count, shuffle, here) {
+        Some(super::detail::SongsBanner::Play) => {
+            app.play_page(shown_tracks(app), ui.input(|i| i.time));
+        }
+        Some(super::detail::SongsBanner::ToggleShuffle) => app.toggle_shuffle(),
+        None => {}
+    }
+    let left = content.left() + pad;
+    let width = content.width() - 2.0 * pad;
+    let top = content.top() + super::detail::BANNER + (super::detail::ACTIONS - 32.0) / 2.0;
+    let search = super::page_search(app, ui, theme, left + width, top, "Search Songs");
+    if search.changed {
+        app.songs_view.selected = None;
+    }
+    let services = app.services_in_use();
+    if services.len() < 2 {
+        return;
+    }
+    let label = match app.songs_view.source {
+        None => "All services",
+        Some(ProviderKind::AppleMusic) => "Apple Music",
+        Some(ProviderKind::SoundCloud) => "SoundCloud",
+        Some(ProviderKind::Navidrome) => "Navidrome",
+    };
+    let f = font(14.0, Weight::Regular);
+    let w = text(ui, label, f.clone(), theme.text, 200.0).size().x + 8.0 + 14.0;
+    let rect = Rect::from_min_size(pos2(search.left - 16.0 - w, top), vec2(w, 32.0));
+    let response = ui
+        .interact(rect, Id::unique("songs-services"), Sense::click())
+        .on_hover_cursor(egui::CursorIcon::PointingHand);
+    let color = if response.hovered() {
+        theme.text
+    } else {
+        theme.subtext0
+    };
+    let g = text(ui, label, f, color, 200.0);
+    paint_text(ui, g, rect.left(), rect.center().y, egui::Align::Min, color);
+    paint_icon(
+        ui,
+        icons::DOWN,
+        pos2(rect.right() - 7.0, rect.center().y),
+        14.0,
+        color,
+    );
+    if let Some(source) =
+        super::menu::sources_menu(&response, theme, app.songs_view.source, &services)
+    {
+        app.set_songs_source(source);
+    }
 }
 
 fn header(app: &mut App, ui: &mut Ui, theme: &Theme, top: f32, left: f32, width: f32) {

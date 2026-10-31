@@ -136,6 +136,38 @@ pub(super) enum SortChoice {
 
 /// The Albums page's sort menu, opened by a click on `response`: what to sort
 /// by, then which way, each with a check by the one in use.
+/// The services to list the songs of, under a button: all, or one of
+/// `services`. The one chosen.
+pub(super) fn sources_menu(
+    response: &Response,
+    theme: &Theme,
+    current: Option<music_core::model::ProviderKind>,
+    services: &[music_core::model::ProviderKind],
+) -> Option<Option<music_core::model::ProviderKind>> {
+    use music_core::model::ProviderKind;
+    let mut entries = vec![Entry::Choice(
+        icons::LIST,
+        "All services",
+        None,
+        current.is_none(),
+    )];
+    for (provider, icon, label) in [
+        (ProviderKind::AppleMusic, icons::APPLE_MUSIC, "Apple Music"),
+        (ProviderKind::SoundCloud, icons::SOUNDCLOUD, "SoundCloud"),
+        (ProviderKind::Navidrome, icons::NAVIDROME, "Navidrome"),
+    ] {
+        if services.contains(&provider) {
+            entries.push(Entry::Choice(
+                icon,
+                label,
+                Some(provider),
+                current == Some(provider),
+            ));
+        }
+    }
+    menu(response, theme, &entries, true)
+}
+
 pub(super) fn albums_sort_menu(
     response: &Response,
     theme: &Theme,
