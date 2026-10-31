@@ -53,9 +53,24 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     player_shortcuts(app, ui);
     mouse_navigation(app, ui);
     if app.now_playing {
+        let layout = app.theme.layout;
+        let cover = layout.now_playing == crate::theme::NowPlaying::Cover;
+        // Spotify's full screen keeps the player along the bottom.
+        if cover && layout.player_bar == PlayerBar::Docked {
+            egui::Panel::bottom("dock")
+                .exact_size(dock::HEIGHT)
+                .resizable(false)
+                .show_separator_line(false)
+                .frame(egui::Frame::new().fill(app.theme.crust))
+                .show(ui, |ui| dock::show(app, ui));
+        }
         egui::CentralPanel::no_frame().show(ui, |ui| {
             let full = ui.max_rect();
-            now_playing::show(app, ui);
+            if cover {
+                now_playing::show_cover(app, ui);
+            } else {
+                now_playing::show(app, ui);
+            }
             signal::show(app, ui, full);
         });
         playlist_dialog::show(app, ui.ctx());

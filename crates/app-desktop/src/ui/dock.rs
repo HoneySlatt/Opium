@@ -436,7 +436,10 @@ fn right_side(app: &mut App, ui: &mut Ui, theme: &Theme, area: Rect, narrow: boo
     if response.clicked() {
         if layout.lyrics == Lyrics::Page {
             app.lyrics_page = !app.lyrics_page;
-            app.now_playing = false;
+            // Spotify's full screen shows them in the cover's place.
+            if layout.now_playing != crate::theme::NowPlaying::Cover {
+                app.now_playing = false;
+            }
         } else {
             app.toggle_drawer(true);
         }
@@ -488,10 +491,15 @@ fn right_side(app: &mut App, ui: &mut Ui, theme: &Theme, area: Rect, narrow: boo
     row.add_space(6.0);
     super::player_bar::volume_slider(app, &mut row, theme, &shown);
     row.add_space(8.0);
-    if icon_button(&mut row, theme, icons::EXPAND, 32.0, 15.0, dim, true)
-        .on_hover_text("Full screen")
+    let (icon, tip) = if app.now_playing {
+        (icons::MINIMIZE, "Exit full screen")
+    } else {
+        (icons::EXPAND, "Full screen")
+    };
+    if icon_button(&mut row, theme, icon, 32.0, 15.0, dim, true)
+        .on_hover_text(tip)
         .clicked()
     {
-        app.now_playing = true;
+        app.now_playing = !app.now_playing;
     }
 }

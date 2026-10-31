@@ -27,6 +27,7 @@ pub struct Layout {
     pub glow: Glow,
     pub cards: Cards,
     pub favourite: Favourite,
+    pub now_playing: NowPlaying,
 }
 
 impl Layout {
@@ -41,6 +42,7 @@ impl Layout {
         glow: Glow::Accent,
         cards: Cards::Covers,
         favourite: Favourite::Star,
+        now_playing: NowPlaying::Lyrics,
     };
 }
 
@@ -151,6 +153,20 @@ pub enum Favourite {
     Star,
     /// A check in the accent, as Spotify's saved songs.
     Check,
+}
+
+/// The full screen player.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NowPlaying {
+    /// Cider's: the cover down the left fading into its colours, the
+    /// lyrics on the right, the controls in a card.
+    #[default]
+    Lyrics,
+    /// Spotify's: the cover large in the middle on its colour, cards about
+    /// the song under it, the player bar kept along the bottom; the lyrics
+    /// in its place on demand.
+    Cover,
 }
 
 #[derive(Debug, Clone, PartialEq)]

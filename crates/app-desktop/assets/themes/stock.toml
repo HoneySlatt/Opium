@@ -16,6 +16,7 @@ lyrics = "drawer"         # drawer | page
 glow = "accent"          # accent | grey
 cards = "covers"          # covers | tiles
 favourite = "star"        # star | check
+now_playing = "lyrics"    # lyrics | cover
 
 [colors]
 light = false

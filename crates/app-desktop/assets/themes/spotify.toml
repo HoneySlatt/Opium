@@ -14,6 +14,7 @@ lyrics = "page"
 glow = "grey"
 cards = "tiles"
 favourite = "check"
+now_playing = "cover"
 
 [colors]
 light = false

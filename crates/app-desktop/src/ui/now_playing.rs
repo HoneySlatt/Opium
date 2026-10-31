@@ -92,6 +92,286 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     buttons(app, ui, &theme, full, reveal);
 }
 
+/// Spotify's full screen: the cover large in the middle on its colour, where
+/// it plays from at the top left, cards about the song under the cover, and
+/// the lyrics in its place on demand.
+pub fn show_cover(app: &mut App, ui: &mut Ui) {
+    let theme = app.theme.clone();
+    let full = ui.max_rect();
+    let shown = app.shown();
+    let track = shown.track.clone();
+    let color = track
+        .as_ref()
+        .and_then(|t| t.artwork.as_ref())
+        .map(|a| a.url(96))
+        .and_then(|url| app.palette(&url))
+        .map(|[c, _, _]| crate::palette::fit_header(c, false))
+        .unwrap_or(theme.surface1);
+    let mut mesh = Mesh::default();
+    let bottom = crate::color::mix(Color32::BLACK, color, 0.5);
+    mesh.colored_vertex(full.left_top(), color);
+    mesh.colored_vertex(full.right_top(), color);
+    mesh.colored_vertex(full.right_bottom(), bottom);
+    mesh.colored_vertex(full.left_bottom(), bottom);
+    mesh.add_triangle(0, 1, 2);
+    mesh.add_triangle(0, 2, 3);
+    ui.painter().add(mesh);
+    let white = Color32::WHITE;
+
+    // Where it plays from, and the buttons on the right.
+    let from = app
+        .playing_from()
+        .cloned()
+        .map(|p| app.title_of(&p))
+        .filter(|t| !t.is_empty())
+        .or_else(|| track.as_ref().and_then(|t| t.album.clone()))
+        .unwrap_or_default();
+    let g = text(
+        ui,
+        &from,
+        font(15.0, Weight::Bold),
+        white,
+        full.width() / 2.0,
+    );
+    paint_text(
+        ui,
+        g,
+        full.left() + 24.0,
+        full.top() + 32.0,
+        egui::Align::Min,
+        white,
+    );
+    let exit = Rect::from_center_size(
+        pos2(full.right() - 24.0 - 16.0, full.top() + 32.0),
+        vec2(32.0, 32.0),
+    );
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(exit));
+    if icon_button(&mut child, &theme, icons::MINIMIZE, 32.0, 16.0, white, true)
+        .on_hover_text("Exit full screen")
+        .clicked()
+    {
+        app.now_playing = false;
+    }
+    let lyrics_button = exit.translate(vec2(-40.0, 0.0));
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(lyrics_button));
+    let lyrics_on = app.lyrics_page;
+    let color = if lyrics_on { theme.accent } else { white };
+    if icon_button(&mut child, &theme, icons::LYRICS, 32.0, 16.0, color, true)
+        .on_hover_text("Lyrics")
+        .clicked()
+    {
+        app.lyrics_page = !lyrics_on;
+    }
+
+    let Some(track) = track else {
+        let g = text(
+            ui,
+            "Nothing playing",
+            font(18.0, Weight::SemiBold),
+            white,
+            full.width(),
+        );
+        paint_text(
+            ui,
+            g,
+            full.center().x,
+            full.center().y,
+            egui::Align::Center,
+            white,
+        );
+        return;
+    };
+    let body = Rect::from_min_max(pos2(full.left(), full.top() + 64.0), full.max);
+    if lyrics_on {
+        let on_cover = Theme {
+            text: white,
+            subtext0: Color32::from_white_alpha(200),
+            ..theme.clone()
+        };
+        let width = body.width().min(1000.0) - 64.0;
+        let column = Rect::from_min_max(
+            pos2(body.center().x - width / 2.0, body.top() + 24.0),
+            pos2(body.center().x + width / 2.0, body.bottom()),
+        );
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(column));
+        child.set_clip_rect(body);
+        lyrics::show(
+            app,
+            &mut child,
+            &on_cover,
+            column,
+            34.0,
+            column.height(),
+            "np-cover-lyrics",
+        );
+        return;
+    }
+
+    // The cover fills the view but for the cards' tops, which peek in.
+    let next = app.upcoming_shown().next().cloned();
+    let mut body_ui = ui.new_child(egui::UiBuilder::new().max_rect(body));
+    egui::ScrollArea::vertical()
+        .id_salt("np-cover")
+        .auto_shrink(false)
+        .show(&mut body_ui, |ui| {
+            ui.spacing_mut().item_spacing.y = 0.0;
+            let view = body.height() - 56.0;
+            let (stage, _) = ui.allocate_exact_size(vec2(body.width(), view), Sense::hover());
+            let side = (stage.height() - 96.0).min(stage.width() * 0.6).max(120.0);
+            let art = Rect::from_center_size(stage.center(), vec2(side, side));
+            ui.painter().add(
+                egui::Shadow {
+                    offset: [0, 16],
+                    blur: 48,
+                    spread: 0,
+                    color: Color32::from_black_alpha(120),
+                }
+                .as_shape(art, 8.0),
+            );
+            let pixels = side * ui.ctx().pixels_per_point();
+            let motion = app
+                .album_motion(&track)
+                .and_then(|master| app.motion_frame("now-playing", &master, pixels, ui.ctx()));
+            match motion {
+                Some(texture) => {
+                    ui.painter().image(
+                        texture.id,
+                        art,
+                        Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)),
+                        Color32::WHITE,
+                    );
+                }
+                None => {
+                    let size = if pixels > 1200.0 { 3000 } else { 1500 };
+                    let url = track.artwork.as_ref().map(|a| a.url(size));
+                    super::artwork(ui, url, art, 8.0, &theme);
+                }
+            }
+
+            // The cards, side by side as many as fit.
+            let card = 420.0;
+            let count = 1 + track.album_id.is_some() as usize + next.is_some() as usize;
+            let per_row =
+                (((body.width() - 48.0 + 16.0) / (card + 16.0)).floor() as usize).clamp(1, count);
+            let rows = count.div_ceil(per_row);
+            let height = 48.0 + 72.0 + 12.0;
+            let (area, _) = ui.allocate_exact_size(
+                vec2(body.width(), rows as f32 * height + 48.0),
+                Sense::hover(),
+            );
+            let row_width = per_row as f32 * (card + 16.0) - 16.0;
+            let at = |k: usize| {
+                let (row, col) = (k / per_row, k % per_row);
+                Rect::from_min_size(
+                    pos2(
+                        area.center().x - row_width / 2.0 + col as f32 * (card + 16.0) - 8.0,
+                        area.top() + row as f32 * height,
+                    ),
+                    vec2(card + 8.0, height),
+                )
+            };
+            let mut k = 0;
+            let quality =
+                super::quality_label(&track).map(|(label, _)| match super::quality_badge(&track) {
+                    Some(badge) => format!("{badge} · {label}"),
+                    None => label,
+                });
+            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(at(k)));
+            let atmos = super::plays_in_atmos(&track);
+            let detail = quality.unwrap_or_else(|| "Not known yet".into());
+            if super::side::card(
+                &mut child,
+                &theme,
+                card,
+                "Signal",
+                "Signal path",
+                72.0,
+                |ui, inner| {
+                    let y = inner.top() + 14.0;
+                    let mut x = inner.left();
+                    if atmos {
+                        super::dolby_logo(ui, pos2(x + 9.0, y), 11.0, theme.text);
+                        x += 24.0;
+                    }
+                    let g = text(
+                        ui,
+                        &detail,
+                        font(14.0, Weight::Medium),
+                        theme.text,
+                        inner.right() - x,
+                    );
+                    paint_text(ui, g, x, y, egui::Align::Min, theme.text);
+                },
+            ) {
+                app.signal_open = Some(crate::app::SignalAnchor::PlayerBar);
+            }
+            k += 1;
+            if let (Some(album), Some(id)) = (track.album.clone(), track.album_id.clone()) {
+                let mut child = ui.new_child(egui::UiBuilder::new().max_rect(at(k)));
+                let artists = track.artists.join(", ");
+                let thumb = super::thumb_url(&track);
+                if super::side::card(
+                    &mut child,
+                    &theme,
+                    card,
+                    "From the album",
+                    "Open album",
+                    72.0,
+                    |ui, inner| {
+                        let cover = Rect::from_min_size(inner.min, vec2(40.0, 40.0));
+                        super::artwork(ui, thumb, cover, 4.0, &theme);
+                        let x = cover.right() + 12.0;
+                        let room = inner.right() - x;
+                        let g = text(ui, &album, font(14.0, Weight::Medium), theme.text, room);
+                        paint_text(
+                            ui,
+                            g,
+                            x,
+                            cover.center().y - 9.0,
+                            egui::Align::Min,
+                            theme.text,
+                        );
+                        let g = text(
+                            ui,
+                            &artists,
+                            font(12.5, Weight::Regular),
+                            theme.subtext0,
+                            room,
+                        );
+                        paint_text(
+                            ui,
+                            g,
+                            x,
+                            cover.center().y + 10.0,
+                            egui::Align::Min,
+                            theme.subtext0,
+                        );
+                    },
+                ) {
+                    app.go(crate::app::Page::Album(id));
+                }
+                k += 1;
+            }
+            if let Some(next) = next {
+                let mut child = ui.new_child(egui::UiBuilder::new().max_rect(at(k)));
+                if super::side::card(
+                    &mut child,
+                    &theme,
+                    card,
+                    "Next in queue",
+                    "Open queue",
+                    72.0,
+                    |ui, inner| {
+                        super::side::next_row(ui, &theme, inner, &next);
+                    },
+                ) {
+                    app.now_playing = false;
+                    app.side = Some(crate::app::Side::Queue);
+                }
+            }
+        });
+}
+
 /// The cover's three colours as four large blobs across the window, drifting
 /// slowly, under a vignette of the background.
 fn backdrop(app: &mut App, ui: &Ui, theme: &Theme, full: Rect) {

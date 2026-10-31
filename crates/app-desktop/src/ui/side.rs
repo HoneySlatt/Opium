@@ -350,7 +350,7 @@ fn now_playing(app: &mut App, ui: &mut Ui, theme: &Theme) {
 
 /// A card under the song: its title and link on top, `body` under them.
 /// Whether the link was clicked.
-fn card(
+pub(super) fn card(
     ui: &mut Ui,
     theme: &Theme,
     width: f32,
@@ -420,7 +420,7 @@ fn card(
     hit.clicked()
 }
 
-fn next_row(ui: &Ui, theme: &Theme, inner: Rect, track: &Track) {
+pub(super) fn next_row(ui: &Ui, theme: &Theme, inner: Rect, track: &Track) {
     let cover = Rect::from_min_size(inner.min, vec2(40.0, 40.0));
     artwork(ui, thumb_url(track), cover, 4.0, theme);
     let x = cover.right() + 12.0;
