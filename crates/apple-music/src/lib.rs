@@ -10,6 +10,7 @@ mod lyrics;
 mod motion;
 mod playback;
 mod radio;
+mod resume;
 pub mod signin;
 mod types;
 

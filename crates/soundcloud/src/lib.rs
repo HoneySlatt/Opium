@@ -7,6 +7,7 @@
 
 mod client_id;
 mod convert;
+mod resume;
 pub mod signin;
 mod stream;
 mod types;

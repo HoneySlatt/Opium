@@ -441,16 +441,18 @@ impl SoundCloud {
             Some(len) => {
                 let (growing, feed) = growing(len);
                 feed.push(&first);
+                let again = self.http.get(&at.redirect_uri);
+                let received = first.len() as u64;
                 tokio::spawn(async move {
-                    loop {
-                        match resp.chunk().await {
-                            // The reader is gone: so is the need.
-                            Ok(Some(bytes)) if !feed.push(&bytes) => return,
-                            Ok(Some(_)) => {}
-                            Ok(None) => return feed.end(None),
-                            Err(e) => return feed.end(Some(e.to_string())),
-                        }
-                    }
+                    // The reader gone, so is the need: `push` says so.
+                    let ended = crate::resume::carry_on(
+                        resp,
+                        received,
+                        |from| crate::resume::rest_of(&again, from),
+                        |bytes| feed.push(bytes),
+                    )
+                    .await;
+                    feed.end(ended.err());
                 });
                 (Reader::Growing(growing), len)
             }

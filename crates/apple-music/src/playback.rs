@@ -133,6 +133,7 @@ fn subsamples(sample: &cenc::EncryptedSample) -> Vec<(u32, u32)> {
 /// `frame` long.
 async fn as_it_downloads(
     mut resp: reqwest::Response,
+    again: reqwest::RequestBuilder,
     frame: std::time::Duration,
     decrypt: cenc::Decrypt,
 ) -> Result<AudioStream> {
@@ -141,9 +142,11 @@ async fn as_it_downloads(
         .ok_or_else(|| playback_error("asset download: no length"))?;
     let (stream, feed) = AudioStream::downloading(len, frame, decrypt);
     let failed = |e: reqwest::Error| format!("asset download: {}", e.without_url());
+    let mut received = 0u64;
     while feed.samples() == 0 {
         match resp.chunk().await {
             Ok(Some(bytes)) => {
+                received += bytes.len() as u64;
                 feed.push(&bytes);
             }
             Ok(None) => {
@@ -154,18 +157,15 @@ async fn as_it_downloads(
         }
     }
     tokio::spawn(async move {
-        loop {
-            match resp.chunk().await {
-                Ok(Some(bytes)) => {
-                    // Nobody reads it any more.
-                    if !feed.push(&bytes) {
-                        return;
-                    }
-                }
-                Ok(None) => return feed.end(None),
-                Err(e) => return feed.end(Some(failed(e))),
-            }
-        }
+        // Nobody reading it any more, `push` says so.
+        let ended = crate::resume::carry_on(
+            resp,
+            received,
+            |from| crate::resume::rest_of(&again, from),
+            |bytes| feed.push(bytes),
+        )
+        .await;
+        feed.end(ended.err().map(|e| format!("asset download: {e}")));
     });
     Ok(stream)
 }
@@ -667,7 +667,8 @@ impl AppleMusic {
                 .decrypt(ciphertext, &key.id, &sample.iv, &subsamples(sample))
                 .map_err(|e| e.to_string())
         });
-        let stream = as_it_downloads(resp, AAC_FRAME, decrypt).await?;
+        let again = self.asset_request(&file.url);
+        let stream = as_it_downloads(resp, again, AAC_FRAME, decrypt).await?;
         let kbps = stream.with_samples(audio_kbps);
         Ok((stream, kbps, false))
     }
@@ -737,7 +738,8 @@ impl AppleMusic {
             }
             Err(last)
         });
-        as_it_downloads(resp, frame, decrypt).await
+        let again = self.asset_request(&file.url);
+        as_it_downloads(resp, again, frame, decrypt).await
     }
 
     async fn web_playback(&self, adam_id: &str) -> Result<serde_json::Value> {

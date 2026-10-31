@@ -4,6 +4,7 @@
 //! is used once, to make it, and kept nowhere.
 
 mod convert;
+mod resume;
 mod types;
 
 use std::collections::{HashMap, HashSet};
@@ -323,16 +324,18 @@ impl Navidrome {
         };
         let (reader, feed) = growing(len);
         feed.push(&first);
+        let again = self.http.get(&url);
+        let received = first.len() as u64;
         tokio::spawn(async move {
-            loop {
-                match resp.chunk().await {
-                    // The reader is gone: so is the need.
-                    Ok(Some(bytes)) if !feed.push(&bytes) => return,
-                    Ok(Some(_)) => {}
-                    Ok(None) => return feed.end(None),
-                    Err(e) => return feed.end(Some(e.without_url().to_string())),
-                }
-            }
+            // The reader gone, so is the need: `push` says so.
+            let ended = resume::carry_on(
+                resp,
+                received,
+                |from| resume::rest_of(&again, from),
+                |bytes| feed.push(bytes),
+            )
+            .await;
+            feed.end(ended.err());
         });
         Ok(Audio {
             reader: Reader::Growing(reader),
