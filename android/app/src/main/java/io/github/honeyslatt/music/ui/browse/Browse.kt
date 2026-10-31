@@ -98,6 +98,15 @@ class Browse(private val core: Core, private val scope: CoroutineScope) {
 /** How a page shows its hero shelf. */
 private enum class Hero { Picks, Editorial, Stations }
 
+/** A genre's charts: its top songs, albums and playlists. */
+@Composable
+fun GenrePage(c: LibraryContext, genre: io.github.honeyslatt.music.core.model.Genre) {
+    val charts by androidx.compose.runtime.produceState<Loading<List<Shelf>>>(Loading.Pending, genre.id) {
+        value = load { c.core.session.genreCharts(genre.id) }
+    }
+    ListPage(c.nav, genre.name) { shelves(c, charts, Hero.Editorial) }
+}
+
 /**
  * Spotify's Home: the account and chips at the top, Home, New and Radio
  * being one tab, as its All, Music and Podcasts.

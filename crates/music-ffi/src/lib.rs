@@ -691,6 +691,16 @@ impl Session {
         off(async move { Ok(self.apple()?.new_music().await?) }).await
     }
 
+    /// Apple Music's genres, to browse from Search.
+    pub async fn genres(self: Arc<Self>) -> Result<Vec<music_core::model::Genre>, MusicError> {
+        off(async move { Ok(self.apple()?.genres().await?) }).await
+    }
+
+    /// A genre's charts, as shelves.
+    pub async fn genre_charts(self: Arc<Self>, genre: String) -> Result<Vec<Shelf>, MusicError> {
+        off(async move { Ok(self.apple()?.genre_charts(&genre).await?) }).await
+    }
+
     pub async fn radio(self: Arc<Self>) -> Result<Vec<Shelf>, MusicError> {
         off(async move { Ok(self.apple()?.radio().await?) }).await
     }

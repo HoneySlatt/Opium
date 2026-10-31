@@ -298,6 +298,14 @@ pub struct Shelf {
     pub songs: Vec<Track>,
 }
 
+/// A genre of the catalogue, whose charts it has.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct Genre {
+    pub id: String,
+    pub name: String,
+}
+
 #[derive(Debug, Clone, Default, PartialEq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct SearchResults {

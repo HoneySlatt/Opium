@@ -32,6 +32,8 @@ sealed interface Route {
     data class Playlist(val id: ItemId, val known: io.github.honeyslatt.music.core.model.Playlist? = null) : Route
     data class LibraryArtist(val artist: io.github.honeyslatt.music.core.model.Artist) : Route
     data class Artist(val id: ItemId) : Route
+    /** A genre's charts, from Spotify's Search tiles. */
+    data class Genre(val genre: io.github.honeyslatt.music.core.model.Genre) : Route
 }
 
 /**

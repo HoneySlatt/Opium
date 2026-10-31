@@ -158,6 +158,9 @@ const NOTES_LANGUAGE: &str = "en-US";
 /// English, British for France, and fall back to its first language for
 /// another one.
 const EDITORIAL_LANGUAGE: &str = "en-GB";
+
+/// The genre all of the catalogue's are under.
+const MUSIC_GENRE: &str = "34";
 /// Recently Added answers at most 25 at a time.
 const RECENT_PAGE: u32 = 25;
 /// How much of Recently Added the phone asks for: it shows 66.
@@ -1177,6 +1180,100 @@ impl Provider for AppleMusic {
             return Ok(Vec::new());
         };
         Ok(editorial_shelves(&page))
+    }
+
+    /// The catalogue's genres under Music, as Apple names them here.
+    async fn genres(&self) -> Result<Vec<music_core::model::Genre>> {
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Attributes {
+            name: String,
+            parent_id: Option<String>,
+        }
+        let path = format!(
+            "/v1/catalog/{}/genres?limit=100&l={EDITORIAL_LANGUAGE}",
+            self.storefront
+        );
+        let Some(resp) = self
+            .fetch::<types::Response<types::Resource<Attributes>>>(&path)
+            .await?
+        else {
+            return Ok(Vec::new());
+        };
+        // Music itself (34) is the root: the genres are its children.
+        Ok(resp
+            .data
+            .into_iter()
+            .filter_map(|r| {
+                let a = r.attributes?;
+                (a.parent_id.as_deref() == Some(MUSIC_GENRE)).then(|| music_core::model::Genre {
+                    id: r.id,
+                    name: a.name,
+                })
+            })
+            .collect())
+    }
+
+    /// A genre's charts: its top songs, then its top albums and playlists.
+    async fn genre_charts(&self, genre: &str) -> Result<Vec<Shelf>> {
+        #[derive(serde::Deserialize)]
+        #[serde(bound(deserialize = "T: serde::de::DeserializeOwned"))]
+        struct Chart<T> {
+            name: String,
+            #[serde(deserialize_with = "types::readable")]
+            data: Vec<T>,
+        }
+        #[derive(serde::Deserialize, Default)]
+        #[serde(default)]
+        struct Charts {
+            songs: Vec<Chart<types::Song>>,
+            albums: Vec<Chart<types::Album>>,
+            playlists: Vec<Chart<types::Playlist>>,
+        }
+        #[derive(serde::Deserialize)]
+        struct Resp {
+            results: Charts,
+        }
+        let genre: String = url::form_urlencoded::byte_serialize(genre.as_bytes()).collect();
+        let path = format!(
+            "/v1/catalog/{}/charts?types=songs,albums,playlists&genre={genre}&limit=30&l={EDITORIAL_LANGUAGE}",
+            self.storefront
+        );
+        let Some(resp) = self.fetch::<Resp>(&path).await? else {
+            return Ok(Vec::new());
+        };
+        let r = resp.results;
+        let mut shelves = Vec::new();
+        for chart in r.songs {
+            shelves.push(Shelf {
+                title: chart.name,
+                songs: chart.data.into_iter().map(convert::track).collect(),
+                ..Shelf::default()
+            });
+        }
+        for chart in r.albums {
+            shelves.push(Shelf {
+                title: chart.name,
+                items: chart
+                    .data
+                    .into_iter()
+                    .map(|a| Collection::Album(convert::album(a)))
+                    .collect(),
+                ..Shelf::default()
+            });
+        }
+        for chart in r.playlists {
+            shelves.push(Shelf {
+                title: chart.name,
+                items: chart
+                    .data
+                    .into_iter()
+                    .map(|p| Collection::Playlist(convert::playlist(p)))
+                    .collect(),
+                ..Shelf::default()
+            });
+        }
+        Ok(shelves.into_iter().filter(|s| !s.songs.is_empty() || !s.items.is_empty()).collect())
     }
 
     /// A station's next songs, about `count` of them. Apple hands out two a

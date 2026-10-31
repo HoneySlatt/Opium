@@ -219,6 +219,7 @@ private fun Page(tab: Tab, page: Route, c: LibraryContext, account: @Composable 
         is Route.LibraryArtist -> LibraryArtistPage(c, page.artist)
         is Route.Artist -> ArtistPage(c, page.id)
         is Route.Shelf -> io.github.honeyslatt.music.ui.browse.ShelfPage(c, page.shelf)
+        is Route.Genre -> io.github.honeyslatt.music.ui.browse.GenrePage(c, page.genre)
     }
 }
 

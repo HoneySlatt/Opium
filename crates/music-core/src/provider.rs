@@ -149,6 +149,16 @@ pub trait Provider: Send + Sync {
         Ok(Vec::new())
     }
 
+    /// The catalogue's genres, to browse.
+    async fn genres(&self) -> Result<Vec<crate::model::Genre>> {
+        Ok(Vec::new())
+    }
+
+    /// A genre's charts: its top songs, albums and playlists, as shelves.
+    async fn genre_charts(&self, _genre: &str) -> Result<Vec<Shelf>> {
+        Ok(Vec::new())
+    }
+
     /// The next songs of a station that plays songs, about `count` of them.
     async fn station_tracks(&self, _station: &ItemId, _count: usize) -> Result<Vec<Track>> {
         Ok(Vec::new())

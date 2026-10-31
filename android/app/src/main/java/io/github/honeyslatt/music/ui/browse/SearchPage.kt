@@ -16,6 +16,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsTopHeight
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -118,9 +122,21 @@ fun SearchPage(c: LibraryContext) {
         recent = (listOf(RecentlySearched(item, inLibrary)) + recent.filter { it.item.id() != item.id() }).take(RECENT)
         keepSearched(c.core.searched, recent)
     }
+    // Spotify's: the genres in tiles until the field is touched; back
+    // from the search, the tiles again.
+    val tiles = io.github.honeyslatt.music.ui.theme.look.mobile.search == io.github.honeyslatt.music.core.model.SearchView.TILES
+    var active by rememberSaveable { mutableStateOf(false) }
+    if (tiles && !active && query.isEmpty()) {
+        BrowseAll(c) { active = true }
+        return
+    }
+    androidx.activity.compose.BackHandler(enabled = tiles && active) {
+        active = false
+        query = ""
+    }
     // The title folds the source chips.
     ListPage(c.nav, "Search", fold = sourcesFold(c.services, sources) { sources = !sources }) {
-        item { SearchReveal(true, query, if (library) "Your Library" else "Artists, Songs, Lyrics and More", focusOnOpen = false) { query = it } }
+        item { SearchReveal(true, query, if (library) "Your Library" else "Artists, Songs, Lyrics and More", focusOnOpen = tiles) { query = it } }
         item {
             // The catalogue searched, as the source chosen says, or the
             // only service there is: a server's songs are only in the library.
@@ -144,6 +160,73 @@ fun SearchPage(c: LibraryContext) {
             r !is Loading.Ready -> item { Empty(r.listing(), "", "") }
             else -> results(c, r.value, library, source, words, { name -> Fold(name in unfolded) { unfolded = if (name in unfolded) unfolded - name else unfolded + name } }) { keep(it, library) }
         }
+    }
+}
+
+/** Spotify's genres' colours, which the tiles take in turn. */
+private val TileColours = listOf(
+    0xFFE8115B, 0xFF006450, 0xFF1E3264, 0xFF8400E7, 0xFF8D67AB, 0xFF777777,
+    0xFF477D95, 0xFF537AA1, 0xFFBA5D07, 0xFF148A08, 0xFFDC148C, 0xFF509BF5,
+).map { androidx.compose.ui.graphics.Color(it) }
+
+/**
+ * Spotify's Search before a word: the account and the title, a white field
+ * which opens the search, then Apple Music's genres in coloured tiles, each
+ * opening its charts.
+ */
+@Composable
+private fun BrowseAll(c: LibraryContext, onSearch: () -> Unit) {
+    val genres by produceState<List<io.github.honeyslatt.music.core.model.Genre>>(emptyList()) {
+        value = runCatching { c.core.session.genres() }.getOrDefault(emptyList())
+    }
+    androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
+        androidx.compose.foundation.lazy.grid.GridCells.Fixed(2),
+        Modifier.fillMaxSize().background(roles.base),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
+        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
+        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
+    ) {
+        val span: androidx.compose.foundation.lazy.grid.LazyGridItemSpanScope.() -> androidx.compose.foundation.lazy.grid.GridItemSpan =
+            { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }
+        item(span = span) {
+            androidx.compose.foundation.layout.Column {
+                Spacer(Modifier.windowInsetsTopHeight(androidx.compose.foundation.layout.WindowInsets.statusBars))
+                androidx.compose.foundation.layout.Row(
+                    Modifier.padding(top = 10.dp, bottom = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
+                ) {
+                    c.account()
+                    BasicText("Search", style = geist(24.sp, FontWeight.Bold).copy(color = roles.text))
+                }
+                androidx.compose.foundation.layout.Row(
+                    Modifier.fillMaxWidth().height(48.dp)
+                        .press(androidx.compose.foundation.shape.RoundedCornerShape(6.dp), shrink = 0.98f, onClick = onSearch)
+                        .background(androidx.compose.ui.graphics.Color.White, androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
+                        .padding(horizontal = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
+                ) {
+                    Glyph(Icons.Search, androidx.compose.ui.graphics.Color(0xFF121212), 24.dp)
+                    BasicText("What do you want to listen to?", style = geist(16.sp, FontWeight.Medium).copy(color = androidx.compose.ui.graphics.Color(0xFF535353)))
+                }
+                if (genres.isNotEmpty()) {
+                    BasicText("Browse all", Modifier.padding(top = 26.dp, bottom = 4.dp), style = geist(18.sp, FontWeight.Bold).copy(color = roles.text))
+                }
+            }
+        }
+        items(genres.size) { i ->
+            val genre = genres[i]
+            Box(
+                Modifier.fillMaxWidth().height(98.dp)
+                    .press(androidx.compose.foundation.shape.RoundedCornerShape(6.dp), shrink = 0.97f) { c.nav.push(io.github.honeyslatt.music.ui.nav.Route.Genre(genre)) }
+                    .background(TileColours[i % TileColours.size], androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
+                    .padding(12.dp),
+            ) {
+                BasicText(genre.name, style = geist(17.sp, FontWeight.Bold).copy(color = androidx.compose.ui.graphics.Color.White))
+            }
+        }
+        item(span = span) { Spacer(Modifier.height(io.github.honeyslatt.music.ui.chrome.ChromeHeight + 120.dp)) }
     }
 }
 
