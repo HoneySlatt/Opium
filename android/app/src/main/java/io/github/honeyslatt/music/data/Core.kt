@@ -101,6 +101,11 @@ class Core(context: Context) {
         }
     }
 
+    /** When `kind`'s library was last read whole, 0 if not lately. */
+    fun libraryReadAt(kind: ProviderKind) = prefs.getLong("library-read-${kind.name}", 0)
+
+    fun libraryRead(kind: ProviderKind, at: Long) = prefs.edit().putLong("library-read-${kind.name}", at).apply()
+
     /** By service, failed tries in a row and when the last was. */
     private val tries = mutableMapOf<ProviderKind, Pair<Int, Long>>()
 

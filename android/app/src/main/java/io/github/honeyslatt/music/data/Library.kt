@@ -81,7 +81,7 @@ class Library(private val core: Core, private val scope: CoroutineScope) {
         }
         again.filter { it in providers }.forEach {
             providers -= it
-            load(it)
+            load(it, again = true)
         }
     }
 
@@ -95,6 +95,8 @@ class Library(private val core: Core, private val scope: CoroutineScope) {
     fun forget(provider: ProviderKind) {
         providers -= provider
         showing -= provider
+        // Signed out or turned off: read whole when it is back.
+        core.libraryRead(provider, 0)
         shown.keys.filter { it.endsWith("-${provider.name}.json") }.forEach { shown.remove(it)?.cancel() }
         loaded.removeAll { it.endsWith("-${provider.name}.json") }
         _lists.update { l ->
@@ -145,14 +147,20 @@ class Library(private val core: Core, private val scope: CoroutineScope) {
     }
 
     /** Load `provider`'s lists, adding to those of the others. */
-    fun load(provider: ProviderKind) {
+    fun load(provider: ProviderKind, again: Boolean = false) {
         // Already, since the app started: the screen made anew (turned, or
         // gone dark at sunset) doesn't read the whole library again.
         if (provider in providers) return
         providers += provider
         showing += provider
-        if (newestAsked) newest(provider, ask = true)
-        lists(provider, ask = true)
+        // Read whole within the hour (the app started again by the car, or
+        // after Android ended it in the background): as kept, not read
+        // again page by page; only what was added lately is asked.
+        val fresh = !again && System.currentTimeMillis() - core.libraryReadAt(provider) < FRESH_FOR
+        if (!fresh) core.libraryRead(provider, System.currentTimeMillis())
+        if (newestAsked) newest(provider, ask = !fresh)
+        lists(provider, ask = !fresh)
+        if (fresh) recentlyAdded(provider)
     }
 
     private fun lists(provider: ProviderKind, ask: Boolean) {
@@ -179,6 +187,11 @@ class Library(private val core: Core, private val scope: CoroutineScope) {
             { session.libraryTracks(provider, it).let { p -> p.items to p.next } },
         ) { f -> _lists.update { it.copy(songs = f(it.songs)) } }
         if (!ask) return
+        recentlyAdded(provider)
+    }
+
+    private fun recentlyAdded(provider: ProviderKind) {
+        val session = core.session
         _lists.update { it.copy(recentlyAdded = it.recentlyAdded.asked(provider)) }
         // Apple's comes whole, in the order of what was added to last; the
         // others' by pages, up to three. Loaded again (the screen made anew),
@@ -186,7 +199,7 @@ class Library(private val core: Core, private val scope: CoroutineScope) {
         scope.launch {
             val fresh = mutableListOf<Collection>()
             pages({ session.recentlyAdded(provider, it).let { p -> p.items to p.next } }, limit = 3) { items, done, error ->
-                if (error != null) unloaded += provider
+                if (error != null) failed(provider)
                 fresh += items
                 _lists.update { l ->
                     l.copy(
@@ -198,6 +211,12 @@ class Library(private val core: Core, private val scope: CoroutineScope) {
                 }
             }
         }
+    }
+
+    /** Not read whole: tried again with the network, and next time anyway. */
+    private fun failed(provider: ProviderKind) {
+        unloaded += provider
+        core.libraryRead(provider, 0)
     }
 
     /** A playlist just made: first in the list, as the newest. */
@@ -269,7 +288,7 @@ class Library(private val core: Core, private val scope: CoroutineScope) {
                 }
             }
             if (failed != null) {
-                unloaded += provider
+                failed(provider)
                 if (!stepwise) set { it.answered(provider) }
                 return@launch
             }
@@ -317,3 +336,6 @@ class Library(private val core: Core, private val scope: CoroutineScope) {
         } while (cursor != null && count < limit)
     }
 }
+
+/** How long a library read whole is taken as it was kept, the app started again. */
+private const val FRESH_FOR = 60 * 60_000L
