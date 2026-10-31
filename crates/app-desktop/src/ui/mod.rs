@@ -489,26 +489,56 @@ pub const LOVED: [Color32; 2] = [
     Color32::from_rgb(0xc4, 0xef, 0xd9),
 ];
 
-/// A square of `from` at its top left to `to` at its bottom right.
-pub fn gradient(ui: &Ui, rect: Rect, from: Color32, to: Color32) {
+/// A rounded square of `from` at its top left to `to` at its bottom right.
+pub fn gradient(ui: &Ui, rect: Rect, radius: f32, from: Color32, to: Color32) {
+    let r = radius.min(rect.width() / 2.0).min(rect.height() / 2.0);
+    let center = rect.center();
+    // Along the diagonal, 0 at the top left, 1 at the bottom right.
+    let at = |p: Pos2| {
+        let d = rect.max - rect.min;
+        (((p - rect.min).dot(d)) / d.length_sq()).clamp(0.0, 1.0)
+    };
     let mut mesh = Mesh::default();
+    mesh.colored_vertex(center, crate::color::mix(to, from, 0.5));
     let corners = [
-        (rect.left_top(), 0.0),
-        (rect.right_top(), 0.5),
-        (rect.right_bottom(), 1.0),
-        (rect.left_bottom(), 0.5),
+        (pos2(rect.right() - r, rect.bottom() - r), 0.0),
+        (pos2(rect.left() + r, rect.bottom() - r), 0.5),
+        (pos2(rect.left() + r, rect.top() + r), 1.0),
+        (pos2(rect.right() - r, rect.top() + r), 1.5),
     ];
-    for (point, t) in corners {
-        mesh.colored_vertex(point, crate::color::mix(to, from, t));
+    let steps = 6;
+    let mut n = 0;
+    for (c, start) in corners {
+        for i in 0..=steps {
+            let a = (start + 0.5 * i as f32 / steps as f32) * std::f32::consts::PI;
+            let p = c + vec2(a.cos(), a.sin()) * r;
+            mesh.colored_vertex(p, crate::color::mix(to, from, at(p)));
+            n += 1;
+        }
     }
-    mesh.add_triangle(0, 1, 2);
-    mesh.add_triangle(0, 2, 3);
+    for i in 1..n {
+        mesh.add_triangle(0, i, i + 1);
+    }
+    mesh.add_triangle(0, n, 1);
     ui.painter().add(mesh);
+}
+
+/// Favourite Songs as the phone draws it: a white star on the accent
+/// fading into its glow.
+pub fn favourites_tile(ui: &Ui, theme: &Theme, rect: Rect) {
+    gradient(ui, rect, rect.width() / 5.0, theme.accent, theme.mauve);
+    paint_icon(
+        ui,
+        icons::STAR_FILL,
+        rect.center(),
+        rect.width() * 0.47,
+        theme.on_accent(),
+    );
 }
 
 /// The library's songs as Spotify draws Liked Songs: a white heart on violet.
 pub fn loved_tile(ui: &Ui, rect: Rect) {
-    gradient(ui, rect, LOVED[0], LOVED[1]);
+    gradient(ui, rect, 4.0, LOVED[0], LOVED[1]);
     paint_icon(
         ui,
         icons::HEART,

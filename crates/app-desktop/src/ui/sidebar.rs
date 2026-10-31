@@ -32,7 +32,7 @@ pub fn show(app: &mut App, ui: &mut Ui, collapsed: bool) {
             ui.add_space(0.0);
             let mut row = |ui: &mut Ui, page: Page, icon: Icon, label: &str| {
                 let active = app.page == page;
-                if nav_item(ui, &theme, Some(icon), None, label, active, collapsed, &NAV).clicked()
+                if nav_item(ui, &theme, Lead::Icon(icon), label, active, collapsed, &NAV).clicked()
                 {
                     app.go(page);
                 }
@@ -56,19 +56,15 @@ pub fn show(app: &mut App, ui: &mut Ui, collapsed: bool) {
             }
             // Apple's own playlist of favourites, once the library says which,
             // drawn like the other playlists with Apple's cover for it.
-            let (favourites, art) = match app.playlists.iter().find(|p| p.favourites) {
-                Some(p) => (
-                    Page::Playlist(p.id.clone()),
-                    p.artwork.as_ref().map(|a| a.url(120)),
-                ),
-                None => (Page::Favourites, None),
+            let favourites = match app.playlists.iter().find(|p| p.favourites) {
+                Some(p) => Page::Playlist(p.id.clone()),
+                None => Page::Favourites,
             };
             let active = app.page == favourites;
             if nav_item(
                 ui,
                 &theme,
-                None,
-                Some(art),
+                Lead::Favourites,
                 "Favourite Songs",
                 active,
                 collapsed,
@@ -91,8 +87,7 @@ pub fn show(app: &mut App, ui: &mut Ui, collapsed: bool) {
                 let response = nav_item(
                     ui,
                     &theme,
-                    None,
-                    Some(art),
+                    Lead::Cover(art),
                     &name,
                     active,
                     collapsed,
@@ -249,13 +244,21 @@ const PLAYLIST: RowSize = RowSize {
     font: 14.0,
 };
 
+/// What comes before a row's label.
+enum Lead {
+    Icon(Icon),
+    /// A playlist's cover, from its URL if it has one.
+    Cover(Option<String>),
+    /// Favourite Songs' tile, as the phone draws it.
+    Favourites,
+}
+
 /// A navigation row: an icon or an artwork, then the label.
 #[allow(clippy::too_many_arguments)]
 fn nav_item(
     ui: &mut Ui,
     theme: &Theme,
-    icon: Option<Icon>,
-    art: Option<Option<String>>,
+    lead_with: Lead,
     label: &str,
     active: bool,
     collapsed: bool,
@@ -281,23 +284,33 @@ fn nav_item(
     } else {
         pos2(rect.left() + 9.0 + size.lead / 2.0, rect.center().y)
     };
-    if let Some(icon) = icon {
-        let color = if active { theme.accent } else { theme.subtext0 };
-        paint_icon(ui, icon, lead, 16.0, color);
-    } else if let Some(url) = art
+    let is_icon = matches!(lead_with, Lead::Icon(_));
+    match lead_with {
+        Lead::Icon(icon) => {
+            let color = if active { theme.accent } else { theme.subtext0 };
+            paint_icon(ui, icon, lead, 16.0, color);
+        }
+        Lead::Favourites => {
+            super::favourites_tile(
+                ui,
+                theme,
+                Rect::from_center_size(lead, vec2(size.lead, size.lead)),
+            );
+        }
         // Scrolled out of sight, its cover isn't loaded, nor kept.
-        && ui.is_rect_visible(rect)
-    {
-        artwork(
-            ui,
-            url,
-            Rect::from_center_size(lead, vec2(size.lead, size.lead)),
-            size.lead / 5.0,
-            theme,
-        );
+        Lead::Cover(url) if ui.is_rect_visible(rect) => {
+            artwork(
+                ui,
+                url,
+                Rect::from_center_size(lead, vec2(size.lead, size.lead)),
+                size.lead / 5.0,
+                theme,
+            );
+        }
+        Lead::Cover(_) => {}
     }
     if !collapsed {
-        let left = rect.left() + 9.0 + size.lead + 10.0 + if icon.is_none() { 4.0 } else { 0.0 };
+        let left = rect.left() + 9.0 + size.lead + 10.0 + if is_icon { 0.0 } else { 4.0 };
         let galley = text(
             ui,
             label,

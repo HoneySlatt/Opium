@@ -414,7 +414,7 @@ fn row_ui(
             }
         }
         Art::Tile(icon, [from, to]) => {
-            super::gradient(ui, art, *from, *to);
+            super::gradient(ui, art, radius, *from, *to);
             paint_icon(ui, *icon, art.center(), 20.0, Color32::WHITE);
         }
     }
