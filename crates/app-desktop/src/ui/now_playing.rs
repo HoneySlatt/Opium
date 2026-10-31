@@ -141,18 +141,34 @@ pub fn show_cover(app: &mut App, ui: &mut Ui) {
         egui::Align::Min,
         white,
     );
+    // Close, then the window's full screen, as Stock's pill has them.
     let exit = Rect::from_center_size(
         pos2(full.right() - 24.0 - 16.0, full.top() + 32.0),
         vec2(32.0, 32.0),
     );
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(exit));
-    if icon_button(&mut child, &theme, icons::MINIMIZE, 32.0, 16.0, white, true)
-        .on_hover_text("Exit full screen")
+    if icon_button(&mut child, &theme, icons::DOWN, 32.0, 18.0, white, true)
+        .on_hover_text("Close Now Playing")
         .clicked()
     {
         app.now_playing = false;
     }
-    let lyrics_button = exit.translate(vec2(-40.0, 0.0));
+    let fullscreen = ui.input(|i| i.viewport().fullscreen.unwrap_or(false));
+    let screen = exit.translate(vec2(-40.0, 0.0));
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(screen));
+    let (icon, tip) = if fullscreen {
+        (icons::MINIMIZE, "Exit Full Screen")
+    } else {
+        (icons::EXPAND, "Full Screen")
+    };
+    if icon_button(&mut child, &theme, icon, 32.0, 15.0, white, true)
+        .on_hover_text(tip)
+        .clicked()
+    {
+        ui.ctx()
+            .send_viewport_cmd(egui::ViewportCommand::Fullscreen(!fullscreen));
+    }
+    let lyrics_button = screen.translate(vec2(-40.0, 0.0));
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(lyrics_button));
     let lyrics_on = app.lyrics_page;
     let color = if lyrics_on { theme.accent } else { white };
