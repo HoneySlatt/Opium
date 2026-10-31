@@ -11,6 +11,9 @@ player_bar = "docked"
 panel = "side"
 header = "banner"
 lyrics = "page"
+glow = "grey"
+cards = "tiles"
+favourite = "check"
 
 [colors]
 light = false

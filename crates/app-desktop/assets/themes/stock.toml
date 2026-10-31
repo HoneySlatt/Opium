@@ -13,6 +13,9 @@ player_bar = "floating"   # floating | docked
 panel = "drawer"          # drawer | side
 header = "cover"          # cover | banner
 lyrics = "drawer"         # drawer | page
+glow = "accent"          # accent | grey
+cards = "covers"          # covers | tiles
+favourite = "star"        # star | check
 
 [colors]
 light = false

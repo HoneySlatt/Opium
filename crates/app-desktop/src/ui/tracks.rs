@@ -401,7 +401,13 @@ pub fn row(
 
 /// The star after a favourite's title, as Cider marks them.
 pub fn favourite_star(ui: &Ui, theme: &Theme, center: egui::Pos2) {
-    paint_icon(ui, icons::STAR_FILL, center, 11.0, theme.red);
+    match theme.layout.favourite {
+        crate::theme::Favourite::Star => paint_icon(ui, icons::STAR_FILL, center, 11.0, theme.red),
+        crate::theme::Favourite::Check => {
+            ui.painter().circle_filled(center, 6.5, theme.accent);
+            paint_icon(ui, icons::CHECK, center, 9.0, theme.on_accent());
+        }
+    }
 }
 
 /// Three accent bars for the playing row, moving while it plays.

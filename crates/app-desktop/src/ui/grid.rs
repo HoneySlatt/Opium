@@ -72,15 +72,72 @@ pub(super) fn cover_card(
     card: &CoverCard,
     id: Id,
 ) -> Option<CardClick> {
-    let response = ui.interact(art, id, Sense::click());
-    let radius = if card.round { art.width() / 2.0 } else { 8.0 };
+    let tiles = theme.layout.cards == crate::theme::Cards::Tiles;
+    // A tile takes the cover and its words.
+    let tile = Rect::from_min_max(
+        art.min - vec2(10.0, 10.0),
+        art.max + vec2(10.0, CARD_TEXT - 4.0),
+    );
+    let response = ui.interact(if tiles { tile } else { art }, id, Sense::click());
+    let radius = match (card.round, tiles) {
+        (true, _) => art.width() / 2.0,
+        (false, true) => 6.0,
+        (false, false) => 8.0,
+    };
+    if tiles && response.hovered() {
+        ui.painter().rect_filled(tile, 8.0, theme.surface0);
+    }
     let missing = card.url.is_none();
     artwork(ui, card.url.clone(), art, radius, theme);
     if missing {
         let icon = if card.round { icons::MIC } else { icons::DISC };
         paint_icon(ui, icon, art.center(), art.height() / 3.0, theme.muted());
     }
-    if response.hovered() {
+    // Spotify's round Play, rising onto the cover on hover.
+    let mut play = None;
+    if tiles && !card.round && card.menu {
+        let shown = ui
+            .ctx()
+            .animate_bool_with_time(id.with("play"), response.hovered(), 0.2);
+        if shown > 0.0 {
+            let center = pos2(
+                art.right() - 30.0,
+                art.bottom() - 30.0 + 8.0 * (1.0 - shown),
+            );
+            let button = Rect::from_center_size(center, vec2(48.0, 48.0));
+            let over = ui.rect_contains_pointer(button);
+            let fill = if over {
+                crate::color::mix(theme.accent, egui::Color32::WHITE, 0.85)
+            } else {
+                theme.accent
+            };
+            ui.painter().add(
+                egui::Shadow {
+                    offset: [0, 8],
+                    blur: 16,
+                    spread: 0,
+                    color: egui::Color32::from_black_alpha((90.0 * shown) as u8),
+                }
+                .as_shape(button, 24.0),
+            );
+            ui.painter().circle_filled(
+                center,
+                24.0 + if over { 1.0 } else { 0.0 },
+                crate::color::alpha(fill, shown),
+            );
+            paint_icon(
+                ui,
+                icons::PLAY_FILL,
+                center,
+                20.0,
+                crate::color::alpha(theme.on_accent(), shown),
+            );
+            if over && response.clicked() {
+                play = Some(CardClick::Enqueue(Enqueue::Now));
+            }
+        }
+    }
+    if !tiles && response.hovered() {
         ui.painter()
             .rect_filled(art, radius, egui::Color32::from_black_alpha(40));
     }
@@ -118,6 +175,9 @@ pub(super) fn cover_card(
         && let Some(click) = super::menu::collection_menu(&response, theme, card.addable)
     {
         return Some(click);
+    }
+    if play.is_some() {
+        return play;
     }
     response
         .on_hover_cursor(egui::CursorIcon::PointingHand)

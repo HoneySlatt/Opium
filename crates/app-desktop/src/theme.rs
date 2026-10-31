@@ -24,6 +24,9 @@ pub struct Layout {
     pub panel: Panel,
     pub header: Header,
     pub lyrics: Lyrics,
+    pub glow: Glow,
+    pub cards: Cards,
+    pub favourite: Favourite,
 }
 
 impl Layout {
@@ -35,6 +38,9 @@ impl Layout {
         panel: Panel::Drawer,
         header: Header::Cover,
         lyrics: Lyrics::Drawer,
+        glow: Glow::Accent,
+        cards: Cards::Covers,
+        favourite: Favourite::Star,
     };
 }
 
@@ -111,6 +117,40 @@ pub enum Lyrics {
     Drawer,
     /// Over the whole page, on the cover's colour.
     Page,
+}
+
+/// What lights the top of the pages without a cover of their own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Glow {
+    /// The accent and its glow, blurred.
+    #[default]
+    Accent,
+    /// A grey fading into the page, as Spotify's.
+    Grey,
+}
+
+/// How covers in grids and shelves are drawn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Cards {
+    /// The cover alone, darkened on hover.
+    #[default]
+    Covers,
+    /// On hover, a tile behind the cover and its words, and a round Play
+    /// on the cover, as Spotify's.
+    Tiles,
+}
+
+/// How a favourite song is marked in the lists.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Favourite {
+    /// A red star after its title, as Apple Music's.
+    #[default]
+    Star,
+    /// A check in the accent, as Spotify's saved songs.
+    Check,
 }
 
 #[derive(Debug, Clone, PartialEq)]

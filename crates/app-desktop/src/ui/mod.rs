@@ -1116,6 +1116,17 @@ pub fn wash_with(ui: &Ui, rect: Rect, base: Color32, blobs: &[Blob], veil: impl 
 /// The accent's glow at the top of pages without a cover: two radial gradients
 /// (accent at 26 % from the top left, mauve at 20 % from the top centre).
 pub fn glow(ui: &Ui, theme: &Theme, rect: Rect) {
+    if theme.layout.glow == crate::theme::Glow::Grey {
+        let blobs = [Blob {
+            center: vec2(0.5, -0.6),
+            radii: vec2(1.4, 1.3),
+            color: theme.surface2,
+            alpha: 0.55,
+            fade: 0.9,
+        }];
+        wash(ui, rect, theme.base, &blobs, false);
+        return;
+    }
     let blobs = [
         Blob {
             center: vec2(0.08, -0.10),
