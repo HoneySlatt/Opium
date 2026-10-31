@@ -119,7 +119,12 @@ fun SearchPage(c: LibraryContext) {
         val lists = c.lists
         value = load {
             val found = c.core.session.search(if (library) SearchScope.LIBRARY else SearchScope.CATALOG, words, source)
-            if (library && (source == null || source == ProviderKind.SOUND_CLOUD)) found.withLikes(lists, words) else found
+            // Matched over every song: off the main thread.
+            if (library && (source == null || source == ProviderKind.SOUND_CLOUD)) {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { found.withLikes(lists, words) }
+            } else {
+                found
+            }
         }
     }
     // A result opened or played: first in Recently Searched, once.

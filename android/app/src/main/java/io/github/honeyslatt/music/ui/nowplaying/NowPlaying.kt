@@ -124,7 +124,11 @@ fun NowPlaying(playback: Playback, actions: NpActions) {
     var mode by remember { mutableStateOf(NpMode.Artwork) }
     var signalOpen by remember { mutableStateOf(false) }
     var devicesOpen by remember { mutableStateOf(false) }
-    val motion by produceState<String?>(null, t.albumId) { value = actions.motion(t) }
+    val motion by produceState<String?>(null, t.albumId) {
+        // Another album: not the last one's video meanwhile.
+        value = null
+        value = actions.motion(t)
+    }
     val dark = roles.dark
     // Over the moving cover the text is white in both themes.
     val np = if (dark || motion != null) {
@@ -288,6 +292,9 @@ private fun Wash(track: Track, playing: Boolean) {
     LaunchedEffect(playing) {
         while (playing) {
             kotlinx.coroutines.delay(66)
+            // Waits for a frame: none come with the screen off or the app
+            // away, and the drift rests with them.
+            withFrameMillis { }
             val next = wash.floatValue + if (rising) 66f / 40_000 else -66f / 40_000
             if (next !in 0f..1f) rising = !rising
             wash.floatValue = next.coerceIn(0f, 1f)
@@ -407,6 +414,12 @@ fun rememberPosition(playback: Playback, playing: Boolean, everyMs: Long = 0): S
             // At every frame, or as often as asked: a bar that moves a few
             // pixels a second needn't redraw the screen 120 times a second.
             if (everyMs > 0) kotlinx.coroutines.delay(everyMs)
+            withFrameMillis { position.longValue = playback.position }
+        }
+        // Paused, it moves only when sought: looked at a few times a second,
+        // and only while shown.
+        while (true) {
+            kotlinx.coroutines.delay(250)
             withFrameMillis { position.longValue = playback.position }
         }
     }

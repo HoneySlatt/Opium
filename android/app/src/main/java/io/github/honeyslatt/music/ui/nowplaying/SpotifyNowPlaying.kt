@@ -83,7 +83,11 @@ fun SpotifyNowPlaying(playback: Playback, actions: NpActions) {
     var signalOpen by remember { mutableStateOf(false) }
     var devicesOpen by remember { mutableStateOf(false) }
     val page = rememberPageColour(t.artwork)
-    val motion by produceState<String?>(null, t.albumId) { value = actions.motion(t) }
+    val motion by produceState<String?>(null, t.albumId) {
+        // Another album: not the last one's video meanwhile.
+        value = null
+        value = actions.motion(t)
+    }
     val np =NpColours(Color.White, Color.White.copy(alpha = 0.7f), Color.White.copy(alpha = 0.3f), Color.White.copy(alpha = 0.14f))
     CompositionLocalProvider(LocalNp provides np) {
         Box(

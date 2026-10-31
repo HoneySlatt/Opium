@@ -28,6 +28,9 @@ import androidx.media3.ui.compose.state.rememberPresentationState
 /** Settings → Artwork → Quality. */
 val LocalMotionQuality = androidx.compose.runtime.staticCompositionLocalOf { io.github.honeyslatt.music.data.MotionQuality.Automatic }
 
+/** Whether the pages are under Now Playing, unseen. */
+val LocalCovered = androidx.compose.runtime.compositionLocalOf { false }
+
 /**
  * An animated cover: Apple's video, looping without sound, faded in over
  * the still cover once its first frame is drawn. It never asks for audio
@@ -63,10 +66,12 @@ fun MotionArtwork(url: String, modifier: Modifier = Modifier, crop: Boolean = fa
         }
     }
     DisposableEffect(player) { onDispose { player.release() } }
-    // Only while the app shows: the phone locked or the app away, the music
-    // playing on, the video stops looping (and loading) in the background.
-    androidx.lifecycle.compose.LifecycleStartEffect(player) {
-        player.play()
+    // Only while the app shows, and the page isn't under Now Playing: the
+    // phone locked or the app away, the music playing on, the video stops
+    // looping (and loading) unseen.
+    val covered = LocalCovered.current
+    androidx.lifecycle.compose.LifecycleStartEffect(player, covered) {
+        if (!covered) player.play()
         onStopOrDispose { player.pause() }
     }
     val fade by animateFloatAsState(if (shown) 1f else 0f, tween(400), label = "motion")

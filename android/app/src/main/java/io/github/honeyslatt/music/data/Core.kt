@@ -37,7 +37,10 @@ class Core(context: Context) {
 
     private val connections = ProviderKind.entries.associateWith { MutableStateFlow<Connection>(Connection.Off) }
 
-    fun connection(kind: ProviderKind): StateFlow<Connection> = connections.getValue(kind).asStateFlow()
+    private val shown = connections.mapValues { it.value.asStateFlow() }
+
+    /** The same flow each time: collected anew at each recomposition otherwise. */
+    fun connection(kind: ProviderKind): StateFlow<Connection> = shown.getValue(kind)
 
     val apple: StateFlow<Connection> = connection(ProviderKind.APPLE_MUSIC)
 

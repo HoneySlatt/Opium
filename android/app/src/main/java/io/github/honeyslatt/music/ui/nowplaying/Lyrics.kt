@@ -83,7 +83,11 @@ fun Lyrics(playback: Playback, track: Track, calm: Boolean, onFound: (Boolean) -
     val np = LocalNp.current
     val playing by playback.playing.collectAsStateWithLifecycle()
     // Whether they were looked for yet, and what was found.
-    val lyrics by produceState<Pair<Boolean, Lyrics?>>(false to null, track.id) { value = true to LyricsSource.find(track) }
+    val lyrics by produceState<Pair<Boolean, Lyrics?>>(false to null, track.id) {
+        // Another song: not the last one's lyrics meanwhile.
+        value = false to null
+        value = true to LyricsSource.find(track)
+    }
     val (looked, l) = lyrics
     LaunchedEffect(lyrics) { onFound(l?.lines?.isNotEmpty() == true) }
     if (!looked) {
@@ -103,7 +107,9 @@ fun Lyrics(playback: Playback, track: Track, calm: Boolean, onFound: (Boolean) -
         }
         return
     }
-    val position = rememberPosition(playback, playing)
+    // 60 times a second light a word smoothly: no need for a 120 Hz
+    // screen's every frame.
+    val position = rememberPosition(playback, playing, everyMs = 16)
     // The line sung changes a few times a minute: only then is the list
     // composed again, the line itself following each frame (`Sung`).
     val current by remember(l) { derivedStateOf { if (l.synced) l.lines.indexOfLast { it.startMs <= position.value }.coerceAtLeast(0) else -1 } }

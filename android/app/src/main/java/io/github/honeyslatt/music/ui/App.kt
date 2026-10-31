@@ -50,6 +50,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.honeyslatt.music.data.Connection
 import io.github.honeyslatt.music.data.Core
@@ -108,12 +109,23 @@ fun App(core: Core, library: Library, playback: io.github.honeyslatt.music.playb
         playback.remoteVolume.collect { v -> hud.show("${Math.round(v * 100)} %", if (v == 0f) Icons.Vlow else Icons.Vhigh) }
     }
     actions.beforeLeaving = { npOpen = false }
+    // The last songs' lyrics, found once: Now Playing's card, its full
+    // lyrics and Lyrics opened again ask for the same. A song not found is
+    // asked again next time, as may the network have been.
+    val lyricsFound = remember { object : LinkedHashMap<String, io.github.honeyslatt.music.core.model.Lyrics>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, io.github.honeyslatt.music.core.model.Lyrics>?) = size > 20
+    } }
     LyricsSource.find = { track ->
         // A station's stream has no lyrics to look for.
         if (playback.isStation(track)) {
             null
         } else {
-            runCatching { core.session.lyrics(track, settings.lyricsSites.filter { it in settings.lyricsSitesOn }, settings.sitesFirst) }.getOrNull()
+            val sites = settings.lyricsSites.filter { it in settings.lyricsSitesOn }
+            val key = "${track.id.provider}:${track.id.id}:$sites:${settings.sitesFirst}"
+            synchronized(lyricsFound) { lyricsFound[key] }
+                ?: runCatching { core.session.lyrics(track, sites, settings.sitesFirst) }.getOrNull()?.also {
+                    synchronized(lyricsFound) { lyricsFound[key] = it }
+                }
         }
     }
     // An album's animated cover, asked once.
@@ -155,6 +167,7 @@ fun App(core: Core, library: Library, playback: io.github.honeyslatt.music.playb
         }
     }
     BackHandler(enabled = npOpen) { npOpen = false }
+    val kept = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
     androidx.compose.runtime.CompositionLocalProvider(
         LocalNowPlaying provides NowPlayingMark(now?.id, playing),
         io.github.honeyslatt.music.ui.detail.LocalMotionQuality provides settings.motionQuality,
@@ -193,8 +206,14 @@ fun App(core: Core, library: Library, playback: io.github.honeyslatt.music.playb
         ) {
             androidx.compose.animation.core.rememberTransition(pages, label = "pages").AnimatedContent(
                 transitionSpec = { push(initialState, targetState, spotify) },
-            ) { (tab, _, page) ->
-                Page(tab, page, context, account, browse)
+            ) { (tab, depth, page) ->
+                // Gone back to, a page is as it was left: scrolled where it
+                // was, its search as typed.
+                kept.SaveableStateProvider("$tab/$depth/$page") {
+                    androidx.compose.runtime.CompositionLocalProvider(io.github.honeyslatt.music.ui.detail.LocalCovered provides (npOpen && now != null)) {
+                        Page(tab, page, context, account, browse)
+                    }
+                }
             }
             if (look.mobile.tabs == io.github.honeyslatt.music.core.model.Tabs.THREE) {
                 io.github.honeyslatt.music.ui.chrome.SpotifyBottom(nav, mini, playback, { devicesOpen = true }, Modifier.align(Alignment.BottomCenter))
@@ -217,7 +236,7 @@ fun App(core: Core, library: Library, playback: io.github.honeyslatt.music.playb
         ) {
             androidx.compose.runtime.LaunchedEffect(Unit) { npDrag = 0f }
             androidx.compose.runtime.CompositionLocalProvider(io.github.honeyslatt.music.ui.chrome.LocalNpVisibility provides this) {
-            SwipeDown({ npOpen = false }, { npDrag = it }) {
+            SwipeDown(npOpen, { npOpen = false }, { npDrag = it }) {
                 if (look.mobile.nowPlaying == io.github.honeyslatt.music.core.model.MobileNowPlaying.SPOTIFY) {
                     io.github.honeyslatt.music.ui.nowplaying.SpotifyNowPlaying(playback, npActions)
                 } else {
@@ -292,18 +311,53 @@ private fun Page(tab: Tab, page: Route, c: LibraryContext, account: @Composable 
 
 /** A sheet that follows a drag down, and closes past a quarter of the screen. */
 @Composable
-private fun SwipeDown(onClose: () -> Unit, onDrag: (Float) -> Unit, content: @Composable () -> Unit) {
+private fun SwipeDown(open: Boolean, onClose: () -> Unit, onDrag: (Float) -> Unit, content: @Composable () -> Unit) {
     var drag by androidx.compose.runtime.remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
-    val shown by androidx.compose.animation.core.animateFloatAsState(drag, label = "drag")
+    val shown = androidx.compose.animation.core.animateFloatAsState(drag, label = "drag")
+    // Opened again while it was going: back in place, not where the swipe left it.
+    androidx.compose.runtime.LaunchedEffect(open) { if (open) drag = 0f }
     androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
         val limit = constraints.maxHeight / 4f
-        // How far down, as a share of the screen, for the page behind.
+        // How far down, as a share of the screen, for the page behind: told
+        // as it moves, from one effect rather than one per frame.
         val height = constraints.maxHeight.toFloat()
-        androidx.compose.runtime.LaunchedEffect(shown) { onDrag((shown / height).coerceIn(0f, 1f)) }
+        androidx.compose.runtime.LaunchedEffect(height) {
+            androidx.compose.runtime.snapshotFlow { shown.value }.collect { onDrag((it / height).coerceIn(0f, 1f)) }
+        }
+        // A list or lyrics scrolled to their top hand the rest of a pull
+        // down to the swipe, and its release.
+        val handOver = androidx.compose.runtime.remember(limit) {
+            object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
+                override fun onPreScroll(available: androidx.compose.ui.geometry.Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource): androidx.compose.ui.geometry.Offset {
+                    // Pulled down already, a push up takes it back first.
+                    if (drag > 0f && available.y < 0f) {
+                        val taken = maxOf(available.y, -drag)
+                        drag += taken
+                        return androidx.compose.ui.geometry.Offset(0f, taken)
+                    }
+                    return androidx.compose.ui.geometry.Offset.Zero
+                }
+
+                override fun onPostScroll(consumed: androidx.compose.ui.geometry.Offset, available: androidx.compose.ui.geometry.Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource): androidx.compose.ui.geometry.Offset {
+                    if (source == androidx.compose.ui.input.nestedscroll.NestedScrollSource.UserInput && available.y > 0f) {
+                        drag += available.y
+                        return androidx.compose.ui.geometry.Offset(0f, available.y)
+                    }
+                    return androidx.compose.ui.geometry.Offset.Zero
+                }
+
+                override suspend fun onPreFling(available: androidx.compose.ui.unit.Velocity): androidx.compose.ui.unit.Velocity {
+                    if (drag <= 0f) return androidx.compose.ui.unit.Velocity.Zero
+                    if (drag > limit || available.y > 1500f) onClose() else drag = 0f
+                    return available
+                }
+            }
+        }
         Box(
             Modifier
                 .fillMaxSize()
-                .graphicsLayer { translationY = shown }
+                .graphicsLayer { translationY = shown.value }
+                .nestedScroll(handOver)
                 .pointerInput(Unit) {
                     detectVerticalDragGestures(
                         onDragEnd = { if (drag > limit) onClose() else drag = 0f },
