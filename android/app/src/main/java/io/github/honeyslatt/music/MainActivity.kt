@@ -55,6 +55,22 @@ class MainActivity : ComponentActivity() {
         super.onStop()
     }
 
+    /** Whether the app is dark now, for the bars' icons. */
+    private var darkBars = true
+
+    private fun barsAsApp() {
+        androidx.core.view.WindowCompat.getInsetsController(window, window.decorView).run {
+            isAppearanceLightStatusBars = !darkBars
+            isAppearanceLightNavigationBars = !darkBars
+        }
+    }
+
+    /** The system turned light or dark (the screen kept: see the manifest): the bars stay as the app. */
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        window.decorView.post { barsAsApp() }
+    }
+
     /** In the app, the volume keys set the volume of the device played on, if any. */
     @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent): Boolean {
@@ -103,6 +119,13 @@ class MainActivity : ComponentActivity() {
                 veil = null
             }
             MusicTheme(applied.second, app.themes.current(themes, applied.first)) {
+                // The bars' icons as the app's appearance, not the system's:
+                // dark on a light app, light on a dark one.
+                val dark = io.github.honeyslatt.music.ui.theme.roles.dark
+                androidx.compose.runtime.SideEffect {
+                    darkBars = dark
+                    barsAsApp()
+                }
                 Box(Modifier.fillMaxSize()) {
                     if (welcomed) {
                         App(app.core, app.library, app.playback, app.settings, connecting)
