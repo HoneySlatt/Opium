@@ -228,19 +228,23 @@ impl Session {
     }
 
     /// Sign in to SoundCloud with the web player's tokens; the user's name.
-    /// `keeper` is told the tokens each time they are renewed.
+    /// `keeper` is told the tokens each time they are renewed; `browser`
+    /// sends the changes, which SoundCloud turns away from any other client.
     pub async fn connect_soundcloud(
         self: Arc<Self>,
         oauth: String,
         refresh: Option<String>,
         keeper: Arc<dyn TokenKeeper>,
+        browser: Arc<dyn SoundCloudBrowser>,
     ) -> Result<String, MusicError> {
         off(async move {
             let on_tokens: soundcloud::OnTokens = Box::new(move |t: &soundcloud::Tokens| {
                 keeper.keep(t.oauth.clone(), t.refresh.clone());
             });
             let tokens = soundcloud::Tokens { oauth, refresh };
-            let sc = Arc::new(soundcloud::SoundCloud::connect(tokens, on_tokens).await?);
+            let browser: Arc<dyn soundcloud::Browser> = Arc::new(ForeignBrowser(browser));
+            let sc =
+                Arc::new(soundcloud::SoundCloud::connect(tokens, on_tokens, Some(browser)).await?);
             let user = sc.username().to_owned();
             self.update(|s| s.soundcloud = Some(sc));
             Ok(user)
@@ -777,6 +781,58 @@ impl Session {
 #[uniffi::export(with_foreign)]
 pub trait TokenKeeper: Send + Sync {
     fn keep(&self, oauth: String, refresh: Option<String>);
+}
+
+/// A browser sending SoundCloud's changes (likes, follows, playlists), as
+/// its bot guard takes only a browser's; when the guard asks for a check,
+/// it has the user pass it and sends again.
+#[uniffi::export(with_foreign)]
+#[async_trait::async_trait]
+pub trait SoundCloudBrowser: Send + Sync {
+    /// `method` on `url` with `headers` (the user's token among them) and a
+    /// JSON `body`; what came back, or status 0 and why not.
+    async fn send(
+        &self,
+        method: String,
+        url: String,
+        headers: std::collections::HashMap<String, String>,
+        body: Option<String>,
+    ) -> SoundCloudAnswer;
+}
+
+#[derive(uniffi::Record)]
+pub struct SoundCloudAnswer {
+    pub status: u16,
+    pub body: String,
+}
+
+struct ForeignBrowser(Arc<dyn SoundCloudBrowser>);
+
+#[async_trait::async_trait]
+impl soundcloud::Browser for ForeignBrowser {
+    async fn send(&self, change: soundcloud::Change) -> music_core::Result<soundcloud::Answer> {
+        let answer = self
+            .0
+            .send(
+                change.method,
+                change.url,
+                change.headers.into_iter().collect(),
+                change.body,
+            )
+            .await;
+        if answer.status == 0 {
+            return Err(music_core::Error::Network(format!(
+                "SoundCloud: {}",
+                answer.body
+            )));
+        }
+        // A page's script can't read the guard's header: its body says it.
+        Ok(soundcloud::Answer {
+            status: answer.status,
+            guard_header: false,
+            body: answer.body,
+        })
+    }
 }
 
 /// A SoundCloud track as Android's player plays it: an HLS playlist or the

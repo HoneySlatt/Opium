@@ -13,6 +13,7 @@ name = "uniffi-bindgen"
 path = "src/bin/uniffi-bindgen.rs"
 
 [dependencies]
+async-trait = "0.1.92"
 apple-music = { path = "../apple-music" }
 connect = { path = "../connect", features = ["ffi"] }
 music-core = { path = "../music-core", features = ["ffi"] }

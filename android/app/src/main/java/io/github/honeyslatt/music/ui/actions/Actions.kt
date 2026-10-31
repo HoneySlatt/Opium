@@ -213,6 +213,9 @@ class Actions(
                             !inLibrary(track) -> MenuItem("Add to Library", Icons.Pluscircle) { addToLibrary(track) }
                             apple && track.libraryId != null ->
                                 MenuItem("Delete from Library…", Icons.Trash, danger = true) { confirmDelete(track) }
+                            // A like, on SoundCloud: undone at once, as easily made again.
+                            track.id.provider == ProviderKind.SOUND_CLOUD ->
+                                MenuItem("Remove from Library", Icons.Minuscircle, danger = true) { removeLike(track) }
                             else -> null
                         },
                         MenuItem("Add to a Playlist…", Icons.Listplus) { addToPlaylists(listOf(track)) },
@@ -445,6 +448,12 @@ class Actions(
             hud.show("Deleted", Icons.Trash)
             change("Couldn't delete it", undo = { inLibraryNow.remove(track.id) }) { session.removeFromLibrary(id) }
         }
+    }
+
+    private fun removeLike(track: Track) {
+        inLibraryNow[track.id] = false
+        hud.show("Removed from Library", Icons.Minuscircle)
+        change("Couldn't remove it", undo = { inLibraryNow.remove(track.id) }) { session.removeFromLibrary(track.id) }
     }
 
     /** Favourite, or not; a song favourited joins the library unless the setting says not to. */

@@ -12,6 +12,7 @@ mod mpris;
 mod palette;
 mod screenshot;
 mod settings;
+mod soundcloud_browser;
 mod theme;
 mod ui;
 

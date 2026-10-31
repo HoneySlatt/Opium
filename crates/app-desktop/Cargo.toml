@@ -12,6 +12,12 @@ path = "src/main.rs"
 music-core = { path = "../music-core" }
 apple-music = { path = "../apple-music" }
 soundcloud = { path = "../soundcloud" }
+browser-signin = { path = "../browser-signin" }
+async-trait = "0.1.92"
+# SoundCloud's bot guard turns away changes from any client but a browser:
+# these are sent as Chrome sends them.
+wreq = "0.16.3"
+wreq-util = "0.2.0"
 navidrome = { path = "../navidrome" }
 lyrics = { path = "../lyrics" }
 services = { path = "../services" }

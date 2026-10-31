@@ -365,7 +365,7 @@ fn private_dir(dir: &Path) -> std::io::Result<()> {
 
 /// Write a secret readable by the user only: aside, then moved over, so
 /// that a crash midway leaves the last one whole.
-fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+pub(crate) fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
     use std::os::unix::fs::OpenOptionsExt;
     if let Some(dir) = path.parent() {
@@ -445,7 +445,16 @@ async fn connect_soundcloud(replies: &Replies) -> Option<Arc<SoundCloud>> {
         replies.send(Reply::SoundCloud(Ok(None)));
         return None;
     };
-    match SoundCloud::connect(tokens, Box::new(keep_soundcloud_tokens)).await {
+    let notify = replies.clone();
+    let browser = crate::soundcloud_browser::ChromeLike::new(
+        sign_in_browser(),
+        soundcloud_dir().join("browser-profile"),
+        soundcloud_dir().join("datadome"),
+        Box::new(move |message| notify.send(Reply::Changed(Ok(message)))),
+    )
+    .ok()
+    .map(|b| Arc::new(b) as Arc<dyn soundcloud::Browser>);
+    match SoundCloud::connect(tokens, Box::new(keep_soundcloud_tokens), browser).await {
         Ok(sc) => {
             replies.send(Reply::SoundCloud(Ok(Some(sc.username().to_owned()))));
             Some(Arc::new(sc))

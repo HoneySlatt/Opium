@@ -113,6 +113,8 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     ConnectHost(connecting, app.core)
+                    val check by app.core.soundCloudWeb.check.collectAsStateWithLifecycle()
+                    check?.let { done -> io.github.honeyslatt.music.ui.connect.SoundCloudCheck { done.complete(Unit) } }
                     veil?.let {
                         androidx.compose.foundation.Image(
                             it,

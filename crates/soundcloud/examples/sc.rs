@@ -48,7 +48,7 @@ fn kept() -> Option<Tokens> {
 
 async fn connect() -> Result<SoundCloud, Box<dyn std::error::Error>> {
     let tokens = kept().ok_or("no tokens yet: run `sc signin` first")?;
-    let sc = SoundCloud::connect(tokens, Box::new(keep)).await?;
+    let sc = SoundCloud::connect(tokens, Box::new(keep), None).await?;
     println!("signed in as {}", sc.username());
     Ok(sc)
 }
@@ -195,7 +195,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             fetch(&sc, arg(1), arg(2), arg(3) != "--stream").await?;
         }
         "public" if args.len() >= 3 => {
-            let sc = SoundCloud::connect(Tokens::default(), Box::new(|_| {})).await?;
+            let sc = SoundCloud::connect(Tokens::default(), Box::new(|_| {}), None).await?;
             fetch(&sc, arg(1), arg(2), false).await?;
         }
         _ => eprintln!(

@@ -54,6 +54,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import io.github.honeyslatt.music.core.model.ProviderKind
 import io.github.honeyslatt.music.data.Connection
 import io.github.honeyslatt.music.data.Core
+import io.github.honeyslatt.music.data.SoundCloudWeb
 import io.github.honeyslatt.music.ui.Icons
 import io.github.honeyslatt.music.ui.components.Glyph
 import io.github.honeyslatt.music.ui.components.Group
@@ -394,8 +395,47 @@ private fun WebSignIn(kind: ProviderKind, onCancel: () -> Unit, onDone: (Map<Str
                 WebView(it).apply {
                     settings.javaScriptEnabled = true
                     settings.domStorageEnabled = true
+                    if (kind == ProviderKind.SOUND_CLOUD) settings.userAgentString = SoundCloudWeb.desktopAgent(it)
                     webViewClient = WebViewClient()
                     loadUrl(site.url)
+                }
+            },
+            modifier = Modifier.fillMaxSize(),
+        )
+    }
+}
+
+/**
+ * SoundCloud, full screen, for its bot guard's check: it shows it when a
+ * song is liked there. Done (or back) sends the change again.
+ */
+@SuppressLint("SetJavaScriptEnabled")
+@Composable
+fun SoundCloudCheck(onDone: () -> Unit) {
+    BackHandler(onBack = onDone)
+    Column(Modifier.fillMaxSize().background(roles.base).windowInsetsPadding(WindowInsets.safeDrawing)) {
+        Row(
+            Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Spacer(Modifier.size(72.dp, 1.dp))
+            BasicText("Bot check", Modifier.weight(1f), style = geist(16.5.sp, FontWeight.SemiBold).copy(color = roles.text, textAlign = TextAlign.Center))
+            SheetButton("Done", onClick = onDone)
+        }
+        BasicText(
+            "SoundCloud wants a check: like a song here and pass it, then tap Done.",
+            Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+            style = geist(14.sp).copy(color = roles.muted, textAlign = TextAlign.Center),
+        )
+        AndroidView(
+            factory = {
+                WebView(it).apply {
+                    settings.javaScriptEnabled = true
+                    settings.domStorageEnabled = true
+                    settings.userAgentString = SoundCloudWeb.desktopAgent(it)
+                    webViewClient = WebViewClient()
+                    loadUrl("https://soundcloud.com/")
                 }
             },
             modifier = Modifier.fillMaxSize(),

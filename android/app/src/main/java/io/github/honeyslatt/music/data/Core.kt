@@ -32,6 +32,9 @@ class Core(context: Context) {
     private val prefs = context.getSharedPreferences("music", Context.MODE_PRIVATE)
     private val vault = Vault(context)
 
+    /** Sends SoundCloud's changes, as only a browser's are taken. */
+    val soundCloudWeb = SoundCloudWeb(context.applicationContext)
+
     private val connections = ProviderKind.entries.associateWith { MutableStateFlow<Connection>(Connection.Off) }
 
     fun connection(kind: ProviderKind): StateFlow<Connection> = connections.getValue(kind).asStateFlow()
@@ -176,7 +179,7 @@ class Core(context: Context) {
                 ProviderKind.NAVIDROME -> session.connectNavidrome(kept)
                 ProviderKind.SOUND_CLOUD -> {
                     val json = JSONObject(kept)
-                    session.connectSoundcloud(json.getString("oauth"), json.optString("refresh").takeIf { !json.isNull("refresh") && it.isNotEmpty() }, keeper)
+                    session.connectSoundcloud(json.getString("oauth"), json.optString("refresh").takeIf { !json.isNull("refresh") && it.isNotEmpty() }, keeper, soundCloudWeb)
                 }
             }
         }

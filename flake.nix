@@ -42,6 +42,9 @@
               pkg-config
               rustPlatform.bindgenHook
               makeWrapper
+              # BoringSSL, for SoundCloud's changes sent as Chrome does.
+              cmake
+              perl
             ];
             buildInputs = with pkgs; [
               ffmpeg
@@ -87,6 +90,9 @@
               pkg-config
               pipewire
               rustPlatform.bindgenHook
+              # BoringSSL, for SoundCloud's changes sent as Chrome does.
+              cmake
+              perl
             ];
             # Animated cover art is decoded with FFmpeg's libraries.
             buildInputs = with pkgs; [ ffmpeg ];

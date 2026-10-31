@@ -45,15 +45,45 @@ fn slow_down() -> Error {
     Error::Protocol("SoundCloud asks to slow down: try again in a few minutes".into())
 }
 
-/// SoundCloud's bot guard (DataDome) asks some networks, a VPN's often, to
-/// pass a check before a change, a like or a playlist: a browser shows it,
-/// the app can't.
+/// SoundCloud's bot guard (DataDome) turned a change away, a like or a
+/// playlist: with a [`Browser`], after the check it asked for, if any.
 fn turned_away() -> Error {
     Error::Protocol(
-        "SoundCloud wants a bot check the app can't show, as it often does behind a VPN: \
-         try without it"
-            .into(),
+        "SoundCloud's bot guard turned this away: try again, passing its check if asked".into(),
     )
+}
+
+/// Whether an answer is the bot guard's refusal: its header says so, or,
+/// where that header can't be read, its body names the check.
+fn guarded(status: u16, guard_header: bool, body: &str) -> bool {
+    status == 403 && (guard_header || body.contains("captcha-delivery.com"))
+}
+
+/// A change to send to SoundCloud's API: a like, a follow, a playlist.
+pub struct Change {
+    pub method: String,
+    /// With its query, the client id's.
+    pub url: String,
+    /// The user's token among them: never printed.
+    pub headers: Vec<(String, String)>,
+    /// JSON, when there is one.
+    pub body: Option<String>,
+}
+
+/// What SoundCloud answered a [`Change`].
+pub struct Answer {
+    pub status: u16,
+    /// The bot guard's header (`x-dd-b`) was there.
+    pub guard_header: bool,
+    pub body: String,
+}
+
+/// Sends changes as a browser does: SoundCloud's bot guard turns away the
+/// likes, follows and playlist changes of any other client. When the guard
+/// asks for a check, the browser has the user pass it, and sends again.
+#[async_trait]
+pub trait Browser: Send + Sync {
+    async fn send(&self, change: Change) -> Result<Answer>;
 }
 
 /// The user's tokens, as the browser keeps them.
@@ -86,6 +116,8 @@ pub struct SoundCloud {
     me: types::User,
     /// What each station has played, so that it goes on without repeating.
     stations: Mutex<std::collections::HashMap<String, Station>>,
+    /// Sends the changes, when there is one.
+    browser: Option<std::sync::Arc<dyn Browser>>,
 }
 
 /// A station's songs so far: their ids, and the last, which the next ones
@@ -99,8 +131,12 @@ struct Station {
 impl SoundCloud {
     /// Sign in with `tokens`, renewing them first when they have expired;
     /// `on_tokens` is told every new pair. Without a token, only what anyone
-    /// can hear is there.
-    pub async fn connect(tokens: Tokens, on_tokens: OnTokens) -> Result<Self> {
+    /// can hear is there; without a `browser`, changes are mostly turned away.
+    pub async fn connect(
+        tokens: Tokens,
+        on_tokens: OnTokens,
+        browser: Option<std::sync::Arc<dyn Browser>>,
+    ) -> Result<Self> {
         let http = reqwest::Client::builder()
             .user_agent(USER_AGENT)
             // A server out of reach, or a download that stalls, fails rather
@@ -119,6 +155,7 @@ impl SoundCloud {
             rescraping: tokio::sync::Mutex::new(()),
             me: types::User::default(),
             stations: Mutex::default(),
+            browser,
         };
         if !sc.token().is_empty() {
             sc.me = sc.get("/me").await?;
@@ -189,35 +226,84 @@ impl SoundCloud {
                 && u.host_str()
                     .is_some_and(|h| h == "soundcloud.com" || h.ends_with(".soundcloud.com"))
         });
+        let browser = self
+            .browser
+            .as_ref()
+            .filter(|_| ours && method != reqwest::Method::GET);
         let (mut renewed, mut rescraped, mut waited) = (false, false, false);
         loop {
             let client_id = self.client_id();
-            let mut request = self
-                .http
-                .request(method.clone(), &url)
-                .query(&[("client_id", client_id.as_str())])
-                .query(query);
             let token = if ours { self.token() } else { String::new() };
-            if !token.is_empty() {
-                request = request.header("Authorization", format!("OAuth {token}"));
-            }
-            if let Some(body) = body {
-                request = request.json(body);
-            }
-            let resp = request
-                .header("Origin", WEB)
-                .header("Referer", format!("{WEB}/"))
-                .send()
-                .await
-                .map_err(|e| Error::Network(format!("{url}: {}", e.without_url())))?;
-            match resp.status().as_u16() {
+            let (status, guard_header, retry_after, text) = match browser {
+                Some(browser) => {
+                    let mut full = reqwest::Url::parse(&url)
+                        .map_err(|e| Error::Protocol(format!("{url}: {e}")))?;
+                    full.query_pairs_mut()
+                        .append_pair("client_id", &client_id)
+                        .extend_pairs(query);
+                    let mut headers = vec![(
+                        "Accept".to_owned(),
+                        "application/json, text/javascript, */*; q=0.01".to_owned(),
+                    )];
+                    if !token.is_empty() {
+                        headers.push(("Authorization".to_owned(), format!("OAuth {token}")));
+                    }
+                    if body.is_some() {
+                        headers.push(("Content-Type".to_owned(), "application/json".to_owned()));
+                    }
+                    let answer = browser
+                        .send(Change {
+                            method: method.to_string(),
+                            url: full.into(),
+                            headers,
+                            body: body.map(|b| b.to_string()),
+                        })
+                        .await?;
+                    (answer.status, answer.guard_header, None, answer.body)
+                }
+                None => {
+                    let mut request = self
+                        .http
+                        .request(method.clone(), &url)
+                        .query(&[("client_id", client_id.as_str())])
+                        .query(query);
+                    if !token.is_empty() {
+                        request = request.header("Authorization", format!("OAuth {token}"));
+                    }
+                    if let Some(body) = body {
+                        request = request.json(body);
+                    }
+                    let resp = request
+                        .header("Origin", WEB)
+                        .header("Referer", format!("{WEB}/"))
+                        .send()
+                        .await
+                        .map_err(|e| Error::Network(format!("{url}: {}", e.without_url())))?;
+                    let status = resp.status().as_u16();
+                    let guard_header = resp.headers().contains_key("x-dd-b");
+                    let retry_after = resp
+                        .headers()
+                        .get("retry-after")
+                        .and_then(|v| v.to_str().ok())
+                        .and_then(|v| v.trim().parse::<u64>().ok());
+                    let text = if (200..300).contains(&status) {
+                        resp.text()
+                            .await
+                            .map_err(|e| Error::Network(format!("{url}: {e}")))?
+                    } else {
+                        String::new()
+                    };
+                    (status, guard_header, retry_after, text)
+                }
+            };
+            match status {
                 401 if !renewed && !token.is_empty() => {
                     renewed = true;
                     self.renew(&token).await?;
                 }
                 401 => return Err(Error::NotSignedIn),
                 // Its guard says so; another client id wouldn't change it.
-                403 if resp.headers().contains_key("x-dd-b") => return Err(turned_away()),
+                403 if guarded(status, guard_header, &text) => return Err(turned_away()),
                 403 if !rescraped => {
                     rescraped = true;
                     let _scraping = self.rescraping.lock().await;
@@ -230,12 +316,7 @@ impl SoundCloud {
                 // Asked to slow down: once, after the wait it names if short.
                 429 if !waited => {
                     waited = true;
-                    let wait = resp
-                        .headers()
-                        .get("retry-after")
-                        .and_then(|v| v.to_str().ok())
-                        .and_then(|v| v.trim().parse::<u64>().ok())
-                        .unwrap_or(2);
+                    let wait = retry_after.unwrap_or(2);
                     if wait > MAX_RETRY_AFTER {
                         return Err(slow_down());
                     }
@@ -245,12 +326,7 @@ impl SoundCloud {
                 s if !(200..300).contains(&s) => {
                     return Err(Error::Protocol(format!("{url}: HTTP {s}")));
                 }
-                _ => {
-                    return resp
-                        .text()
-                        .await
-                        .map_err(|e| Error::Network(format!("{url}: {e}")));
-                }
+                _ => return Ok(text),
             }
         }
     }

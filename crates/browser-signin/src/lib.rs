@@ -100,17 +100,28 @@ pub async fn sign_in_unwatched(
     site: Site<'_>,
     timeout: Duration,
 ) -> Result<HashMap<String, String>, SignInError> {
+    open_until_closed(browser, profile, site.url, timeout).await?;
+    signed_in(read_cookies(browser, profile, site).await?, site)
+}
+
+/// Open `browser` on `url` in `profile`, unwatched, and wait for the user to
+/// close it.
+pub async fn open_until_closed(
+    browser: &Path,
+    profile: &Path,
+    url: &str,
+    timeout: Duration,
+) -> Result<(), SignInError> {
     let mut child = Command::new(browser)
         .arg(format!("--user-data-dir={}", profile.display()))
         .args(["--no-first-run", "--no-default-browser-check"])
-        .arg(format!("--app={}", site.url))
+        .arg(format!("--app={url}"))
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .kill_on_drop(true)
         .spawn()
         .map_err(|e| SignInError::Launch(browser.to_owned(), e))?;
-    wait_until_closed(&mut child, profile, Instant::now() + timeout, timeout).await?;
-    signed_in(read_cookies(browser, profile, site).await?, site)
+    wait_until_closed(&mut child, profile, Instant::now() + timeout, timeout).await
 }
 
 fn signed_in(
@@ -148,7 +159,7 @@ async fn wait_until_closed(
 
 /// The site's cookies in `profile`, from the browser started headless on no
 /// page.
-async fn read_cookies(
+pub async fn read_cookies(
     browser: &Path,
     profile: &Path,
     site: Site<'_>,
