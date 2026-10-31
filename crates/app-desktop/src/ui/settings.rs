@@ -362,7 +362,7 @@ fn switch(ui: &mut Ui, theme: &Theme, right_center: egui::Pos2, on: bool, salt: 
         .animate_bool_with_time(Id::unique(("switch-anim", salt)), on, 0.18);
     let off = theme.surface2;
     ui.painter()
-        .rect_filled(rect, 11.0, crate::color::mix(off, theme.accent, t));
+        .rect_filled(rect, 11.0, crate::color::mix(theme.accent, off, t));
     let x = rect.left() + 11.0 + t * 16.0;
     ui.painter()
         .circle_filled(pos2(x, rect.center().y), 8.0, egui::Color32::WHITE);
