@@ -69,6 +69,11 @@ pub struct Settings {
     pub spatial_audio: Option<bool>,
     /// The services turned off: still signed in, but not used.
     pub services_off: Vec<music_core::model::ProviderKind>,
+    /// The sidebar was folded when the app last closed.
+    pub sidebar_collapsed: Option<bool>,
+    /// The column beside the page, as last left: closed, or what it showed.
+    pub side_closed: Option<bool>,
+    pub side: Option<crate::app::Side>,
 }
 
 /// Repeat, as kept: the queue's own, by name.

@@ -110,7 +110,8 @@ pub enum SearchScope {
 }
 
 /// What the column beside the page shows, in a theme that has one.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Side {
     NowPlaying,
     Queue,
@@ -613,7 +614,7 @@ impl App {
             page: Page::Home,
             back: Vec::new(),
             forward: Vec::new(),
-            sidebar_collapsed: false,
+            sidebar_collapsed: settings.sidebar_collapsed.unwrap_or(false),
             search: String::new(),
             search_edited: None,
             focus_search: false,
@@ -676,7 +677,11 @@ impl App {
             page_search_open: false,
             searched: None,
             drawer_tab: DrawerTab::default(),
-            side: Some(Side::NowPlaying),
+            // As left: open on what it showed, unless it was closed.
+            side: match settings.side_closed {
+                Some(true) => None,
+                _ => Some(settings.side.unwrap_or(Side::NowPlaying)),
+            },
             lyrics_page: std::env::var_os("MUSIC_SCREENSHOT_LYRICS").is_some(),
             history: read_history(),
             queue: Queue::new(),
@@ -4068,6 +4073,21 @@ impl App {
 impl eframe::App for App {
     fn on_exit(&mut self) {
         self.keep_session(true);
+        // The sidebars stay as they were left.
+        let (collapsed, closed) = (Some(self.sidebar_collapsed), Some(self.side.is_none()));
+        let side = self.side.or(self.settings.side);
+        if (collapsed, closed, side)
+            != (
+                self.settings.sidebar_collapsed,
+                self.settings.side_closed,
+                self.settings.side,
+            )
+        {
+            self.settings.sidebar_collapsed = collapsed;
+            self.settings.side_closed = closed;
+            self.settings.side = side;
+            self.settings.save();
+        }
         // A volume still settling is kept as it is.
         if self.volume_changed.is_some() {
             self.settings.volume = Some(self.volume);
