@@ -272,16 +272,19 @@ pub fn show(
                 } else {
                     (size, wrap)
                 };
-                let galley = sung(ui, &words(line, next, position), size, wrap, theme, fade);
+                let lit = words(line, next, position);
+                let galley = sung(ui, &lit, size, wrap, theme, fade);
                 let top = rect.center().y - galley.size().y / 2.0;
                 let mut shape = egui::Shape::galley(pos2(rect.left() + PAD.x, top), galley, color);
                 grow(&mut shape);
                 painter.add(shape);
-                // 60 frames a second light it smoothly: no need for the
-                // screen's every refresh.
+                // While a word fills, 30 frames a second light it smoothly;
+                // between words, a tenth of a second finds the next one.
                 if app.shown().playing {
+                    let filling = lit.iter().any(|(_, p)| *p > 0.0 && *p < 1.0);
+                    let after = if filling { 33 } else { 100 };
                     ui.ctx()
-                        .request_repaint_after(std::time::Duration::from_millis(16));
+                        .request_repaint_after(std::time::Duration::from_millis(after));
                 }
             }
             Some(galley) => {
@@ -335,6 +338,8 @@ const UNSUNG: f32 = 0.35;
 /// How many letters the edge of the light spreads over, as it moves along
 /// a word: a soft wipe rather than letter by letter.
 const EDGE: f32 = 1.8;
+/// The light's steps, from unlit to lit.
+const LIGHT_STEPS: f32 = 16.0;
 
 /// The words of the line playing, each with how far it has been sung: as
 /// timed word by word, else each its share of the line by its length, as
@@ -396,6 +401,10 @@ fn sung(
         ..TextFormat::default()
     };
     let mut job = LayoutJob::default();
+    // Letters lit alike go as one run, the light in steps: the same line,
+    // lit the same, is laid out once and found again, not every frame.
+    let mut run = String::new();
+    let mut run_lit = 0u8;
     let count = words.len();
     for (k, (word, progress)) in words.iter().enumerate() {
         let text = if k + 1 == count {
@@ -419,8 +428,19 @@ fn sung(
                 t * t * (3.0 - 2.0 * t)
             };
             last = lit;
-            job.append(&c.to_string(), 0.0, format(UNSUNG + (1.0 - UNSUNG) * lit));
+            let step = (lit * LIGHT_STEPS).round() as u8;
+            if step != run_lit && !run.is_empty() {
+                let lit = f32::from(run_lit) / LIGHT_STEPS;
+                job.append(&run, 0.0, format(UNSUNG + (1.0 - UNSUNG) * lit));
+                run.clear();
+            }
+            run_lit = step;
+            run.push(c);
         }
+    }
+    if !run.is_empty() {
+        let lit = f32::from(run_lit) / LIGHT_STEPS;
+        job.append(&run, 0.0, format(UNSUNG + (1.0 - UNSUNG) * lit));
     }
     job.wrap = TextWrapping::wrap_at_width(wrap);
     ui.painter().layout_job(job)

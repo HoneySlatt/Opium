@@ -55,11 +55,48 @@ pub fn write_motion(url: &str, size: u32, bytes: &[u8]) -> Option<PathBuf> {
     Some(path)
 }
 
+/// Covers fetched at once: scrolling fast through a library asks for
+/// hundreds, which would each get threads of their own.
+const FETCHERS: usize = 6;
+
+type Job = Box<dyn FnOnce() + Send>;
+
+/// The covers waiting their turn, the last asked first: those on screen now.
+static JOBS: std::sync::LazyLock<(std::sync::Mutex<Vec<Job>>, std::sync::Condvar)> =
+    std::sync::LazyLock::new(|| {
+        for _ in 0..FETCHERS {
+            std::thread::spawn(|| {
+                loop {
+                    let job = {
+                        let (jobs, ready) = &*JOBS;
+                        let mut jobs = jobs.lock().unwrap_or_else(|e| e.into_inner());
+                        loop {
+                            if let Some(job) = jobs.pop() {
+                                break job;
+                            }
+                            jobs = ready.wait(jobs).unwrap_or_else(|e| e.into_inner());
+                        }
+                    };
+                    job();
+                }
+            });
+        }
+        Default::default()
+    });
+
+fn fetch_later(job: Job) {
+    let (jobs, ready) = &*JOBS;
+    jobs.lock().unwrap_or_else(|e| e.into_inner()).push(job);
+    ready.notify_one();
+}
+
 /// When each cover was last drawn, to let go of those not seen for a while.
 static SEEN: std::sync::LazyLock<std::sync::Mutex<HashMap<String, f64>>> =
     std::sync::LazyLock::new(Default::default);
 /// How long a cover may go unseen before its image and texture are dropped.
 const UNSEEN_FOR: f64 = 60.0;
+/// The most covers kept in memory: a few screens of them.
+const KEPT_AT_MOST: usize = 400;
 
 /// The cover at `url` is drawn now.
 pub fn seen(ctx: &egui::Context, url: &str) {
@@ -78,8 +115,16 @@ pub fn seen(ctx: &egui::Context, url: &str) {
 pub fn forget_unseen(ctx: &egui::Context) {
     let now = ctx.input(|i| i.time);
     let mut seen = SEEN.lock().unwrap_or_else(|e| e.into_inner());
+    // Past the most kept, the longest unseen go too, however recent.
+    let oldest_kept = if seen.len() > KEPT_AT_MOST {
+        let mut times: Vec<f64> = seen.values().copied().collect();
+        times.sort_by(|a, b| b.total_cmp(a));
+        times[KEPT_AT_MOST - 1]
+    } else {
+        f64::NEG_INFINITY
+    };
     seen.retain(|url, at| {
-        let keep = now - *at < UNSEEN_FOR;
+        let keep = now - *at < UNSEEN_FOR && *at >= oldest_kept;
         if !keep {
             ctx.forget_image(url);
         }
@@ -217,22 +262,25 @@ impl BytesLoader for CoverLoader {
                 ctx.request_repaint();
             }
         };
-        std::thread::spawn(move || {
+        let wanted = self.loaded.clone();
+        fetch_later(Box::new(move || {
+            // Scrolled past and let go of before its turn: not fetched.
+            if !wanted.lock().contains_key(&uri) {
+                return;
+            }
             if let Some(bytes) = read(&uri) {
                 return finish(uri, Ok(bytes.into()));
             }
-            ehttp::fetch(ehttp::Request::get(uri.clone()), move |response| {
-                let result = match response {
-                    Ok(r) if r.ok => {
-                        write(&uri, &r.bytes);
-                        Ok(r.bytes.into())
-                    }
-                    Ok(r) => Err(format!("{uri}: {} {}", r.status, r.status_text)),
-                    Err(e) => Err(format!("{uri}: {e}")),
-                };
-                finish(uri, result);
-            });
-        });
+            let result = match ehttp::fetch_blocking(&ehttp::Request::get(uri.clone())) {
+                Ok(r) if r.ok => {
+                    write(&uri, &r.bytes);
+                    Ok(r.bytes.into())
+                }
+                Ok(r) => Err(format!("{uri}: {} {}", r.status, r.status_text)),
+                Err(e) => Err(format!("{uri}: {e}")),
+            };
+            finish(uri, result);
+        }));
         Ok(BytesPoll::Pending { size: None })
     }
 

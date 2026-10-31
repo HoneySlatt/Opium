@@ -495,6 +495,9 @@ pub fn favourite_star(ui: &Ui, theme: &Theme, center: egui::Pos2) {
 
 /// Three accent bars for the playing row, moving while it plays.
 fn bars(ui: &Ui, theme: &Theme, center: egui::Pos2, moving: bool) {
+    // Still while the window is in the background: the whole window would
+    // be drawn again for them alone.
+    let moving = moving && ui.input(|i| i.focused);
     let t = ui.input(|i| i.time) as f32;
     for (k, phase) in [0.0_f32, 1.7, 3.1].into_iter().enumerate() {
         let h = if moving {
@@ -509,10 +512,10 @@ fn bars(ui: &Ui, theme: &Theme, center: egui::Pos2, moving: bool) {
         );
         ui.painter().rect_filled(rect, 1.0, theme.accent);
     }
-    // 30 frames a second are plenty for them.
+    // 20 frames a second are plenty for them.
     if moving {
         ui.ctx()
-            .request_repaint_after(std::time::Duration::from_millis(33));
+            .request_repaint_after(std::time::Duration::from_millis(50));
     }
 }
 

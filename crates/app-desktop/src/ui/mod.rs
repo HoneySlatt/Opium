@@ -1278,7 +1278,10 @@ pub(super) fn motion_over(
     radius: f32,
     points: f32,
 ) {
-    let Some(master) = master else { return };
+    // Scrolled out of sight, it isn't played: unseen, it stops.
+    let Some(master) = master.filter(|_| ui.is_rect_visible(rect)) else {
+        return;
+    };
     let pixels = points * ui.ctx().pixels_per_point();
     if let Some(texture) = app.motion_frame(slot, master, pixels, ui.ctx()) {
         egui::Image::from_texture(texture)

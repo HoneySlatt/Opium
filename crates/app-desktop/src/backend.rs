@@ -205,6 +205,9 @@ pub enum Reply {
     },
     /// A change to the library went through (the message to show), or why not.
     Changed(Result<String, String>),
+    /// A song left the library (the message to show), or why not: then the
+    /// library, changed at once, is loaded again as it is.
+    RemovedFromLibrary(Result<String, String>),
     /// Whether catalog albums or playlists are in the library; those Apple
     /// didn't answer for are left out.
     InLibrary(Vec<(ItemId, bool)>),
@@ -617,6 +620,14 @@ async fn sign_in() -> Result<(), String> {
     write_private(&dir.join("media-user-token"), token.as_bytes()).map_err(|e| e.to_string())
 }
 
+/// A connection made while requests went on.
+/// With whether its library then loads (once the library was asked for).
+enum Arrived {
+    Apple(Option<Arc<AppleMusic>>, bool),
+    SoundCloud(Option<Arc<SoundCloud>>, bool),
+    Navidrome(Option<Arc<Navidrome>>, bool),
+}
+
 async fn run(
     mut requests: UnboundedReceiver<Request>,
     again: UnboundedSender<Request>,
@@ -624,8 +635,8 @@ async fn run(
     off: Vec<ProviderKind>,
 ) {
     let on = |p| !off.contains(&p);
-    // All at once: a server out of reach holds up none of the others.
-    let (mut apple, mut sc, mut nd) = tokio::join!(
+    // Apple Music and SoundCloud at once, before anything is asked of them.
+    let (mut apple, mut sc) = tokio::join!(
         async {
             match on(ProviderKind::AppleMusic) {
                 true => connect(&replies).await,
@@ -638,13 +649,22 @@ async fn run(
                 false => None,
             }
         },
-        async {
-            match on(ProviderKind::Navidrome) {
-                true => connect_navidrome(&replies).await,
-                false => None,
-            }
-        },
     );
+    // A connection made later (the server, often out of reach away from
+    // home; one turned on, or tried again) comes back here, so that it
+    // holds up nothing meanwhile.
+    let (arrived_tx, mut arrived) = tokio::sync::mpsc::unbounded_channel::<Arrived>();
+    let mut nd = None;
+    if on(ProviderKind::Navidrome) {
+        let (arrived_tx, replies) = (arrived_tx.clone(), replies.clone());
+        tokio::spawn(async move {
+            let _ = arrived_tx.send(Arrived::Navidrome(connect_navidrome(&replies).await, true));
+        });
+    }
+    // Asked for once: a service connected afterwards loads its library.
+    let mut library_wanted = false;
+    // Turned off meanwhile: a connection made before is dropped as it comes.
+    let mut turned_off: std::collections::HashSet<ProviderKind> = off.iter().copied().collect();
     let cdm = widevine::locate()
         .ok_or_else(|| "no Widevine module found: install Brave, Chrome or Firefox".to_owned())
         .and_then(|path| widevine::Cdm::open(&path).map_err(|e| e.to_string()));
@@ -653,7 +673,48 @@ async fn run(
     let finder = Arc::new(lyrics::Finder::new());
     let mut loading = Loading::default();
     let mut warming: Option<tokio::task::JoinHandle<()>> = None;
-    while let Some(request) = requests.recv().await {
+    loop {
+        let request = tokio::select! {
+            Some(came) = arrived.recv() => {
+                let replies = replies.clone();
+                let provider = match &came {
+                    Arrived::Apple(..) => ProviderKind::AppleMusic,
+                    Arrived::SoundCloud(..) => ProviderKind::SoundCloud,
+                    Arrived::Navidrome(..) => ProviderKind::Navidrome,
+                };
+                if turned_off.contains(&provider) {
+                    continue;
+                }
+                match came {
+                    Arrived::Apple(am, load) => {
+                        apple = am;
+                        if let Some(am) = apple.clone().filter(|_| load && library_wanted) {
+                            loading.start(ProviderKind::AppleMusic, load_library(am, replies));
+                        }
+                    }
+                    Arrived::SoundCloud(c, load) => {
+                        sc = c;
+                        if let Some(sc) = sc.clone().filter(|_| load && library_wanted) {
+                            loading.start(
+                                ProviderKind::SoundCloud,
+                                load_soundcloud_library(sc, replies),
+                            );
+                        }
+                    }
+                    Arrived::Navidrome(server, load) => {
+                        nd = server;
+                        if let Some(nd) = nd.clone().filter(|_| load && library_wanted) {
+                            loading.start(ProviderKind::Navidrome, load_navidrome_library(nd, replies));
+                        }
+                    }
+                }
+                continue;
+            }
+            request = requests.recv() => match request {
+                Some(request) => request,
+                None => break,
+            },
+        };
         let replies = replies.clone();
         match request {
             Request::SignIn => {
@@ -671,10 +732,18 @@ async fn run(
                 continue;
             }
             Request::Reconnect => {
-                apple = connect(&replies).await;
+                let arrived_tx = arrived_tx.clone();
+                tokio::spawn(async move {
+                    let _ = arrived_tx.send(Arrived::Apple(connect(&replies).await, false));
+                });
                 continue;
             }
             Request::SetService { provider, on } => {
+                if on {
+                    turned_off.remove(&provider);
+                } else {
+                    turned_off.insert(provider);
+                }
                 match (provider, on) {
                     (ProviderKind::AppleMusic, false) => {
                         apple = None;
@@ -688,29 +757,28 @@ async fn run(
                         nd = None;
                         loading.stop(provider);
                     }
+                    // Turned on: its library loads once it is connected.
                     (ProviderKind::AppleMusic, true) => {
-                        apple = connect(&replies).await;
-                        if let Some(am) = apple.clone() {
-                            loading.start(ProviderKind::AppleMusic, load_library(am, replies));
-                        }
+                        let arrived_tx = arrived_tx.clone();
+                        tokio::spawn(async move {
+                            let _ = arrived_tx.send(Arrived::Apple(connect(&replies).await, true));
+                        });
                     }
                     (ProviderKind::SoundCloud, true) => {
-                        sc = connect_soundcloud(&replies).await;
-                        if let Some(sc) = sc.clone() {
-                            loading.start(
-                                ProviderKind::SoundCloud,
-                                load_soundcloud_library(sc, replies),
-                            );
-                        }
+                        let arrived_tx = arrived_tx.clone();
+                        tokio::spawn(async move {
+                            let _ = arrived_tx.send(Arrived::SoundCloud(
+                                connect_soundcloud(&replies).await,
+                                true,
+                            ));
+                        });
                     }
                     (ProviderKind::Navidrome, true) => {
-                        nd = connect_navidrome(&replies).await;
-                        if let Some(nd) = nd.clone() {
-                            loading.start(
-                                ProviderKind::Navidrome,
-                                load_navidrome_library(nd, replies),
-                            );
-                        }
+                        let arrived_tx = arrived_tx.clone();
+                        tokio::spawn(async move {
+                            let _ = arrived_tx
+                                .send(Arrived::Navidrome(connect_navidrome(&replies).await, true));
+                        });
                     }
                 }
                 continue;
@@ -728,13 +796,13 @@ async fn run(
                 continue;
             }
             Request::ReconnectSoundCloud => {
-                sc = connect_soundcloud(&replies).await;
-                if let Some(sc) = sc.clone() {
-                    loading.start(
-                        ProviderKind::SoundCloud,
-                        load_soundcloud_library(sc, replies),
-                    );
-                }
+                let arrived_tx = arrived_tx.clone();
+                tokio::spawn(async move {
+                    let _ = arrived_tx.send(Arrived::SoundCloud(
+                        connect_soundcloud(&replies).await,
+                        true,
+                    ));
+                });
                 continue;
             }
             Request::SignInNavidrome {
@@ -772,6 +840,7 @@ async fn run(
             }
             // Every service at once.
             Request::Library => {
+                library_wanted = true;
                 if let Some(am) = apple.clone() {
                     loading.start(ProviderKind::AppleMusic, load_library(am, replies.clone()));
                 }
@@ -790,8 +859,30 @@ async fn run(
             Request::LibraryAlbums | Request::LibraryArtists | Request::RecentlyAdded
                 if apple.is_none() =>
             {
-                if let Some(nd) = nd.clone() {
-                    tokio::spawn(navidrome_lists(nd, request, replies));
+                match nd.clone() {
+                    Some(nd) => {
+                        tokio::spawn(navidrome_lists(nd, request, replies));
+                    }
+                    // No service has such lists: they are empty, not loading.
+                    None => replies.send(match request {
+                        Request::LibraryAlbums => Reply::LibraryAlbums {
+                            provider: ProviderKind::AppleMusic,
+                            albums: Vec::new(),
+                            done: true,
+                            whole: true,
+                        },
+                        Request::LibraryArtists => Reply::LibraryArtists {
+                            provider: ProviderKind::AppleMusic,
+                            artists: Vec::new(),
+                            done: true,
+                            whole: true,
+                        },
+                        _ => Reply::RecentlyAdded {
+                            provider: ProviderKind::AppleMusic,
+                            items: Vec::new(),
+                            done: true,
+                        },
+                    }),
                 }
                 continue;
             }
@@ -846,6 +937,31 @@ async fn run(
                         id: track.id,
                         found,
                     });
+                });
+                continue;
+            }
+            // A cover's colours: any service's, or none.
+            Request::Palette(url) => {
+                let http = http.clone();
+                tokio::spawn(async move {
+                    // The cover is often kept already, the page showing it.
+                    let bytes = match crate::covers::read(&url) {
+                        Some(bytes) => Some(bytes),
+                        None => match http.get(&url).send().await {
+                            Ok(resp) => resp.bytes().await.ok().map(|b| b.to_vec()),
+                            Err(_) => None,
+                        },
+                    };
+                    let palette = match bytes {
+                        Some(bytes) => {
+                            tokio::task::spawn_blocking(move || crate::palette::from_image(&bytes))
+                                .await
+                                .ok()
+                                .flatten()
+                        }
+                        None => None,
+                    };
+                    replies.send(Reply::Palette { url, palette });
                 });
                 continue;
             }
@@ -909,6 +1025,7 @@ async fn run(
             | Request::SiteLyrics { .. }
             | Request::Library
             | Request::Playlists
+            | Request::Palette(_)
             | Request::Search(..) => {}
             Request::Album(id) => {
                 tokio::spawn(async move {
@@ -930,29 +1047,6 @@ async fn run(
             }
             Request::Playlist(id) => {
                 tokio::spawn(load_playlist(am, id, replies));
-            }
-            Request::Palette(url) => {
-                let http = http.clone();
-                tokio::spawn(async move {
-                    // The cover is often kept already, the page showing it.
-                    let bytes = match crate::covers::read(&url) {
-                        Some(bytes) => Some(bytes),
-                        None => match http.get(&url).send().await {
-                            Ok(resp) => resp.bytes().await.ok().map(|b| b.to_vec()),
-                            Err(_) => None,
-                        },
-                    };
-                    let palette = match bytes {
-                        Some(bytes) => {
-                            tokio::task::spawn_blocking(move || crate::palette::from_image(&bytes))
-                                .await
-                                .ok()
-                                .flatten()
-                        }
-                        None => None,
-                    };
-                    replies.send(Reply::Palette { url, palette });
-                });
             }
             Request::Lyrics(id) => {
                 tokio::spawn(async move {
@@ -1276,7 +1370,7 @@ fn shared_request(p: Arc<dyn Provider>, request: Request, replies: Replies) -> O
                     .await
                     .map(|()| "Removed from the library".to_owned())
                     .map_err(|e| format!("Couldn't remove it from the library: {e}"));
-                replies.send(Reply::Changed(result));
+                replies.send(Reply::RemovedFromLibrary(result));
             });
         }
         Request::CreatePlaylist {
@@ -1415,6 +1509,44 @@ fn unanswered(request: Request, service: &str, replies: &Replies) {
         Request::Home => Reply::Home(Err(e)),
         Request::Radio => Reply::Radio(Err(e)),
         Request::NewMusic => Reply::NewMusic(Err(e)),
+        // A change shown at once is undone, and the user told why.
+        Request::SetFavourite { id, on, .. } => Reply::Favourite {
+            id,
+            set: Some(on),
+            result: Err(e),
+        },
+        Request::AddToLibrary { kind, id, quiet } => Reply::AddedToLibrary {
+            kind,
+            id,
+            quiet,
+            result: Err(e),
+        },
+        Request::RemoveFromLibrary(_) => {
+            Reply::RemovedFromLibrary(Err(format!("Couldn't remove it from the library: {e}")))
+        }
+        Request::AddToPlaylists { .. } => {
+            Reply::Changed(Err(format!("Couldn't add to the playlist: {e}")))
+        }
+        Request::CreatePlaylist { .. } => Reply::PlaylistCreated(Err(e)),
+        Request::EditPlaylist {
+            id,
+            name,
+            description,
+        } => Reply::PlaylistEdited {
+            id,
+            name,
+            description,
+            result: Err(e),
+        },
+        Request::DeletePlaylist(id) => Reply::PlaylistDeleted { id, result: Err(e) },
+        Request::RemoveFromPlaylist { playlist, .. } => Reply::RemovedFromPlaylist {
+            playlist,
+            result: Err(e),
+        },
+        Request::SongLinks { radio, .. } => Reply::SongLinks {
+            radio,
+            result: Err(e),
+        },
         _ => return,
     };
     replies.send(reply);

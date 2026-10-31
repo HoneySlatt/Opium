@@ -326,30 +326,38 @@ fn rebuild_order(app: &mut App) {
     }
     view.order_key = key;
     let songs = &app.songs;
+    // Made again only when songs come or go, not at each key typed.
+    if view
+        .prepared
+        .as_ref()
+        .is_none_or(|p| p.count != songs.len())
+    {
+        view.prepared = Some(crate::app::PreparedSongs {
+            count: songs.len(),
+            copies: music_core::dedupe::songs(songs),
+            folded: songs
+                .iter()
+                .map(|t| {
+                    crate::app::fold(&format!(
+                        "{} {} {}",
+                        t.title,
+                        t.artists.join(" "),
+                        t.album.as_deref().unwrap_or_default()
+                    ))
+                })
+                .collect(),
+        });
+    }
+    let prepared = view.prepared.as_ref().expect("just made");
     // Every word searched for is in the title, the artists or the album.
     let words: Vec<&str> = query.split_whitespace().collect();
-    let found = |t: &Track| {
-        words.is_empty() || {
-            let text = crate::app::fold(&format!(
-                "{} {} {}",
-                t.title,
-                t.artists.join(" "),
-                t.album.as_deref().unwrap_or_default()
-            ));
-            words.iter().all(|w| text.contains(w))
-        }
-    };
+    let found = |i: usize| words.is_empty() || words.iter().all(|w| prepared.folded[i].contains(w));
     // Across services, one copy of a song; within one, all of its own.
-    let copies = if view.source.is_none() {
-        music_core::dedupe::songs(songs)
-    } else {
-        Default::default()
-    };
     let mut order: Vec<usize> = (0..songs.len())
         .filter(|&i| {
             view.source.is_none_or(|s| songs[i].id.provider == s)
-                && !copies.contains(&i)
-                && found(&songs[i])
+                && (view.source.is_some() || !prepared.copies.contains(&i))
+                && found(i)
         })
         .collect();
     if let Some((by, ascending)) = view.sort {

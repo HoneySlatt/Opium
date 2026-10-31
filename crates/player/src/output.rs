@@ -304,7 +304,10 @@ fn run(
         let ours = summary_state.node_id.load(Ordering::Relaxed);
         if ours != spa::sys::SPA_ID_INVALID {
             let mixing = graph.borrow().summary(ours);
-            *summary_state.mixing.lock().unwrap_or_else(|e| e.into_inner()) = mixing;
+            *summary_state
+                .mixing
+                .lock()
+                .unwrap_or_else(|e| e.into_inner()) = mixing;
         }
     });
     timer.update_timer(
@@ -338,7 +341,9 @@ fn run(
             }
         })
         .process(|stream, feed| {
-            feed.state.node_id.store(stream.node_id(), Ordering::Relaxed);
+            feed.state
+                .node_id
+                .store(stream.node_id(), Ordering::Relaxed);
             if let Ok(time) = stream.time() {
                 let rate = time.rate();
                 if rate.denom > 0 {

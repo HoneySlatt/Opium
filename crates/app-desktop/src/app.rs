@@ -336,6 +336,16 @@ pub struct SongsView {
     /// Indices into `App::songs`, sorted and filtered; rebuilt when `order_key` changes.
     pub order: Vec<usize>,
     pub order_key: Option<OrderKey>,
+    /// What each search and filter of the songs starts from, made once for
+    /// as many songs: the copies across services, each song's words folded.
+    pub prepared: Option<PreparedSongs>,
+}
+
+#[derive(Default)]
+pub struct PreparedSongs {
+    pub count: usize,
+    pub copies: std::collections::HashSet<usize>,
+    pub folded: Vec<String>,
 }
 
 /// What `SongsView::order` was built from: the song count, sort, source
@@ -462,6 +472,10 @@ pub struct App {
     pub playlist_dialog: Option<PlaylistDialog>,
     /// The songs in Apple's playlist of favourites.
     favourite_songs: std::collections::HashSet<ItemId>,
+    /// SoundCloud songs unliked, until SoundCloud takes it.
+    unliked: HashMap<ItemId, Track>,
+    /// Paused while the song was still loading: it starts paused.
+    hold_paused: bool,
     /// What is known to be a favourite or not: set by the user here, or read
     /// from the service. It wins over `favourite_songs`.
     favourites_known: HashMap<ItemId, bool>,
@@ -663,6 +677,8 @@ impl App {
             artist_albums: HashMap::new(),
             recently_added: Streamed::default(),
             favourite_songs: Default::default(),
+            unliked: HashMap::new(),
+            hold_paused: false,
             library_songs: Default::default(),
             radio_from: None,
             new_playlist: None,
@@ -852,7 +868,14 @@ impl App {
             self.page = Page::Playlist(id);
         }
         match &self.page {
-            Page::Album(id) if !self.albums.contains_key(id) => {
+            // Not asked yet, or failed (offline, a service not connected
+            // yet): asked again on arriving.
+            Page::Album(id)
+                if !matches!(
+                    self.albums.get(id),
+                    Some(Loaded::Loading | Loaded::Ready(_))
+                ) =>
+            {
                 self.albums.insert(id.clone(), Loaded::Loading);
                 self.backend.send(Request::Album(id.clone()));
             }
@@ -869,7 +892,12 @@ impl App {
             Page::RecentlyAdded if self.recently_added.first_ask() => {
                 self.backend.send(Request::RecentlyAdded);
             }
-            Page::Artist(id) if !self.artists.contains_key(id) => {
+            Page::Artist(id)
+                if !matches!(
+                    self.artists.get(id),
+                    Some(Loaded::Loading | Loaded::Ready(_))
+                ) =>
+            {
                 self.artists.insert(id.clone(), Loaded::Loading);
                 self.backend.send(Request::Artist(id.clone()));
             }
@@ -877,7 +905,10 @@ impl App {
             Page::LibraryArtist(id) => {
                 let id = id.clone();
                 for twin in self.artist_twins(&id) {
-                    if !self.artist_albums.contains_key(&twin) {
+                    if !matches!(
+                        self.artist_albums.get(&twin),
+                        Some(Loaded::Loading | Loaded::Ready(_))
+                    ) {
                         self.artist_albums.insert(twin.clone(), Loaded::Loading);
                         self.backend.send(Request::LibraryArtistAlbums(twin));
                     }
@@ -898,7 +929,11 @@ impl App {
             Page::Playlist(id)
                 if id.id.starts_with("pl.") && !self.favourites_known.contains_key(id) =>
             {
-                if !self.playlist_tracks.contains_key(id) {
+                if self
+                    .playlist_tracks
+                    .get(id)
+                    .is_none_or(|p| p.error.is_some())
+                {
                     self.playlist_tracks
                         .insert(id.clone(), PlaylistTracks::default());
                     self.backend.send(Request::Playlist(id.clone()));
@@ -908,7 +943,12 @@ impl App {
                     id: id.clone(),
                 });
             }
-            Page::Playlist(id) if !self.playlist_tracks.contains_key(id) => {
+            Page::Playlist(id)
+                if self
+                    .playlist_tracks
+                    .get(id)
+                    .is_none_or(|p| p.error.is_some()) =>
+            {
                 self.playlist_tracks
                     .insert(id.clone(), PlaylistTracks::default());
                 self.backend.send(Request::Playlist(id.clone()));
@@ -1112,6 +1152,13 @@ impl App {
         self.in_library_asked.clear();
         self.home = None;
         self.searches.clear();
+        // What the account was asked before: its lists, its favourites.
+        self.playlist_tracks.clear();
+        self.artist_albums.clear();
+        self.favourites_known.clear();
+        self.favourite_songs.clear();
+        self.palettes
+            .retain(|_, p| !matches!(p, PaletteState::Failed));
         self.backend.send(Request::Library);
         self.arrived();
     }
@@ -1265,6 +1312,10 @@ impl App {
                     self.library_songs.insert(id.clone());
                 } else {
                     self.library_songs.remove(&id);
+                    // Kept until SoundCloud takes the unlike, to come back if not.
+                    if let Some(track) = self.songs.iter().find(|t| t.id == id) {
+                        self.unliked.insert(id.clone(), track.clone());
+                    }
                     self.songs.retain(|t| t.id != id);
                 }
             }
@@ -2203,6 +2254,11 @@ impl App {
                 bytemuck::cast_vec(frame.pixels),
             );
             match &mut view.texture {
+                // Written over in place: a whole new texture each frame would
+                // be made, and bound, 25 times a second.
+                Some(texture) if texture.size() == image.size => {
+                    texture.set_partial([0, 0], image, egui::TextureOptions::LINEAR);
+                }
                 Some(texture) => texture.set(image, egui::TextureOptions::LINEAR),
                 None => {
                     view.texture = Some(ctx.load_texture(
@@ -2464,6 +2520,9 @@ impl App {
         if let Some((_, at)) = self.start_at.take_if(|(t, _)| *t == token) {
             self.player.seek(at);
         }
+        if std::mem::take(&mut self.hold_paused) {
+            self.player.pause();
+        }
     }
 
     /// Show what played when the app last closed, paused where it was; it
@@ -2546,6 +2605,8 @@ impl App {
     }
 
     fn start_current(&mut self) {
+        // Another song asked for: it plays.
+        self.hold_paused = false;
         self.queued_next = None;
         self.next_ready = false;
         let resume = self.resume.take();
@@ -2665,6 +2726,9 @@ impl App {
         if self.status.token.is_none() {
             if self.pending_play.is_none() {
                 self.start_current();
+            } else {
+                // Still loading: it starts as asked last, playing or paused.
+                self.hold_paused = !self.hold_paused;
             }
         } else if self.status.paused {
             self.player.resume();
@@ -3416,6 +3480,7 @@ impl App {
                         self.library_songs
                             .extend(tracks.iter().filter(|t| t.in_library).map(|t| t.id.clone()));
                     }
+                    let favourites = self.favourites().as_ref() == Some(&id);
                     let entry = self.playlist_tracks.entry(id).or_default();
                     match result {
                         // As kept from last time, or fresh after it.
@@ -3427,6 +3492,10 @@ impl App {
                         Err(e) => entry.error = Some(e),
                     }
                     entry.done = done;
+                    // The favourites whole: those no longer in it lose their mark.
+                    if favourites && done && entry.error.is_none() {
+                        self.favourite_songs = entry.tracks.iter().map(|t| t.id.clone()).collect();
+                    }
                 }
                 Reply::SongLinks { radio, result } => match (radio, result) {
                     (false, Ok(links)) => match links.artist {
@@ -3499,9 +3568,13 @@ impl App {
                         self.playlist_tracks.remove(&id);
                         self.settings.recent_playlists.retain(|r| *r != id.id);
                         self.settings.save();
-                        if self.page == Page::Playlist(id) {
+                        let gone = Page::Playlist(id.clone());
+                        if self.page == gone {
                             self.go(Page::Home);
                         }
+                        // Back or forward no longer lead to it.
+                        self.back.retain(|p| *p != gone);
+                        self.forward.retain(|p| *p != gone);
                         let message = match name {
                             Some(name) => format!("Deleted “{name}”"),
                             None => "Deleted the playlist".to_owned(),
@@ -3553,8 +3626,16 @@ impl App {
                 Reply::Changed(result) => match result {
                     Ok(message) | Err(message) => self.notify(message, now),
                 },
+                Reply::RemovedFromLibrary(result) => match result {
+                    Ok(message) => self.notify(message, now),
+                    Err(message) => {
+                        self.notify(message, now);
+                        self.reload_library();
+                    }
+                },
                 Reply::Favourite { id, set, result } => match (set, result) {
                     (Some(on), Ok(_)) => {
+                        self.unliked.remove(&id);
                         let message = if on {
                             "Added to Favourites"
                         } else {
@@ -3563,6 +3644,15 @@ impl App {
                         self.notify(message, now);
                     }
                     (Some(on), Err(e)) => {
+                        // A SoundCloud like is the library: undone with it.
+                        if id.provider == ProviderKind::SoundCloud {
+                            if on {
+                                self.library_songs.remove(&id);
+                            } else if let Some(track) = self.unliked.remove(&id) {
+                                self.library_songs.insert(id.clone());
+                                self.songs.push(track);
+                            }
+                        }
                         self.favourites_known.insert(id, !on);
                         self.notify(format!("Couldn't change the favourites: {e}"), now);
                     }
@@ -3623,9 +3713,18 @@ impl App {
                         Err(e) => Loaded::Failed(e),
                     };
                     // Only the last few searches are kept, and those on their
-                    // way: the page waiting on one would wait forever.
+                    // way, and the one shown: the page waiting on one would
+                    // wait forever.
                     if self.searches.len() >= SEARCHES_KEPT {
-                        self.searches.retain(|_, l| matches!(l, Loaded::Loading));
+                        let shown = match &self.page {
+                            Page::Search(q) => {
+                                Some((self.search_scope, self.search_source, q.clone()))
+                            }
+                            _ => None,
+                        };
+                        self.searches.retain(|key, l| {
+                            matches!(l, Loaded::Loading) || shown.as_ref() == Some(key)
+                        });
                     }
                     self.searches.insert((scope, source, query), loaded);
                 }

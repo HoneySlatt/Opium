@@ -791,9 +791,11 @@ pub(super) fn banner_actions(
 /// foot under their name.
 fn picture(app: &mut App, ui: &Ui, theme: &Theme, artist: &ArtistDetail, rect: Rect) {
     let pixels = rect.width() * ui.ctx().pixels_per_point();
+    // Scrolled out of sight, the video isn't played: unseen, it stops.
     let motion = artist
         .motion
         .as_deref()
+        .filter(|_| ui.is_rect_visible(rect))
         .and_then(|master| app.motion_frame("artist-hero", master, pixels, ui.ctx()));
     let (texture, photo) = match motion {
         Some(t) => (Some(t), false),
@@ -913,9 +915,11 @@ fn albums_shelf(
 fn banner(app: &mut App, ui: &Ui, theme: &Theme, artist: &ArtistDetail, rect: Rect) {
     let area = Rect::from_min_size(rect.min, vec2(rect.width(), rect.width() * 9.0 / 16.0));
     let pixels = rect.width() * ui.ctx().pixels_per_point();
+    // Scrolled out of sight, the video isn't played: unseen, it stops.
     let motion = artist
         .motion
         .as_deref()
+        .filter(|_| ui.is_rect_visible(rect))
         .and_then(|master| app.motion_frame("artist-hero", master, pixels, ui.ctx()));
     let (texture, photo) = match motion {
         Some(t) => (Some(t), false),

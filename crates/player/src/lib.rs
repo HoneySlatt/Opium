@@ -272,9 +272,9 @@ impl Player {
         }
         engine.shared.retire();
         let fresh = start(self.events_tx.clone());
-        let _ = fresh
-            .commands
-            .send(Command::Volume(f32::from_bits(self.volume.load(Ordering::Relaxed))));
+        let _ = fresh.commands.send(Command::Volume(f32::from_bits(
+            self.volume.load(Ordering::Relaxed),
+        )));
         if self.paused.load(Ordering::Relaxed) {
             let _ = fresh.commands.send(Command::Pause);
         }
@@ -424,7 +424,10 @@ mod tests {
     fn a_player_stuck_on_a_read_starts_afresh() {
         let (wake, stalled) = std::sync::mpsc::channel();
         let player = Player::new();
-        player.play(1, Source::new(Stalled(Mutex::new(stalled)), 1_000_000, Some("flac")));
+        player.play(
+            1,
+            Source::new(Stalled(Mutex::new(stalled)), 1_000_000, Some("flac")),
+        );
         std::thread::sleep(STALLED + Duration::from_millis(200));
         assert!(player.stalled());
         // Stop doesn't wait on it: a fresh engine takes over.

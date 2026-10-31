@@ -227,7 +227,7 @@ impl Engine {
                     std::sync::mpsc::TryRecvError::Disconnected => RecvTimeoutError::Disconnected,
                 })
             } else {
-                commands.recv_timeout(IDLE)
+                commands.recv_timeout(self.idle())
             };
             match command {
                 Ok(Command::Quit) | Err(RecvTimeoutError::Disconnected) => return,
@@ -244,6 +244,21 @@ impl Engine {
                 return;
             }
             self.publish();
+        }
+    }
+
+    /// How long to wait for a command when there is nothing to decode: a
+    /// command wakes it at once, so with nothing playing it rests, while a
+    /// track playing out of a full ring is watched closely for its end.
+    fn idle(&self) -> Duration {
+        if self.recovering.is_some() || self.opening.is_some() || self.switch.is_some() {
+            IDLE
+        } else if self.sink.is_none() {
+            Duration::from_secs(1)
+        } else if self.paused {
+            Duration::from_millis(250)
+        } else {
+            IDLE
         }
     }
 
@@ -320,6 +335,7 @@ impl Engine {
                 self.skip_when_opened = false;
                 self.next = None;
                 self.switch = None;
+                self.fade_out();
                 self.sink = None;
             }
             Command::Volume(volume) => {
@@ -347,6 +363,9 @@ impl Engine {
 
     /// Open an output for `item`'s format and play it from `at`.
     fn start(&mut self, item: Item, at: Duration) {
+        // Another track asked for: the one waiting for an output to come
+        // back is no longer wanted.
+        self.recovering = None;
         if let Err(failed) = self.try_start(item, at) {
             let (item, e) = *failed;
             self.emit(Event::Error {
@@ -359,6 +378,7 @@ impl Engine {
     /// Open an output for `item`'s format and play it from `at`; the item
     /// back if no output would open.
     fn try_start(&mut self, mut item: Item, at: Duration) -> Result<(), Box<(Item, crate::Error)>> {
+        self.fade_out();
         self.sink = None;
         self.segments.clear();
         self.pending.clear();
@@ -412,6 +432,20 @@ impl Engine {
                 Ok(())
             }
             Err(e) => Err(Box::new((item, e))),
+        }
+    }
+
+    /// Bring what sounds down to silence before its output closes, as a
+    /// seek or a pause does: cut at full level, it would click. A stream
+    /// not running (paused, or still starting) is closed as it is.
+    fn fade_out(&self) {
+        let Some(sink) = self.sink.as_ref().filter(|_| !self.paused) else {
+            return;
+        };
+        sink.state.flush.store(true, Ordering::Release);
+        let deadline = Instant::now() + Duration::from_millis(100);
+        while sink.state.flush.load(Ordering::Acquire) && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(1));
         }
     }
 
