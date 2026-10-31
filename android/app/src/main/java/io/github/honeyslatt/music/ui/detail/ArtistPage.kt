@@ -243,6 +243,8 @@ private fun BannerHero(artist: Artist?, motion: String?) {
             Cover(artist?.artwork, width, RectangleShape, Modifier.fillMaxSize())
             if (motion != null) MotionArtwork(motion, Modifier.fillMaxSize(), crop = true)
         }
+        // A shade at the top, for the status bar and Back on a light photo.
+        Box(Modifier.fillMaxWidth().height(120.dp).background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.4f), Color.Transparent))))
         val name = artist?.name.orEmpty()
         val size = when {
             name.length <= 12 -> 52.sp
@@ -264,7 +266,11 @@ private fun BannerHero(artist: Artist?, motion: String?) {
 
 /** Follow, or Following: an outlined pill. */
 @Composable
-private fun Follow(following: Boolean, onClick: () -> Unit) {
+private fun Follow(following: Boolean, onClick: () -> Unit) = Pill(if (following) "Following" else "Follow", onClick)
+
+/** An outlined pill by Shuffle and Play. */
+@Composable
+private fun Pill(label: String, onClick: () -> Unit) {
     val shape = RoundedCornerShape(16.dp)
     Box(
         Modifier.padding(start = 9.dp, end = 4.dp).height(32.dp)
@@ -273,7 +279,7 @@ private fun Follow(following: Boolean, onClick: () -> Unit) {
             .padding(horizontal = 16.dp),
         contentAlignment = Alignment.Center,
     ) {
-        BasicText(if (following) "Following" else "Follow", style = geist(14.sp, FontWeight.SemiBold).copy(color = roles.text))
+        BasicText(label, style = geist(14.sp, FontWeight.SemiBold).copy(color = roles.text))
     }
 }
 
@@ -488,6 +494,24 @@ fun LibraryArtistPage(c: LibraryContext, artist: Artist) {
     }
     val all = (albums as? Loading.Ready)?.value.orEmpty().sortedByDescending { it.released ?: it.year?.toString() }
     val (short, long) = all.partition { it.kind() != "Album" }
+    if (io.github.honeyslatt.music.ui.theme.look.layout.header == io.github.honeyslatt.music.core.model.Header.BANNER) {
+        // Spotify's: their songs to play, read album after album, newest first.
+        val songs by produceState(emptyList<Track>(), all) {
+            var read = emptyList<Track>()
+            for (album in all) {
+                read = read + runCatching { c.core.session.album(album.id).tracks }.getOrDefault(emptyList())
+                value = read
+            }
+        }
+        DetailPage(c.nav, artist.name, rememberPageColour(artist.artwork)) {
+            item { BannerHero(artist, null) }
+            item { io.github.honeyslatt.music.ui.library.PlayRow(c, songs) { Pill("Artist page") { c.nav.push(Route.Artist(artist.id)) } } }
+            if (all.isEmpty()) item { Empty(albums.listing(), "No albums", "Nothing of theirs in the library yet.") }
+            shelf("Albums", long.map { ShelfCover(it.artwork, bare(it.title), releaseLine(it), it.explicit) { c.nav.push(Route.Album(it.id)) } })
+            shelf("Singles and EPs", short.map { ShelfCover(it.artwork, bare(it.title), releaseLine(it), it.explicit) { c.nav.push(Route.Album(it.id)) } })
+        }
+        return
+    }
     io.github.honeyslatt.music.ui.components.ListPage(c.nav, artist.name, largeTitle = false) {
         item {
             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {

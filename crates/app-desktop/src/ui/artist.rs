@@ -345,22 +345,12 @@ fn show_banner(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
                 ui.allocate_exact_size(vec2(ui.available_width(), total), Sense::hover());
             let left = content.left() + pad;
             let top = Rect::from_min_size(content.min, vec2(content.width(), hero));
-            // Under the picture, its colour fading into the page.
-            let color = colors.map_or(theme.surface1, |[c, _, _]| c);
-            let fade = Rect::from_min_size(top.left_bottom(), vec2(content.width(), 260.0));
-            let mut mesh = Mesh::default();
-            let shade = crate::color::mix(
-                crate::color::mix(Color32::BLACK, color, 0.4),
-                theme.base,
-                0.8,
+            banner_fade(
+                ui,
+                &theme,
+                colors.map_or(theme.surface1, |[c, _, _]| c),
+                top,
             );
-            mesh.colored_vertex(fade.left_top(), shade);
-            mesh.colored_vertex(fade.right_top(), shade);
-            mesh.colored_vertex(fade.right_bottom(), theme.base);
-            mesh.colored_vertex(fade.left_bottom(), theme.base);
-            mesh.add_triangle(0, 1, 2);
-            mesh.add_triangle(0, 2, 3);
-            ui.painter().add(mesh);
             if let Some(artist) = &artist {
                 picture(app, ui, &theme, artist, top);
             }
@@ -379,99 +369,18 @@ fn show_banner(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
             let Some(artist) = &artist else {
                 return;
             };
-            // The name, as large as it fits.
-            let white = Color32::WHITE;
-            let name_font = [96.0, 72.0, 56.0, 40.0]
-                .into_iter()
-                .map(|size| font(size, Weight::Bold))
-                .find(|f| {
-                    text(ui, &artist.artist.name, f.clone(), white, f32::INFINITY)
-                        .size()
-                        .x
-                        <= width
-                })
-                .unwrap_or(font(40.0, Weight::Bold));
-            let name = text(ui, &artist.artist.name, name_font, white, width);
-            let name_y = top.bottom() - 28.0 - name.size().y / 2.0;
-            paint_text(ui, name, left, name_y, egui::Align::Min, white);
+            banner_name(ui, &artist.artist.name, left, width, top.bottom());
 
             // Play, Shuffle and Follow.
             let now = ui.input(|i| i.time);
-            let mid = top.bottom() + BANNER_ACTIONS / 2.0;
-            let play = Rect::from_center_size(pos2(left + 28.0, mid), vec2(56.0, 56.0));
-            let response = ui
-                .interact(play, Id::unique("artist-banner-play"), Sense::click())
-                .on_hover_text("Play")
-                .on_hover_cursor(egui::CursorIcon::PointingHand);
-            let fill = if response.hovered() {
-                crate::color::mix(theme.accent, Color32::WHITE, 0.85)
-            } else {
-                theme.accent
-            };
-            ui.painter().circle_filled(
-                play.center(),
-                28.0 + if response.hovered() { 2.0 } else { 0.0 },
-                fill,
-            );
-            let icon = if app.page_playing() {
-                icons::PAUSE_FILL
-            } else {
-                icons::PLAY_FILL
-            };
-            paint_icon(ui, icon, play.center(), 24.0, theme.on_accent());
-            if response.clicked() {
-                app.play_page(artist.top_songs.clone(), now);
-            }
-            let shuffle =
-                Rect::from_center_size(pos2(play.right() + 16.0 + 20.0, mid), vec2(40.0, 40.0));
-            // Shuffle is a switch, green with a dot while on, as Spotify's.
-            let shuffling = app.shown().shuffle;
-            let (color, tip) = if shuffling {
-                (theme.accent, "Turn shuffle off")
-            } else {
-                (theme.subtext0, "Turn shuffle on")
-            };
-            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(shuffle));
-            if super::icon_button(&mut child, &theme, icons::SHUFFLE, 40.0, 26.0, color, true)
-                .on_hover_text(tip)
-                .clicked()
-            {
-                app.toggle_shuffle();
-            }
-            if shuffling {
-                ui.painter()
-                    .circle_filled(shuffle.center() + vec2(0.0, 17.0), 2.0, theme.accent);
-            }
             let following = app.is_favourite(FavouriteKind::Artist, &artist.artist.id);
             let label = if following { "Following" } else { "Follow" };
-            let f = font(14.0, Weight::Bold);
-            let w = text(ui, label, f.clone(), theme.text, 200.0).size().x + 32.0;
-            let follow =
-                Rect::from_min_size(pos2(shuffle.right() + 16.0, mid - 16.0), vec2(w, 32.0));
-            let hit = ui
-                .interact(follow, Id::unique("artist-follow"), Sense::click())
-                .on_hover_cursor(egui::CursorIcon::PointingHand);
-            let border = if hit.hovered() {
-                theme.text
-            } else {
-                theme.text_a(0.5)
-            };
-            ui.painter().rect_stroke(
-                follow,
-                16.0,
-                egui::Stroke::new(1.0, border),
-                egui::StrokeKind::Inside,
-            );
-            let g = text(ui, label, f, theme.text, 200.0);
-            paint_text(
-                ui,
-                g,
-                follow.center().x,
-                follow.center().y,
-                egui::Align::Center,
-                theme.text,
-            );
-            if hit.clicked() {
+            let (play, follow) =
+                banner_actions(app, ui, &theme, left, top.bottom(), label, "artist");
+            if play {
+                app.play_page(artist.top_songs.clone(), now);
+            }
+            if follow {
                 app.toggle_favourite(FavouriteKind::Artist, artist.artist.id.clone());
             }
 
@@ -761,7 +670,119 @@ fn show_banner(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
 /// The height of a popular song's row.
 const POPULAR_ROW: f32 = 56.0;
 /// The row of Play, Shuffle and Follow under the picture.
-const BANNER_ACTIONS: f32 = 104.0;
+pub(super) const BANNER_ACTIONS: f32 = 104.0;
+
+/// Under the picture `top`, `color` fading into the page.
+pub(super) fn banner_fade(ui: &Ui, theme: &Theme, color: Color32, top: Rect) {
+    let fade = Rect::from_min_size(top.left_bottom(), vec2(top.width(), 260.0));
+    let mut mesh = Mesh::default();
+    let shade = crate::color::mix(
+        crate::color::mix(Color32::BLACK, color, 0.4),
+        theme.base,
+        0.8,
+    );
+    mesh.colored_vertex(fade.left_top(), shade);
+    mesh.colored_vertex(fade.right_top(), shade);
+    mesh.colored_vertex(fade.right_bottom(), theme.base);
+    mesh.colored_vertex(fade.left_bottom(), theme.base);
+    mesh.add_triangle(0, 1, 2);
+    mesh.add_triangle(0, 2, 3);
+    ui.painter().add(mesh);
+}
+
+/// The name over the picture's foot at `bottom`, as large as it fits.
+pub(super) fn banner_name(ui: &Ui, name: &str, left: f32, width: f32, bottom: f32) {
+    let white = Color32::WHITE;
+    let name_font = [96.0, 72.0, 56.0, 40.0]
+        .into_iter()
+        .map(|size| font(size, Weight::Bold))
+        .find(|f| text(ui, name, f.clone(), white, f32::INFINITY).size().x <= width)
+        .unwrap_or(font(40.0, Weight::Bold));
+    let name = text(ui, name, name_font, white, width);
+    let name_y = bottom - 28.0 - name.size().y / 2.0;
+    paint_text(ui, name, left, name_y, egui::Align::Min, white);
+}
+
+/// Under the picture's foot at `bottom`: Play in the accent, Shuffle a
+/// switch, green with a dot while on, as Spotify's, and an outlined pill
+/// saying `pill`. Whether Play, then the pill, were clicked.
+pub(super) fn banner_actions(
+    app: &mut App,
+    ui: &mut Ui,
+    theme: &Theme,
+    left: f32,
+    bottom: f32,
+    pill: &str,
+    salt: &str,
+) -> (bool, bool) {
+    let mid = bottom + BANNER_ACTIONS / 2.0;
+    let play = Rect::from_center_size(pos2(left + 28.0, mid), vec2(56.0, 56.0));
+    let response = ui
+        .interact(play, Id::unique((salt, "banner-play")), Sense::click())
+        .on_hover_text("Play")
+        .on_hover_cursor(egui::CursorIcon::PointingHand);
+    let fill = if response.hovered() {
+        crate::color::mix(theme.accent, Color32::WHITE, 0.85)
+    } else {
+        theme.accent
+    };
+    ui.painter().circle_filled(
+        play.center(),
+        28.0 + if response.hovered() { 2.0 } else { 0.0 },
+        fill,
+    );
+    let icon = if app.page_playing() {
+        icons::PAUSE_FILL
+    } else {
+        icons::PLAY_FILL
+    };
+    paint_icon(ui, icon, play.center(), 24.0, theme.on_accent());
+    let shuffle = Rect::from_center_size(pos2(play.right() + 16.0 + 20.0, mid), vec2(40.0, 40.0));
+    let shuffling = app.shown().shuffle;
+    let (color, tip) = if shuffling {
+        (theme.accent, "Turn shuffle off")
+    } else {
+        (theme.subtext0, "Turn shuffle on")
+    };
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(shuffle));
+    if super::icon_button(&mut child, theme, icons::SHUFFLE, 40.0, 26.0, color, true)
+        .on_hover_text(tip)
+        .clicked()
+    {
+        app.toggle_shuffle();
+    }
+    if shuffling {
+        ui.painter()
+            .circle_filled(shuffle.center() + vec2(0.0, 17.0), 2.0, theme.accent);
+    }
+    let f = font(14.0, Weight::Bold);
+    let w = text(ui, pill, f.clone(), theme.text, 200.0).size().x + 32.0;
+    let rect = Rect::from_min_size(pos2(shuffle.right() + 16.0, mid - 16.0), vec2(w, 32.0));
+    let hit = ui
+        .interact(rect, Id::unique((salt, "banner-pill")), Sense::click())
+        .on_hover_cursor(egui::CursorIcon::PointingHand);
+    let border = if hit.hovered() {
+        theme.text
+    } else {
+        theme.text_a(0.5)
+    };
+    ui.painter().rect_stroke(
+        rect,
+        16.0,
+        egui::Stroke::new(1.0, border),
+        egui::StrokeKind::Inside,
+    );
+    let g = text(ui, pill, f, theme.text, 200.0);
+    paint_text(
+        ui,
+        g,
+        rect.center().x,
+        rect.center().y,
+        egui::Align::Center,
+        theme.text,
+    );
+    (response.clicked(), hit.clicked())
+}
 
 /// Their wide picture, else their photo, filling `rect` and darkening at its
 /// foot under their name.
@@ -788,6 +809,18 @@ fn picture(app: &mut App, ui: &Ui, theme: &Theme, artist: &ArtistDetail, rect: R
             (texture, photo)
         }
     };
+    paint_picture(ui, theme, texture, photo, rect);
+}
+
+/// `texture` filling `rect`, a photo a little above its middle, darkening
+/// at its foot under the name.
+pub(super) fn paint_picture(
+    ui: &Ui,
+    theme: &Theme,
+    texture: Option<egui::load::SizedTexture>,
+    photo: bool,
+    rect: Rect,
+) {
     let painter = ui.painter_at(rect);
     painter.rect_filled(rect, 0.0, theme.surface0);
     if let Some(texture) = texture {
