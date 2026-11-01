@@ -413,6 +413,8 @@ pub struct App {
     /// Navidrome's connection, as SoundCloud's.
     pub navidrome: SoundCloudState,
     pub navidrome_form: NavidromeForm,
+    /// Settings → Devices: the relay as typed, kept once left.
+    pub relay_field: String,
     /// The server is being signed in to.
     pub navidrome_signing_in: bool,
     /// Its sign-in shows again, though connected.
@@ -660,6 +662,7 @@ impl App {
                 ..NavidromeForm::default()
             },
             navidrome_signing_in: false,
+            relay_field: settings.relay.clone().unwrap_or_default(),
             navidrome_editing: false,
             songs_coming: Default::default(),
             page: Page::Home,
@@ -1189,6 +1192,15 @@ impl App {
 
     pub fn soundcloud_originals(&self) -> bool {
         self.settings.soundcloud_originals.unwrap_or(true)
+    }
+
+    /// The relay typed in kept, for the next start; n0's when left empty.
+    pub fn keep_relay(&mut self) {
+        let relay = Some(self.relay_field.trim().to_owned()).filter(|r| !r.is_empty());
+        if relay != self.settings.relay {
+            self.settings.relay = relay;
+            self.settings.save();
+        }
     }
 
     pub fn set_soundcloud_originals(&mut self, on: bool) {

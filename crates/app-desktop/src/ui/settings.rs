@@ -32,7 +32,7 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
         + 11.0 * (GROUP_HEAD + GROUP_GAP)
         + 3.0 * ROW
         + THEMES * (1 + theme_rows()) as f32
-        + (12 + paired) as f32 * ROW
+        + (13 + paired) as f32 * ROW
         + 104.0;
     let output = egui::ScrollArea::vertical()
         .id_salt("settings")
@@ -289,11 +289,15 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
                 y,
                 width,
                 "Devices",
-                "Your phone, on the same Wi-Fi, plays here and controls this computer, once paired.",
+                "Your phone plays here and controls this computer, once paired on the same Wi-Fi; away from it, through a relay.",
             );
-            let card = Rect::from_min_size(pos2(left, y), vec2(width, paired as f32 * ROW));
-            panel(ui, &theme, card, paired);
+            let card = Rect::from_min_size(
+                pos2(left, y),
+                vec2(width, (paired + 1) as f32 * ROW),
+            );
+            panel(ui, &theme, card, paired + 1);
             devices(app, ui, &theme, card);
+            relay(app, ui, &theme, card);
             y = card.bottom() + GROUP_GAP;
 
             y = group(ui, &theme, left, y, width, "About", "");
@@ -393,6 +397,36 @@ fn button(ui: &mut Ui, theme: &Theme, right: f32, y: f32, label: &str, enabled: 
         && response
             .on_hover_cursor(egui::CursorIcon::PointingHand)
             .clicked()
+}
+
+/// The relay the devices meet through away from home, on the card's last
+/// row; kept once left.
+fn relay(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect) {
+    let y = card.bottom() - ROW / 2.0;
+    let width = 260.0;
+    let rect = Rect::from_min_size(
+        pos2(card.right() - 16.0 - width, y - 14.0),
+        vec2(width, 28.0),
+    );
+    let field = ui.put(
+        rect,
+        egui::TextEdit::singleline(&mut app.relay_field)
+            .hint_text("n0's relays")
+            .font(font(12.5, Weight::Regular))
+            .margin(egui::Margin::symmetric(8, 6))
+            .desired_width(width),
+    );
+    if field.lost_focus() {
+        app.keep_relay();
+    }
+    labels(
+        ui,
+        theme,
+        pos2(card.left() + 16.0, y),
+        "Relay",
+        "Passes on what the devices say away from home, unable to read it. Used from the next start.",
+        rect.left() - card.left() - 32.0,
+    );
 }
 
 /// The devices paired, each with Forget; or how to pair one.
