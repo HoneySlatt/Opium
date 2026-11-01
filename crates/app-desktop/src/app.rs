@@ -1467,6 +1467,41 @@ impl App {
         self.settings.save();
     }
 
+    /// Settings → Library: Recently Added by date rather than by service.
+    pub fn recent_by_date(&self) -> bool {
+        self.settings.recent_by_date.unwrap_or(false)
+    }
+
+    pub fn set_recent_by_date(&mut self, on: bool) {
+        self.settings.recent_by_date = Some(on);
+        self.settings.save();
+        self.order_recent();
+    }
+
+    /// Recently Added each service's together, in the same order every
+    /// time; then, by date if so set, merged by when each was added, each
+    /// service's own order kept.
+    fn order_recent(&mut self) {
+        self.recently_added.items.sort_by_key(|c| {
+            match match c {
+                Collection::Album(a) => a.id.provider,
+                Collection::Playlist(p) => p.id.provider,
+                Collection::Station(s) => s.id.provider,
+            } {
+                ProviderKind::AppleMusic => 0,
+                ProviderKind::SoundCloud => 1,
+                ProviderKind::Navidrome => 2,
+                ProviderKind::Music => 3,
+            }
+        });
+        if self.recent_by_date() {
+            let items = std::mem::take(&mut self.recently_added.items);
+            self.recently_added.items = music_core::recent::in_time_order(items);
+        }
+        // What was built from the items, by place, is built again.
+        self.recently_added.version += 1;
+    }
+
     pub fn add_to_library(&mut self, track: &Track, now: f64) {
         self.library_songs.insert(track.id.clone());
         self.backend.send(Request::AddToLibrary {
@@ -3628,19 +3663,7 @@ impl App {
                             Collection::Station(s) => s.id.provider == provider,
                         },
                     );
-                    // Each service's together, in the same order every time.
-                    self.recently_added.items.sort_by_key(|c| {
-                        match match c {
-                            Collection::Album(a) => a.id.provider,
-                            Collection::Playlist(p) => p.id.provider,
-                            Collection::Station(s) => s.id.provider,
-                        } {
-                            ProviderKind::AppleMusic => 0,
-                            ProviderKind::SoundCloud => 1,
-                            ProviderKind::Navidrome => 2,
-                            ProviderKind::Music => 3,
-                        }
-                    });
+                    self.order_recent();
                 }
                 Reply::Album { id, result } => {
                     let loaded = match result.map(|b| *b) {

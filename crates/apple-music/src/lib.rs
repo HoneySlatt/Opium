@@ -11,6 +11,7 @@ mod motion;
 mod playback;
 mod radio;
 mod resume;
+mod seen;
 pub mod signin;
 mod types;
 
@@ -178,6 +179,8 @@ pub struct AppleMusic {
     renewed: tokio::sync::Mutex<Option<std::time::Instant>>,
     user_token: String,
     storefront: String,
+    /// When the newest songs were first seen, once kept: see `seen`.
+    seen: std::sync::Mutex<Option<seen::Seen>>,
 }
 
 /// How long a developer token read again is trusted before it may be read
@@ -215,6 +218,7 @@ impl AppleMusic {
             renewed: tokio::sync::Mutex::new(None),
             user_token: user_token.into(),
             storefront: String::new(),
+            seen: std::sync::Mutex::new(None),
         };
         let storefronts: types::Response<types::Resource<serde::de::IgnoredAny>> =
             am.get("/v1/me/storefront").await?;
@@ -225,6 +229,12 @@ impl AppleMusic {
             .map(|s| s.id)
             .ok_or_else(|| Error::Protocol("the account has no storefront".into()))?;
         Ok(am)
+    }
+
+    /// Keep in `path` when each new library song was first seen, which
+    /// dates the albums songs were added to in Recently Added.
+    pub fn keep_seen_in(&self, path: std::path::PathBuf) {
+        *self.seen.lock().unwrap_or_else(|e| e.into_inner()) = Some(seen::Seen::open(path));
     }
 
     /// The account's profile on Apple Music, where it has made one.
@@ -616,6 +626,12 @@ impl AppleMusic {
         got?;
         // Without the newest songs, the list as Apple keeps it.
         let newest = newest.map(|p| p.items).unwrap_or_default();
+        let ids: Vec<String> = newest.iter().map(|t| t.id.id.clone()).collect();
+        let times = match self.seen.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
+            Some(seen) => seen.when(&ids),
+            None => vec![None; ids.len()],
+        };
+        let newest: Vec<(Track, Option<String>)> = newest.into_iter().zip(times).collect();
         Ok(by_activity(listed, &newest))
     }
 
@@ -1422,19 +1438,20 @@ impl Provider for AppleMusic {
 /// an album comes up to where its latest song stands, what is between keeps
 /// its order. Each album's `added` becomes when it was last added to, as near
 /// as is known, so that a merge by date keeps the order.
-fn by_activity(listed: Vec<Collection>, newest: &[Track]) -> Vec<Collection> {
+fn by_activity(listed: Vec<Collection>, newest: &[(Track, Option<String>)]) -> Vec<Collection> {
     use std::collections::{HashMap, HashSet};
-    // The albums of the newest songs, each once, with the song saying so.
+    // The albums of the newest songs, each once, with the song saying so,
+    // and when it was added.
     let mut seen = HashSet::new();
-    let touched: Vec<(&ItemId, &Track)> = newest
+    let touched: Vec<(&ItemId, &Track, &Option<String>)> = newest
         .iter()
-        .filter_map(|t| Some((t.album_id.as_ref()?, t)))
-        .filter(|(id, _)| seen.insert(*id))
+        .filter_map(|(t, added)| Some((t.album_id.as_ref()?, t, added)))
+        .filter(|(id, _, _)| seen.insert(*id))
         .collect();
     let rank: HashMap<&ItemId, usize> = touched
         .iter()
         .enumerate()
-        .map(|(i, (id, _))| (*id, i))
+        .map(|(i, (id, _, _))| (*id, i))
         .collect();
     let albums: HashMap<ItemId, Album> = listed
         .iter()
@@ -1451,9 +1468,9 @@ fn by_activity(listed: Vec<Collection>, newest: &[Track]) -> Vec<Collection> {
             // already, as one of them.
             Collection::Album(a) if let Some(&at) = rank.get(&a.id) => {
                 while next <= at {
-                    let (id, song) = touched[next];
+                    let (id, song, song_added) = touched[next];
                     next += 1;
-                    let album = albums.get(id).cloned().unwrap_or_else(|| Album {
+                    let mut album = albums.get(id).cloned().unwrap_or_else(|| Album {
                         id: id.clone(),
                         title: song.album.clone().unwrap_or_default(),
                         artists: song.artists.clone(),
@@ -1473,6 +1490,11 @@ fn by_activity(listed: Vec<Collection>, newest: &[Track]) -> Vec<Collection> {
                         copyright: None,
                         mastered: false,
                     });
+                    // Added to when the song was: among the other services'
+                    // too, it is that recent.
+                    if *song_added > album.added {
+                        album.added.clone_from(song_added);
+                    }
                     out.push(Collection::Album(album));
                 }
             }
@@ -1547,6 +1569,7 @@ mod tests {
                 catalog_id: None,
                 in_favourites: None,
                 editable: true,
+                added: None,
             })
         };
         // `old` joined long ago and had a song added last; `p` is a playlist.
@@ -1557,7 +1580,13 @@ mod tests {
             album("c", "2026-10-20"),
             album("old", "2026-01-01"),
         ];
-        let newest = [song("old"), song("a"), song("b"), song("b"), song("c")];
+        let newest = [
+            (song("old"), Some("2026-10-30".to_owned())),
+            (song("a"), Some("2026-10-28".to_owned())),
+            (song("b"), Some("2026-10-25".to_owned())),
+            (song("b"), Some("2026-10-24".to_owned())),
+            (song("c"), Some("2026-10-20".to_owned())),
+        ];
         let titles: Vec<(String, Option<String>)> = by_activity(listed, &newest)
             .into_iter()
             .map(|c| match c {
@@ -1570,7 +1599,7 @@ mod tests {
         assert_eq!(
             titles,
             [
-                ("old".into(), date("2026-10-28")),
+                ("old".into(), date("2026-10-30")),
                 ("a".into(), date("2026-10-28")),
                 ("b".into(), date("2026-10-25")),
                 ("p".into(), None),

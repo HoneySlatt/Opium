@@ -763,6 +763,7 @@ async fn connect(replies: &Replies) -> Option<Arc<AppleMusic>> {
     };
     match AppleMusic::connect(token.trim()).await {
         Ok(am) => {
+            am.keep_seen_in(crate::settings::dir().join("apple-seen.json"));
             replies.send(Reply::Connected {
                 storefront: am.storefront().to_owned(),
             });

@@ -127,6 +127,8 @@ pub struct Session {
     finder: lyrics::Finder,
     /// Music's own playlists, kept with the other devices: see [`Session::own`].
     own: RwLock<Option<Arc<Connect>>>,
+    /// Where the app keeps its own: see [`Session::keep_in`].
+    dir: RwLock<Option<std::path::PathBuf>>,
 }
 
 impl Session {
@@ -199,7 +201,14 @@ impl Session {
             services: RwLock::default(),
             finder: lyrics::Finder::new(),
             own: RwLock::default(),
+            dir: RwLock::default(),
         })
+    }
+
+    /// Keep in `dir` what the services' sign-ins need kept: when Apple's
+    /// newest songs were first seen, for Recently Added.
+    pub fn keep_in(&self, dir: String) {
+        *self.dir.write().unwrap_or_else(|e| e.into_inner()) = Some(dir.into());
     }
 
     /// Music's own playlists, as `connect` keeps them, answered with the
@@ -213,6 +222,9 @@ impl Session {
     pub async fn connect_apple(self: Arc<Self>, user_token: String) -> Result<String, MusicError> {
         off(async move {
             let apple = Arc::new(AppleMusic::connect(&user_token).await?);
+            if let Some(dir) = self.dir.read().unwrap_or_else(|e| e.into_inner()).clone() {
+                apple.keep_seen_in(dir.join("apple-seen.json"));
+            }
             let storefront = apple.storefront().to_owned();
             let warming = apple.clone();
             tokio::spawn(async move { warming.warm().await });
@@ -1040,6 +1052,12 @@ impl LiveStation {
 #[uniffi::export]
 pub fn songs_left_out(songs: Vec<Track>) -> Vec<u32> {
     sorted(music_core::dedupe::songs(&songs))
+}
+
+/// Every service's Recently Added in one list, by when each item was added.
+#[uniffi::export]
+pub fn recent_in_time(items: Vec<Collection>) -> Vec<Collection> {
+    music_core::recent::in_time_order(items)
 }
 
 #[uniffi::export]

@@ -78,6 +78,9 @@ pub struct Settings {
     /// The relay the devices meet through away from home, as
     /// `https://relay.example.org`; n0's unless set.
     pub relay: Option<String>,
+    /// Recently Added merges the services' by when each was added (off
+    /// unless set); otherwise Apple Music's, SoundCloud's, then Navidrome's.
+    pub recent_by_date: Option<bool>,
 }
 
 /// Repeat, as kept: the queue's own, by name.

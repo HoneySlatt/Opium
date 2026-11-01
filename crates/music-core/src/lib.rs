@@ -5,6 +5,7 @@ pub mod model;
 pub mod palette;
 pub mod provider;
 pub mod queue;
+pub mod recent;
 pub mod text;
 pub mod theme;
 

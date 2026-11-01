@@ -167,6 +167,7 @@ pub(crate) fn playlist(urls: &Urls, playlist: types::Playlist, user: &str) -> Pl
         track_count: playlist.song_count,
         catalog_id: None,
         in_favourites: None,
+        added: playlist.created,
     }
 }
 

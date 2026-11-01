@@ -749,7 +749,10 @@ impl Provider for SoundCloud {
                         ..convert::album(playlist)
                     })
                 } else {
-                    Collection::Playlist(convert::playlist(playlist, me))
+                    Collection::Playlist(Playlist {
+                        added,
+                        ..convert::playlist(playlist, me)
+                    })
                 })
             })
             .collect();

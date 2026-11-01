@@ -42,6 +42,7 @@ import io.github.honeyslatt.music.core.model.Collection
 import io.github.honeyslatt.music.core.model.ProviderKind
 import io.github.honeyslatt.music.core.model.Track
 import io.github.honeyslatt.music.core.songsLeftOut
+import io.github.honeyslatt.music.core.recentInTime
 import io.github.honeyslatt.music.data.LibraryLists
 import io.github.honeyslatt.music.data.Listing
 import io.github.honeyslatt.music.ui.Icons
@@ -85,6 +86,8 @@ class LibraryContext(
     val account: @Composable () -> Unit,
     /** Settings → Artwork → Animated artwork. */
     val animatedArtwork: Boolean = true,
+    /** Settings → Library → Recently Added by date. */
+    val recentByDate: Boolean = false,
     @property:androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     val playback: io.github.honeyslatt.music.playback.Playback,
     val library: io.github.honeyslatt.music.data.Library? = null,
@@ -102,9 +105,11 @@ fun LibraryRoot(c: LibraryContext) {
     var source by io.github.honeyslatt.music.ui.components.rememberSource(c.core, "recently-added")
     // Folded at first, the source kept still applying; opened at will.
     var sources by rememberSaveable { mutableStateOf(false) }
-    val added = remember(c.lists.recentlyAdded.items, source) {
-        // Each service's together, as the library lists them: Apple Music's, SoundCloud's, Navidrome's.
-        c.lists.recentlyAdded.items.filter { source == null || it.provider() == source }.take(RECENT_SHOWN)
+    val added = remember(c.lists.recentlyAdded.items, source, c.recentByDate) {
+        // Each service's together, as the library lists them: Apple Music's,
+        // SoundCloud's, Navidrome's; or all by when each was added.
+        val all = c.lists.recentlyAdded.items.let { if (c.recentByDate) recentInTime(it) else it }
+        all.filter { source == null || it.provider() == source }.take(RECENT_SHOWN)
     }
     GridPage(c.nav, "Library", account = c.account, refresh = c.refresh { it.recentlyAdded }) {
         full {

@@ -17,6 +17,7 @@ class Settings(context: Context) {
 
     private val favourites = flag("favourites-to-library", true)
     private val playlistSongs = flag("playlist-songs-to-library", true)
+    private val recentByDateState = flag("recent-by-date", false)
     private val sitesFirstState = flag("lyrics-sites-first", false)
     private val animatedState = flag("animated-artwork", true)
     private val originals = flag("soundcloud-originals", true)
@@ -41,6 +42,11 @@ class Settings(context: Context) {
     var playlistSongsToLibrary: Boolean
         get() = playlistSongs.value
         set(v) = save("playlist-songs-to-library", v).also { playlistSongs.value = v }
+
+    /** Recently Added merges the services' by when each was added, rather than one after the other. */
+    var recentByDate: Boolean
+        get() = recentByDateState.value
+        set(v) = save("recent-by-date", v).also { recentByDateState.value = v }
 
     /** Where lyrics come from when the service has none, in order. */
     var lyricsSites: List<LyricsSite>

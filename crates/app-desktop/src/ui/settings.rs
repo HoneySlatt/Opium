@@ -78,10 +78,10 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
                 y,
                 width,
                 "Library",
-                "What joins your Apple Music library.",
+                "What joins your Apple Music library, and how Recently Added is sorted.",
             );
-            let card = Rect::from_min_size(pos2(left, y), vec2(width, 2.0 * ROW));
-            panel(ui, &theme, card, 2);
+            let card = Rect::from_min_size(pos2(left, y), vec2(width, 3.0 * ROW));
+            panel(ui, &theme, card, 3);
             let on = app.favourites_to_library();
             if switch(
                 ui,
@@ -116,6 +116,24 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
                 pos2(card.left() + 16.0, card.top() + 1.5 * ROW),
                 "Add playlist songs to the library",
                 "A song you add to a playlist joins your library if it isn't there yet.",
+                width - 32.0 - 60.0,
+            );
+            let on = app.recent_by_date();
+            if switch(
+                ui,
+                &theme,
+                pos2(card.right() - 16.0, card.top() + 2.5 * ROW),
+                on,
+                "recent-by-date",
+            ) {
+                app.set_recent_by_date(!on);
+            }
+            labels(
+                ui,
+                &theme,
+                pos2(card.left() + 16.0, card.top() + 2.5 * ROW),
+                "Recently Added by date",
+                "Every service's together, newest first. Off: Apple Music's, then SoundCloud's, then Navidrome's.",
                 width - 32.0 - 60.0,
             );
             y = card.bottom() + GROUP_GAP;

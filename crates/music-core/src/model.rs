@@ -270,6 +270,10 @@ pub struct Playlist {
     pub in_favourites: Option<bool>,
     /// The user's own: songs can be added to it.
     pub editable: bool,
+    /// When it joined the library (made, liked, added), as the service
+    /// writes it, for Recently Added.
+    #[serde(default)]
+    pub added: Option<String>,
 }
 
 /// An editors' pick: what it is, in a word, and how they show it.

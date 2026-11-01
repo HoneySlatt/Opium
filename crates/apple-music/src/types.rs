@@ -188,6 +188,8 @@ pub struct PlaylistAttributes {
     /// Library playlists: whether the user may change it (theirs, not one
     /// they follow or Apple's Favourite Songs).
     pub can_edit: Option<bool>,
+    /// When a library playlist was added (RFC 3339).
+    pub date_added: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]

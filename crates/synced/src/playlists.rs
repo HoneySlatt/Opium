@@ -74,6 +74,7 @@ impl Playlist {
             catalog_id: None,
             in_favourites: None,
             editable: true,
+            added: None,
         }
     }
 

@@ -189,6 +189,10 @@ private fun Root(core: Core, settings: Settings, go: (SettingsPage) -> Unit) {
             Words("Add playlist songs to the library", "A song you add to a playlist joins your library if it isn’t there yet.")
             Switch(settings.playlistSongsToLibrary) { settings.playlistSongsToLibrary = it }
         }
+        GroupRow(first = false) {
+            Words("Recently Added by date", "Every service’s together, newest first. Off: Apple Music’s, then SoundCloud’s, then Navidrome’s.")
+            Switch(settings.recentByDate) { settings.recentByDate = it }
+        }
     }
 
     Label("Lyrics")

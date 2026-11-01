@@ -113,6 +113,7 @@ pub struct Playlist {
     pub owner: Option<String>,
     pub song_count: Option<u32>,
     pub cover_art: Option<String>,
+    pub created: Option<String>,
     /// With `getPlaylist`.
     pub entry: Vec<Song>,
 }

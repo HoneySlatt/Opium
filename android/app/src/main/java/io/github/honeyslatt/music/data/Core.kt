@@ -31,7 +31,7 @@ val SERVICES = ProviderKind.entries - ProviderKind.MUSIC
  * sign-ins (in the vault) and the settings.
  */
 class Core(context: Context) {
-    val session = Session()
+    val session = Session().apply { keepIn(context.filesDir.path) }
     private val prefs = context.getSharedPreferences("music", Context.MODE_PRIVATE)
     private val vault = Vault(context)
 

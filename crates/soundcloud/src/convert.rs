@@ -97,6 +97,7 @@ pub(crate) fn playlist(playlist: types::Playlist, mine: Option<u64>) -> Playlist
         catalog_id: None,
         in_favourites: None,
         editable,
+        added: None,
     }
 }
 
