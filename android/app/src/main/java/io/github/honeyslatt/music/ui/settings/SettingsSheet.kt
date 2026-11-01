@@ -260,6 +260,7 @@ private fun Root(core: Core, settings: Settings, go: (SettingsPage) -> Unit) {
                 {
                     relay = it.trim()
                     core.setSetting("relay", relay)
+                    settings.shareSettings()
                 },
                 Modifier.weight(1f),
                 textStyle = style,

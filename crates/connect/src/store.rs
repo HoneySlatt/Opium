@@ -1,7 +1,9 @@
 //! What a device keeps: its own id, its key away from home, and the
 //! devices paired with it, each with the key they share and where to reach
-//! it away from home.
+//! it away from home; the keys it gave two of them to know each other by,
+//! and the devices the user forgot here.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use rand::RngCore;
@@ -16,6 +18,13 @@ struct Saved {
     #[serde(default)]
     away: String,
     paired: Vec<Paired>,
+    /// The keys made for two paired devices to know each other by, by
+    /// their ids, the smaller first: given again alike each time.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    made: BTreeMap<String, String>,
+    /// The devices unpaired here: not paired again but by hand.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    forgotten: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -26,6 +35,10 @@ struct Paired {
     /// Its id on iroh, as it told once connected.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     away: Option<String>,
+    /// The device that introduced it, paired with both; none if paired
+    /// here by hand.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    by: Option<String>,
 }
 
 pub(crate) struct Store {
@@ -51,6 +64,8 @@ impl Store {
                 id: hex::encode(random::<8>()),
                 away: String::new(),
                 paired: Vec::new(),
+                made: BTreeMap::new(),
+                forgotten: Vec::new(),
             }),
             path,
         };
@@ -110,12 +125,77 @@ impl Store {
 
     pub fn pair(&mut self, device: Device, key: [u8; 32]) {
         self.saved.paired.retain(|p| p.device.id != device.id);
+        self.saved.forgotten.retain(|id| *id != device.id);
         self.saved.paired.push(Paired {
             device,
             key: hex::encode(key),
             away: None,
+            by: None,
         });
         self.save();
+    }
+
+    /// The key for paired devices `a` and `b` to know each other by, made
+    /// the first time.
+    pub fn introduction(&mut self, a: &str, b: &str) -> String {
+        let pair = if a < b {
+            format!("{a} {b}")
+        } else {
+            format!("{b} {a}")
+        };
+        if let Some(key) = self.saved.made.get(&pair) {
+            return key.clone();
+        }
+        let key = hex::encode(random::<32>());
+        self.saved.made.insert(pair, key.clone());
+        self.save();
+        key
+    }
+
+    /// `by`, paired with this device and with `device`, introduced them
+    /// with `key`: whether they are paired now as it says. Not a device
+    /// forgotten here, nor one paired by hand; of two devices introducing
+    /// the same one, the smaller id wins, on both sides alike.
+    pub fn introduced(
+        &mut self,
+        device: Device,
+        key: String,
+        away: Option<String>,
+        by: &str,
+    ) -> bool {
+        if self.saved.forgotten.contains(&device.id)
+            || hex::decode(&key).map_or(true, |k| k.len() != 32)
+        {
+            return false;
+        }
+        match self
+            .saved
+            .paired
+            .iter_mut()
+            .find(|p| p.device.id == device.id)
+        {
+            Some(p) => {
+                let Some(before) = &p.by else {
+                    return false;
+                };
+                if p.key == key || by > before.as_str() {
+                    return false;
+                }
+                p.key = key;
+                p.by = Some(by.to_owned());
+                if away.is_some() {
+                    p.away = away;
+                }
+            }
+            None => self.saved.paired.push(Paired {
+                device,
+                key,
+                away,
+                by: Some(by.to_owned()),
+            }),
+        }
+        self.save();
+        true
     }
 
     /// A paired device came back under another name, or as another kind.
@@ -134,6 +214,9 @@ impl Store {
 
     pub fn forget(&mut self, id: &str) {
         self.saved.paired.retain(|p| p.device.id != id);
+        if !self.saved.forgotten.iter().any(|f| f == id) {
+            self.saved.forgotten.push(id.to_owned());
+        }
         self.save();
     }
 

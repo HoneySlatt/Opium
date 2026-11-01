@@ -54,6 +54,7 @@ class Settings(context: Context) {
         set(v) {
             prefs.edit().putString("lyrics-sites", v.joinToString(",") { it.name }).apply()
             sitesState.value = v
+            shareSettings()
         }
 
     private val sitesOnState = mutableStateOf(
@@ -73,6 +74,7 @@ class Settings(context: Context) {
         set(v) {
             prefs.edit().putString("lyrics-sites-on", v.joinToString(",") { it.name }).apply()
             sitesOnState.value = v
+            shareSettings()
         }
 
     /** Ask the sites before the service. */
@@ -103,8 +105,80 @@ class Settings(context: Context) {
 
     private fun save(key: String, value: Boolean) {
         prefs.edit().putBoolean(key, value).apply()
+        shareSettings()
+    }
+
+    private var devices: Devices? = null
+
+    /** The settings alike on every device, by the names the devices know them by. */
+    private val sharedFlags = mapOf(
+        "favourites-to-library" to favourites,
+        "playlist-songs-to-library" to playlistSongs,
+        "recent-by-date" to recentByDateState,
+        "lyrics-sites-first" to sitesFirstState,
+        "soundcloud-originals" to originals,
+    )
+
+    /**
+     * The settings the devices share taken, and those set here before they
+     * did offered them; as another device changes one, taken here too.
+     */
+    fun withDevices(devices: Devices) {
+        this.devices = devices
+        take(devices.settings())
+        val known = devices.settings()
+        shared().forEach { (name, value) -> if (name !in known) devices.offerSetting(name, value) }
+        devices.settingsShared = { take(devices.settings()) }
+    }
+
+    /** A setting changed here: the devices are told. */
+    fun shareSettings() {
+        val devices = devices ?: return
+        shared().forEach { (name, value) -> devices.setSetting(name, value) }
+    }
+
+    /** As set here; those never set aren't, the same by default everywhere. Spatial Audio and the rest stay the phone's. */
+    private fun shared(): Map<String, String> = buildMap {
+        sharedFlags.forEach { (name, state) -> if (prefs.contains(name)) put(name, state.value.toString()) }
+        if (prefs.contains("lyrics-sites")) put("lyrics-sites", lyricsSites.joinToString(",") { it.shared })
+        if (prefs.contains("lyrics-sites-on")) {
+            put("lyrics-sites-on", LyricsSite.entries.filter { it in lyricsSitesOn }.joinToString(",") { it.shared })
+        }
+        prefs.getString("relay", null)?.let { put("relay", it) }
+    }
+
+    /** The settings as the devices have them, taken here. */
+    private fun take(shared: Map<String, String>) {
+        val edit = prefs.edit()
+        sharedFlags.forEach { (name, state) ->
+            val on = shared[name]?.let { it == "true" } ?: return@forEach
+            if (state.value != on || !prefs.contains(name)) {
+                state.value = on
+                edit.putBoolean(name, on)
+            }
+        }
+        val sites = { text: String -> text.split(',').mapNotNull { n -> LyricsSite.entries.firstOrNull { it.shared == n } } }
+        shared["lyrics-sites"]?.let(sites)?.takeIf { it.toSet() == LyricsSite.entries.toSet() && it != sitesState.value }?.let {
+            sitesState.value = it
+            edit.putString("lyrics-sites", it.joinToString(",") { s -> s.name })
+        }
+        shared["lyrics-sites-on"]?.let(sites)?.toSet()?.takeIf { it != sitesOnState.value }?.let {
+            sitesOnState.value = it
+            edit.putString("lyrics-sites-on", it.joinToString(",") { s -> s.name })
+        }
+        // Taken at the next start.
+        shared["relay"]?.let { edit.putString("relay", it) }
+        edit.apply()
     }
 }
+
+/** A lyrics site as the devices name it to each other. */
+private val LyricsSite.shared
+    get() = when (this) {
+        LyricsSite.LRCLIB -> "lrclib"
+        LyricsSite.NET_EASE -> "netease"
+        LyricsSite.KU_GOU -> "kugou"
+    }
 
 /** A site's name, as Settings lists it, and a word about it. */
 val LyricsSite.label: String

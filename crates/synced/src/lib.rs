@@ -1,6 +1,7 @@
 //! What the user's devices keep in common: the songs played lately, the
 //! playlists made in Music itself, where the music last stopped, on
-//! whichever device, and when the library's newest songs were first seen.
+//! whichever device, when the library's newest songs were first seen, the
+//! playlists songs were last added to, and the user's settings.
 //!
 //! Each device keeps its own copy, and changes it while alone. When two
 //! meet, each takes the other's in, and they come out the same whatever was
@@ -66,6 +67,21 @@ fn earliest(mine: &mut BTreeMap<String, u64>, theirs: BTreeMap<String, u64>) -> 
     changed
 }
 
+/// `theirs` taken in, of two times for a playlist the latest, the latest
+/// [`USED`] kept: whether that changed anything.
+fn latest_used(mine: &mut BTreeMap<String, u64>, theirs: BTreeMap<String, u64>) -> bool {
+    let before = mine.clone();
+    for (id, at) in theirs {
+        let known = mine.entry(id).or_insert(0);
+        *known = (*known).max(at);
+    }
+    // The same whichever device trims: by time, then by id.
+    let mut all: Vec<(String, u64)> = std::mem::take(mine).into_iter().collect();
+    all.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+    *mine = all.into_iter().take(USED).collect();
+    *mine != before
+}
+
 /// All that is kept in common, or some changes to it: what one device
 /// sends another.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -83,7 +99,17 @@ pub struct Shared {
     /// wins. It dates Recently Added where the service doesn't.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     seen: BTreeMap<String, u64>,
+    /// The playlists songs were last added to, by id, and when, in ms since
+    /// 1970: the latest [`USED`] of them.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    used: BTreeMap<String, u64>,
+    /// Settings alike on every device, by name, as text: the last given wins.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    settings: BTreeMap<String, Latest<String>>,
 }
+
+/// As many playlists as Add to Playlist shows as the last ones.
+pub const USED: usize = 3;
 
 impl Shared {
     pub fn is_empty(&self) -> bool {
@@ -96,7 +122,14 @@ impl Shared {
         let playlists = self.playlists.merge(other.playlists);
         let session = latest(&mut self.session, other.session);
         let seen = earliest(&mut self.seen, other.seen);
-        history || playlists || session || seen
+        let used = latest_used(&mut self.used, other.used);
+        let mut settings = false;
+        for (name, value) in other.settings {
+            let mut mine = self.settings.remove(&name);
+            settings |= latest(&mut mine, Some(value));
+            self.settings.extend(mine.map(|m| (name, m)));
+        }
+        history || playlists || session || seen || used || settings
     }
 
     fn newest(&self) -> u64 {
@@ -104,6 +137,7 @@ impl Shared {
             .newest()
             .max(self.playlists.newest())
             .max(self.session.as_ref().map(|s| &s.at))
+            .max(self.settings.values().map(|s| &s.at).max())
             .map_or(0, |s| s.at)
     }
 }
@@ -424,6 +458,76 @@ impl Kept {
                 .collect();
             s.apply(Shared {
                 seen: earlier,
+                ..Shared::default()
+            })
+        })
+    }
+
+    /// The playlists songs were last added to, by id, the last first.
+    pub fn used(&self) -> Vec<String> {
+        let state = lock(&self.state);
+        let mut used: Vec<(&String, &u64)> = state.shared.used.iter().collect();
+        used.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
+        used.into_iter().map(|(id, _)| id.clone()).collect()
+    }
+
+    /// Songs added now to the playlists `ids`, the first last of all.
+    pub fn use_playlists(&self, ids: &[String]) -> Shared {
+        let at = now();
+        self.change(|s| {
+            let used = ids
+                .iter()
+                .enumerate()
+                .map(|(i, id)| (id.clone(), at.saturating_sub(i as u64)))
+                .collect();
+            s.apply(Shared {
+                used,
+                ..Shared::default()
+            })
+        })
+    }
+
+    /// The settings alike on every device, by name.
+    pub fn settings(&self) -> BTreeMap<String, String> {
+        lock(&self.state)
+            .shared
+            .settings
+            .iter()
+            .map(|(name, s)| (name.clone(), s.value.clone()))
+            .collect()
+    }
+
+    /// Setting `name` set to `value` here, now: nothing if it is so already.
+    pub fn set_setting(&self, name: &str, value: String) -> Shared {
+        self.change(|s| {
+            if s.shared
+                .settings
+                .get(name)
+                .is_some_and(|v| v.value == value)
+            {
+                return (Shared::default(), false);
+            }
+            let at = s.stamp(now());
+            s.apply(Shared {
+                settings: BTreeMap::from([(name.to_owned(), Latest { at, value })]),
+                ..Shared::default()
+            })
+        })
+    }
+
+    /// Setting `name` as it was here before the devices shared it: taken if
+    /// none is shared yet, and given way to by any set since, anywhere.
+    pub fn offer_setting(&self, name: &str, value: String) -> Shared {
+        self.change(|s| {
+            if s.shared.settings.contains_key(name) {
+                return (Shared::default(), false);
+            }
+            let at = Stamp {
+                at: 0,
+                device: s.me.clone(),
+            };
+            s.apply(Shared {
+                settings: BTreeMap::from([(name.to_owned(), Latest { at, value })]),
                 ..Shared::default()
             })
         })

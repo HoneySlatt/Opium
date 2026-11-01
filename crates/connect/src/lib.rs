@@ -240,6 +240,13 @@ enum Message {
     Shared(Shared),
     /// Where this device is reached away from home: its id on iroh.
     Away(String),
+    /// Another device paired with this one, and the key to know it by:
+    /// paired with one device, a new one is with all of them.
+    Introduce {
+        device: Device,
+        key: String,
+        away: Option<String>,
+    },
     Ping,
 }
 
@@ -906,6 +913,7 @@ impl Inner {
         if let Some(away) = self.away_id() {
             let _ = tx.send(Self::encode(&Message::Away(away)));
         }
+        self.introduce(&peer, &tx);
         drop(tx);
 
         let (mut read, mut write) = tokio::io::split(stream);
@@ -957,7 +965,36 @@ impl Inner {
         Err(ended)
     }
 
-    fn heard(&self, from: &str, message: Message) {
+    /// `peer`, just connected, and the other paired devices introduced to
+    /// each other: to it through `tx`, it to those connected now.
+    fn introduce(&self, peer: &Device, tx: &mpsc::UnboundedSender<Arc<[u8]>>) {
+        let mut store = lock(&self.store);
+        let others: Vec<Device> = store
+            .paired()
+            .filter(|d| d.id != peer.id)
+            .cloned()
+            .collect();
+        let peer_away = store.away(&peer.id).map(str::to_owned);
+        for other in others {
+            let key = store.introduction(&peer.id, &other.id);
+            let away = store.away(&other.id).map(str::to_owned);
+            let _ = tx.send(Self::encode(&Message::Introduce {
+                device: other.clone(),
+                key: key.clone(),
+                away,
+            }));
+            self.send(
+                &other.id,
+                &Message::Introduce {
+                    device: peer.clone(),
+                    key,
+                    away: peer_away.clone(),
+                },
+            );
+        }
+    }
+
+    fn heard(self: &Arc<Self>, from: &str, message: Message) {
         if let Some(link) = lock(&self.seen).get_mut(from).and_then(|s| s.link.as_mut()) {
             link.heard = Instant::now();
         }
@@ -995,6 +1032,21 @@ impl Inner {
                 }
             }
             Message::Away(away) => lock(&self.store).set_away(from, away),
+            Message::Introduce { device, key, away } => {
+                if device.id == self.me.id
+                    || !lock(&self.store).introduced(device.clone(), key, away, from)
+                {
+                    return;
+                }
+                // Known now: reached on the network once seen there, or at
+                // once away from home.
+                let id = device.id.clone();
+                lock(&self.seen)
+                    .entry(id.clone())
+                    .or_insert_with(|| Seen::new(device));
+                (self.events)(Event::Changed);
+                self.reach(&id);
+            }
             Message::Ping => {}
         }
     }
@@ -1461,6 +1513,69 @@ mod tests {
         assert_eq!(a_kept.history().len(), 2);
         assert_eq!(a_kept.history()[0].id.id, "2");
         drop((a, b));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// A and C, each paired with B alone, are introduced by it: they pair
+    /// with each other and connect, without a code.
+    #[test]
+    fn devices_paired_with_one_are_with_each_other() {
+        let dir = std::env::temp_dir().join(format!("connect-introduce-{}", std::process::id()));
+        let node = |name: &str, kind| {
+            let d = dir.join(name);
+            Node::launch(
+                name.into(),
+                kind,
+                &d,
+                Kept::open(&d, Vec::new),
+                None,
+                Box::new(|_| {}),
+                false,
+            )
+        };
+        let (a, b, c) = (
+            node("a", DeviceKind::Phone),
+            node("b", DeviceKind::Computer),
+            node("c", DeviceKind::Computer),
+        );
+        let at = |n: &Node| {
+            let mut seen = Seen::new(n.me());
+            seen.addrs = vec![SocketAddr::from(([127, 0, 0, 1], n.port))];
+            seen
+        };
+        for (other, key) in [(&a, [1; 32]), (&c, [3; 32])] {
+            lock(&other.inner.store).pair(b.me(), key);
+            lock(&b.inner.store).pair(other.me(), key);
+            lock(&other.inner.seen).insert(b.me().id, at(&b));
+            other.inner.reach(&b.me().id);
+        }
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while lock(&a.inner.store).key(&c.me().id).is_none()
+            || lock(&c.inner.store).key(&a.me().id).is_none()
+        {
+            assert!(Instant::now() < deadline, "never introduced");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert_eq!(
+            lock(&a.inner.store).key(&c.me().id),
+            lock(&c.inner.store).key(&a.me().id)
+        );
+        // Seen on the network, as mDNS would say: they connect.
+        lock(&a.inner.seen).insert(c.me().id, at(&c));
+        a.inner.reach(&c.me().id);
+        while !c
+            .peers()
+            .iter()
+            .any(|p| p.device.id == a.me().id && p.connected)
+        {
+            assert!(Instant::now() < deadline, "A and C never connected");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        // Forgotten on A: not introduced again.
+        a.forget(&c.me().id);
+        let key = lock(&b.inner.store).introduction(&a.me().id, &c.me().id);
+        assert!(!lock(&a.inner.store).introduced(c.me(), key, None, &b.me().id));
+        drop((a, b, c));
         let _ = std::fs::remove_dir_all(dir);
     }
 }

@@ -53,6 +53,7 @@ class MusicApp : Application(), coil3.SingletonImageLoader.Factory {
         library = Library(core, scope)
         devices = io.github.honeyslatt.music.data.Devices(this)
         devices.themesShared = { themes.shared(it) }
+        settings.withDevices(devices)
         devices.lend(core.session)
         scope.launch { devices.changes.collect { library.own() } }
         playback = io.github.honeyslatt.music.playback.Playback(this, core, scope, devices)

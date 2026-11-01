@@ -72,6 +72,9 @@ class Devices(context: Context) {
     /** A device asked for something, handed its music over, or what is kept in common changed. */
     var heard: ((Event) -> Unit)? = null
 
+    /** A device changed the settings alike on every device. */
+    var settingsShared: (() -> Unit)? = null
+
     /** The themes a device shares, all of them. */
     var themesShared: ((List<io.github.honeyslatt.music.core.connect.SharedTheme>) -> Unit)? = null
 
@@ -109,6 +112,20 @@ class Devices(context: Context) {
 
     /** Music's own playlists, as kept with the devices, answered by `session` as a service's are. */
     fun lend(session: io.github.honeyslatt.music.core.Session) = session.own(node)
+
+    /** The settings alike on every device, by name, as text. */
+    fun settings(): Map<String, String> = node.settings()
+
+    fun setSetting(name: String, value: String) = node.setSetting(name, value)
+
+    /** Setting `name` as set here before the devices shared it: taken if none is shared yet. */
+    fun offerSetting(name: String, value: String) = node.offerSetting(name, value)
+
+    /** The playlists songs were last added to, on any device, by id, the last first. */
+    fun usedPlaylists(): List<String> = node.usedPlaylists()
+
+    /** Songs added now to the playlists `ids`, the first last of all; the devices are told. */
+    fun usePlaylists(ids: List<String>) = node.usePlaylists(ids)
 
     /** Where the music last stopped, here or on another device. */
     fun session(): io.github.honeyslatt.music.core.LastSession? = node.session()
@@ -159,6 +176,7 @@ class Devices(context: Context) {
             is Event.Asked, is Event.Handed -> heard?.invoke(event)
             is Event.Themes -> themesShared?.invoke(event.themes)
             Event.Synced -> {
+                settingsShared?.invoke()
                 _history.value = node.history()
                 _changes.value++
                 heard?.invoke(event)

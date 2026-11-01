@@ -324,6 +324,15 @@ pub enum SortKey {
     Duration,
 }
 
+/// A lyrics site as the devices name it to each other.
+fn site_name(site: lyrics::Source) -> &'static str {
+    match site {
+        lyrics::Source::Lrclib => "lrclib",
+        lyrics::Source::NetEase => "netease",
+        lyrics::Source::KuGou => "kugou",
+    }
+}
+
 /// How the Songs page is sorted and filtered.
 #[derive(Default)]
 pub struct SongsView {
@@ -791,6 +800,7 @@ impl App {
             app.queue.set_repeat(repeat.into());
         }
         app.resume_session();
+        app.settings_with_devices();
         // The first page loads what it shows, as any page does on arrival.
         app.arrived();
         app
@@ -1203,6 +1213,134 @@ impl App {
         });
     }
 
+    /// The settings alike on every device, as set here, by the names the
+    /// devices know them by: those never set aren't, the same by default
+    /// everywhere. Spatial Audio and the rest stay each device's.
+    fn shared_settings(&self) -> Vec<(&'static str, String)> {
+        let s = &self.settings;
+        let names = |sites: &[lyrics::Source]| {
+            sites
+                .iter()
+                .map(|site| site_name(*site))
+                .collect::<Vec<_>>()
+                .join(",")
+        };
+        let mut shared: Vec<(&'static str, String)> = [
+            ("favourites-to-library", s.favourites_to_library),
+            ("playlist-songs-to-library", s.playlist_songs_to_library),
+            ("recent-by-date", s.recent_by_date),
+            ("lyrics-sites-first", s.lyrics_sites_first),
+            ("soundcloud-originals", s.soundcloud_originals),
+        ]
+        .into_iter()
+        .filter_map(|(name, on)| Some((name, on?.to_string())))
+        .collect();
+        if !s.lyrics_order.is_empty() {
+            let order: Vec<lyrics::Source> = self
+                .lyrics_sites()
+                .into_iter()
+                .map(|(site, _)| site)
+                .collect();
+            shared.push(("lyrics-sites", names(&order)));
+        }
+        if let Some(on) = &s.lyrics_on {
+            let on: Vec<lyrics::Source> = lyrics::Source::ALL
+                .into_iter()
+                .filter(|site| on.contains(site))
+                .collect();
+            shared.push(("lyrics-sites-on", names(&on)));
+        }
+        if let Some(relay) = &s.relay {
+            shared.push(("relay", relay.clone()));
+        }
+        shared
+    }
+
+    /// A setting changed here: the other devices are told.
+    fn share_settings(&self) {
+        for (name, value) in self.shared_settings() {
+            self.devices.node.share(self.kept.set_setting(name, value));
+        }
+    }
+
+    /// At the start: the settings the devices share taken, and those set
+    /// here before they did offered them.
+    fn settings_with_devices(&mut self) {
+        self.take_shared_settings();
+        let shared = self.kept.settings();
+        for (name, value) in self.shared_settings() {
+            if !shared.contains_key(name) {
+                self.devices
+                    .node
+                    .share(self.kept.offer_setting(name, value));
+            }
+        }
+        // The playlists added to last, kept here before.
+        if self.kept.used().is_empty() && !self.settings.recent_playlists.is_empty() {
+            let ids = std::mem::take(&mut self.settings.recent_playlists);
+            self.devices.node.share(self.kept.use_playlists(&ids));
+            self.settings.save();
+        }
+    }
+
+    /// The settings as another device set them, taken here.
+    fn take_shared_settings(&mut self) {
+        let shared = self.kept.settings();
+        let flag = |field: &mut Option<bool>, name: &str| {
+            let on = shared.get(name).map(|v| v == "true");
+            let changed = on.is_some() && *field != on;
+            if changed {
+                *field = on;
+            }
+            changed
+        };
+        let sites = |name: &str| {
+            shared.get(name).map(|v| {
+                v.split(',')
+                    .filter_map(|n| lyrics::Source::ALL.into_iter().find(|s| site_name(*s) == n))
+                    .collect::<Vec<_>>()
+            })
+        };
+        let s = &mut self.settings;
+        let mut changed = flag(&mut s.favourites_to_library, "favourites-to-library")
+            | flag(
+                &mut s.playlist_songs_to_library,
+                "playlist-songs-to-library",
+            )
+            | flag(&mut s.soundcloud_originals, "soundcloud-originals");
+        let recent = flag(&mut s.recent_by_date, "recent-by-date");
+        let mut lyrics = flag(&mut s.lyrics_sites_first, "lyrics-sites-first");
+        if let Some(order) = sites("lyrics-sites")
+            && order != s.lyrics_order
+        {
+            s.lyrics_order = order;
+            lyrics = true;
+        }
+        if let Some(on) = sites("lyrics-sites-on")
+            && Some(&on) != s.lyrics_on.as_ref()
+        {
+            s.lyrics_on = Some(on);
+            lyrics = true;
+        }
+        if let Some(relay) = shared.get("relay")
+            && Some(relay) != s.relay.as_ref()
+        {
+            // Taken at the next start, as typed here.
+            s.relay = Some(relay.clone());
+            self.relay_field = relay.clone();
+            changed = true;
+        }
+        if changed || recent || lyrics {
+            self.settings.save();
+        }
+        if recent {
+            self.order_recent();
+        }
+        if lyrics {
+            self.lyrics_found_anew();
+        }
+    }
+
     pub fn soundcloud_originals(&self) -> bool {
         self.settings.soundcloud_originals.unwrap_or(true)
     }
@@ -1213,12 +1351,14 @@ impl App {
         if relay != self.settings.relay {
             self.settings.relay = relay;
             self.settings.save();
+            self.share_settings();
         }
     }
 
     pub fn set_soundcloud_originals(&mut self, on: bool) {
         self.settings.soundcloud_originals = Some(on);
         self.settings.save();
+        self.share_settings();
     }
 
     pub fn spatial_audio(&self) -> bool {
@@ -1456,6 +1596,7 @@ impl App {
     pub fn set_favourites_to_library(&mut self, on: bool) {
         self.settings.favourites_to_library = Some(on);
         self.settings.save();
+        self.share_settings();
     }
 
     pub fn playlist_songs_to_library(&self) -> bool {
@@ -1465,6 +1606,7 @@ impl App {
     pub fn set_playlist_songs_to_library(&mut self, on: bool) {
         self.settings.playlist_songs_to_library = Some(on);
         self.settings.save();
+        self.share_settings();
     }
 
     /// Settings → Library: Recently Added by date rather than by service.
@@ -1475,6 +1617,7 @@ impl App {
     pub fn set_recent_by_date(&mut self, on: bool) {
         self.settings.recent_by_date = Some(on);
         self.settings.save();
+        self.share_settings();
         self.order_recent();
     }
 
@@ -1551,8 +1694,8 @@ impl App {
     /// `tracks` can go in.
     pub fn recent_playlists(&self, tracks: &[Track]) -> Vec<Playlist> {
         let fit = self.editable_playlists(tracks);
-        self.settings
-            .recent_playlists
+        self.kept
+            .used()
             .iter()
             .filter_map(|id| fit.iter().find(|p| p.id.id == *id))
             .cloned()
@@ -1693,11 +1836,9 @@ impl App {
             if let Some(entry) = self.playlist_tracks.get_mut(id) {
                 Arc::make_mut(&mut entry.tracks).extend(dialog.tracks.iter().cloned());
             }
-            self.settings.recent_playlists.retain(|r| *r != id.id);
-            self.settings.recent_playlists.insert(0, id.id.clone());
         }
-        self.settings.recent_playlists.truncate(3);
-        self.settings.save();
+        let used: Vec<String> = dialog.chosen.iter().map(|id| id.id.clone()).collect();
+        self.devices.node.share(self.kept.use_playlists(&used));
         // Songs added to a playlist join the library, unless the user said not to.
         if self.playlist_songs_to_library() {
             for track in &dialog.tracks {
@@ -1925,6 +2066,7 @@ impl App {
         }
         self.settings.lyrics_on = Some(sites);
         self.settings.save();
+        self.share_settings();
         self.lyrics_found_anew();
     }
 
@@ -1939,6 +2081,7 @@ impl App {
         }
         self.settings.lyrics_order = order;
         self.settings.save();
+        self.share_settings();
         self.lyrics_found_anew();
     }
 
@@ -1949,6 +2092,7 @@ impl App {
     pub fn set_lyrics_sites_first(&mut self, on: bool) {
         self.settings.lyrics_sites_first = Some(on);
         self.settings.save();
+        self.share_settings();
         self.lyrics_found_anew();
     }
 
@@ -3751,14 +3895,10 @@ impl App {
                 Reply::PlaylistCreated(result) => match result {
                     Ok(playlist) => {
                         self.notify(format!("Made “{}”", playlist.name), now);
-                        self.settings
-                            .recent_playlists
-                            .retain(|r| *r != playlist.id.id);
-                        self.settings
-                            .recent_playlists
-                            .insert(0, playlist.id.id.clone());
-                        self.settings.recent_playlists.truncate(3);
-                        self.settings.save();
+                        self.devices.node.share(
+                            self.kept
+                                .use_playlists(std::slice::from_ref(&playlist.id.id)),
+                        );
                         let id = playlist.id.clone();
                         self.playlists.push(playlist);
                         if std::mem::take(&mut self.open_created) {
@@ -3798,8 +3938,6 @@ impl App {
                         let name = self.playlist(&id).map(|p| p.name.clone());
                         self.playlists.retain(|p| p.id != id);
                         self.playlist_tracks.remove(&id);
-                        self.settings.recent_playlists.retain(|r| *r != id.id);
-                        self.settings.save();
                         let gone = Page::Playlist(id.clone());
                         if self.page == gone {
                             self.go(Page::Home);
@@ -4232,6 +4370,7 @@ impl App {
                 // Themes go from here to the phone, not back.
                 Event::Themes { .. } => {}
                 Event::Synced => {
+                    self.take_shared_settings();
                     self.history = self.kept.history();
                     self.follow_session();
                     let loaded: Vec<ItemId> = self

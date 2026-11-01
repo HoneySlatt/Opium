@@ -380,3 +380,40 @@ fn of_two_devices_times_for_a_song_the_earliest_wins_whoever_hears_first() {
     // Heard again: nothing changes.
     assert!(!one.merge(other));
 }
+
+#[test]
+fn the_playlists_used_last_are_alike_everywhere_and_few() {
+    let used = |pairs: &[(&str, u64)]| Shared {
+        used: pairs
+            .iter()
+            .map(|(id, at)| ((*id).to_owned(), *at))
+            .collect(),
+        ..Shared::default()
+    };
+    let phone = used(&[("a", 10), ("b", 40), ("c", 30)]);
+    let desktop = used(&[("a", 50), ("d", 20)]);
+    let mut one = phone.clone();
+    one.merge(desktop.clone());
+    let mut other = desktop;
+    other.merge(phone);
+    assert_eq!(one, other);
+    assert_eq!(one, used(&[("a", 50), ("b", 40), ("c", 30)]));
+}
+
+#[test]
+fn a_setting_set_last_wins_and_one_from_before_gives_way() {
+    let dir = std::env::temp_dir().join(format!("synced-settings-{}", std::process::id()));
+    let (a, b) = (
+        Kept::open(&dir.join("a"), Vec::new),
+        Kept::open(&dir.join("b"), Vec::new),
+    );
+    a.offer_setting("relay", "old".into());
+    let set = b.set_setting("relay", "new".into());
+    a.merge(set);
+    b.merge(a.everything());
+    assert_eq!(a.settings(), b.settings());
+    assert_eq!(a.settings()["relay"], "new");
+    // Offered once there is one: nothing changes.
+    assert!(a.offer_setting("relay", "older".into()).is_empty());
+    let _ = std::fs::remove_dir_all(dir);
+}

@@ -540,12 +540,18 @@ class Actions(
         return recent().mapNotNull { id -> fit.firstOrNull { it.id.id == id } }
     }
 
-    private fun recent() = prefs.getString("recent-playlists", null)?.split('\n')?.filter { it.isNotEmpty() } ?: emptyList()
+    private val devices = (context.applicationContext as io.github.honeyslatt.music.MusicApp).devices
 
-    private fun usedNow(playlists: List<Playlist>) {
-        val ids = (playlists.map { it.id.id } + recent()).distinct().take(5)
-        prefs.edit().putString("recent-playlists", ids.joinToString("\n")).apply()
+    /** As every device has them; those kept on the phone before, taken in once. */
+    private fun recent(): List<String> {
+        prefs.getString("recent-playlists", null)?.let { old ->
+            if (devices.usedPlaylists().isEmpty()) devices.usePlaylists(old.split('\n').filter { it.isNotEmpty() })
+            prefs.edit().remove("recent-playlists").apply()
+        }
+        return devices.usedPlaylists()
     }
+
+    private fun usedNow(playlists: List<Playlist>) = devices.usePlaylists(playlists.map { it.id.id })
 
     /** Load what the playlists hold, those not known yet. */
     fun loadContents(playlists: List<Playlist>) {

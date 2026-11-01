@@ -1345,6 +1345,34 @@ impl Connect {
         self.1.flush();
     }
 
+    /// The settings alike on every device, by name, as text.
+    pub fn settings(&self) -> std::collections::HashMap<String, String> {
+        self.1.settings().into_iter().collect()
+    }
+
+    /// Setting `name` set to `value` here: told the devices.
+    pub fn set_setting(&self, name: String, value: String) {
+        self.0.share(self.1.set_setting(&name, value));
+    }
+
+    /// Setting `name` as set here before the devices shared it: taken if
+    /// none is shared yet.
+    pub fn offer_setting(&self, name: String, value: String) {
+        self.0.share(self.1.offer_setting(&name, value));
+    }
+
+    /// The playlists songs were last added to, on any device, by id, the
+    /// last first.
+    pub fn used_playlists(&self) -> Vec<String> {
+        self.1.used()
+    }
+
+    /// Songs added now to the playlists `ids`, the first last of all: told
+    /// the devices.
+    pub fn use_playlists(&self, ids: Vec<String>) {
+        self.0.share(self.1.use_playlists(&ids));
+    }
+
     /// Reachable away from home, and reaching the devices away, or not.
     pub fn set_away(&self, on: bool) {
         self.0.set_away(on);
