@@ -182,6 +182,9 @@ pub struct AppleMusic {
     storefront: String,
     /// When the newest songs were first seen, once kept: see `seen`.
     seen: std::sync::Mutex<Option<seen::Seen>>,
+    /// The library's songs' catalog ids checked: still there, or gone, with
+    /// the song that took the place of each. See `released_now`.
+    current: std::sync::Mutex<std::collections::HashMap<String, Option<Track>>>,
 }
 
 /// How long a developer token read again is trusted before it may be read
@@ -220,6 +223,7 @@ impl AppleMusic {
             user_token: user_token.into(),
             storefront: String::new(),
             seen: std::sync::Mutex::new(None),
+            current: Default::default(),
         };
         let storefronts: types::Response<types::Resource<serde::de::IgnoredAny>> =
             am.get("/v1/me/storefront").await?;
@@ -495,6 +499,9 @@ fn recently_added_path() -> String {
     )
 }
 
+/// How many songs the catalog is asked about at once.
+const CHECKED_AT_ONCE: usize = 300;
+
 /// How many pages of a list are asked for at once: Apple answers 32 about as
 /// fast as one, where one after another a 5 000-song playlist took a minute.
 const PAGES_AT_ONCE: usize = 32;
@@ -516,11 +523,105 @@ impl AppleMusic {
         }
     }
 
-    /// Every library song, page by page: `each` gets them in order, and
-    /// whether that was the last page.
+    /// Every library song: `each` gets them in order, and whether that was
+    /// the last page; all at once, each as released now (see
+    /// `released_now`).
     pub async fn each_library_track(&self, each: impl FnMut(Vec<Track>, bool)) -> Result<()> {
-        self.each_page(&library_songs_path(), convert::track, usize::MAX, each)
+        self.each_released_now(&library_songs_path(), each).await
+    }
+
+    /// The songs of `first` and the pages after, as released now, given all
+    /// at once.
+    async fn each_released_now(
+        &self,
+        first: &str,
+        mut each: impl FnMut(Vec<Track>, bool),
+    ) -> Result<()> {
+        let mut all = Vec::new();
+        self.each_page(first, convert::track, usize::MAX, |page, _| {
+            all.extend(page)
+        })
+        .await?;
+        self.released_now(&mut all).await;
+        each(all, true);
+        Ok(())
+    }
+
+    /// Songs saved long ago may name a release replaced since, gone from
+    /// the catalog: Apple Music plays the one in its place, with its rating,
+    /// its quality and its lyrics. So do these, keeping their place in the
+    /// library (its id, its album there). Checked once each, a few hundred
+    /// at a time; what couldn't be is left as it is, and tried again later.
+    pub async fn released_now(&self, tracks: &mut [Track]) {
+        let unknown: Vec<String> = {
+            let known = self.current.lock().unwrap_or_else(|e| e.into_inner());
+            let mut asked = std::collections::HashSet::new();
+            tracks
+                .iter()
+                .filter(|t| t.library_id.is_some() && t.id.id.bytes().all(|b| b.is_ascii_digit()))
+                .map(|t| t.id.id.clone())
+                .filter(|id| !known.contains_key(id) && asked.insert(id.clone()))
+                .collect()
+        };
+        if !unknown.is_empty() {
+            let mut asking = Vec::new();
+            for ids in unknown.chunks(CHECKED_AT_ONCE) {
+                asking.push(self.check_released(ids));
+            }
+            let checked = futures_util::future::join_all(asking).await;
+            self.current
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .extend(checked.into_iter().flatten());
+        }
+        let known = self.current.lock().unwrap_or_else(|e| e.into_inner());
+        for t in tracks.iter_mut() {
+            if let Some(Some(now)) = known.get(&t.id.id) {
+                *t = Track {
+                    library_id: t.library_id.take(),
+                    in_library: t.in_library,
+                    album_id: t.album_id.take().or_else(|| now.album_id.clone()),
+                    ..now.clone()
+                };
+            }
+        }
+    }
+
+    /// Which of `ids` are in the catalog still, and the songs in place of
+    /// the others; none of those that couldn't be told.
+    async fn check_released(&self, ids: &[String]) -> Vec<(String, Option<Track>)> {
+        let path = format!(
+            "/v1/catalog/{}/songs?ids={}&fields%5Bsongs%5D=name",
+            self.storefront,
+            ids.join(",")
+        );
+        let Ok(there) = self
+            .fetch::<types::Response<types::Resource<serde::de::IgnoredAny>>>(&path)
             .await
+        else {
+            return Vec::new();
+        };
+        let there: std::collections::HashSet<String> = there
+            .map(|r| r.data.into_iter().map(|s| s.id).collect())
+            .unwrap_or_default();
+        let mut checked = Vec::with_capacity(ids.len());
+        for id in ids {
+            if there.contains(id) {
+                checked.push((id.clone(), None));
+                continue;
+            }
+            let path = format!(
+                "/v1/catalog/{}/songs?filter%5Bequivalents%5D={id}&include=albums",
+                self.storefront
+            );
+            if let Ok(now) = self.fetch::<types::Response<types::Song>>(&path).await {
+                let now = now
+                    .and_then(|r| r.data.into_iter().find(|s| s.id != *id))
+                    .map(convert::track);
+                checked.push((id.clone(), now));
+            }
+        }
+        checked
     }
 
     /// Every library song, the latest added first, as
@@ -529,8 +630,7 @@ impl AppleMusic {
         &self,
         each: impl FnMut(Vec<Track>, bool),
     ) -> Result<()> {
-        self.each_page(&newest_songs_path(), convert::track, usize::MAX, each)
-            .await
+        self.each_released_now(&newest_songs_path(), each).await
     }
 
     /// Every song of a playlist, as [`each_library_track`](Self::each_library_track).
@@ -540,8 +640,7 @@ impl AppleMusic {
         each: impl FnMut(Vec<Track>, bool),
     ) -> Result<()> {
         let first = self.playlist_tracks_path(playlist);
-        self.each_page(&first, convert::track, usize::MAX, each)
-            .await
+        self.each_released_now(&first, each).await
     }
 
     pub async fn each_library_album(&self, each: impl FnMut(Vec<Album>, bool)) -> Result<()> {
@@ -843,17 +942,25 @@ impl Provider for AppleMusic {
         let path = format!(
             "/v1/me/library/search?term={term}&types=library-songs,library-albums,library-artists,library-playlists&limit={SEARCH_LIMIT}&include%5Blibrary-songs%5D=albums&include%5Blibrary-artists%5D=catalog"
         );
-        self.search_at(&path, convert::library_artist).await
+        let mut found = self.search_at(&path, convert::library_artist).await?;
+        self.released_now(&mut found.tracks).await;
+        Ok(found)
     }
 
     async fn library_tracks(&self, cursor: Option<&Cursor>) -> Result<Page<Track>> {
-        self.page(&library_songs_path(), cursor, convert::track)
-            .await
+        let mut page = self
+            .page(&library_songs_path(), cursor, convert::track)
+            .await?;
+        self.released_now(&mut page.items).await;
+        Ok(page)
     }
 
     async fn library_tracks_newest(&self, cursor: Option<&Cursor>) -> Result<Page<Track>> {
-        self.page(&newest_songs_path(), cursor, convert::track)
-            .await
+        let mut page = self
+            .page(&newest_songs_path(), cursor, convert::track)
+            .await?;
+        self.released_now(&mut page.items).await;
+        Ok(page)
     }
 
     async fn library_albums(&self, cursor: Option<&Cursor>) -> Result<Page<Album>> {
@@ -936,7 +1043,10 @@ impl Provider for AppleMusic {
             }));
             match page.next {
                 Some(next) => cursor = Some(next),
-                None => return Ok(tracks),
+                None => {
+                    self.released_now(&mut tracks).await;
+                    return Ok(tracks);
+                }
             }
         }
     }
@@ -946,8 +1056,11 @@ impl Provider for AppleMusic {
         playlist: &ItemId,
         cursor: Option<&Cursor>,
     ) -> Result<Page<Track>> {
-        self.page(&self.playlist_tracks_path(playlist), cursor, convert::track)
-            .await
+        let mut page = self
+            .page(&self.playlist_tracks_path(playlist), cursor, convert::track)
+            .await?;
+        self.released_now(&mut page.items).await;
+        Ok(page)
     }
 
     /// The artist's top songs, albums, and singles and EPs, as the web player
