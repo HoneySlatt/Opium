@@ -36,6 +36,9 @@ pub struct Settings {
     /// A song added to a playlist joins the library if it isn't there (on
     /// unless turned off), as Apple Music's own option does.
     pub playlist_songs_to_library: Option<bool>,
+    /// A song taken out of the library leaves the user's playlists too:
+    /// Music's and SoundCloud's, Apple's doing so itself. Off unless set.
+    pub removals_leave_playlists: Option<bool>,
     /// The playlists songs were last added to, most recent first, as kept
     /// here before the devices shared them: taken in once, then emptied.
     pub recent_playlists: Vec<String>,

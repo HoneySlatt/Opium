@@ -190,6 +190,10 @@ private fun Root(core: Core, settings: Settings, go: (SettingsPage) -> Unit) {
             Switch(settings.playlistSongsToLibrary) { settings.playlistSongsToLibrary = it }
         }
         GroupRow(first = false) {
+            Words("Remove library songs from playlists", "A song you delete from your library leaves your playlists too.")
+            Switch(settings.removalsLeavePlaylists) { settings.removalsLeavePlaylists = it }
+        }
+        GroupRow(first = false) {
             Words("Recently Added by date", "Every service’s together, newest first. Off: Apple Music’s, then SoundCloud’s, then Navidrome’s.")
             Switch(settings.recentByDate) { settings.recentByDate = it }
         }

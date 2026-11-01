@@ -32,7 +32,7 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
         + 11.0 * (GROUP_HEAD + GROUP_GAP)
         + 3.0 * ROW
         + THEMES * (1 + theme_rows()) as f32
-        + (13 + paired) as f32 * ROW
+        + (14 + paired) as f32 * ROW
         + 104.0;
     let output = egui::ScrollArea::vertical()
         .id_salt("settings")
@@ -78,10 +78,10 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
                 y,
                 width,
                 "Library",
-                "What joins your Apple Music library, and how Recently Added is sorted.",
+                "What joins your library and leaves it, and how Recently Added is sorted.",
             );
-            let card = Rect::from_min_size(pos2(left, y), vec2(width, 3.0 * ROW));
-            panel(ui, &theme, card, 3);
+            let card = Rect::from_min_size(pos2(left, y), vec2(width, 4.0 * ROW));
+            panel(ui, &theme, card, 4);
             let on = app.favourites_to_library();
             if switch(
                 ui,
@@ -118,11 +118,29 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
                 "A song you add to a playlist joins your library if it isn't there yet.",
                 width - 32.0 - 60.0,
             );
-            let on = app.recent_by_date();
+            let on = app.removals_leave_playlists();
             if switch(
                 ui,
                 &theme,
                 pos2(card.right() - 16.0, card.top() + 2.5 * ROW),
+                on,
+                "library-removals-leave-playlists",
+            ) {
+                app.set_removals_leave_playlists(!on);
+            }
+            labels(
+                ui,
+                &theme,
+                pos2(card.left() + 16.0, card.top() + 2.5 * ROW),
+                "Remove library songs from playlists",
+                "A song you delete from your library leaves your playlists too.",
+                width - 32.0 - 60.0,
+            );
+            let on = app.recent_by_date();
+            if switch(
+                ui,
+                &theme,
+                pos2(card.right() - 16.0, card.top() + 3.5 * ROW),
                 on,
                 "recent-by-date",
             ) {
@@ -131,7 +149,7 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
             labels(
                 ui,
                 &theme,
-                pos2(card.left() + 16.0, card.top() + 2.5 * ROW),
+                pos2(card.left() + 16.0, card.top() + 3.5 * ROW),
                 "Recently Added by date",
                 "Every service's together, newest first. Off: Apple Music's, then SoundCloud's, then Navidrome's.",
                 width - 32.0 - 60.0,

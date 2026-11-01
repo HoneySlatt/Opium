@@ -223,6 +223,9 @@ enum ForSongs {
     Shuffle,
     /// Into the Add to Playlists window.
     AddToPlaylist,
+    /// The album deleted from the library, its songs out of the playlists
+    /// first if Settings → Library says so.
+    DeleteFromLibrary,
 }
 
 /// The New Playlist window: its name and description so far, and the songs
@@ -516,6 +519,9 @@ pub struct App {
     favourites_known: HashMap<ItemId, bool>,
     /// Whether less like an album was asked for: set here, or read.
     less_known: HashMap<ItemId, bool>,
+    /// Playlists the songs taken out of the library are to leave, once their
+    /// songs are in: see `leave_playlists`.
+    leaving: Vec<(ItemId, std::collections::HashSet<ItemId>)>,
     /// Library albums read for their menu, whose Suggest Less is asked once in.
     less_for_menu: std::collections::HashSet<ItemId>,
     /// A link to put on the clipboard, at the next frame.
@@ -751,6 +757,7 @@ impl App {
             favourites_known: HashMap::new(),
             less_known: HashMap::new(),
             less_for_menu: Default::default(),
+            leaving: Vec::new(),
             copy: None,
             new_music: None,
             radio: None,
@@ -1258,6 +1265,10 @@ impl App {
         let mut shared: Vec<(&'static str, String)> = [
             ("favourites-to-library", s.favourites_to_library),
             ("playlist-songs-to-library", s.playlist_songs_to_library),
+            (
+                "library-removals-leave-playlists",
+                s.removals_leave_playlists,
+            ),
             ("recent-by-date", s.recent_by_date),
             ("lyrics-sites-first", s.lyrics_sites_first),
             ("soundcloud-originals", s.soundcloud_originals),
@@ -1336,6 +1347,10 @@ impl App {
             | flag(
                 &mut s.playlist_songs_to_library,
                 "playlist-songs-to-library",
+            )
+            | flag(
+                &mut s.removals_leave_playlists,
+                "library-removals-leave-playlists",
             )
             | flag(&mut s.soundcloud_originals, "soundcloud-originals");
         let recent = flag(&mut s.recent_by_date, "recent-by-date");
@@ -1635,6 +1650,18 @@ impl App {
 
     pub fn set_playlist_songs_to_library(&mut self, on: bool) {
         self.settings.playlist_songs_to_library = Some(on);
+        self.settings.save();
+        self.share_settings();
+    }
+
+    /// Settings → Library: a song taken out of the library leaves the
+    /// playlists too.
+    pub fn removals_leave_playlists(&self) -> bool {
+        self.settings.removals_leave_playlists.unwrap_or(false)
+    }
+
+    pub fn set_removals_leave_playlists(&mut self, on: bool) {
+        self.settings.removals_leave_playlists = Some(on);
         self.settings.save();
         self.share_settings();
     }
@@ -2027,7 +2054,12 @@ impl App {
                 }
                 self.back.retain(|p| *p != gone);
                 self.forward.retain(|p| *p != gone);
-                self.backend.send(Request::RemoveFromLibrary(id));
+                if self.removals_leave_playlists() {
+                    // Its songs, read while it is still in the library.
+                    self.album_songs(id, ForSongs::DeleteFromLibrary, now);
+                } else {
+                    self.backend.send(Request::RemoveFromLibrary(id));
+                }
                 self.notify(format!("Deleting “{}”…", album.title), now);
             }
             _ => {}
@@ -3583,7 +3615,7 @@ impl App {
                 self.radio_from = Some(track);
             }
             TrackChoice::RemoveFromLibrary => {
-                if let Some(library_id) = track.library_id {
+                if let Some(library_id) = track.library_id.clone() {
                     self.library_songs.remove(&track.id);
                     // The Songs list rebuilds its order when its count changes.
                     self.songs.retain(|t| t.id != track.id);
@@ -3603,8 +3635,71 @@ impl App {
                         }
                     }
                     self.favourite_songs.remove(&track.id);
+                    self.leave_playlists(std::slice::from_ref(&track));
                     self.backend.send(Request::RemoveFromLibrary(library_id));
                 }
+            }
+        }
+    }
+
+    /// Songs taken out of the library leave the user's playlists too, if
+    /// Settings → Library says so: Music's own, and SoundCloud's of theirs.
+    /// Apple takes its songs out of its playlists itself.
+    fn leave_playlists(&mut self, songs: &[Track]) {
+        if !self.removals_leave_playlists() || songs.is_empty() {
+            return;
+        }
+        let ids: std::collections::HashSet<ItemId> = songs
+            .iter()
+            .flat_map(|t| [Some(t.id.clone()), t.library_id.clone()])
+            .flatten()
+            .collect();
+        let soundcloud = songs
+            .iter()
+            .any(|t| t.id.provider == ProviderKind::SoundCloud);
+        let mine: Vec<ItemId> = self
+            .playlists
+            .iter()
+            .filter(|p| {
+                p.editable
+                    && (p.id.provider == ProviderKind::Music
+                        || (soundcloud && p.id.provider == ProviderKind::SoundCloud))
+            })
+            .map(|p| p.id.clone())
+            .collect();
+        for playlist in mine {
+            if self
+                .playlist_tracks
+                .get(&playlist)
+                .is_none_or(|p| p.error.is_some())
+            {
+                self.playlist_tracks
+                    .insert(playlist.clone(), PlaylistTracks::default());
+                self.backend.send(Request::Playlist(playlist.clone()));
+            }
+            self.leaving.push((playlist, ids.clone()));
+        }
+        self.leave_loaded();
+    }
+
+    /// Take the songs out of the playlists [`leave_playlists`](Self::leave_playlists)
+    /// waits on, those loaded now.
+    fn leave_loaded(&mut self) {
+        for (playlist, ids) in std::mem::take(&mut self.leaving) {
+            match self.playlist_tracks.get(&playlist) {
+                Some(p) if p.done => {
+                    let there: Vec<Track> = p
+                        .tracks
+                        .iter()
+                        .filter(|t| ids.contains(&t.id))
+                        .cloned()
+                        .collect();
+                    for track in there {
+                        self.remove_from_playlist(&playlist, &track);
+                    }
+                }
+                Some(p) if p.error.is_some() => {}
+                _ => self.leaving.push((playlist, ids)),
             }
         }
     }
@@ -3720,6 +3815,12 @@ impl App {
             }
             ForSongs::AddToPlaylist if !tracks.is_empty() => self.open_playlist_dialog(tracks),
             ForSongs::AddToPlaylist => {}
+            ForSongs::DeleteFromLibrary => {
+                if let Page::Album(id) = from {
+                    self.leave_playlists(&tracks);
+                    self.backend.send(Request::RemoveFromLibrary(id));
+                }
+            }
         }
     }
 
@@ -4574,6 +4675,9 @@ impl App {
         self.status = self.player.status();
         if self.waiting.is_some() {
             self.queue_waiting(now);
+        }
+        if !self.leaving.is_empty() {
+            self.leave_loaded();
         }
     }
 }

@@ -17,6 +17,7 @@ class Settings(context: Context) {
 
     private val favourites = flag("favourites-to-library", true)
     private val playlistSongs = flag("playlist-songs-to-library", true)
+    private val leavePlaylistsState = flag("library-removals-leave-playlists", false)
     private val recentByDateState = flag("recent-by-date", false)
     private val sitesFirstState = flag("lyrics-sites-first", false)
     private val animatedState = flag("animated-artwork", true)
@@ -42,6 +43,11 @@ class Settings(context: Context) {
     var playlistSongsToLibrary: Boolean
         get() = playlistSongs.value
         set(v) = save("playlist-songs-to-library", v).also { playlistSongs.value = v }
+
+    /** A song taken out of the library leaves the user's playlists too: Music's and SoundCloud's, Apple's doing so itself. */
+    var removalsLeavePlaylists: Boolean
+        get() = leavePlaylistsState.value
+        set(v) = save("library-removals-leave-playlists", v).also { leavePlaylistsState.value = v }
 
     /** Recently Added merges the services' by when each was added, rather than one after the other. */
     var recentByDate: Boolean
@@ -114,6 +120,7 @@ class Settings(context: Context) {
     private val sharedFlags = mapOf(
         "favourites-to-library" to favourites,
         "playlist-songs-to-library" to playlistSongs,
+        "library-removals-leave-playlists" to leavePlaylistsState,
         "recent-by-date" to recentByDateState,
         "lyrics-sites-first" to sitesFirstState,
         "soundcloud-originals" to originals,

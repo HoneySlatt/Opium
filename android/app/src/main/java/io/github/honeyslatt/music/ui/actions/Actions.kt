@@ -523,6 +523,7 @@ class Actions(
             change("Couldn't delete it", undo = { inLibraryNow.remove(track.id) }) {
                 session.removeFromLibrary(id)
                 library.recentChanged(track.id.provider)
+                leavePlaylists(listOf(track))
             }
         }
     }
@@ -537,8 +538,11 @@ class Actions(
             onDeleted()
             hud.show("Deleted", Icons.Trash)
             change("Couldn't delete it", undo = { library.albumBack(album) }) {
+                // Its songs, read while it is still in the library.
+                val songs = if (settings.removalsLeavePlaylists) session.album(album.id).tracks else emptyList()
                 session.removeFromLibrary(album.id)
                 library.recentChanged(album.id.provider)
+                leavePlaylists(songs)
             }
         }
     }
@@ -549,6 +553,29 @@ class Actions(
         change("Couldn't remove it", undo = { inLibraryNow.remove(track.id) }) {
             session.removeFromLibrary(track.id)
             library.recentChanged(track.id.provider)
+            leavePlaylists(listOf(track))
+        }
+    }
+
+    /**
+     * Songs taken out of the library leave the user's playlists too, if
+     * Settings → Library says so: Music's own, and SoundCloud's of theirs.
+     * Apple takes its songs out of its playlists itself.
+     */
+    private fun leavePlaylists(songs: List<Track>) {
+        if (!settings.removalsLeavePlaylists || songs.isEmpty()) return
+        val ids = songs.flatMap { listOfNotNull(it.id, it.libraryId) }.toSet()
+        val providers = songs.map { it.id.provider }.toSet()
+        val mine = library.lists.value.playlists.items.filter { p ->
+            p.editable && (p.id.provider == ProviderKind.MUSIC || (p.id.provider == ProviderKind.SOUND_CLOUD && p.id.provider in providers))
+        }
+        mine.forEach { p ->
+            change("Couldn't take it out of “${p.name}”") {
+                // Music and SoundCloud name a playlist's row by the song's id.
+                val there = allTracks(p.id).filter { it.id in ids }.map { it.id }
+                there.forEach { session.removeFromPlaylist(p.id, it) }
+                if (there.isNotEmpty()) contents[p.id]?.let { contents[p.id] = it - there.toSet() }
+            }
         }
     }
 
