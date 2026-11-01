@@ -23,9 +23,11 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * A list of the library, as it loads: done once every service asked for
@@ -69,6 +71,15 @@ class Library(private val core: Core, private val scope: CoroutineScope) {
         val again = unloaded.toList()
         if (again.isEmpty()) return
         unloaded.clear()
+        clearErrors()
+        again.filter { it in providers }.forEach {
+            providers -= it
+            load(it, again = true)
+        }
+    }
+
+    /** What couldn't load, no longer said: it is tried again. */
+    private fun clearErrors() {
         _lists.update {
             it.copy(
                 playlists = it.playlists.copy(error = null),
@@ -78,10 +89,6 @@ class Library(private val core: Core, private val scope: CoroutineScope) {
                 recentlyAdded = it.recentlyAdded.copy(error = null),
                 newestSongs = it.newestSongs.copy(error = null),
             )
-        }
-        again.filter { it in providers }.forEach {
-            providers -= it
-            load(it, again = true)
         }
     }
 
@@ -224,6 +231,22 @@ class Library(private val core: Core, private val scope: CoroutineScope) {
             if (provider == ProviderKind.APPLE_MUSIC) kotlinx.coroutines.delay(1_500)
             recentlyAdded(provider)
         }
+    }
+
+    /**
+     * Pulled down: every service's lists read again, what shows staying until
+     * the new ones are there; back once `of` them is, or after 30 s at most.
+     */
+    suspend fun refresh(of: (LibraryLists) -> Listing<*>) {
+        unloaded.clear()
+        clearErrors()
+        providers.forEach {
+            core.libraryRead(it, System.currentTimeMillis())
+            if (newestAsked) newest(it, ask = true)
+            lists(it, ask = true)
+        }
+        own()
+        withTimeoutOrNull(30_000) { lists.first { of(it).waiting.isEmpty() } }
     }
 
     /** Not read whole: tried again with the network, and next time anyway. */

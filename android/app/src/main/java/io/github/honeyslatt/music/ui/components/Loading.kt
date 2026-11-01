@@ -54,21 +54,25 @@ fun Loader(shapes: Shapes = Shapes.Rows, modifier: Modifier = Modifier) {
     }
 }
 
-/** iOS's: eight spokes, the lit one going round, the others fading behind. */
+/**
+ * iOS's: eight spokes, the lit one going round, the others fading behind;
+ * or, still, as many of them as `drawn` of eight, as when a page is pulled.
+ */
 @Composable
-fun ActivitySpinner(size: Dp = 28.dp, color: Color = roles.sub) {
+fun ActivitySpinner(size: Dp = 28.dp, color: Color = roles.sub, drawn: Float? = null) {
     val turn = rememberInfiniteTransition(label = "activity")
     val step by turn.animateFloat(0f, 8f, infiniteRepeatable(tween(800, easing = LinearEasing)), label = "step")
     Canvas(Modifier.size(size)) {
         val lit = step.toInt()
         val r = this.size.minDimension / 2
         val stroke = r * 0.22f
-        for (k in 0 until 8) {
+        val spokes = if (drawn == null) 8 else (drawn * 8).toInt().coerceIn(0, 8)
+        for (k in 0 until spokes) {
             val a = Math.toRadians(k * 45.0 - 90).toFloat()
             val behind = (lit - k + 8) % 8
             val c = Offset(center.x, center.y)
             drawLine(
-                color.copy(alpha = 1f - behind * 0.11f),
+                color.copy(alpha = if (drawn == null) 1f - behind * 0.11f else 0.7f),
                 c + Offset(cos(a), sin(a)) * (r * 0.45f),
                 c + Offset(cos(a), sin(a)) * (r - stroke / 2),
                 stroke,

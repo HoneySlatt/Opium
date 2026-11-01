@@ -60,7 +60,8 @@ private val Under = ChromeHeight + 58.dp + 10.dp + 24.dp
 
 /**
  * A page that lists: its large title, then `content`, under the navigation
- * bar, which turns solid and shows the title once the large one is gone.
+ * bar, which turns solid and shows the title once the large one is gone;
+ * pulled down from its top, `refresh` runs, if any.
  */
 @Composable
 fun ListPage(
@@ -71,6 +72,7 @@ fun ListPage(
     largeTitle: Boolean = true,
     fold: Fold? = null,
     state: LazyListState = rememberLazyListState(),
+    refresh: (suspend () -> Unit)? = null,
     content: LazyListScope.() -> Unit,
 ) {
     Folding(nav) { state.firstVisibleItemIndex to state.firstVisibleItemScrollOffset }
@@ -79,13 +81,15 @@ fun ListPage(
     val scrolled by remember(titleAt) { derivedStateOf { state.firstVisibleItemIndex > titleAt } }
     val chips = LocalTitleChips.current
     Box(Modifier.fillMaxSize().background(roles.base)) {
-        LazyColumn(Modifier.fillMaxSize(), state = state) {
-            item { Spacer(Modifier.windowInsetsTopHeight(WindowInsets.statusBars)) }
-            // A pushed page's title sits under the bar and its back button.
-            if (nav.canPop) item { Spacer(Modifier.height(52.dp)) }
-            if (chips != null) item { chips() } else if (largeTitle) item { LargeTitle(title, fold = fold) }
-            content()
-            item { Spacer(Modifier.height(Under)) }
+        PullRefresh(refresh, if (nav.canPop) 52.dp else 0.dp) {
+            LazyColumn(Modifier.fillMaxSize(), state = state) {
+                item { Spacer(Modifier.windowInsetsTopHeight(WindowInsets.statusBars)) }
+                // A pushed page's title sits under the bar and its back button.
+                if (nav.canPop) item { Spacer(Modifier.height(52.dp)) }
+                if (chips != null) item { chips() } else if (largeTitle) item { LargeTitle(title, fold = fold) }
+                content()
+                item { Spacer(Modifier.height(Under)) }
+            }
         }
         NavBar(nav, title, scrolled, actions, if (chips != null) null else account)
     }
@@ -100,6 +104,7 @@ fun GridPage(
     account: (@Composable () -> Unit)? = null,
     fold: Fold? = null,
     state: LazyGridState = rememberLazyGridState(),
+    refresh: (suspend () -> Unit)? = null,
     content: LazyGridScope.() -> Unit,
 ) {
     Folding(nav) { state.firstVisibleItemIndex to state.firstVisibleItemScrollOffset }
@@ -107,18 +112,20 @@ fun GridPage(
     val titleAt = if (nav.canPop) 2 else 1
     val scrolled by remember(titleAt) { derivedStateOf { state.firstVisibleItemIndex > titleAt } }
     Box(Modifier.fillMaxSize().background(roles.base)) {
-        LazyVerticalGrid(
-            GridCells.Fixed(2),
-            Modifier.fillMaxSize(),
-            state = state,
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 20.dp),
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            full { Spacer(Modifier.windowInsetsTopHeight(WindowInsets.statusBars)) }
-            if (nav.canPop) full { Spacer(Modifier.height(52.dp)) }
-            full { LargeTitle(title, fold = fold) }
-            content()
-            full { Spacer(Modifier.height(Under)) }
+        PullRefresh(refresh, if (nav.canPop) 52.dp else 0.dp) {
+            LazyVerticalGrid(
+                GridCells.Fixed(2),
+                Modifier.fillMaxSize(),
+                state = state,
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 20.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                full { Spacer(Modifier.windowInsetsTopHeight(WindowInsets.statusBars)) }
+                if (nav.canPop) full { Spacer(Modifier.height(52.dp)) }
+                full { LargeTitle(title, fold = fold) }
+                content()
+                full { Spacer(Modifier.height(Under)) }
+            }
         }
         NavBar(nav, title, scrolled, actions, account)
     }

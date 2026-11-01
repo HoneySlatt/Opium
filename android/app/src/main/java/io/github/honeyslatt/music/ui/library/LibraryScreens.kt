@@ -88,7 +88,10 @@ class LibraryContext(
     @property:androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     val playback: io.github.honeyslatt.music.playback.Playback,
     val library: io.github.honeyslatt.music.data.Library? = null,
-)
+) {
+    /** Pulled down: the library read again, the spinner turning until `of` it is there. */
+    fun refresh(of: (LibraryLists) -> Listing<*>): (suspend () -> Unit)? = library?.let { l -> { l.refresh(of) } }
+}
 
 /** As many as Apple Music shows under Recently Added. */
 private const val RECENT_SHOWN = 66
@@ -103,7 +106,7 @@ fun LibraryRoot(c: LibraryContext) {
         // Each service's together, as the library lists them: Apple Music's, SoundCloud's, Navidrome's.
         c.lists.recentlyAdded.items.filter { source == null || it.provider() == source }.take(RECENT_SHOWN)
     }
-    GridPage(c.nav, "Library", account = c.account) {
+    GridPage(c.nav, "Library", account = c.account, refresh = c.refresh { it.recentlyAdded }) {
         full {
             androidx.compose.foundation.layout.Column(Modifier.padding(top = 6.dp)) {
                 listOf(
@@ -192,7 +195,7 @@ fun Playlists(c: LibraryContext) {
     var searching by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
     val favourites = playlists.items.firstOrNull { it.favourites }?.takeIf { matches(query, "Favourite Songs") }
-    ListPage(c.nav, "Playlists", actions = listOf(BarAction(Icons.Search, "Search Playlists") { searching = !searching })) {
+    ListPage(c.nav, "Playlists", actions = listOf(BarAction(Icons.Search, "Search Playlists") { searching = !searching }), refresh = c.refresh { it.playlists }) {
         item { SearchReveal(searching, query, "Search Playlists") { query = it } }
         item {
             ItemRow(
@@ -289,6 +292,7 @@ fun Albums(c: LibraryContext) {
             },
         ),
         fold = sourcesFold(c.services, sources) { sources = !sources },
+        refresh = c.refresh { it.albums },
     ) {
         full { SearchReveal(searching, query, "Search Albums") { query = it } }
         full { SourceChips(sources, source, c.services) { source = it } }
@@ -322,7 +326,7 @@ fun Artists(c: LibraryContext) {
     var searching by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
     val matching = shown.filter { matches(query, it.name) }
-    ListPage(c.nav, "Artists", actions = listOf(BarAction(Icons.Search, "Search Artists") { searching = !searching })) {
+    ListPage(c.nav, "Artists", actions = listOf(BarAction(Icons.Search, "Search Artists") { searching = !searching }), refresh = c.refresh { it.artists }) {
         item { SearchReveal(searching, query, "Search Artists") { query = it } }
         if (matching.isEmpty()) item { Empty(c.lists.artists, "No artists", "Artists of the songs you add show here.") }
         items(matching, key = { it.id.provider.name + it.id.id }) { artist ->
@@ -382,6 +386,7 @@ fun Songs(c: LibraryContext) {
             },
         ),
         fold = sourcesFold(c.services, sources) { sources = !sources },
+        refresh = c.refresh { if (order == SongSort.Added) it.newestSongs else it.songs },
     ) {
         item { SearchReveal(searching, query, "Search Songs") { query = it } }
         item { SourceChips(sources, source, c.services) { source = it } }
