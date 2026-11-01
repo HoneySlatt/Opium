@@ -100,7 +100,8 @@ fun LibraryRoot(c: LibraryContext) {
     // Folded at first, the source kept still applying; opened at will.
     var sources by rememberSaveable { mutableStateOf(false) }
     val added = remember(c.lists.recentlyAdded.items, source) {
-        newestFirst(c.lists.recentlyAdded.items).filter { source == null || it.provider() == source }.take(RECENT_SHOWN)
+        // Each service's together, as the library lists them: Apple Music's, SoundCloud's, Navidrome's.
+        c.lists.recentlyAdded.items.filter { source == null || it.provider() == source }.take(RECENT_SHOWN)
     }
     GridPage(c.nav, "Library", account = c.account) {
         full {
@@ -126,23 +127,6 @@ private fun Collection.provider() = when (this) {
     is Collection.Album -> v1.id.provider
     is Collection.Playlist -> v1.id.provider
     is Collection.Station -> v1.id.provider
-}
-
-/**
- * Every service's recent additions, newest first. Each service lists its
- * own newest first; a playlist, which says no date, keeps the date of what
- * comes before it in its service's list.
- */
-private fun newestFirst(items: List<Collection>): List<Collection> {
-    val last = mutableMapOf<ProviderKind, String>()
-    val dated = items.map { item ->
-        val own = (item as? Collection.Album)?.v1?.added
-        // Before any dated one: as new as can be.
-        val date = own ?: last[item.provider()] ?: "9999"
-        last[item.provider()] = date
-        item to date
-    }
-    return dated.sortedByDescending { it.second }.map { it.first }
 }
 
 private fun androidx.compose.foundation.lazy.grid.LazyGridScope.collections(

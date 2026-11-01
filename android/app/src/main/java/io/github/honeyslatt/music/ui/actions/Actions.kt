@@ -429,12 +429,16 @@ class Actions(
             } else {
                 session.addToLibrary(FavouriteKind.SONG, track.id)
             }
+            library.recentChanged(track.id.provider)
         }
     }
 
     fun addAlbumToLibrary(album: Album) {
         hud.show("Added to Library")
-        change("Couldn't add to the library") { session.addToLibrary(FavouriteKind.ALBUM, album.catalogId ?: album.id) }
+        change("Couldn't add to the library") {
+            session.addToLibrary(FavouriteKind.ALBUM, album.catalogId ?: album.id)
+            library.recentChanged(album.id.provider)
+        }
     }
 
     private fun confirmDelete(track: Track) {
@@ -446,14 +450,20 @@ class Actions(
         ) {
             inLibraryNow[track.id] = false
             hud.show("Deleted", Icons.Trash)
-            change("Couldn't delete it", undo = { inLibraryNow.remove(track.id) }) { session.removeFromLibrary(id) }
+            change("Couldn't delete it", undo = { inLibraryNow.remove(track.id) }) {
+                session.removeFromLibrary(id)
+                library.recentChanged(track.id.provider)
+            }
         }
     }
 
     private fun removeLike(track: Track) {
         inLibraryNow[track.id] = false
         hud.show("Removed from Library", Icons.Minuscircle)
-        change("Couldn't remove it", undo = { inLibraryNow.remove(track.id) }) { session.removeFromLibrary(track.id) }
+        change("Couldn't remove it", undo = { inLibraryNow.remove(track.id) }) {
+            session.removeFromLibrary(track.id)
+            library.recentChanged(track.id.provider)
+        }
     }
 
     /** Favourite, or not; a song favourited joins the library unless the setting says not to. */
@@ -481,6 +491,8 @@ class Actions(
         ) {
             if (joins) session.addToLibrary(FavouriteKind.SONG, track.id)
             session.setFavourite(FavouriteKind.SONG, track.id, on)
+            // A SoundCloud like is the library.
+            if (soundCloud || joins) library.recentChanged(track.id.provider)
         }
     }
 
@@ -563,7 +575,10 @@ class Actions(
         if (!playlistSongsToLibrary) return
         tracks.filter { it.id.provider == ProviderKind.APPLE_MUSIC && !inLibrary(it) }.forEach { t ->
             inLibraryNow[t.id] = true
-            change("Couldn't add to the library", undo = { inLibraryNow.remove(t.id) }) { session.addToLibrary(FavouriteKind.SONG, t.id) }
+            change("Couldn't add to the library", undo = { inLibraryNow.remove(t.id) }) {
+                session.addToLibrary(FavouriteKind.SONG, t.id)
+                library.recentChanged(t.id.provider)
+            }
         }
     }
 
@@ -573,6 +588,7 @@ class Actions(
         scope.launch {
             try {
                 val made = session.createPlaylist(provider, name, description, tracks)
+                library.recentChanged(provider)
                 library.playlistMade(made)
                 contents[made.id] = tracks.map { it.id }.toSet()
                 usedNow(listOf(made))
@@ -603,7 +619,10 @@ class Actions(
             library.playlistDeleted(playlist.id)
             onDeleted()
             hud.show("Deleted", Icons.Trash)
-            change("Couldn't delete the playlist", undo = { library.playlistMade(playlist) }) { session.deletePlaylist(playlist.id) }
+            change("Couldn't delete the playlist", undo = { library.playlistMade(playlist) }) {
+                session.deletePlaylist(playlist.id)
+                library.recentChanged(playlist.id.provider)
+            }
         }
     }
 

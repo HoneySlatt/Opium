@@ -855,6 +855,8 @@ async fn run(
     }
     // Asked for once: a service connected afterwards loads its library.
     let mut library_wanted = false;
+    // Recently Added was asked for: SoundCloud answers once connected.
+    let mut recent_wanted = false;
     // Turned off meanwhile: a connection made before is dropped as it comes.
     let mut turned_off: std::collections::HashSet<ProviderKind> = off.iter().copied().collect();
     // Signed out of meanwhile, until signed in again.
@@ -888,6 +890,9 @@ async fn run(
                     }
                     Arrived::SoundCloud(c, load) => {
                         sc = c;
+                        if let Some(sc) = sc.clone().filter(|_| load && recent_wanted) {
+                            tokio::spawn(soundcloud_recent(sc, replies.clone()));
+                        }
                         if let Some(sc) = sc.clone().filter(|_| load && library_wanted) {
                             loading.start(
                                 ProviderKind::SoundCloud,
@@ -911,6 +916,13 @@ async fn run(
             },
         };
         let replies = replies.clone();
+        // SoundCloud's likes, beside the other services' Recently Added.
+        if matches!(request, Request::RecentlyAdded) {
+            recent_wanted = true;
+            if let Some(sc) = sc.clone() {
+                tokio::spawn(soundcloud_recent(sc, replies.clone()));
+            }
+        }
         match request {
             Request::SignIn => {
                 let again = again.clone();
@@ -1972,6 +1984,23 @@ async fn soundcloud_playable(
         .await
         .map(Playable::SoundCloud)
         .map_err(|e| e.to_string())
+}
+
+/// What the user liked last on SoundCloud, for Recently Added.
+async fn soundcloud_recent(sc: Arc<SoundCloud>, replies: Replies) {
+    let provider = ProviderKind::SoundCloud;
+    let items = match sc.recently_added(None).await {
+        Ok(page) => page.items,
+        Err(e) => {
+            replies.send(Reply::Failed(e.to_string()));
+            Vec::new()
+        }
+    };
+    replies.send(Reply::RecentlyAdded {
+        provider,
+        items,
+        done: true,
+    });
 }
 
 /// Every SoundCloud playlist of the user's: their own, then those they liked.

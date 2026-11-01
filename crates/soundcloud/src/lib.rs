@@ -718,11 +718,42 @@ impl Provider for SoundCloud {
         })
     }
 
-    async fn recently_added(&self, _cursor: Option<&Cursor>) -> Result<Page<Collection>> {
-        Ok(Page {
-            items: Vec::new(),
-            next: None,
-        })
+    /// What the user liked last, newest first: a track as a single, an
+    /// album as one (each with when it was liked), a playlist.
+    async fn recently_added(&self, cursor: Option<&Cursor>) -> Result<Page<Collection>> {
+        if cursor.is_some() {
+            return Ok(Page {
+                items: Vec::new(),
+                next: None,
+            });
+        }
+        let page: types::Collection<types::Like> = self
+            .page(&format!("/users/{}/likes", self.me.id), None)
+            .await?;
+        let me = Some(self.me.id);
+        let items = page
+            .collection
+            .into_iter()
+            .filter_map(|like| {
+                let added = like.created_at;
+                if let Some(track) = like.track {
+                    return Some(Collection::Album(Album {
+                        added,
+                        ..convert::single(track)
+                    }));
+                }
+                let playlist = like.playlist?;
+                Some(if playlist.is_album {
+                    Collection::Album(Album {
+                        added,
+                        ..convert::album(playlist)
+                    })
+                } else {
+                    Collection::Playlist(convert::playlist(playlist, me))
+                })
+            })
+            .collect();
+        Ok(Page { items, next: None })
     }
 
     /// SoundCloud's albums are playlists marked so.

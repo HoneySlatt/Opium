@@ -101,9 +101,11 @@ pub struct TrackLike {
     pub track: Option<Track>,
 }
 
-/// One of the user's likes, of a track or a playlist.
+/// One of the user's likes, of a track or a playlist, and when.
 #[derive(Debug, Deserialize)]
 pub struct Like {
+    pub created_at: Option<String>,
+    pub track: Option<Track>,
     pub playlist: Option<Playlist>,
 }
 

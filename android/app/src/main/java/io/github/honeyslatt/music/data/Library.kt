@@ -213,6 +213,19 @@ class Library(private val core: Core, private val scope: CoroutineScope) {
         }
     }
 
+    /**
+     * Something of `provider`'s just joined the library, or left it: its
+     * Recently Added read again, a moment later for Apple's, whose newest
+     * songs say so only then.
+     */
+    fun recentChanged(provider: ProviderKind) {
+        if (provider !in providers) return
+        scope.launch {
+            if (provider == ProviderKind.APPLE_MUSIC) kotlinx.coroutines.delay(1_500)
+            recentlyAdded(provider)
+        }
+    }
+
     /** Not read whole: tried again with the network, and next time anyway. */
     private fun failed(provider: ProviderKind) {
         unloaded += provider

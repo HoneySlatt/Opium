@@ -415,6 +415,8 @@ pub struct App {
     pub navidrome_form: NavidromeForm,
     /// Settings → Devices: the relay as typed, kept once left.
     pub relay_field: String,
+    /// When to read Recently Added again, after a change to the library.
+    recent_due: Option<f64>,
     /// The server is being signed in to.
     pub navidrome_signing_in: bool,
     /// Its sign-in shows again, though connected.
@@ -663,6 +665,7 @@ impl App {
             },
             navidrome_signing_in: false,
             relay_field: settings.relay.clone().unwrap_or_default(),
+            recent_due: None,
             navidrome_editing: false,
             songs_coming: Default::default(),
             page: Page::Home,
@@ -1038,6 +1041,16 @@ impl App {
 
     /// The services whose albums, artists and recent additions are listed
     /// (Apple Music's and the server's), signed in or on their way to.
+    /// Something joined the library or left it: Recently Added, if it was
+    /// read, is read again a moment later (Apple adds to the library on its
+    /// own time, its newest songs saying so only then), what it shows
+    /// staying until each service answers.
+    fn recent_changed(&mut self, now: f64) {
+        if self.recently_added.requested {
+            self.recent_due = Some(now + 1.5);
+        }
+    }
+
     fn listing_services(&self) -> Vec<ProviderKind> {
         let mut listing = Vec::new();
         if self.service_on(ProviderKind::AppleMusic)
@@ -3594,9 +3607,17 @@ impl App {
                     items,
                     done,
                 } => {
-                    // Apple Music's come page by page; the server's whole.
-                    let whole = provider != ProviderKind::AppleMusic;
-                    let listing = self.listing_services();
+                    // Each service's whole, in place of what it said before.
+                    let whole = true;
+                    let mut listing = self.listing_services();
+                    if self.service_on(ProviderKind::SoundCloud)
+                        && matches!(
+                            self.soundcloud,
+                            SoundCloudState::Connecting | SoundCloudState::Connected(_)
+                        )
+                    {
+                        listing.push(ProviderKind::SoundCloud);
+                    }
                     self.recently_added.arrived_from(
                         provider,
                         (items, done, whole),
@@ -3607,6 +3628,19 @@ impl App {
                             Collection::Station(s) => s.id.provider == provider,
                         },
                     );
+                    // Each service's together, in the same order every time.
+                    self.recently_added.items.sort_by_key(|c| {
+                        match match c {
+                            Collection::Album(a) => a.id.provider,
+                            Collection::Playlist(p) => p.id.provider,
+                            Collection::Station(s) => s.id.provider,
+                        } {
+                            ProviderKind::AppleMusic => 0,
+                            ProviderKind::SoundCloud => 1,
+                            ProviderKind::Navidrome => 2,
+                            ProviderKind::Music => 3,
+                        }
+                    });
                 }
                 Reply::Album { id, result } => {
                     let loaded = match result.map(|b| *b) {
@@ -3779,13 +3813,13 @@ impl App {
                             FavouriteKind::Playlist => self.backend.send(Request::Playlists),
                             FavouriteKind::Album => {
                                 self.library_albums = Streamed::default();
-                                self.recently_added = Streamed::default();
-                                if matches!(self.page, Page::Albums | Page::RecentlyAdded) {
+                                if self.page == Page::Albums {
                                     self.arrived();
                                 }
                             }
                             FavouriteKind::Song | FavouriteKind::Artist => {}
                         }
+                        self.recent_changed(now);
                         if !quiet {
                             self.notify("Added to the library", now);
                         }
@@ -3802,7 +3836,10 @@ impl App {
                     Ok(message) | Err(message) => self.notify(message, now),
                 },
                 Reply::RemovedFromLibrary(result) => match result {
-                    Ok(message) => self.notify(message, now),
+                    Ok(message) => {
+                        self.recent_changed(now);
+                        self.notify(message, now);
+                    }
                     Err(message) => {
                         self.notify(message, now);
                         self.reload_library();
@@ -3810,6 +3847,10 @@ impl App {
                 },
                 Reply::Favourite { id, set, result } => match (set, result) {
                     (Some(on), Ok(_)) => {
+                        // A SoundCloud like is the library.
+                        if id.provider == ProviderKind::SoundCloud {
+                            self.recent_changed(now);
+                        }
                         self.unliked.remove(&id);
                         let message = if on {
                             "Added to Favourites"
@@ -4537,6 +4578,14 @@ impl eframe::App for App {
                 // Its next failure sets the next try.
                 self.apple_retry = Some((f64::INFINITY, wait));
                 self.backend.send(Request::Reconnect);
+            } else {
+                ctx.request_repaint_after(Duration::from_secs_f64(at - now));
+            }
+        }
+        if let Some(at) = self.recent_due {
+            if now >= at {
+                self.recent_due = None;
+                self.backend.send(Request::RecentlyAdded);
             } else {
                 ctx.request_repaint_after(Duration::from_secs_f64(at - now));
             }
