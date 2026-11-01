@@ -7,6 +7,7 @@ license.workspace = true
 [dependencies]
 hex = "0.4.3"
 hmac = "0.13.0"
+iroh = { version = "1.4.1", default-features = false, features = ["tls-ring"] }
 mdns-sd = "0.21.6"
 music-core = { path = "../music-core" }
 rand = "0.8"

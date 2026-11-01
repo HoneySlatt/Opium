@@ -23,7 +23,7 @@ pub struct Devices {
 impl Devices {
     /// Go on the network under the computer's name; `ctx` is woken when
     /// something is heard.
-    pub fn start(ctx: egui::Context, kept: synced::Kept) -> Self {
+    pub fn start(ctx: egui::Context, kept: synced::Kept, relay: Option<String>) -> Self {
         let name = std::fs::read_to_string("/proc/sys/kernel/hostname")
             .ok()
             .map(|n| n.trim().to_owned())
@@ -35,6 +35,7 @@ impl Devices {
             DeviceKind::Computer,
             &crate::settings::dir(),
             kept,
+            relay,
             move |event| {
                 let _ = tx.send(event);
                 ctx.request_repaint();

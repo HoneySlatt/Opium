@@ -1231,14 +1231,16 @@ impl Connect {
 #[uniffi::export]
 impl Connect {
     /// Go on the network as `name`, keeping the pairings and what is kept
-    /// in common in `dir`; the songs played and where the music stopped as
-    /// kept before in `history` and `session` are taken in.
+    /// in common in `dir`, away from home through `relay` (n0's when
+    /// `None`); the songs played and where the music stopped as kept before
+    /// in `history` and `session` are taken in.
     #[uniffi::constructor]
     pub fn new(
         name: String,
         dir: String,
         history: String,
         session: String,
+        relay: Option<String>,
         listener: Arc<dyn ConnectListener>,
     ) -> Arc<Self> {
         let dir = std::path::Path::new(&dir);
@@ -1252,10 +1254,17 @@ impl Connect {
                 kept.take_old_session(old, at.as_millis() as u64);
             }
         }
-        let node = connect::Node::start(name, connect::DeviceKind::Phone, dir, kept.clone(), {
-            let listener = listener.clone();
-            move |event| listener.heard(event)
-        });
+        let node = connect::Node::start(
+            name,
+            connect::DeviceKind::Phone,
+            dir,
+            kept.clone(),
+            relay,
+            {
+                let listener = listener.clone();
+                move |event| listener.heard(event)
+            },
+        );
         Arc::new(Self(node, kept, listener))
     }
 

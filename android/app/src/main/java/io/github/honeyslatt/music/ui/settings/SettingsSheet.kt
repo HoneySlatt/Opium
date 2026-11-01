@@ -246,6 +246,35 @@ private fun Root(core: Core, settings: Settings, go: (SettingsPage) -> Unit) {
         }
     }
 
+    Label("Away from Home")
+    Group("Away from your Wi-Fi, your devices meet through this relay, which passes on what they say without being able to read it; n0’s unless you set your own. Used from the next time Music starts.") {
+        GroupRow(first = true) {
+            var relay by remember { mutableStateOf(core.setting("relay").orEmpty()) }
+            val style = geist(16.sp).copy(color = roles.text)
+            androidx.compose.foundation.text.BasicTextField(
+                relay,
+                {
+                    relay = it.trim()
+                    core.setSetting("relay", relay)
+                },
+                Modifier.weight(1f),
+                textStyle = style,
+                singleLine = true,
+                cursorBrush = androidx.compose.ui.graphics.SolidColor(roles.accent),
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Uri,
+                    autoCorrectEnabled = false,
+                ),
+                decorationBox = { inner ->
+                    Box {
+                        if (relay.isEmpty()) BasicText("Relay (n0’s)", style = style.copy(color = roles.muted))
+                        inner()
+                    }
+                },
+            )
+        }
+    }
+
     Label("About")
     Group {
         GroupRow(first = true) {

@@ -81,6 +81,8 @@ class Devices(context: Context) {
         context.filesDir.path,
         java.io.File(context.filesDir, "history.json").path,
         java.io.File(context.filesDir, "session.json").path,
+        // Away from home, the devices meet through this relay; n0's unless set.
+        context.getSharedPreferences("music", Context.MODE_PRIVATE).getString("relay", null)?.takeIf { it.isNotBlank() },
         object : ConnectListener {
             override fun heard(event: Event) {
                 main.post { take(event) }

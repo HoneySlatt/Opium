@@ -75,6 +75,9 @@ pub struct Settings {
     /// The column beside the page, as last left: closed, or what it showed.
     pub side_closed: Option<bool>,
     pub side: Option<crate::app::Side>,
+    /// The relay the devices meet through away from home, as
+    /// `https://relay.example.org`; n0's unless set.
+    pub relay: Option<String>,
 }
 
 /// Repeat, as kept: the queue's own, by name.

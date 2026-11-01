@@ -1,5 +1,6 @@
-//! What a device keeps: its own id, and the devices paired with it, each
-//! with the key they share.
+//! What a device keeps: its own id, its key away from home, and the
+//! devices paired with it, each with the key they share and where to reach
+//! it away from home.
 
 use std::path::{Path, PathBuf};
 
@@ -11,6 +12,9 @@ use crate::Device;
 #[derive(Serialize, Deserialize, Default)]
 struct Saved {
     id: String,
+    /// This device's secret key on iroh, in hex: see `away`.
+    #[serde(default)]
+    away: String,
     paired: Vec<Paired>,
 }
 
@@ -19,6 +23,9 @@ struct Paired {
     device: Device,
     /// The key shared at pairing, in hex.
     key: String,
+    /// Its id on iroh, as it told once connected.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    away: Option<String>,
 }
 
 pub(crate) struct Store {
@@ -39,19 +46,57 @@ impl Store {
         if saved.is_none() && path.exists() {
             let _ = std::fs::rename(&path, path.with_extension("json.bad"));
         }
-        let store = Self {
+        let mut store = Self {
             saved: saved.unwrap_or_else(|| Saved {
                 id: hex::encode(random::<8>()),
+                away: String::new(),
                 paired: Vec::new(),
             }),
             path,
         };
+        if store.secret().is_none() {
+            store.saved.away = hex::encode(random::<32>());
+        }
         store.save();
         store
     }
 
     pub fn id(&self) -> &str {
         &self.saved.id
+    }
+
+    /// This device's secret key on iroh.
+    pub fn secret(&self) -> Option<[u8; 32]> {
+        hex::decode(&self.saved.away).ok()?.try_into().ok()
+    }
+
+    /// Where `id` is reached away from home, once it said.
+    pub fn away(&self, id: &str) -> Option<&str> {
+        self.saved
+            .paired
+            .iter()
+            .find(|p| p.device.id == id)?
+            .away
+            .as_deref()
+    }
+
+    /// `id` said where it is reached away from home.
+    pub fn set_away(&mut self, id: &str, away: String) {
+        if let Some(p) = self.saved.paired.iter_mut().find(|p| p.device.id == id)
+            && p.away.as_ref() != Some(&away)
+        {
+            p.away = Some(away);
+            self.save();
+        }
+    }
+
+    /// The paired device reached away from home as `away`.
+    pub fn away_of(&self, away: &str) -> Option<&Device> {
+        self.saved
+            .paired
+            .iter()
+            .find(|p| p.away.as_deref() == Some(away))
+            .map(|p| &p.device)
     }
 
     pub fn key(&self, id: &str) -> Option<[u8; 32]> {
@@ -68,6 +113,7 @@ impl Store {
         self.saved.paired.push(Paired {
             device,
             key: hex::encode(key),
+            away: None,
         });
         self.save();
     }

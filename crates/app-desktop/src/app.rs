@@ -626,7 +626,11 @@ impl App {
             history.reverse();
             history
         });
-        let devices = crate::devices::Devices::start(cc.egui_ctx.clone(), kept.clone());
+        let devices = crate::devices::Devices::start(
+            cc.egui_ctx.clone(),
+            kept.clone(),
+            settings.relay.clone(),
+        );
         let own = crate::backend::Own::new(kept.clone(), devices.node.sharer());
         let backend = Backend::start(cc.egui_ctx.clone(), settings.services_off.clone(), own);
         backend.send(Request::Library);
