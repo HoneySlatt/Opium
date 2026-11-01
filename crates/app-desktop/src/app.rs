@@ -210,6 +210,8 @@ pub struct NewPlaylist {
     pub name: String,
     pub description: String,
     pub tracks: Vec<Track>,
+    /// Where it is made: Music itself, or a service.
+    pub service: ProviderKind,
     /// The playlist being edited, when the window edits one instead.
     pub editing: Option<ItemId>,
 }
@@ -618,20 +620,22 @@ impl App {
         // A cover on the GPU isn't kept decoded in memory too: a library's
         // worth of them took hundreds of megabytes.
         cc.egui_ctx.options_mut(|o| o.reduce_texture_memory = true);
-        let backend = Backend::start(cc.egui_ctx.clone(), settings.services_off.clone());
-        backend.send(Request::Library);
         // The history kept before it was shared starts it, the last first.
         let kept = synced::Kept::open(&crate::settings::dir(), || {
             let mut history = read_history();
             history.reverse();
             history
         });
+        let devices = crate::devices::Devices::start(cc.egui_ctx.clone(), kept.clone());
+        let own = crate::backend::Own::new(kept.clone(), devices.node.sharer());
+        let backend = Backend::start(cc.egui_ctx.clone(), settings.services_off.clone(), own);
+        backend.send(Request::Library);
         let mut app = Self {
             theme,
             backend,
             player: Player::new(),
             mpris: crate::mpris::Mpris::start(cc.egui_ctx.clone()),
-            devices: crate::devices::Devices::start(cc.egui_ctx.clone(), kept.clone()),
+            devices,
             remote: None,
             obeying: false,
             far_playing: HashMap::new(),
@@ -1013,6 +1017,7 @@ impl App {
             ProviderKind::AppleMusic => !matches!(self.connection, Connection::NotSignedIn),
             ProviderKind::SoundCloud => !matches!(self.soundcloud, SoundCloudState::NotSignedIn),
             ProviderKind::Navidrome => !matches!(self.navidrome, SoundCloudState::NotSignedIn),
+            ProviderKind::Music => false,
         };
         [
             ProviderKind::AppleMusic,
@@ -1078,6 +1083,7 @@ impl App {
             }
             ProviderKind::SoundCloud => self.soundcloud = SoundCloudState::Connecting,
             ProviderKind::Navidrome => self.navidrome = SoundCloudState::Connecting,
+            ProviderKind::Music => {}
         }
         if on {
             // Read again, the service's albums with the rest, when shown.
@@ -1107,12 +1113,14 @@ impl App {
             ProviderKind::AppleMusic => self.connection = Connection::NotSignedIn,
             ProviderKind::SoundCloud => self.soundcloud = SoundCloudState::NotSignedIn,
             ProviderKind::Navidrome => self.navidrome = SoundCloudState::NotSignedIn,
+            ProviderKind::Music => {}
         }
         self.leave_library(provider);
         let name = match provider {
             ProviderKind::AppleMusic => "Apple Music",
             ProviderKind::SoundCloud => "SoundCloud",
             ProviderKind::Navidrome => "Navidrome",
+            ProviderKind::Music => "Music",
         };
         self.notify(format!("Signed out of {name}"), now);
         true
@@ -1440,16 +1448,39 @@ impl App {
         self.notify(format!("Adding “{}” to the library…", track.title), now);
     }
 
-    /// The user's own playlists that `tracks` can go in: those of their
-    /// service, as a playlist takes its own service's songs only.
+    /// The user's own playlists that `tracks` can go in: Music's, which
+    /// take any service's songs, and those of their service, as a service's
+    /// playlist takes its own songs only.
     pub fn editable_playlists(&self, tracks: &[Track]) -> Vec<Playlist> {
         let provider = tracks.first().map(|t| t.id.provider);
         let one_service = tracks.iter().all(|t| Some(t.id.provider) == provider);
         self.playlists
             .iter()
-            .filter(|p| p.editable && one_service && Some(p.id.provider) == provider)
+            .filter(|p| {
+                p.editable
+                    && (p.id.provider == ProviderKind::Music
+                        || (one_service && Some(p.id.provider) == provider))
+            })
             .cloned()
             .collect()
+    }
+
+    /// Where a new playlist of `tracks` can be made: in Music itself, or in
+    /// their service; any service in use, made empty.
+    pub fn new_playlist_services(&self, tracks: &[Track]) -> Vec<ProviderKind> {
+        let in_use = self.services_in_use();
+        let theirs: Vec<ProviderKind> = match tracks.first() {
+            None => in_use,
+            Some(first) => {
+                let provider = first.id.provider;
+                if tracks.iter().all(|t| t.id.provider == provider) && in_use.contains(&provider) {
+                    vec![provider]
+                } else {
+                    Vec::new()
+                }
+            }
+        };
+        std::iter::once(ProviderKind::Music).chain(theirs).collect()
     }
 
     /// The playlists songs were last added to, most recent first, that
@@ -1498,6 +1529,7 @@ impl App {
             name: String::new(),
             description: String::new(),
             tracks,
+            service: ProviderKind::Music,
             editing: None,
         });
     }
@@ -1515,6 +1547,7 @@ impl App {
                     name: playlist.name,
                     description: playlist.description.unwrap_or_default(),
                     tracks: Vec::new(),
+                    service: playlist.id.provider,
                     editing: Some(playlist.id),
                 });
             }
@@ -1567,7 +1600,16 @@ impl App {
                 }
             }
         }
+        if new.service == ProviderKind::Music {
+            self.backend.send(Request::CreateMusicPlaylist {
+                name,
+                description,
+                tracks: new.tracks,
+            });
+            return;
+        }
         self.backend.send(Request::CreatePlaylist {
+            service: new.service,
             name,
             description,
             tracks: new.tracks.into_iter().map(|t| t.id).collect(),
@@ -1604,6 +1646,16 @@ impl App {
                     });
                 }
             }
+        }
+        for playlist in dialog
+            .chosen
+            .iter()
+            .filter(|p| p.provider == ProviderKind::Music)
+        {
+            self.backend.send(Request::AddToMusicPlaylist {
+                playlist: playlist.clone(),
+                tracks: dialog.tracks.clone(),
+            });
         }
         self.backend.send(Request::AddToPlaylists {
             playlists: dialog.chosen,
@@ -3088,8 +3140,12 @@ impl App {
     /// every row of it, as Apple does.
     pub fn remove_from_playlist(&mut self, playlist: &ItemId, track: &Track) {
         // Apple names a playlist's row by its library id; SoundCloud has a
-        // track once in a playlist, named by its own.
-        let entry = if playlist.provider == ProviderKind::SoundCloud {
+        // track once in a playlist, named by its own; Music takes out every
+        // row of the song named.
+        let entry = if matches!(
+            playlist.provider,
+            ProviderKind::SoundCloud | ProviderKind::Music
+        ) {
             track.id.clone()
         } else {
             let Some(entry) = track.library_id.clone() else {
@@ -3418,10 +3474,16 @@ impl App {
                     provider,
                     playlists,
                 } => {
-                    // A service's in place of its others, Apple Music's first.
+                    // A service's in place of its others: Music's own first,
+                    // then Apple Music's.
                     self.playlists.retain(|p| p.id.provider != provider);
                     let at = match provider {
-                        ProviderKind::AppleMusic => 0,
+                        ProviderKind::Music => 0,
+                        ProviderKind::AppleMusic => self
+                            .playlists
+                            .iter()
+                            .take_while(|p| p.id.provider == ProviderKind::Music)
+                            .count(),
                         _ => self.playlists.len(),
                     };
                     self.playlists.splice(at..at, playlists);
@@ -4092,6 +4154,13 @@ impl App {
                 Event::Synced => {
                     self.history = self.kept.history();
                     self.follow_session();
+                    let loaded: Vec<ItemId> = self
+                        .playlist_tracks
+                        .keys()
+                        .filter(|id| id.provider == ProviderKind::Music)
+                        .cloned()
+                        .collect();
+                    self.backend.own_changed(&loaded);
                 }
             }
         }

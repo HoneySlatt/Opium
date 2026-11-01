@@ -33,6 +33,8 @@ impl Services {
             ProviderKind::AppleMusic => self.apple.clone().map(|p| p as Arc<dyn Provider>),
             ProviderKind::SoundCloud => self.soundcloud.clone().map(|p| p as Arc<dyn Provider>),
             ProviderKind::Navidrome => self.navidrome.clone().map(|p| p as Arc<dyn Provider>),
+            // What Music keeps of its own is the app's, not a service's.
+            ProviderKind::Music => None,
         }
     }
 

@@ -126,7 +126,7 @@ fn the_history_keeps_the_latest_songs_whatever_order_devices_meet_in() {
 fn taking_the_same_in_twice_changes_nothing() {
     let (mut a, mut b) = (device("a"), device("b"));
     a.played(track(1), 1000);
-    let (made, _) = a.create_playlist("p", "Mix".into(), vec![track(2)], 1100);
+    let (made, _) = a.create_playlist("p", "Mix".into(), String::new(), vec![track(2)], 1100);
     assert!(b.merge(a.shared.clone()));
     assert!(!b.merge(a.shared.clone()));
     assert!(!b.merge(made));
@@ -136,7 +136,7 @@ fn taking_the_same_in_twice_changes_nothing() {
 fn a_change_lost_on_the_way_comes_with_the_next_meeting() {
     let (mut a, mut b) = (device("a"), device("b"));
     let (_lost, _) = a.played(track(1), 1000);
-    let (_lost, _) = a.create_playlist("p", "Mix".into(), vec![track(2)], 1100);
+    let (_lost, _) = a.create_playlist("p", "Mix".into(), String::new(), vec![track(2)], 1100);
     meet(&mut a, &mut b);
     assert_eq!(history(&b), ["Song 1"]);
     assert_eq!(songs(&b, "p"), ["Song 2"]);
@@ -145,7 +145,13 @@ fn a_change_lost_on_the_way_comes_with_the_next_meeting() {
 #[test]
 fn songs_added_apart_to_a_playlist_are_all_in_it_in_the_same_order() {
     let (mut a, mut b) = (device("a"), device("b"));
-    a.create_playlist("p", "Mix".into(), vec![track(1), track(2)], 1000);
+    a.create_playlist(
+        "p",
+        "Mix".into(),
+        String::new(),
+        vec![track(1), track(2)],
+        1000,
+    );
     meet(&mut a, &mut b);
     a.add_to_playlist("p", vec![track(3)], 2000);
     b.add_to_playlist("p", vec![track(4), track(5)], 2100);
@@ -162,7 +168,7 @@ fn songs_added_apart_to_a_playlist_are_all_in_it_in_the_same_order() {
 #[test]
 fn the_same_song_can_be_in_a_playlist_twice() {
     let (mut a, mut b) = (device("a"), device("b"));
-    a.create_playlist("p", "Mix".into(), vec![track(1)], 1000);
+    a.create_playlist("p", "Mix".into(), String::new(), vec![track(1)], 1000);
     meet(&mut a, &mut b);
     a.add_to_playlist("p", vec![track(2)], 2000);
     b.add_to_playlist("p", vec![track(2)], 2000);
@@ -173,10 +179,10 @@ fn the_same_song_can_be_in_a_playlist_twice() {
 #[test]
 fn of_two_names_given_apart_the_later_wins() {
     let (mut a, mut b) = (device("a"), device("b"));
-    a.create_playlist("p", "Mix".into(), vec![], 1000);
+    a.create_playlist("p", "Mix".into(), String::new(), vec![], 1000);
     meet(&mut a, &mut b);
-    b.rename_playlist("p", "Later".into(), 3000);
-    a.rename_playlist("p", "Earlier".into(), 2000);
+    b.edit_playlist("p", "Later".into(), String::new(), 3000);
+    a.edit_playlist("p", "Earlier".into(), String::new(), 2000);
     meet(&mut a, &mut b);
     assert_eq!(a.shared.playlists.get("p").unwrap().name, "Later");
 }
@@ -184,12 +190,12 @@ fn of_two_names_given_apart_the_later_wins() {
 #[test]
 fn a_deleted_playlist_stays_deleted_whatever_was_done_to_it_meanwhile() {
     let (mut a, mut b, mut c) = (device("a"), device("b"), device("c"));
-    a.create_playlist("p", "Mix".into(), vec![track(1)], 1000);
+    a.create_playlist("p", "Mix".into(), String::new(), vec![track(1)], 1000);
     meet(&mut a, &mut b);
     meet(&mut b, &mut c);
     a.delete_playlist("p", 2000);
     b.add_to_playlist("p", vec![track(2)], 3000);
-    b.rename_playlist("p", "Still here?".into(), 3100);
+    b.edit_playlist("p", "Still here?".into(), String::new(), 3100);
     meet(&mut a, &mut b);
     assert!(a.shared.playlists.get("p").is_none());
     assert!(a.shared.playlists.all().is_empty());
@@ -203,7 +209,13 @@ fn a_deleted_playlist_stays_deleted_whatever_was_done_to_it_meanwhile() {
 #[test]
 fn a_song_taken_out_stays_out_even_if_moved_meanwhile() {
     let (mut a, mut b) = (device("a"), device("b"));
-    a.create_playlist("p", "Mix".into(), vec![track(1), track(2), track(3)], 1000);
+    a.create_playlist(
+        "p",
+        "Mix".into(),
+        String::new(),
+        vec![track(1), track(2), track(3)],
+        1000,
+    );
     meet(&mut a, &mut b);
     let entry = a.shared.playlists.get("p").unwrap().songs[0].entry.clone();
     a.remove_from_playlist("p", std::slice::from_ref(&entry));
@@ -215,7 +227,13 @@ fn a_song_taken_out_stays_out_even_if_moved_meanwhile() {
 #[test]
 fn a_song_moved_on_both_ends_up_in_one_place() {
     let (mut a, mut b) = (device("a"), device("b"));
-    a.create_playlist("p", "Mix".into(), (1..=5).map(track).collect(), 1000);
+    a.create_playlist(
+        "p",
+        "Mix".into(),
+        String::new(),
+        (1..=5).map(track).collect(),
+        1000,
+    );
     meet(&mut a, &mut b);
     let entry = a.shared.playlists.get("p").unwrap().songs[0].entry.clone();
     a.move_in_playlist("p", &entry, 4, 2000);
@@ -230,7 +248,13 @@ fn a_song_moved_on_both_ends_up_in_one_place() {
 #[test]
 fn moving_puts_a_song_where_asked() {
     let mut a = device("a");
-    a.create_playlist("p", "Mix".into(), (1..=4).map(track).collect(), 1000);
+    a.create_playlist(
+        "p",
+        "Mix".into(),
+        String::new(),
+        (1..=4).map(track).collect(),
+        1000,
+    );
     let entry = |a: &State, k: usize| a.shared.playlists.get("p").unwrap().songs[k].entry.clone();
     let e = entry(&a, 3);
     a.move_in_playlist("p", &e, 0, 2000);
@@ -246,11 +270,11 @@ fn moving_puts_a_song_where_asked() {
 #[test]
 fn changes_heard_out_of_order_come_out_the_same() {
     let (mut a, mut b) = (device("a"), device("b"));
-    let (made, _) = a.create_playlist("p", "Mix".into(), vec![track(1)], 1000);
+    let (made, _) = a.create_playlist("p", "Mix".into(), String::new(), vec![track(1)], 1000);
     let (added, _) = a.add_to_playlist("p", vec![track(2)], 2000);
     let entry = a.shared.playlists.get("p").unwrap().songs[1].entry.clone();
     let (moved, _) = a.move_in_playlist("p", &entry, 0, 3000);
-    let (renamed, _) = a.rename_playlist("p", "Renamed".into(), 4000);
+    let (renamed, _) = a.edit_playlist("p", "Renamed".into(), String::new(), 4000);
     for change in [renamed, moved, added, made] {
         b.merge(change);
     }
@@ -264,7 +288,7 @@ fn kept_on_disk_from_one_launch_to_the_next() {
     let kept = Kept::open(&dir, || vec![track(2), track(1)]);
     assert_eq!(titles(kept.history()), ["Song 2", "Song 1"]);
     kept.played(track(3));
-    let (id, _) = kept.create_playlist("Mix".into(), vec![track(4)]);
+    let (id, _) = kept.create_playlist("Mix".into(), String::new(), vec![track(4)]);
     let me = kept.me();
     drop(kept);
     // The writer goes on a moment after.

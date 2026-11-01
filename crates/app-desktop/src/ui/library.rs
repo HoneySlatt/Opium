@@ -497,11 +497,12 @@ fn row_ui(
     response
 }
 
-fn service(provider: ProviderKind) -> &'static str {
+pub(super) fn service(provider: ProviderKind) -> &'static str {
     match provider {
         ProviderKind::AppleMusic => "Apple Music",
         ProviderKind::SoundCloud => "SoundCloud",
         ProviderKind::Navidrome => "Navidrome",
+        ProviderKind::Music => "Music",
     }
 }
 

@@ -8,7 +8,7 @@
 
 use std::collections::BTreeMap;
 
-use music_core::model::Track;
+use music_core::model::{ItemId, ProviderKind, Track};
 use serde::{Deserialize, Serialize};
 
 use crate::{Latest, Stamp, latest, place};
@@ -24,6 +24,8 @@ pub struct Playlists {
 struct List {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     name: Option<Latest<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    description: Option<Latest<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     deleted: Option<Stamp>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -47,6 +49,7 @@ struct Entry {
 pub struct Playlist {
     pub id: String,
     pub name: String,
+    pub description: String,
     pub songs: Vec<PlaylistSong>,
 }
 
@@ -55,6 +58,37 @@ pub struct Playlist {
 pub struct PlaylistSong {
     pub entry: String,
     pub track: Track,
+}
+
+impl Playlist {
+    /// As the apps show a service's playlist: its cover its first song's.
+    pub fn model(&self) -> music_core::model::Playlist {
+        music_core::model::Playlist {
+            id: ItemId::new(ProviderKind::Music, self.id.clone()),
+            name: self.name.clone(),
+            description: Some(self.description.clone()).filter(|d| !d.is_empty()),
+            curator: Some("Music".to_owned()),
+            favourites: false,
+            artwork: self.songs.iter().find_map(|s| s.track.artwork.clone()),
+            track_count: Some(self.songs.len() as u32),
+            catalog_id: None,
+            in_favourites: None,
+            editable: true,
+        }
+    }
+
+    /// The entries of `track`, every time it is in.
+    pub fn entries_of(&self, track: &ItemId) -> Vec<String> {
+        self.songs
+            .iter()
+            .filter(|s| s.track.id == *track)
+            .map(|s| s.entry.clone())
+            .collect()
+    }
+
+    pub fn tracks(&self) -> Vec<Track> {
+        self.songs.iter().map(|s| s.track.clone()).collect()
+    }
 }
 
 impl Entry {
@@ -85,10 +119,12 @@ impl List {
         }
         if self.deleted.is_some() {
             self.name = None;
+            self.description = None;
             self.songs.clear();
             return;
         }
         latest(&mut self.name, other.name);
+        latest(&mut self.description, other.description);
         for (id, entry) in other.songs {
             self.songs.entry(id).or_default().merge(entry);
         }
@@ -123,6 +159,11 @@ impl Playlists {
         Some(Playlist {
             id: id.to_owned(),
             name,
+            description: list
+                .description
+                .as_ref()
+                .map(|d| d.value.clone())
+                .unwrap_or_default(),
             songs: list
                 .shown()
                 .into_iter()
@@ -147,6 +188,7 @@ impl Playlists {
                     .as_ref()
                     .map(|n| &n.at)
                     .into_iter()
+                    .chain(l.description.as_ref().map(|d| &d.at))
                     .chain(&l.deleted)
                     .chain(songs)
             })
@@ -175,6 +217,7 @@ impl Playlists {
     pub(crate) fn create(
         id: &str,
         name: String,
+        description: String,
         tracks: Vec<Track>,
         entries: impl FnMut() -> String,
         at: Stamp,
@@ -186,17 +229,29 @@ impl Playlists {
                     at: at.clone(),
                     value: name,
                 }),
+                description: Some(Latest {
+                    at: at.clone(),
+                    value: description,
+                }),
                 deleted: None,
                 songs: Self::added(None, tracks, entries, at),
             },
         )
     }
 
-    pub(crate) fn rename(id: &str, name: String, at: Stamp) -> Self {
+    /// `id` named `name`, described by `description`.
+    pub(crate) fn edit(id: &str, name: String, description: String, at: Stamp) -> Self {
         Self::change(
             id,
             List {
-                name: Some(Latest { at, value: name }),
+                name: Some(Latest {
+                    at: at.clone(),
+                    value: name,
+                }),
+                description: Some(Latest {
+                    at,
+                    value: description,
+                }),
                 ..List::default()
             },
         )

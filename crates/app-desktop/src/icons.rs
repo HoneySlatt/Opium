@@ -234,6 +234,7 @@ pub fn service(provider: music_core::model::ProviderKind) -> Icon {
         music_core::model::ProviderKind::AppleMusic => APPLE_MUSIC,
         music_core::model::ProviderKind::SoundCloud => SOUNDCLOUD,
         music_core::model::ProviderKind::Navidrome => NAVIDROME,
+        music_core::model::ProviderKind::Music => NOTE,
     }
 }
 

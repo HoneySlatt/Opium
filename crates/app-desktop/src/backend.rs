@@ -92,11 +92,23 @@ pub enum Request {
     },
     /// Take a song out of the library, by its library id.
     RemoveFromLibrary(ItemId),
-    /// Make a playlist with these songs.
+    /// Make a playlist with these songs, in `service`.
     CreatePlaylist {
+        service: ProviderKind,
         name: String,
         description: String,
         tracks: Vec<ItemId>,
+    },
+    /// Make one of Music's own playlists, of songs from any service.
+    CreateMusicPlaylist {
+        name: String,
+        description: String,
+        tracks: Vec<Track>,
+    },
+    /// Add songs to one of Music's own playlists.
+    AddToMusicPlaylist {
+        playlist: ItemId,
+        tracks: Vec<Track>,
     },
     /// Change a playlist's name and description.
     EditPlaylist {
@@ -343,6 +355,134 @@ pub enum Playable {
 pub struct Backend {
     requests: UnboundedSender<Request>,
     replies: mpsc::Receiver<Reply>,
+    own: Own,
+}
+
+/// What Music keeps of its own, its playlists, answered at once rather
+/// than by a service, and shared with the other devices as it changes.
+pub struct Own {
+    pub kept: synced::Kept,
+    pub share: connect::Sharer,
+    replies: Option<Replies>,
+}
+
+impl Own {
+    pub fn new(kept: synced::Kept, share: connect::Sharer) -> Self {
+        Self {
+            kept,
+            share,
+            replies: None,
+        }
+    }
+
+    fn reply(&self, reply: Reply) {
+        if let Some(replies) = &self.replies {
+            replies.send(reply);
+        }
+    }
+
+    /// The playlists, and the songs of `loaded`, as they are now.
+    fn tell(&self, loaded: &[ItemId]) {
+        let playlists = self.kept.playlists();
+        self.reply(Reply::Playlists {
+            provider: ProviderKind::Music,
+            playlists: playlists.iter().map(synced::Playlist::model).collect(),
+        });
+        for id in loaded {
+            self.reply(Reply::PlaylistTracks {
+                id: id.clone(),
+                result: match playlists.iter().find(|p| p.id == id.id) {
+                    Some(p) => Ok(p.tracks()),
+                    None => Err("This playlist was deleted".to_owned()),
+                },
+                done: true,
+                whole: true,
+            });
+        }
+    }
+
+    fn share(&self, change: synced::Shared) {
+        self.share.share(change);
+    }
+
+    /// Answer `request` if it is about Music's own; hand it back if it is a
+    /// service's.
+    fn answer(&self, request: Request) -> Option<Request> {
+        let music = |id: &ItemId| id.provider == ProviderKind::Music;
+        match request {
+            Request::Library | Request::Playlists => {
+                self.tell(&[]);
+                Some(request)
+            }
+            Request::Playlist(id) if music(&id) => {
+                self.tell(&[id]);
+                None
+            }
+            Request::CreateMusicPlaylist {
+                name,
+                description,
+                tracks,
+            } => {
+                let (id, change) = self.kept.create_playlist(name, description, tracks);
+                self.share(change);
+                if let Some(p) = self.kept.playlist(&id) {
+                    self.reply(Reply::PlaylistCreated(Ok(p.model())));
+                }
+                self.tell(&[]);
+                None
+            }
+            Request::AddToMusicPlaylist { playlist, tracks } => {
+                self.share(self.kept.add_to_playlist(&playlist.id, tracks));
+                self.tell(&[playlist]);
+                None
+            }
+            Request::EditPlaylist {
+                id,
+                name,
+                description,
+            } if music(&id) => {
+                self.share(
+                    self.kept
+                        .edit_playlist(&id.id, name.clone(), description.clone()),
+                );
+                self.reply(Reply::PlaylistEdited {
+                    id,
+                    name,
+                    description,
+                    result: Ok(()),
+                });
+                None
+            }
+            Request::DeletePlaylist(id) if music(&id) => {
+                self.share(self.kept.delete_playlist(&id.id));
+                self.reply(Reply::PlaylistDeleted { id, result: Ok(()) });
+                self.tell(&[]);
+                None
+            }
+            // Every entry of the song, as a service's playlist does.
+            Request::RemoveFromPlaylist { playlist, entry } if music(&playlist) => {
+                let entries = self
+                    .kept
+                    .playlist(&playlist.id)
+                    .map(|p| p.entries_of(&entry))
+                    .unwrap_or_default();
+                self.share(self.kept.remove_from_playlist(&playlist.id, &entries));
+                self.reply(Reply::RemovedFromPlaylist {
+                    playlist: playlist.clone(),
+                    result: Ok(()),
+                });
+                self.tell(&[playlist]);
+                None
+            }
+            Request::AddToPlaylists { playlists, tracks } => {
+                let playlists: Vec<ItemId> = playlists.into_iter().filter(|p| !music(p)).collect();
+                (!playlists.is_empty()).then_some(Request::AddToPlaylists { playlists, tracks })
+            }
+            // Nothing else is Music's to answer, nor a service's.
+            request if target(&request) == Some(ProviderKind::Music) => None,
+            request => Some(request),
+        }
+    }
 }
 
 /// Where the Apple Music sign-in keeps its token (see the `am` example).
@@ -441,6 +581,7 @@ fn forget_sign_in(provider: ProviderKind) {
             gone(soundcloud_dir().join("browser-profile"));
         }
         ProviderKind::Navidrome => gone(navidrome_file()),
+        ProviderKind::Music => {}
     }
     cache::clear();
 }
@@ -533,7 +674,7 @@ impl Replies {
 
 impl Backend {
     /// Start, connecting to every service but those `off`.
-    pub fn start(ctx: egui::Context, off: Vec<ProviderKind>) -> Self {
+    pub fn start(ctx: egui::Context, off: Vec<ProviderKind>, mut own: Own) -> Self {
         // What the app keeps, sign-ins and browser profiles among it, for the
         // user's eyes only, folders made before included.
         for dir in [
@@ -550,6 +691,10 @@ impl Backend {
         let (requests, request_rx) = tokio::sync::mpsc::unbounded_channel();
         let again = requests.clone();
         let (tx, replies) = mpsc::channel();
+        own.replies = Some(Replies {
+            tx: tx.clone(),
+            ctx: ctx.clone(),
+        });
         let replies_out = Replies { tx, ctx };
         std::thread::Builder::new()
             .name("backend".into())
@@ -561,11 +706,23 @@ impl Backend {
                 runtime.block_on(run(request_rx, again, replies_out, off));
             })
             .expect("spawn the backend thread");
-        Self { requests, replies }
+        Self {
+            requests,
+            replies,
+            own,
+        }
     }
 
     pub fn send(&self, request: Request) {
-        let _ = self.requests.send(request);
+        if let Some(request) = self.own.answer(request) {
+            let _ = self.requests.send(request);
+        }
+    }
+
+    /// Music's own playlists changed on another device: what shows of
+    /// them, and the songs of those `loaded`, again.
+    pub fn own_changed(&self, loaded: &[ItemId]) {
+        self.own.tell(loaded);
     }
 
     pub fn try_recv(&self) -> Option<Reply> {
@@ -797,6 +954,7 @@ async fn run(
                         sign_covers_with(&nd);
                         loading.stop(provider);
                     }
+                    (ProviderKind::Music, _) => {}
                     // Turned on: its library loads once it is connected.
                     (ProviderKind::AppleMusic, true) => {
                         let arrived_tx = arrived_tx.clone();
@@ -834,6 +992,7 @@ async fn run(
                         nd = None;
                         sign_covers_with(&nd);
                     }
+                    ProviderKind::Music => {}
                 }
                 tokio::task::spawn_blocking(move || forget_sign_in(provider));
                 continue;
@@ -1068,6 +1227,8 @@ async fn run(
             | Request::SongLinks { .. }
             | Request::RemoveFromLibrary(_)
             | Request::CreatePlaylist { .. }
+            | Request::CreateMusicPlaylist { .. }
+            | Request::AddToMusicPlaylist { .. }
             | Request::EditPlaylist { .. }
             | Request::RemoveFromPlaylist { .. }
             | Request::DeletePlaylist(_)
@@ -1436,6 +1597,7 @@ fn shared_request(p: Arc<dyn Provider>, request: Request, replies: Replies) -> O
             name,
             description,
             tracks,
+            ..
         } => {
             tokio::spawn(async move {
                 let result = p
@@ -1633,7 +1795,7 @@ fn target(request: &Request) -> Option<ProviderKind> {
         | Request::RemoveFromPlaylist { playlist: id, .. } => id,
         Request::InLibrary { ids, .. } => ids.first()?,
         Request::AddToPlaylists { playlists, .. } => playlists.first()?,
-        Request::CreatePlaylist { tracks, .. } => tracks.first()?,
+        Request::CreatePlaylist { service, .. } => return Some(*service),
         _ => return None,
     };
     Some(id.provider)

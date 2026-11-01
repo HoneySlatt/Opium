@@ -24,6 +24,8 @@ fn rank(provider: ProviderKind) -> u8 {
         ProviderKind::Navidrome => 0,
         ProviderKind::AppleMusic => 1,
         ProviderKind::SoundCloud => 2,
+        // Music has no songs of its own.
+        ProviderKind::Music => 3,
     }
 }
 
@@ -33,6 +35,7 @@ fn artist_rank(provider: ProviderKind) -> u8 {
         ProviderKind::AppleMusic => 0,
         ProviderKind::Navidrome => 1,
         ProviderKind::SoundCloud => 2,
+        ProviderKind::Music => 3,
     }
 }
 

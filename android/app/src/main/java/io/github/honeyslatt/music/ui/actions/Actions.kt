@@ -509,11 +509,17 @@ class Actions(
         )
     }
 
-    /** The user's playlists `tracks` can go in: theirs, of the songs' service. */
+    /** The user's playlists `tracks` can go in: Music's own, and theirs of the songs' service. */
     fun editablePlaylists(tracks: List<Track>): List<Playlist> {
-        val provider = tracks.firstOrNull()?.id?.provider ?: return emptyList()
-        if (tracks.any { it.id.provider != provider }) return emptyList()
-        return library.lists.value.playlists.items.filter { it.editable && it.id.provider == provider }
+        val provider = tracks.map { it.id.provider }.distinct().singleOrNull()
+        return library.lists.value.playlists.items.filter { it.editable && (it.id.provider == ProviderKind.MUSIC || it.id.provider == provider) }
+    }
+
+    /** Where a new playlist of `tracks` can go: Music's own, or their service; any connected, without songs. */
+    fun newPlaylistServices(tracks: List<Track>): List<ProviderKind> {
+        val connected = io.github.honeyslatt.music.data.SERVICES.filter { core.connection(it).value is io.github.honeyslatt.music.data.Connection.Connected }
+        val theirs = if (tracks.isEmpty()) connected else listOfNotNull(tracks.map { it.id.provider }.distinct().singleOrNull()?.takeIf { it in connected })
+        return listOf(ProviderKind.MUSIC) + theirs
     }
 
     /** The playlists songs were last added to, most recent first. */
@@ -547,7 +553,7 @@ class Actions(
         chosen.forEach { p ->
             contents[p.id]?.let { contents[p.id] = it + tracks.map { t -> t.id } }
             change("Couldn't add to “${p.name}”", undo = { contents.remove(p.id) }) {
-                session.addToPlaylist(p.id, tracks.map { it.id })
+                session.addToPlaylist(p.id, tracks)
             }
         }
     }
@@ -561,13 +567,12 @@ class Actions(
         }
     }
 
-    fun createPlaylist(name: String, description: String, tracks: List<Track>) {
+    fun createPlaylist(name: String, description: String, tracks: List<Track>, provider: ProviderKind) {
         sheet = null
         joinLibrary(tracks)
-        val provider = tracks.firstOrNull()?.id?.provider ?: ProviderKind.APPLE_MUSIC
         scope.launch {
             try {
-                val made = session.createPlaylist(provider, name, description, tracks.map { it.id })
+                val made = session.createPlaylist(provider, name, description, tracks)
                 library.playlistMade(made)
                 contents[made.id] = tracks.map { it.id }.toSet()
                 usedNow(listOf(made))
@@ -602,9 +607,9 @@ class Actions(
         }
     }
 
-    /** Apple names a playlist's row by the song's library id; SoundCloud by the song's. */
+    /** Apple names a playlist's row by the song's library id; SoundCloud and Music by the song's. */
     private fun removeFromPlaylist(playlist: Playlist, track: Track, onRemoved: () -> Unit) {
-        val entry = if (playlist.id.provider == ProviderKind.SOUND_CLOUD) track.id else track.libraryId ?: return
+        val entry = if (playlist.id.provider == ProviderKind.APPLE_MUSIC) track.libraryId ?: return else track.id
         onRemoved()
         contents[playlist.id]?.let { contents[playlist.id] = it - track.id }
         hud.show("Removed", Icons.Minuscircle)

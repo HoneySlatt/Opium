@@ -23,6 +23,9 @@ sealed interface Connection {
     data class Failed(val reason: String) : Connection
 }
 
+/** The services one signs in to: Music's own playlists are none. */
+val SERVICES = ProviderKind.entries - ProviderKind.MUSIC
+
 /**
  * The Rust core's session, and what the app keeps between launches: the
  * sign-ins (in the vault) and the settings.
@@ -84,7 +87,7 @@ class Core(context: Context) {
 
     /** The first launch's screen, until one service is connected and Continue is tapped. */
     var welcomed: Boolean
-        get() = prefs.getBoolean("welcomed", false) || ProviderKind.entries.any { signedIn(it) }
+        get() = prefs.getBoolean("welcomed", false) || SERVICES.any { signedIn(it) }
         set(v) = prefs.edit().putBoolean("welcomed", v).apply()
 
     /**
@@ -94,7 +97,7 @@ class Core(context: Context) {
      */
     suspend fun start() {
         kotlinx.coroutines.coroutineScope {
-            ProviderKind.entries.filter { signedIn(it) && enabled(it) }.forEach { kind ->
+            SERVICES.filter { signedIn(it) && enabled(it) }.forEach { kind ->
                 val now = connections.getValue(kind).value
                 if (now !is Connection.Connected && now != Connection.Connecting) launch { connect(kind) }
             }
@@ -117,7 +120,7 @@ class Core(context: Context) {
     suspend fun retryFailed() {
         val now = android.os.SystemClock.elapsedRealtime()
         kotlinx.coroutines.coroutineScope {
-            ProviderKind.entries.filter { signedIn(it) && enabled(it) && connections.getValue(it).value is Connection.Failed }.forEach { kind ->
+            SERVICES.filter { signedIn(it) && enabled(it) && connections.getValue(it).value is Connection.Failed }.forEach { kind ->
                 val (failed, at) = synchronized(tries) { tries[kind] } ?: (0 to 0L)
                 val wait = (60_000L shl (failed - 1).coerceIn(0, 5)).coerceAtMost(30 * 60_000L)
                 if (failed > 0 && now - at < wait) return@forEach
@@ -211,6 +214,7 @@ class Core(context: Context) {
                     val json = JSONObject(kept)
                     session.connectSoundcloud(json.getString("oauth"), json.optString("refresh").takeIf { !json.isNull("refresh") && it.isNotEmpty() }, keeper, soundCloudWeb)
                 }
+                ProviderKind.MUSIC -> error("Music's playlists need no sign-in")
             }
         }
     }
@@ -238,6 +242,7 @@ class Core(context: Context) {
             ProviderKind.APPLE_MUSIC -> APPLE
             ProviderKind.SOUND_CLOUD -> SOUNDCLOUD
             ProviderKind.NAVIDROME -> "navidrome"
+            ProviderKind.MUSIC -> "music"
         }
 
     private companion object {

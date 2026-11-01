@@ -64,6 +64,11 @@ class Devices(context: Context) {
     /** What to tell the user: paired, or why not. */
     val notices: SharedFlow<String> = _notices.asSharedFlow()
 
+    private val _changes = MutableStateFlow(0)
+
+    /** Counts the changes to what is kept in common (Music's own playlists), here or from a device. */
+    val changes: StateFlow<Int> = _changes.asStateFlow()
+
     /** A device asked for something, handed its music over, or what is kept in common changed. */
     var heard: ((Event) -> Unit)? = null
 
@@ -99,6 +104,9 @@ class Devices(context: Context) {
         node.clearHistory()
         _history.value = node.history()
     }
+
+    /** Music's own playlists, as kept with the devices, answered by `session` as a service's are. */
+    fun lend(session: io.github.honeyslatt.music.core.Session) = session.own(node)
 
     /** Where the music last stopped, here or on another device. */
     fun session(): io.github.honeyslatt.music.core.LastSession? = node.session()
@@ -150,6 +158,7 @@ class Devices(context: Context) {
             is Event.Themes -> themesShared?.invoke(event.themes)
             Event.Synced -> {
                 _history.value = node.history()
+                _changes.value++
                 heard?.invoke(event)
             }
         }

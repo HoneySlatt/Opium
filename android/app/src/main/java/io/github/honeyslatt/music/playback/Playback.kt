@@ -988,6 +988,8 @@ class Playback(private val context: Context, private val core: Core, private val
                 soundCloudSource(stream, item)
             }
             ProviderKind.NAVIDROME -> navidromeSource(core.session.navidromeStreamUrl(track.id), item)
+            // Its playlists' songs are the services'.
+            ProviderKind.MUSIC -> error("no song is Music's own")
         }
     }
 }

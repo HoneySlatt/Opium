@@ -71,9 +71,9 @@ fun Welcome(core: Core, connecting: Connecting, onContinue: () -> Unit) {
                 Modifier.padding(top = 10.dp, bottom = 28.dp),
                 style = geist(15.5.sp).copy(color = roles.sub, lineHeight = 22.sp),
             )
-            val states = ProviderKind.entries.associateWith { core.connection(it).collectAsStateWithLifecycle().value }
+            val states = io.github.honeyslatt.music.data.SERVICES.associateWith { core.connection(it).collectAsStateWithLifecycle().value }
             Group("You can connect or turn off a service later, from your account.") {
-                ProviderKind.entries.forEachIndexed { i, kind ->
+                io.github.honeyslatt.music.data.SERVICES.forEachIndexed { i, kind ->
                     GroupRow(first = i == 0, inset = 58.dp) {
                         ServiceLogo(kind, 30.dp)
                         Column(Modifier.weight(1f)) {
@@ -83,6 +83,7 @@ fun Welcome(core: Core, connecting: Connecting, onContinue: () -> Unit) {
                                     ProviderKind.APPLE_MUSIC -> "Main service · AAC 256"
                                     ProviderKind.SOUND_CLOUD -> "Optional · your likes and the uploaders’ files"
                                     ProviderKind.NAVIDROME -> "Optional · lossless, from your server"
+                                    ProviderKind.MUSIC -> ""
                                 },
                                 style = geist(13.sp).copy(color = roles.sub),
                             )

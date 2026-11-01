@@ -139,6 +139,8 @@ fn steps(app: &App, track: &Track) -> Vec<Step> {
             icons::NAVIDROME,
             "stream?format=raw, original file",
         ),
+        // No song is Music's own.
+        ProviderKind::Music => ("Music", icons::NOTE, ""),
     };
     let detail = match track.quality.as_ref() {
         Some(q) if q.codec == Codec::Aac => match q.bitrate_kbps {

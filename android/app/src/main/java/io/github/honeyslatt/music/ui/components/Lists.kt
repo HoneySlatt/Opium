@@ -113,6 +113,7 @@ fun ServiceLogo(provider: ProviderKind, size: androidx.compose.ui.unit.Dp) {
         ProviderKind.APPLE_MUSIC -> R.drawable.logo_apple_music
         ProviderKind.SOUND_CLOUD -> R.drawable.logo_soundcloud
         ProviderKind.NAVIDROME -> R.drawable.logo_navidrome
+        ProviderKind.MUSIC -> R.drawable.logo_music
     }
     Image(painterResource(res), contentDescription = null, modifier = Modifier.size(size))
 }
@@ -121,6 +122,7 @@ fun ProviderKind.label() = when (this) {
     ProviderKind.APPLE_MUSIC -> "Apple Music"
     ProviderKind.SOUND_CLOUD -> "SoundCloud"
     ProviderKind.NAVIDROME -> "Navidrome"
+    ProviderKind.MUSIC -> "Music"
 }
 
 /**

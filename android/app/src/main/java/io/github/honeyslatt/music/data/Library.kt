@@ -219,9 +219,17 @@ class Library(private val core: Core, private val scope: CoroutineScope) {
         core.libraryRead(provider, 0)
     }
 
-    /** A playlist just made: first in the list, as the newest. */
+    /** A playlist just made: first in the list, as the newest (once, Music's own being read again as it is made). */
     fun playlistMade(playlist: Playlist) {
-        _lists.update { it.copy(playlists = it.playlists.copy(items = listOf(playlist) + it.playlists.items)) }
+        _lists.update { it.copy(playlists = it.playlists.copy(items = listOf(playlist) + it.playlists.items.filter { p -> p.id != playlist.id })) }
+    }
+
+    /** Music's own playlists, as kept with the other devices now. */
+    fun own() {
+        scope.launch {
+            val own = runCatching { core.session.libraryPlaylists(ProviderKind.MUSIC, null).items }.getOrNull() ?: return@launch
+            _lists.update { it.copy(playlists = it.playlists.copy(items = it.playlists.items.with(ProviderKind.MUSIC, own) { p -> p.id.provider })) }
+        }
     }
 
     fun playlistEdited(id: io.github.honeyslatt.music.core.model.ItemId, name: String, description: String) {
@@ -300,12 +308,13 @@ class Library(private val core: Core, private val scope: CoroutineScope) {
 
     /**
      * The list with `provider`'s items now `group`: each service's together,
-     * in the same order every time (Apple Music, SoundCloud, Navidrome), so
-     * that a list read again doesn't move.
+     * in the same order every time (Music's own, Apple Music, SoundCloud,
+     * Navidrome), so that a list read again doesn't move.
      */
     private fun <T> List<T>.with(provider: ProviderKind, group: List<T>, of: (T) -> ProviderKind): List<T> {
+        val rank = { p: ProviderKind -> if (p == ProviderKind.MUSIC) -1 else p.ordinal }
         val rest = filter { of(it) != provider }
-        val at = rest.indexOfFirst { of(it).ordinal > provider.ordinal }.takeIf { it >= 0 } ?: rest.size
+        val at = rest.indexOfFirst { rank(of(it)) > rank(provider) }.takeIf { it >= 0 } ?: rest.size
         return rest.take(at) + group + rest.drop(at)
     }
 

@@ -53,6 +53,8 @@ class MusicApp : Application(), coil3.SingletonImageLoader.Factory {
         library = Library(core, scope)
         devices = io.github.honeyslatt.music.data.Devices(this)
         devices.themesShared = { themes.shared(it) }
+        devices.lend(core.session)
+        scope.launch { devices.changes.collect { library.own() } }
         playback = io.github.honeyslatt.music.playback.Playback(this, core, scope, devices)
         // Back on a network (out of the metro, onto the Wi-Fi): the services
         // it kept out connect, and a song it stopped goes on.
@@ -94,7 +96,7 @@ class MusicApp : Application(), coil3.SingletonImageLoader.Factory {
         if (started) return
         started = true
         scope.launch { core.start() }
-        ProviderKind.entries.forEach { kind ->
+        io.github.honeyslatt.music.data.SERVICES.forEach { kind ->
             scope.launch {
                 core.connection(kind).map { (it is Connection.Connected) to (it == Connection.Off) }.distinctUntilChanged().collect {
                     when (core.connection(kind).value) {

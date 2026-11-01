@@ -193,20 +193,27 @@ impl State {
         &mut self,
         id: &str,
         name: String,
+        description: String,
         tracks: Vec<Track>,
         now: u64,
     ) -> (Shared, bool) {
         let at = self.stamp(now);
         self.apply(Shared {
-            playlists: Playlists::create(id, name, tracks, new_id, at),
+            playlists: Playlists::create(id, name, description, tracks, new_id, at),
             ..Shared::default()
         })
     }
 
-    fn rename_playlist(&mut self, id: &str, name: String, now: u64) -> (Shared, bool) {
+    fn edit_playlist(
+        &mut self,
+        id: &str,
+        name: String,
+        description: String,
+        now: u64,
+    ) -> (Shared, bool) {
         let at = self.stamp(now);
         self.apply(Shared {
-            playlists: Playlists::rename(id, name, at),
+            playlists: Playlists::edit(id, name, description, at),
             ..Shared::default()
         })
     }
@@ -388,14 +395,20 @@ impl Kept {
     }
 
     /// A new playlist; its id with the change.
-    pub fn create_playlist(&self, name: String, tracks: Vec<Track>) -> (String, Shared) {
+    pub fn create_playlist(
+        &self,
+        name: String,
+        description: String,
+        tracks: Vec<Track>,
+    ) -> (String, Shared) {
         let id = new_id();
-        let change = self.change(|s| s.create_playlist(&id, name, tracks, now()));
+        let change = self.change(|s| s.create_playlist(&id, name, description, tracks, now()));
         (id, change)
     }
 
-    pub fn rename_playlist(&self, id: &str, name: String) -> Shared {
-        self.change(|s| s.rename_playlist(id, name, now()))
+    /// Playlist `id` named `name`, described by `description`.
+    pub fn edit_playlist(&self, id: &str, name: String, description: String) -> Shared {
+        self.change(|s| s.edit_playlist(id, name, description, now()))
     }
 
     pub fn delete_playlist(&self, id: &str) -> Shared {

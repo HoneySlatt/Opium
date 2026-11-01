@@ -105,6 +105,7 @@ private val ProviderKind.site
             listOf("oauth_refresh_token"),
         )
         ProviderKind.NAVIDROME -> error("Navidrome signs in with a form")
+        ProviderKind.MUSIC -> error("Music's playlists need no sign-in")
     }
 
 /** The sheets and the sign-in page of the service being connected, over everything. */
@@ -209,7 +210,7 @@ private suspend fun verify(kind: ProviderKind, cookies: Map<String, String>, cor
                 set(1, Check("Signed in", (got as? Connection.Failed)?.reason ?: "Refused", Check.State.Failed))
             }
         }
-        ProviderKind.NAVIDROME -> {}
+        ProviderKind.NAVIDROME, ProviderKind.MUSIC -> {}
     }
 }
 

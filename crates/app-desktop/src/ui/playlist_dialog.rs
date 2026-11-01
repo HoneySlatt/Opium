@@ -248,6 +248,11 @@ pub fn show_new(app: &mut App, ctx: &egui::Context) {
     };
     let theme = app.theme.clone();
     let count = new.tracks.len();
+    // Where a new playlist goes, asked when there is more than one choice.
+    let services = match new.editing {
+        Some(_) => Vec::new(),
+        None => app.new_playlist_services(&new.tracks),
+    };
     let (title, action) = if new.editing.is_some() {
         ("Edit Playlist", "Save")
     } else {
@@ -379,6 +384,29 @@ pub fn show_new(app: &mut App, ctx: &egui::Context) {
                         )
                     });
                 writing_notes = notes.inner.has_focus();
+            }
+            if services.len() > 1 {
+                ui.add_space(12.0);
+                let (row, _) = ui.allocate_exact_size(vec2(width, 36.0), Sense::hover());
+                let gap = 8.0;
+                let n = services.len() as f32;
+                let w = (row.width() - 48.0 - gap * (n - 1.0)) / n;
+                for (i, &service) in services.iter().enumerate() {
+                    let x = row.left() + 24.0 + i as f32 * (w + gap);
+                    let rect = Rect::from_min_size(pos2(x, row.top()), vec2(w, row.height()));
+                    let chosen = app.new_playlist.as_ref().map(|n| n.service) == Some(service);
+                    if pill(
+                        ui,
+                        &theme,
+                        rect,
+                        super::library::service(service),
+                        chosen,
+                        true,
+                    ) && let Some(new) = &mut app.new_playlist
+                    {
+                        new.service = service;
+                    }
+                }
             }
             let named = app
                 .new_playlist

@@ -34,6 +34,7 @@ import io.github.honeyslatt.music.core.model.Playlist
 import io.github.honeyslatt.music.ui.Icons
 import io.github.honeyslatt.music.ui.components.Cover
 import io.github.honeyslatt.music.ui.components.fold
+import io.github.honeyslatt.music.ui.components.label
 import io.github.honeyslatt.music.ui.components.Glyph
 import io.github.honeyslatt.music.ui.components.Group
 import io.github.honeyslatt.music.ui.components.GroupRow
@@ -191,6 +192,9 @@ private fun PlaylistForm(actions: Actions, spec: SheetSpec.PlaylistForm, open: B
     val editing = spec.editing
     var name by remember(spec) { mutableStateOf(editing?.name.orEmpty()) }
     var description by remember(spec) { mutableStateOf(editing?.description.orEmpty()) }
+    // Where a new one goes, asked when there is more than one choice.
+    val services = remember(spec) { if (editing == null) actions.newPlaylistServices(spec.tracks) else emptyList() }
+    var service by remember(spec) { mutableStateOf(io.github.honeyslatt.music.core.model.ProviderKind.MUSIC) }
     val ready = name.isNotBlank()
     Sheet(
         open,
@@ -202,7 +206,7 @@ private fun PlaylistForm(actions: Actions, spec: SheetSpec.PlaylistForm, open: B
                 if (editing != null) {
                     actions.editPlaylist(editing, name.trim(), description.trim())
                 } else {
-                    actions.createPlaylist(name.trim(), description.trim(), spec.tracks)
+                    actions.createPlaylist(name.trim(), description.trim(), spec.tracks, service)
                 }
             }
         },
@@ -210,6 +214,19 @@ private fun PlaylistForm(actions: Actions, spec: SheetSpec.PlaylistForm, open: B
         Group {
             GroupRow(first = true) { Field(name, "Playlist Name", Modifier.weight(1f)) { name = it.take(100) } }
             GroupRow(first = false) { Field(description, "Description (Optional)", Modifier.weight(1f).padding(vertical = 4.dp), single = false) { description = it } }
+        }
+        if (services.size > 1) {
+            Spacer(Modifier.height(14.dp))
+            Label("Create In")
+            Group(footer = "Music’s own playlists take songs from every service, and are kept on all your devices.") {
+                services.forEachIndexed { i, kind ->
+                    GroupRow(first = i == 0, inset = 58.dp, onClick = { service = kind }) {
+                        io.github.honeyslatt.music.ui.components.ServiceLogo(kind, 30.dp)
+                        BasicText(kind.label(), Modifier.weight(1f), style = geist(16.sp).copy(color = roles.text))
+                        Tick(on = service == kind, done = false)
+                    }
+                }
+            }
         }
         if (editing != null) {
             Group(footer = "It goes from your library on every device.") {

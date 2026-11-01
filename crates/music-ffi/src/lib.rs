@@ -125,6 +125,8 @@ fn next(page_next: Option<Cursor>) -> Option<String> {
 pub struct Session {
     services: RwLock<Services>,
     finder: lyrics::Finder,
+    /// Music's own playlists, kept with the other devices: see [`Session::own`].
+    own: RwLock<Option<Arc<Connect>>>,
 }
 
 impl Session {
@@ -163,6 +165,25 @@ impl Session {
         self.finder.find(&query, &sources).await.map(|(l, _)| l)
     }
 
+    fn connect(&self) -> Result<Arc<Connect>, MusicError> {
+        self.own
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+            .ok_or_else(|| MusicError::Failed {
+                reason: "Music's playlists aren't there yet".into(),
+            })
+    }
+
+    fn own_playlist(&self, id: &ItemId) -> Result<synced::Playlist, MusicError> {
+        self.connect()?
+            .1
+            .playlist(&id.id)
+            .ok_or_else(|| MusicError::Failed {
+                reason: "This playlist was deleted".into(),
+            })
+    }
+
     fn apple(&self) -> Result<Arc<AppleMusic>, MusicError> {
         self.services().apple.ok_or_else(|| MusicError::Failed {
             reason: "Apple Music isn't connected".into(),
@@ -177,7 +198,14 @@ impl Session {
         Arc::new(Self {
             services: RwLock::default(),
             finder: lyrics::Finder::new(),
+            own: RwLock::default(),
         })
+    }
+
+    /// Music's own playlists, as `connect` keeps them, answered with the
+    /// services' as `ProviderKind::Music`.
+    pub fn own(&self, connect: Arc<Connect>) {
+        *self.own.write().unwrap_or_else(|e| e.into_inner()) = Some(connect);
     }
 
     /// Sign in to Apple Music with the `media-user-token` its sign-in page
@@ -300,6 +328,7 @@ impl Session {
             ProviderKind::AppleMusic => s.apple = None,
             ProviderKind::SoundCloud => s.soundcloud = None,
             ProviderKind::Navidrome => s.navidrome = None,
+            ProviderKind::Music => {}
         });
     }
 
@@ -451,6 +480,18 @@ impl Session {
         kind: ProviderKind,
         page: Option<String>,
     ) -> Result<PlaylistPage, MusicError> {
+        if kind == ProviderKind::Music {
+            return Ok(PlaylistPage {
+                items: self
+                    .connect()?
+                    .1
+                    .playlists()
+                    .iter()
+                    .map(synced::Playlist::model)
+                    .collect(),
+                next: None,
+            });
+        }
         off(async move {
             let page = self
                 .provider(kind)?
@@ -507,6 +548,12 @@ impl Session {
         id: ItemId,
         page: Option<String>,
     ) -> Result<TrackPage, MusicError> {
+        if id.provider == ProviderKind::Music {
+            return Ok(TrackPage {
+                items: self.own_playlist(&id)?.tracks(),
+                next: None,
+            });
+        }
         off(async move {
             let page = self
                 .provider(id.provider)?
@@ -578,8 +625,17 @@ impl Session {
         kind: ProviderKind,
         name: String,
         description: String,
-        tracks: Vec<ItemId>,
+        tracks: Vec<Track>,
     ) -> Result<Playlist, MusicError> {
+        if kind == ProviderKind::Music {
+            let own = self.connect()?;
+            let (id, change) = own.1.create_playlist(name, description, tracks);
+            own.changed(change);
+            return Ok(self
+                .own_playlist(&ItemId::new(ProviderKind::Music, id))?
+                .model());
+        }
+        let tracks: Vec<ItemId> = tracks.into_iter().map(|t| t.id).collect();
         off(async move {
             Ok(self
                 .provider(kind)?
@@ -595,6 +651,11 @@ impl Session {
         name: String,
         description: String,
     ) -> Result<(), MusicError> {
+        if playlist.provider == ProviderKind::Music {
+            let own = self.connect()?;
+            own.changed(own.1.edit_playlist(&playlist.id, name, description));
+            return Ok(());
+        }
         off(async move {
             Ok(self
                 .provider(playlist.provider)?
@@ -605,6 +666,11 @@ impl Session {
     }
 
     pub async fn delete_playlist(self: Arc<Self>, playlist: ItemId) -> Result<(), MusicError> {
+        if playlist.provider == ProviderKind::Music {
+            let own = self.connect()?;
+            own.changed(own.1.delete_playlist(&playlist.id));
+            return Ok(());
+        }
         off(async move {
             Ok(self
                 .provider(playlist.provider)?
@@ -614,12 +680,19 @@ impl Session {
         .await
     }
 
-    /// Take a song out of a playlist, by its row's id there.
+    /// Take a song out of a playlist, by its row's id there; out of one of
+    /// Music's, by its own, every time it is in.
     pub async fn remove_from_playlist(
         self: Arc<Self>,
         playlist: ItemId,
         entry: ItemId,
     ) -> Result<(), MusicError> {
+        if playlist.provider == ProviderKind::Music {
+            let entries = self.own_playlist(&playlist)?.entries_of(&entry);
+            let own = self.connect()?;
+            own.changed(own.1.remove_from_playlist(&playlist.id, &entries));
+            return Ok(());
+        }
         off(async move {
             Ok(self
                 .provider(playlist.provider)?
@@ -632,8 +705,14 @@ impl Session {
     pub async fn add_to_playlist(
         self: Arc<Self>,
         playlist: ItemId,
-        tracks: Vec<ItemId>,
+        tracks: Vec<Track>,
     ) -> Result<(), MusicError> {
+        if playlist.provider == ProviderKind::Music {
+            let own = self.connect()?;
+            own.changed(own.1.add_to_playlist(&playlist.id, tracks));
+            return Ok(());
+        }
+        let tracks: Vec<ItemId> = tracks.into_iter().map(|t| t.id).collect();
         off(async move {
             Ok(self
                 .provider(playlist.provider)?
@@ -1139,7 +1218,15 @@ pub trait ConnectListener: Send + Sync {
 /// This phone on the network, as Music Connect: see the `connect` crate;
 /// and what it keeps in common with the other devices: see `synced`.
 #[derive(uniffi::Object)]
-pub struct Connect(connect::Node, synced::Kept);
+pub struct Connect(connect::Node, synced::Kept, Arc<dyn ConnectListener>);
+
+impl Connect {
+    /// `change` made here: told the devices, and the app as theirs are.
+    fn changed(&self, change: synced::Shared) {
+        self.0.share(change);
+        self.2.heard(connect::Event::Synced);
+    }
+}
 
 #[uniffi::export]
 impl Connect {
@@ -1165,14 +1252,11 @@ impl Connect {
                 kept.take_old_session(old, at.as_millis() as u64);
             }
         }
-        let node = connect::Node::start(
-            name,
-            connect::DeviceKind::Phone,
-            dir,
-            kept.clone(),
-            move |event| listener.heard(event),
-        );
-        Arc::new(Self(node, kept))
+        let node = connect::Node::start(name, connect::DeviceKind::Phone, dir, kept.clone(), {
+            let listener = listener.clone();
+            move |event| listener.heard(event)
+        });
+        Arc::new(Self(node, kept, listener))
     }
 
     /// The songs played lately, here and on the other devices, the last

@@ -3,13 +3,15 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-/// A music service the app can pull from.
+/// A music service the app can pull from; or Music itself, for what it
+/// keeps of its own (its playlists of songs from any service).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
 pub enum ProviderKind {
     AppleMusic,
     SoundCloud,
     Navidrome,
+    Music,
 }
 
 /// An item within one provider. The id is opaque: only its provider knows what it means.

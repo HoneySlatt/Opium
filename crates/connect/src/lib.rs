@@ -510,9 +510,12 @@ impl Node {
     /// Tell the devices connected of a change made here to what they keep
     /// in common; those not connected hear of it as they connect.
     pub fn share(&self, change: Shared) {
-        if !change.is_empty() {
-            self.inner.broadcast(&Message::Shared(change), None);
-        }
+        self.sharer().share(change);
+    }
+
+    /// What tells the devices of changes, for another part of the app.
+    pub fn sharer(&self) -> Sharer {
+        Sharer(self.inner.clone())
     }
 
     /// Ask `to`'s player for something; false if it isn't connected.
@@ -565,6 +568,19 @@ impl Node {
             seen.upcoming.clear();
         }
         (self.inner.events)(Event::Changed);
+    }
+}
+
+/// Tells the devices connected of changes to what they keep in common, as
+/// [`Node::share`] does; it doesn't keep the node going.
+#[derive(Clone)]
+pub struct Sharer(Arc<Inner>);
+
+impl Sharer {
+    pub fn share(&self, change: Shared) {
+        if !change.is_empty() {
+            self.0.broadcast(&Message::Shared(change), None);
+        }
     }
 }
 

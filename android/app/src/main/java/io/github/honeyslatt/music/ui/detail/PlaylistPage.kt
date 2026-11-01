@@ -49,9 +49,12 @@ import io.github.honeyslatt.music.ui.theme.roles
 @Composable
 fun PlaylistPage(c: LibraryContext, id: ItemId, known: Playlist? = null) {
     val playlist: Playlist? = c.lists.playlists.items.firstOrNull { it.id == id } ?: known
+    // Music's own read again as they change, here or on another device.
+    val changes by c.playback.devices.changes.collectAsStateWithLifecycle()
+    val version = if (id.provider == ProviderKind.MUSIC) changes else 0
     // Every page of its songs, one after another.
     var complete by remember(id) { mutableStateOf(false) }
-    val loaded by produceState<Loading<List<Track>>>(Loading.Pending, id) {
+    val loaded by produceState<Loading<List<Track>>>(Loading.Pending, id, version) {
         value = load {
             val all = mutableListOf<Track>()
             var page: String? = null

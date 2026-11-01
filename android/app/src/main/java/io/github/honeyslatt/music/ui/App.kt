@@ -84,7 +84,7 @@ fun App(core: Core, library: Library, playback: io.github.honeyslatt.music.playb
     val nav = remember { Navigator() }
     val lists by library.lists.collectAsStateWithLifecycle()
     // The services connected, for the source chips.
-    val services = ProviderKind.entries.filter { core.connection(it).collectAsStateWithLifecycle().value is Connection.Connected }
+    val services = io.github.honeyslatt.music.data.SERVICES.filter { core.connection(it).collectAsStateWithLifecycle().value is Connection.Connected }
     var settingsOpen by remember { mutableStateOf(false) }
     // The devices to play on, from the mini player in Spotify's layout.
     var devicesOpen by remember { mutableStateOf(false) }
