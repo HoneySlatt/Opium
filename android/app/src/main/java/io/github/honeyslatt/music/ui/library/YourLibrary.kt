@@ -91,93 +91,102 @@ fun YourLibrary(c: LibraryContext) {
         }
     }
     Box(Modifier.fillMaxSize().background(roles.base)) {
-        LazyColumn(Modifier.fillMaxSize()) {
-            item { Spacer(Modifier.windowInsetsTopHeight(WindowInsets.statusBars)) }
-            item {
-                Row(
-                    Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 10.dp, bottom = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    c.account()
-                    BasicText("Your Library", Modifier.weight(1f), style = geist(24.sp, FontWeight.Bold).copy(color = roles.text))
-                    Box(Modifier.size(44.dp).press(CircleShape) { searching = !searching }, contentAlignment = Alignment.Center) {
-                        Glyph(Icons.Search, roles.text, 24.dp)
-                    }
-                    Box(
-                        Modifier.size(44.dp).press(CircleShape) { actions?.sheet = SheetSpec.PlaylistForm(null) },
-                        contentAlignment = Alignment.Center,
-                    ) { Glyph(Icons.Plus, roles.text, 26.dp) }
-                }
-            }
-            item {
-                Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Kind.entries.forEach { k ->
-                        val on = k == kind
-                        Box(
-                            Modifier.height(34.dp)
-                                .press(RoundedCornerShape(17.dp)) { kind = k }
-                                .background(if (on) roles.accent else roles.surface2, RoundedCornerShape(17.dp))
-                                .padding(horizontal = 14.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            BasicText(k.label, style = geist(14.sp).copy(color = if (on) roles.onAccent else roles.text))
-                        }
-                    }
-                }
-            }
-            item { SearchReveal(searching, query, "Search ${kind.label}") { query = it } }
-            item { Spacer(Modifier.height(8.dp)) }
+        val refresh = c.refresh {
             when (kind) {
-                Kind.Playlists -> {
-                    if (matches(query, "Songs")) {
-                        item {
-                            Entry(
-                                null,
-                                "Songs",
-                                if (c.lists.songs.items.isEmpty() && !c.lists.songs.done) "Playlist" else "Playlist • ${songs(c.lists.songs.items.size)}",
-                                pinned = true,
-                                tile = {
-                                    Box(Modifier.size(64.dp).background(Brush.linearGradient(Loved), RoundedCornerShape(4.dp)), contentAlignment = Alignment.Center) {
-                                        Glyph(MoreIcons.HeartFill, Color.White, 26.dp)
-                                    }
-                                },
-                            ) { c.nav.push(Route.Songs) }
+                Kind.Playlists -> it.playlists
+                Kind.Albums -> it.albums
+                Kind.Artists -> it.artists
+            }
+        }
+        io.github.honeyslatt.music.ui.components.PullRefresh(refresh, 0.dp) {
+            LazyColumn(Modifier.fillMaxSize()) {
+                item { Spacer(Modifier.windowInsetsTopHeight(WindowInsets.statusBars)) }
+                item {
+                    Row(
+                        Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 10.dp, bottom = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        c.account()
+                        BasicText("Your Library", Modifier.weight(1f), style = geist(24.sp, FontWeight.Bold).copy(color = roles.text))
+                        Box(Modifier.size(44.dp).press(CircleShape) { searching = !searching }, contentAlignment = Alignment.Center) {
+                            Glyph(Icons.Search, roles.text, 24.dp)
+                        }
+                        Box(
+                            Modifier.size(44.dp).press(CircleShape) { actions?.sheet = SheetSpec.PlaylistForm(null) },
+                            contentAlignment = Alignment.Center,
+                        ) { Glyph(Icons.Plus, roles.text, 26.dp) }
+                    }
+                }
+                item {
+                    Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Kind.entries.forEach { k ->
+                            val on = k == kind
+                            Box(
+                                Modifier.height(34.dp)
+                                    .press(RoundedCornerShape(17.dp)) { kind = k }
+                                    .background(if (on) roles.accent else roles.surface2, RoundedCornerShape(17.dp))
+                                    .padding(horizontal = 14.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                BasicText(k.label, style = geist(14.sp).copy(color = if (on) roles.onAccent else roles.text))
+                            }
                         }
                     }
-                    val playlists = c.lists.playlists.items.distinctBy { it.id }
-                        .filter { matches(query, if (it.favourites) "Favourite Songs" else it.name, it.curator) }
-                    items(playlists, key = { it.id.provider.name + it.id.id }) { p ->
-                        val by = if (p.editable) me else p.curator
-                        Entry(
-                            p.artwork,
-                            if (p.favourites) "Favourite Songs" else p.name,
-                            listOfNotNull("Playlist", by).joinToString(" • "),
-                            tile = if (p.artwork == null) {
-                                { io.github.honeyslatt.music.ui.components.PlaylistCover(p, 64.dp, RoundedCornerShape(4.dp), Modifier.size(64.dp)) }
-                            } else {
-                                null
-                            },
-                            onMenu = { actions?.playlistMenu(p, it) },
-                        ) { c.nav.push(Route.Playlist(p.id)) }
+                }
+                item { SearchReveal(searching, query, "Search ${kind.label}") { query = it } }
+                item { Spacer(Modifier.height(8.dp)) }
+                when (kind) {
+                    Kind.Playlists -> {
+                        if (matches(query, "Songs")) {
+                            item {
+                                Entry(
+                                    null,
+                                    "Songs",
+                                    if (c.lists.songs.items.isEmpty() && !c.lists.songs.done) "Playlist" else "Playlist • ${songs(c.lists.songs.items.size)}",
+                                    pinned = true,
+                                    tile = {
+                                        Box(Modifier.size(64.dp).background(Brush.linearGradient(Loved), RoundedCornerShape(4.dp)), contentAlignment = Alignment.Center) {
+                                            Glyph(MoreIcons.HeartFill, Color.White, 26.dp)
+                                        }
+                                    },
+                                ) { c.nav.push(Route.Songs) }
+                            }
+                        }
+                        val playlists = c.lists.playlists.items.distinctBy { it.id }
+                            .filter { matches(query, if (it.favourites) "Favourite Songs" else it.name, it.curator) }
+                        items(playlists, key = { it.id.provider.name + it.id.id }) { p ->
+                            val by = if (p.editable) me else p.curator
+                            Entry(
+                                p.artwork,
+                                if (p.favourites) "Favourite Songs" else p.name,
+                                listOfNotNull("Playlist", by).joinToString(" • "),
+                                tile = if (p.artwork == null) {
+                                    { io.github.honeyslatt.music.ui.components.PlaylistCover(p, 64.dp, RoundedCornerShape(4.dp), Modifier.size(64.dp)) }
+                                } else {
+                                    null
+                                },
+                                onMenu = { actions?.playlistMenu(p, it) },
+                            ) { c.nav.push(Route.Playlist(p.id)) }
+                        }
+                    }
+                    Kind.Albums -> items(albums.filter { matches(query, it.title, it.artists.joinToString(" ")) }, key = { it.id.provider.name + it.id.id }) { a ->
+                        Entry(a.artwork, a.title, "Album • ${a.artists.joinToString(", ")}") { c.nav.push(Route.Album(a.id)) }
+                    }
+                    Kind.Artists -> items(artists.filter { matches(query, it.name) }, key = { it.id.provider.name + it.id.id }) { a ->
+                        Entry(a.artwork, a.name, "Artist", round = true) { c.nav.push(Route.LibraryArtist(a)) }
                     }
                 }
-                Kind.Albums -> items(albums.filter { matches(query, it.title, it.artists.joinToString(" ")) }, key = { it.id.provider.name + it.id.id }) { a ->
-                    Entry(a.artwork, a.title, "Album • ${a.artists.joinToString(", ")}") { c.nav.push(Route.Album(a.id)) }
+                val listing = when (kind) {
+                    Kind.Playlists -> c.lists.playlists
+                    Kind.Albums -> c.lists.albums
+                    Kind.Artists -> c.lists.artists
                 }
-                Kind.Artists -> items(artists.filter { matches(query, it.name) }, key = { it.id.provider.name + it.id.id }) { a ->
-                    Entry(a.artwork, a.name, "Artist", round = true) { c.nav.push(Route.LibraryArtist(a)) }
+                if (listing.items.isEmpty() && query.isBlank()) {
+                    item { Empty(listing, "Nothing here yet", "${kind.label} you add show here.") }
                 }
+                item { Spacer(Modifier.height(ChromeHeight + 120.dp)) }
             }
-            val listing = when (kind) {
-                Kind.Playlists -> c.lists.playlists
-                Kind.Albums -> c.lists.albums
-                Kind.Artists -> c.lists.artists
-            }
-            if (listing.items.isEmpty() && query.isBlank()) {
-                item { Empty(listing, "Nothing here yet", "${kind.label} you add show here.") }
-            }
-            item { Spacer(Modifier.height(ChromeHeight + 120.dp)) }
         }
     }
 }
