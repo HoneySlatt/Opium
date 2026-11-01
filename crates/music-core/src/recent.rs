@@ -73,7 +73,7 @@ fn added(item: &Collection) -> Option<i64> {
 /// Seconds since 1970 of a time as the services write it: RFC 3339
 /// (`2025-10-31T12:00:00Z`, `…T12:00:00.123+01:00`), or SoundCloud's older
 /// `2025/10/31 12:00:00 +0000`.
-fn seconds(text: &str) -> Option<i64> {
+pub fn seconds(text: &str) -> Option<i64> {
     let number = |at: usize, len: usize| -> Option<i64> { text.get(at..at + len)?.parse().ok() };
     let (year, month, day) = (number(0, 4)?, number(5, 2)?, number(8, 2)?);
     let (hour, minute, second) = (number(11, 2)?, number(14, 2)?, number(17, 2)?);

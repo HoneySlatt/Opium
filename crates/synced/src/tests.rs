@@ -359,3 +359,24 @@ fn a_device_opened_and_closed_without_playing_doesnt_pass_for_the_last() {
     meet(&mut a, &mut b);
     assert_eq!(last(&a), Some((20_000, "b".into())));
 }
+
+#[test]
+fn of_two_devices_times_for_a_song_the_earliest_wins_whoever_hears_first() {
+    let seen = |pairs: &[(&str, u64)]| Shared {
+        seen: pairs
+            .iter()
+            .map(|(id, at)| ((*id).to_owned(), *at))
+            .collect(),
+        ..Shared::default()
+    };
+    let phone = seen(&[("a", 100), ("b", 300)]);
+    let desktop = seen(&[("a", 200), ("b", 250), ("c", 50)]);
+    let mut one = phone.clone();
+    assert!(one.merge(desktop.clone()));
+    let mut other = desktop;
+    assert!(other.merge(phone));
+    assert_eq!(one, other);
+    assert_eq!(one, seen(&[("a", 100), ("b", 250), ("c", 50)]));
+    // Heard again: nothing changes.
+    assert!(!one.merge(other));
+}

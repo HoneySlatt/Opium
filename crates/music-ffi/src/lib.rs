@@ -126,7 +126,7 @@ pub struct Session {
     services: RwLock<Services>,
     finder: lyrics::Finder,
     /// Music's own playlists, kept with the other devices: see [`Session::own`].
-    own: RwLock<Option<Arc<Connect>>>,
+    own: Arc<RwLock<Option<Arc<Connect>>>>,
     /// Where the app keeps its own: see [`Session::keep_in`].
     dir: RwLock<Option<std::path::PathBuf>>,
 }
@@ -200,7 +200,7 @@ impl Session {
         Arc::new(Self {
             services: RwLock::default(),
             finder: lyrics::Finder::new(),
-            own: RwLock::default(),
+            own: Arc::default(),
             dir: RwLock::default(),
         })
     }
@@ -223,7 +223,10 @@ impl Session {
         off(async move {
             let apple = Arc::new(AppleMusic::connect(&user_token).await?);
             if let Some(dir) = self.dir.read().unwrap_or_else(|e| e.into_inner()).clone() {
-                apple.keep_seen_in(dir.join("apple-seen.json"));
+                apple.keep_seen_in(
+                    dir.join("apple-seen.json"),
+                    Some(Arc::new(SeenShared(self.own.clone()))),
+                );
             }
             let storefront = apple.storefront().to_owned();
             let warming = apple.clone();
@@ -1231,6 +1234,28 @@ pub struct LastSession {
 #[uniffi::export(with_foreign)]
 pub trait ConnectListener: Send + Sync {
     fn heard(&self, event: connect::Event);
+}
+
+/// Apple's newest songs as first seen, kept in common with the other
+/// devices once Music Connect is there.
+struct SeenShared(Arc<RwLock<Option<Arc<Connect>>>>);
+
+impl SeenShared {
+    fn connect(&self) -> Option<Arc<Connect>> {
+        self.0.read().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+}
+
+impl apple_music::SeenElsewhere for SeenShared {
+    fn known(&self, ids: &[String]) -> std::collections::HashMap<String, u64> {
+        self.connect().map(|c| c.1.seen(ids)).unwrap_or_default()
+    }
+
+    fn seen_here(&self, times: Vec<(String, u64)>) {
+        if let Some(c) = self.connect() {
+            c.0.share(c.1.first_seen(times));
+        }
+    }
 }
 
 /// This phone on the network, as Music Connect: see the `connect` crate;

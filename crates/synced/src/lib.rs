@@ -1,6 +1,6 @@
 //! What the user's devices keep in common: the songs played lately, the
-//! playlists made in Music itself, and where the music last stopped, on
-//! whichever device.
+//! playlists made in Music itself, where the music last stopped, on
+//! whichever device, and when the library's newest songs were first seen.
 //!
 //! Each device keeps its own copy, and changes it while alone. When two
 //! meet, each takes the other's in, and they come out the same whatever was
@@ -13,6 +13,7 @@ mod history;
 mod place;
 mod playlists;
 
+use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard, mpsc};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -52,6 +53,19 @@ pub(crate) fn latest<T>(mine: &mut Option<Latest<T>>, theirs: Option<Latest<T>>)
     false
 }
 
+/// `theirs` taken in, of two times for a song the earliest: whether any was.
+fn earliest(mine: &mut BTreeMap<String, u64>, theirs: BTreeMap<String, u64>) -> bool {
+    let mut changed = false;
+    for (id, at) in theirs {
+        let known = mine.entry(id).or_insert(u64::MAX);
+        if at < *known {
+            *known = at;
+            changed = true;
+        }
+    }
+    changed
+}
+
 /// All that is kept in common, or some changes to it: what one device
 /// sends another.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -64,6 +78,11 @@ pub struct Shared {
     /// the device that played last says.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     session: Option<Latest<Handoff>>,
+    /// When each new library song was first seen on any of the devices,
+    /// by the service's id for it, in seconds since 1970: the earliest
+    /// wins. It dates Recently Added where the service doesn't.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    seen: BTreeMap<String, u64>,
 }
 
 impl Shared {
@@ -76,7 +95,8 @@ impl Shared {
         let history = self.history.merge(other.history);
         let playlists = self.playlists.merge(other.playlists);
         let session = latest(&mut self.session, other.session);
-        history || playlists || session
+        let seen = earliest(&mut self.seen, other.seen);
+        history || playlists || session || seen
     }
 
     fn newest(&self) -> u64 {
@@ -384,6 +404,29 @@ impl Kept {
                 ..Shared::default()
             })
         });
+    }
+
+    /// When each of `ids` was first seen on any device, of those known.
+    pub fn seen(&self, ids: &[String]) -> HashMap<String, u64> {
+        let state = lock(&self.state);
+        ids.iter()
+            .filter_map(|id| Some((id.clone(), *state.shared.seen.get(id)?)))
+            .collect()
+    }
+
+    /// Songs first seen here at those times: what is earlier than known,
+    /// to send the other devices.
+    pub fn first_seen(&self, times: Vec<(String, u64)>) -> Shared {
+        self.change(|s| {
+            let earlier: BTreeMap<String, u64> = times
+                .into_iter()
+                .filter(|(id, at)| s.shared.seen.get(id).is_none_or(|known| at < known))
+                .collect();
+            s.apply(Shared {
+                seen: earlier,
+                ..Shared::default()
+            })
+        })
     }
 
     /// On disk now, before the app closes; a few seconds at most.

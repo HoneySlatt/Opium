@@ -12,6 +12,7 @@ mod playback;
 mod radio;
 mod resume;
 mod seen;
+pub use seen::SeenElsewhere;
 pub mod signin;
 mod types;
 
@@ -232,9 +233,15 @@ impl AppleMusic {
     }
 
     /// Keep in `path` when each new library song was first seen, which
-    /// dates the albums songs were added to in Recently Added.
-    pub fn keep_seen_in(&self, path: std::path::PathBuf) {
-        *self.seen.lock().unwrap_or_else(|e| e.into_inner()) = Some(seen::Seen::open(path));
+    /// dates the albums songs were added to in Recently Added; with
+    /// `elsewhere`, the earliest the user's devices saw each.
+    pub fn keep_seen_in(
+        &self,
+        path: std::path::PathBuf,
+        elsewhere: Option<std::sync::Arc<dyn SeenElsewhere>>,
+    ) {
+        *self.seen.lock().unwrap_or_else(|e| e.into_inner()) =
+            Some(seen::Seen::open(path, elsewhere));
     }
 
     /// The account's profile on Apple Music, where it has made one.

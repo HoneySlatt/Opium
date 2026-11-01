@@ -690,6 +690,8 @@ impl Backend {
         }
         let (requests, request_rx) = tokio::sync::mpsc::unbounded_channel();
         let again = requests.clone();
+        let seen: Arc<dyn apple_music::SeenElsewhere> =
+            Arc::new(SeenShared(own.kept.clone(), own.share.clone()));
         let (tx, replies) = mpsc::channel();
         own.replies = Some(Replies {
             tx: tx.clone(),
@@ -703,7 +705,7 @@ impl Backend {
                     .enable_all()
                     .build()
                     .expect("start the tokio runtime");
-                runtime.block_on(run(request_rx, again, replies_out, off));
+                runtime.block_on(run(request_rx, again, replies_out, off, seen));
             })
             .expect("spawn the backend thread");
         Self {
@@ -756,14 +758,30 @@ fn sign_in_browser() -> std::ffi::OsString {
 }
 
 /// Connect with the saved token, telling the UI how it went.
-async fn connect(replies: &Replies) -> Option<Arc<AppleMusic>> {
+/// Apple's newest songs as first seen, kept in common with the other devices.
+struct SeenShared(synced::Kept, connect::Sharer);
+
+impl apple_music::SeenElsewhere for SeenShared {
+    fn known(&self, ids: &[String]) -> std::collections::HashMap<String, u64> {
+        self.0.seen(ids)
+    }
+
+    fn seen_here(&self, times: Vec<(String, u64)>) {
+        self.1.share(self.0.first_seen(times));
+    }
+}
+
+async fn connect(
+    replies: &Replies,
+    seen: Arc<dyn apple_music::SeenElsewhere>,
+) -> Option<Arc<AppleMusic>> {
     let Ok(token) = std::fs::read_to_string(apple_music_dir().join("media-user-token")) else {
         replies.send(Reply::NotSignedIn);
         return None;
     };
     match AppleMusic::connect(token.trim()).await {
         Ok(am) => {
-            am.keep_seen_in(crate::settings::dir().join("apple-seen.json"));
+            am.keep_seen_in(crate::settings::dir().join("apple-seen.json"), Some(seen));
             replies.send(Reply::Connected {
                 storefront: am.storefront().to_owned(),
             });
@@ -826,13 +844,14 @@ async fn run(
     again: UnboundedSender<Request>,
     replies: Replies,
     off: Vec<ProviderKind>,
+    seen: Arc<dyn apple_music::SeenElsewhere>,
 ) {
     let on = |p| !off.contains(&p);
     // Apple Music and SoundCloud at once, before anything is asked of them.
     let (mut apple, mut sc) = tokio::join!(
         async {
             match on(ProviderKind::AppleMusic) {
-                true => connect(&replies).await,
+                true => connect(&replies, seen.clone()).await,
                 false => None,
             }
         },
@@ -942,8 +961,9 @@ async fn run(
             Request::Reconnect => {
                 signed_out.remove(&ProviderKind::AppleMusic);
                 let arrived_tx = arrived_tx.clone();
+                let seen = seen.clone();
                 tokio::spawn(async move {
-                    let _ = arrived_tx.send(Arrived::Apple(connect(&replies).await, false));
+                    let _ = arrived_tx.send(Arrived::Apple(connect(&replies, seen).await, false));
                 });
                 continue;
             }
@@ -971,8 +991,10 @@ async fn run(
                     // Turned on: its library loads once it is connected.
                     (ProviderKind::AppleMusic, true) => {
                         let arrived_tx = arrived_tx.clone();
+                        let seen = seen.clone();
                         tokio::spawn(async move {
-                            let _ = arrived_tx.send(Arrived::Apple(connect(&replies).await, true));
+                            let _ = arrived_tx
+                                .send(Arrived::Apple(connect(&replies, seen).await, true));
                         });
                     }
                     (ProviderKind::SoundCloud, true) => {
