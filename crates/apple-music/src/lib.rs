@@ -1421,13 +1421,38 @@ impl Provider for AppleMusic {
     }
 
     /// Word-timed lyrics, else line-timed ones. Uploads (`i.` ids) are not
-    /// in the catalog and have none.
+    /// in the catalog and have none. A song saved long ago may name a
+    /// release since replaced, without lyrics: the one in its place has
+    /// them, as Apple Music shows.
     async fn lyrics(&self, track: &ItemId) -> Result<Option<Lyrics>> {
         if track.id.starts_with("i.") {
             return Ok(None);
         }
+        if let Some(lyrics) = self.lyrics_of(&track.id).await? {
+            return Ok(Some(lyrics));
+        }
+        let path = format!(
+            "/v1/catalog/{}/songs?filter%5Bequivalents%5D={}",
+            self.storefront, track.id
+        );
+        let Some(resp) = self
+            .fetch::<types::Response<types::Resource<serde::de::IgnoredAny>>>(&path)
+            .await?
+        else {
+            return Ok(None);
+        };
+        match resp.data.into_iter().find(|r| r.id != track.id) {
+            Some(now) => self.lyrics_of(&now.id).await,
+            None => Ok(None),
+        }
+    }
+}
+
+impl AppleMusic {
+    /// Catalog song `id`'s lyrics, word-timed if it has them.
+    async fn lyrics_of(&self, id: &str) -> Result<Option<Lyrics>> {
         for kind in ["syllable-lyrics", "lyrics"] {
-            let path = format!("/v1/catalog/{}/songs/{}/{kind}", self.storefront, track.id);
+            let path = format!("/v1/catalog/{}/songs/{id}/{kind}", self.storefront);
             let Some(resp) = self.fetch::<types::LyricsResponse>(&path).await? else {
                 continue;
             };
