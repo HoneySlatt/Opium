@@ -3,7 +3,7 @@
 //! each saying whether it has the song already.
 
 use egui::{Color32, Frame, Id, Rect, Sense, Stroke, Ui, pos2, vec2};
-use music_core::model::Playlist;
+use music_core::model::{Collection, Playlist};
 
 use crate::app::App;
 use crate::fonts::{Weight, font};
@@ -440,13 +440,20 @@ pub fn show_new(app: &mut App, ctx: &egui::Context) {
     }
 }
 
-/// Whether to delete a playlist, asked once: Cancel, or Delete in red.
+/// Whether to delete a playlist, or an album from the library, asked once:
+/// Cancel, or Delete in red.
 pub fn show_delete(app: &mut App, ctx: &egui::Context) {
-    let Some(playlist) = &app.deleting else {
-        return;
+    let (name, gone) = match &app.deleting {
+        Some(Collection::Playlist(p)) => {
+            (p.name.clone(), "It goes from your library on every device.")
+        }
+        Some(Collection::Album(a)) => (
+            a.title.clone(),
+            "It and its songs go from your library on every device.",
+        ),
+        _ => return,
     };
     let theme = app.theme.clone();
-    let name = playlist.name.clone();
     let frame = Frame::new()
         .fill(theme.mantle)
         .stroke(Stroke::new(1.0, theme.line()))
@@ -485,7 +492,7 @@ pub fn show_delete(app: &mut App, ctx: &egui::Context) {
             );
             let g = text(
                 ui,
-                "It goes from your library on every device.",
+                gone,
                 font(13.0, Weight::Regular),
                 theme.subtext0,
                 width - 48.0,
@@ -515,7 +522,7 @@ pub fn show_delete(app: &mut App, ctx: &egui::Context) {
             }
         });
     if delete {
-        app.delete_playlist();
+        app.delete_collection(ctx.input(|i| i.time));
     } else if cancel || response.should_close() {
         app.deleting = None;
     }

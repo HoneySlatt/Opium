@@ -16,6 +16,7 @@ use crate::backend::{Backend, Playable, Reply, Request};
 use crate::palette::Palette;
 use crate::theme::Theme;
 use crate::ui;
+use crate::ui::menu::CollectionFacts;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Page {
@@ -196,12 +197,32 @@ struct Warm {
 /// than passing over it, shorter than reaching for a double click.
 const WARM_AFTER: f64 = 0.3;
 
-/// What a playlist's menu asked for.
-#[derive(Clone, Copy)]
-pub enum PlaylistChoice {
+/// What an album's or a playlist's menu asked for.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum CollectionChoice {
+    /// The menu opened: what it says of the favourites is asked.
+    Opened,
     Enqueue(Enqueue),
+    Shuffle,
+    AddToLibrary,
+    AddToPlaylist,
     Edit,
+    Favourite,
+    SuggestLess,
+    GoToArtist,
+    StartRadio,
+    Share,
     Delete,
+}
+
+/// What an album's or a playlist's songs are fetched for.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum ForSongs {
+    Enqueue(Enqueue),
+    /// Played now, shuffled.
+    Shuffle,
+    /// Into the Add to Playlists window.
+    AddToPlaylist,
 }
 
 /// The New Playlist window: its name and description so far, and the songs
@@ -477,7 +498,7 @@ pub struct App {
     /// The New Playlist window, when open.
     pub new_playlist: Option<NewPlaylist>,
     /// The playlist the Delete window asks about, when open.
-    pub deleting: Option<Playlist>,
+    pub deleting: Option<Collection>,
     /// A playlist being made from the sidebar, to open once it exists.
     open_created: bool,
     /// The Add to Playlists window, when open.
@@ -493,6 +514,12 @@ pub struct App {
     /// What is known to be a favourite or not: set by the user here, or read
     /// from the service. It wins over `favourite_songs`.
     favourites_known: HashMap<ItemId, bool>,
+    /// Whether less like an album was asked for: set here, or read.
+    less_known: HashMap<ItemId, bool>,
+    /// Library albums read for their menu, whose Suggest Less is asked once in.
+    less_for_menu: std::collections::HashSet<ItemId>,
+    /// A link to put on the clipboard, at the next frame.
+    copy: Option<String>,
     /// The new music page's shelves, once asked for.
     pub new_music: Option<Loaded<Arc<Vec<Shelf>>>>,
     /// The radio page's shelves, once asked for.
@@ -583,7 +610,7 @@ pub struct App {
     /// The song the pointer is on, and since when.
     resting: Option<(ItemId, f64)>,
     /// An album or playlist to queue once its tracks are in.
-    waiting: Option<(Waiting, Enqueue)>,
+    waiting: Option<(Waiting, ForSongs)>,
     /// Tracks that failed to start one after the other, skipped.
     failed_in_row: usize,
     /// When covers out of sight were last let go of.
@@ -722,6 +749,9 @@ impl App {
             open_created: false,
             playlist_dialog: None,
             favourites_known: HashMap::new(),
+            less_known: HashMap::new(),
+            less_for_menu: Default::default(),
+            copy: None,
             new_music: None,
             radio: None,
             station: None,
@@ -1741,31 +1771,266 @@ impl App {
         });
     }
 
-    /// What a playlist's menu in the sidebar asked for.
-    pub fn playlist_choice(&mut self, id: &ItemId, choice: PlaylistChoice, now: f64) {
-        let Some(playlist) = self.playlist(id).cloned() else {
-            return;
-        };
-        match choice {
-            PlaylistChoice::Enqueue(how) => self.enqueue_playlist(&playlist, how, now),
-            PlaylistChoice::Edit => {
-                self.playlist_dialog = None;
-                self.new_playlist = Some(NewPlaylist {
-                    name: playlist.name,
-                    description: playlist.description.unwrap_or_default(),
-                    tracks: Vec::new(),
-                    service: playlist.id.provider,
-                    editing: Some(playlist.id),
-                });
-            }
-            PlaylistChoice::Delete => self.deleting = Some(playlist),
+    /// The catalog id an album's favourites, Suggest Less, radio and link
+    /// go by: none for one the user uploaded.
+    fn album_catalog_id(album: &Album) -> Option<ItemId> {
+        album
+            .catalog_id
+            .clone()
+            .or_else(|| (!album.id.id.starts_with("l.")).then(|| album.id.clone()))
+    }
+
+    /// The id a playlist's link goes by: none for an Apple playlist of the
+    /// user's never published, nor for Music's own or the server's.
+    fn playlist_share_id(playlist: &Playlist) -> Option<ItemId> {
+        match playlist.id.provider {
+            ProviderKind::AppleMusic => Self::playlist_favourite_id(playlist),
+            ProviderKind::SoundCloud => Some(playlist.id.clone()),
+            _ => None,
         }
     }
 
-    /// Delete the playlist the Delete window asked about, and close it.
-    pub fn delete_playlist(&mut self) {
-        if let Some(playlist) = self.deleting.take() {
-            self.backend.send(Request::DeletePlaylist(playlist.id));
+    /// What an album's or a playlist's menu offers, as far as the app knows.
+    pub fn collection_facts(&self, item: &Collection) -> CollectionFacts {
+        match item {
+            Collection::Album(album) => self.album_facts(album),
+            Collection::Playlist(playlist) => self.playlist_facts(playlist),
+            Collection::Station(_) => CollectionFacts::default(),
+        }
+    }
+
+    /// An album as its page read it, once it has: a library album's list
+    /// leaves out its catalog id and its artist.
+    fn whole_album<'a>(&'a self, album: &'a Album) -> &'a Album {
+        match self.albums.get(&album.id) {
+            Some(Loaded::Ready((whole, _))) => whole,
+            _ => album,
+        }
+    }
+
+    pub fn album_facts(&self, listed: &Album) -> CollectionFacts {
+        let album = self.whole_album(listed);
+        let apple = album.id.provider == ProviderKind::AppleMusic;
+        let catalog = Self::album_catalog_id(album);
+        // Apple's favourites and Suggest Less; a SoundCloud like is its library.
+        let rated = catalog.as_ref().filter(|_| apple);
+        CollectionFacts {
+            songs: true,
+            playlist: false,
+            addable: self.can_add_album(&listed.id),
+            deletable: apple && album.id.id.starts_with("l."),
+            editable: false,
+            favourite: rated.map(|id| {
+                self.favourites_known
+                    .get(id)
+                    .copied()
+                    .or(album.in_favourites)
+                    .unwrap_or(false)
+            }),
+            less: rated.map(|id| self.less_known.get(id).copied().unwrap_or(false)),
+            artist: album.artist_id.is_some(),
+            radio: rated.is_some(),
+            shareable: catalog.is_some_and(|id| {
+                matches!(
+                    id.provider,
+                    ProviderKind::AppleMusic | ProviderKind::SoundCloud
+                )
+            }),
+        }
+    }
+
+    pub fn playlist_facts(&self, playlist: &Playlist) -> CollectionFacts {
+        let apple = playlist.id.provider == ProviderKind::AppleMusic;
+        CollectionFacts {
+            songs: true,
+            playlist: true,
+            addable: self.collection_in_library(FavouriteKind::Playlist, &playlist.id)
+                == Some(false),
+            // In the library, but Apple's Favourite Songs.
+            deletable: !playlist.favourites && self.playlists.iter().any(|p| p.id == playlist.id),
+            editable: playlist.editable,
+            favourite: Self::playlist_favourite_id(playlist)
+                .filter(|_| apple && !playlist.favourites)
+                .map(|id| {
+                    self.favourites_known
+                        .get(&id)
+                        .copied()
+                        .or(playlist.in_favourites)
+                        .unwrap_or(false)
+                }),
+            less: None,
+            artist: false,
+            radio: false,
+            shareable: Self::playlist_share_id(playlist).is_some(),
+        }
+    }
+
+    /// What an album's or a playlist's menu asked for.
+    pub fn collection_choice(&mut self, item: &Collection, choice: CollectionChoice, now: f64) {
+        let whole;
+        let item = match item {
+            Collection::Album(a) => {
+                whole = Collection::Album(self.whole_album(a).clone());
+                &whole
+            }
+            _ => item,
+        };
+        let facts = self.collection_facts(item);
+        match (item, choice) {
+            (_, CollectionChoice::Opened) => self.ask_about(item),
+            (Collection::Album(a), CollectionChoice::Enqueue(how)) => {
+                self.enqueue_album(a.id.clone(), how, now)
+            }
+            (Collection::Playlist(p), CollectionChoice::Enqueue(how)) => {
+                self.enqueue_playlist(p, how, now)
+            }
+            (Collection::Album(a), CollectionChoice::Shuffle) => {
+                self.album_songs(a.id.clone(), ForSongs::Shuffle, now)
+            }
+            (Collection::Playlist(p), CollectionChoice::Shuffle) => {
+                self.playlist_songs(p, ForSongs::Shuffle, now)
+            }
+            (Collection::Album(a), CollectionChoice::AddToPlaylist) => {
+                self.album_songs(a.id.clone(), ForSongs::AddToPlaylist, now)
+            }
+            (Collection::Playlist(p), CollectionChoice::AddToPlaylist) => {
+                self.playlist_songs(p, ForSongs::AddToPlaylist, now)
+            }
+            (_, CollectionChoice::AddToLibrary) => self.add_collection_to_library(item, now),
+            (Collection::Playlist(p), CollectionChoice::Edit) => {
+                self.playlist_dialog = None;
+                self.new_playlist = Some(NewPlaylist {
+                    name: p.name.clone(),
+                    description: p.description.clone().unwrap_or_default(),
+                    tracks: Vec::new(),
+                    service: p.id.provider,
+                    editing: Some(p.id.clone()),
+                });
+            }
+            (_, CollectionChoice::Favourite) => {
+                let (kind, id) = match item {
+                    Collection::Album(a) => (FavouriteKind::Album, Self::album_catalog_id(a)),
+                    Collection::Playlist(p) => {
+                        (FavouriteKind::Playlist, Self::playlist_favourite_id(p))
+                    }
+                    Collection::Station(_) => return,
+                };
+                if let (Some(id), Some(shown)) = (id, facts.favourite) {
+                    // Toggled from what the menu showed.
+                    self.favourites_known.insert(id.clone(), shown);
+                    self.toggle_favourite(kind, id);
+                }
+            }
+            (Collection::Album(a), CollectionChoice::SuggestLess) => {
+                if let (Some(id), Some(shown)) = (Self::album_catalog_id(a), facts.less) {
+                    self.less_known.insert(id.clone(), !shown);
+                    self.backend.send(Request::SuggestLess {
+                        kind: FavouriteKind::Album,
+                        id,
+                        on: !shown,
+                    });
+                }
+            }
+            (Collection::Album(a), CollectionChoice::GoToArtist) => {
+                if let Some(id) = a.artist_id.clone() {
+                    self.go(Page::Artist(id));
+                }
+            }
+            // Apple names an album's station `ra.` and the album's id.
+            (Collection::Album(a), CollectionChoice::StartRadio) => {
+                if let Some(id) = Self::album_catalog_id(a) {
+                    self.play_station(&Station {
+                        id: ItemId::new(ProviderKind::AppleMusic, format!("ra.{}", id.id)),
+                        name: format!("{} Radio", a.title),
+                        description: None,
+                        artwork: a.artwork.clone(),
+                        kind: StationKind::Tracks,
+                    });
+                }
+            }
+            (_, CollectionChoice::Share) => {
+                let asked = match item {
+                    Collection::Album(a) => {
+                        Self::album_catalog_id(a).map(|id| (FavouriteKind::Album, id))
+                    }
+                    Collection::Playlist(p) => {
+                        Self::playlist_share_id(p).map(|id| (FavouriteKind::Playlist, id))
+                    }
+                    Collection::Station(_) => None,
+                };
+                if let Some((kind, id)) = asked {
+                    self.backend.send(Request::ShareLink { kind, id });
+                }
+            }
+            (_, CollectionChoice::Delete) => self.deleting = Some(item.clone()),
+            _ => {}
+        }
+    }
+
+    /// The menu opened on `item`: whether it is a favourite, and whether
+    /// less like it was asked for, unless known.
+    fn ask_about(&mut self, item: &Collection) {
+        let (kind, id) = match item {
+            Collection::Album(a) if a.id.provider == ProviderKind::AppleMusic => {
+                (FavouriteKind::Album, Self::album_catalog_id(a))
+            }
+            Collection::Playlist(p) if p.id.provider == ProviderKind::AppleMusic => {
+                (FavouriteKind::Playlist, Self::playlist_favourite_id(p))
+            }
+            _ => return,
+        };
+        // A library album's list leaves out its catalog id and artist: read
+        // as its page reads it.
+        if let Collection::Album(a) = item
+            && a.id.id.starts_with("l.")
+            && (a.catalog_id.is_none() || a.artist_id.is_none())
+            && !self.albums.contains_key(&a.id)
+        {
+            self.albums.insert(a.id.clone(), Loaded::Loading);
+            self.backend.send(Request::Album(a.id.clone()));
+            // Suggest Less is asked once its catalog id is known.
+            self.less_for_menu.insert(a.id.clone());
+        }
+        let Some(id) = id else {
+            return;
+        };
+        if !self.favourites_known.contains_key(&id) {
+            self.backend.send(Request::Favourite {
+                kind,
+                id: id.clone(),
+            });
+        }
+        if kind == FavouriteKind::Album && !self.less_known.contains_key(&id) {
+            self.backend.send(Request::SuggestsLess { kind, id });
+        }
+    }
+
+    /// Delete the album or playlist the Delete window asked about, and
+    /// close it.
+    pub fn delete_collection(&mut self, now: f64) {
+        match self.deleting.take() {
+            Some(Collection::Playlist(playlist)) => {
+                self.backend.send(Request::DeletePlaylist(playlist.id));
+            }
+            // Gone at once; the library read again if Apple refuses.
+            Some(Collection::Album(album)) => {
+                let id = album.id;
+                self.library_albums.items.retain(|a| a.id != id);
+                self.library_albums.version += 1;
+                self.recently_added
+                    .items
+                    .retain(|c| !matches!(c, Collection::Album(a) if a.id == id));
+                self.recently_added.version += 1;
+                let gone = Page::Album(id.clone());
+                if self.page == gone {
+                    self.go(Page::Home);
+                }
+                self.back.retain(|p| *p != gone);
+                self.forward.retain(|p| *p != gone);
+                self.backend.send(Request::RemoveFromLibrary(id));
+                self.notify(format!("Deleting “{}”…", album.title), now);
+            }
+            _ => {}
         }
     }
 
@@ -3373,9 +3638,14 @@ impl App {
 
     /// Queue an album, fetching its tracks first if need be.
     pub fn enqueue_album(&mut self, id: ItemId, how: Enqueue, now: f64) {
+        self.album_songs(id, ForSongs::Enqueue(how), now);
+    }
+
+    /// An album's songs, fetched first if need be, for `how`.
+    fn album_songs(&mut self, id: ItemId, how: ForSongs, now: f64) {
         if let Some(tracks) = self.album_tracks(&id) {
             let tracks = tracks.to_vec();
-            self.enqueue_from(tracks, how, now, Page::Album(id));
+            self.songs_for(tracks, how, now, Page::Album(id));
             return;
         }
         if !matches!(self.albums.get(&id), Some(Loaded::Loading)) {
@@ -3387,6 +3657,11 @@ impl App {
 
     /// Queue a playlist, fetching its tracks first if need be.
     pub fn enqueue_playlist(&mut self, playlist: &Playlist, how: Enqueue, now: f64) {
+        self.playlist_songs(playlist, ForSongs::Enqueue(how), now);
+    }
+
+    /// A playlist's songs, fetched first if need be, for `how`.
+    fn playlist_songs(&mut self, playlist: &Playlist, how: ForSongs, now: f64) {
         self.other_playlists
             .entry(playlist.id.clone())
             .or_insert_with(|| playlist.clone());
@@ -3395,7 +3670,7 @@ impl App {
             && entry.done
         {
             let tracks = entry.tracks.to_vec();
-            self.enqueue_from(tracks, how, now, Page::Playlist(id));
+            self.songs_for(tracks, how, now, Page::Playlist(id));
             return;
         }
         if !self.playlist_tracks.contains_key(&id) {
@@ -3428,7 +3703,23 @@ impl App {
                 Waiting::Album(id) => Page::Album(id),
                 Waiting::Playlist(id) => Page::Playlist(id),
             };
-            self.enqueue_from(tracks, how, now, from);
+            self.songs_for(tracks, how, now, from);
+        }
+    }
+
+    /// An album's or a playlist's songs, once in, as `how` asked.
+    fn songs_for(&mut self, tracks: Vec<Track>, how: ForSongs, now: f64, from: Page) {
+        match how {
+            ForSongs::Enqueue(how) => self.enqueue_from(tracks, how, now, from),
+            ForSongs::Shuffle => {
+                let plays = !tracks.is_empty();
+                self.play_shuffled_or_not(tracks, true, now);
+                if plays {
+                    self.playing_from = Some(from);
+                }
+            }
+            ForSongs::AddToPlaylist if !tracks.is_empty() => self.open_playlist_dialog(tracks),
+            ForSongs::AddToPlaylist => {}
         }
     }
 
@@ -3817,6 +4108,15 @@ impl App {
                                     .entry(Self::album_favourite_id(&album))
                                     .or_insert(on);
                             }
+                            if self.less_for_menu.remove(&id)
+                                && let Some(catalog) = album.catalog_id.clone()
+                                && !self.less_known.contains_key(&catalog)
+                            {
+                                self.backend.send(Request::SuggestsLess {
+                                    kind: FavouriteKind::Album,
+                                    id: catalog,
+                                });
+                            }
                             Loaded::Ready((album, Arc::new(tracks)))
                         }
                         Err(e) => Loaded::Failed(e),
@@ -4037,6 +4337,32 @@ impl App {
                         self.favourites_known.entry(id).or_insert(on);
                     }
                     (None, _) => {}
+                },
+                Reply::SuggestsLess { id, set, result } => match (set, result) {
+                    (Some(on), Ok(_)) => {
+                        let message = if on {
+                            "Suggesting less like it"
+                        } else {
+                            "No longer suggesting less like it"
+                        };
+                        self.notify(message, now);
+                    }
+                    (Some(on), Err(e)) => {
+                        self.less_known.insert(id, !on);
+                        self.notify(format!("Couldn't change it: {e}"), now);
+                    }
+                    (None, Ok(Some(on))) => {
+                        self.less_known.entry(id).or_insert(on);
+                    }
+                    (None, _) => {}
+                },
+                Reply::ShareLink(result) => match result {
+                    Ok(Some(link)) => {
+                        self.copy = Some(link);
+                        self.notify("Link copied", now);
+                    }
+                    Ok(None) => self.notify("It has no link to share", now),
+                    Err(e) => self.notify(format!("Couldn't get its link: {e}"), now),
                 },
                 Reply::Palette { url, palette } => {
                     let state = palette.map_or(PaletteState::Failed, PaletteState::Ready);
@@ -4724,6 +5050,9 @@ impl eframe::App for App {
         }
         let now = ctx.input(|i| i.time);
         self.pump(now);
+        if let Some(link) = self.copy.take() {
+            ctx.copy_text(link);
+        }
         self.media_controls(ctx);
         self.other_devices(now);
         if let Some(edited) = self.search_edited {

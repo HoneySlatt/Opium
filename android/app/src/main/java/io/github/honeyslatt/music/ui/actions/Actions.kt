@@ -244,16 +244,18 @@ class Actions(
         )
     }
 
-    fun albumMenu(album: Album, anchor: Rect, onDeleted: () -> Unit = {}) {
-        val head = MenuHead(album.artwork, album.title, album.artists.joinToString(", "))
-        val saved = album.added != null || album.id.id.startsWith("l.")
-        val apple = album.id.provider == ProviderKind.APPLE_MUSIC
-        // Its id in the service's catalog: none for one the user uploaded.
-        val catalog = album.catalogId ?: album.id.takeUnless { it.id.startsWith("l.") }
-        // Apple's favourites and Suggest Less; a SoundCloud like is its library.
-        val rated = catalog?.takeIf { apple }
+    fun albumMenu(listed: Album, anchor: Rect, onDeleted: () -> Unit = {}) {
+        val head = MenuHead(listed.artwork, listed.title, listed.artists.joinToString(", "))
+        val saved = listed.added != null || listed.id.id.startsWith("l.")
+        val apple = listed.id.provider == ProviderKind.APPLE_MUSIC
+        readWhole(listed)
         menus.show(
             MenuSpec(anchor, head) {
+                val album = whole[listed.id] ?: listed
+                // Its id in the service's catalog: none for one the user uploaded.
+                val catalog = album.catalogId ?: album.id.takeUnless { it.id.startsWith("l.") }
+                // Apple's favourites and Suggest Less; a SoundCloud like is its library.
+                val rated = catalog?.takeIf { apple }
                 val favourite = rated != null && isFavourite(FavouriteKind.ALBUM, rated, album.inFavourites)
                 val less = rated != null && suggestsLess(FavouriteKind.ALBUM, rated)
                 listOf(
@@ -270,7 +272,7 @@ class Actions(
                             !apple -> null
                             !saved -> MenuItem("Add to Library", Icons.Pluscircle) { addAlbumToLibrary(album) }
                             album.id.id.startsWith("l.") ->
-                                MenuItem("Delete from Library…", Icons.Trash, danger = true) { confirmDelete(album, onDeleted) }
+                                MenuItem("Delete from Library…", Icons.Trash, danger = true) { confirmDelete(listed, onDeleted) }
                             else -> null
                         },
                         MenuItem("Add to a Playlist…", Icons.Listplus) {
@@ -293,6 +295,16 @@ class Actions(
                 )
             },
         )
+    }
+
+    /** Library albums as their pages read them, with the catalog's id and the artist their lists leave out. */
+    private val whole = mutableStateMapOf<ItemId, Album>()
+
+    /** A library album of Apple's, read once its menu opens, for what its list leaves out. */
+    private fun readWhole(album: Album) {
+        val lacking = album.catalogId == null || album.artistId == null
+        if (album.id.provider != ProviderKind.APPLE_MUSIC || !album.id.id.startsWith("l.") || !lacking || album.id in whole) return
+        scope.launch { runCatching { session.album(album.id).album }.getOrNull()?.let { whole[album.id] = it } }
     }
 
     fun playlistMenu(playlist: Playlist, anchor: Rect, onDeleted: () -> Unit = {}) {

@@ -3,13 +3,12 @@
 
 use egui::{Frame, Response, Sense, Stroke, Ui, pos2, vec2};
 
-use crate::app::{Enqueue, PlaylistChoice, TrackChoice};
+use crate::app::{CollectionChoice, Enqueue, TrackChoice};
 use crate::fonts::{Weight, font};
 use crate::icons::{self, Icon};
 use crate::settings::AlbumSort;
 use crate::theme::Theme;
 
-use super::grid::CardClick;
 use super::{paint_icon, paint_text, text};
 
 /// A menu line: an item with its icon, label and what it means, or a hairline.
@@ -308,72 +307,159 @@ fn track_entries(facts: TrackFacts) -> Vec<Entry<TrackChoice>> {
     entries
 }
 
-/// A library playlist's menu in the sidebar: playing it, then editing it if
-/// it is the user's own, and deleting it unless it is Apple's favourites.
-pub(super) fn playlist_menu(
+/// What an album's or a playlist's menu offers besides playing it.
+#[derive(Clone, Copy, Default)]
+pub(crate) struct CollectionFacts {
+    /// An album or a playlist: songs to shuffle and add to playlists. A
+    /// station's menu only plays it.
+    pub songs: bool,
+    /// A playlist, not an album: its Share and Delete say so.
+    pub playlist: bool,
+    /// Not wholly in the library: Add to Library.
+    pub addable: bool,
+    /// In the user's library, to delete from it.
+    pub deletable: bool,
+    /// The user's own playlist, to rename.
+    pub editable: bool,
+    /// Whether it is a favourite, when it can be one.
+    pub favourite: Option<bool>,
+    /// Whether less like it was asked for, when that can be.
+    pub less: Option<bool>,
+    /// Its artist's page is known.
+    pub artist: bool,
+    /// It has a station of songs like it.
+    pub radio: bool,
+    /// It has a page on the service's website.
+    pub shareable: bool,
+}
+
+/// An album's or a playlist's menu, as the phone's: playing it, the library
+/// and the favourites, where it leads, and deleting it.
+pub(super) fn collection_menu(
     response: &Response,
     theme: &Theme,
-    editable: bool,
-    deletable: bool,
-) -> Option<PlaylistChoice> {
-    let mut entries = vec![
-        Entry::Item(
-            icons::PLAY_FILL,
-            "Play",
-            PlaylistChoice::Enqueue(Enqueue::Now),
-        ),
+    facts: CollectionFacts,
+) -> Option<CollectionChoice> {
+    let mut entries = vec![Entry::Item(
+        icons::PLAY_FILL,
+        "Play",
+        CollectionChoice::Enqueue(Enqueue::Now),
+    )];
+    if facts.songs {
+        entries.push(Entry::Item(
+            icons::SHUFFLE,
+            "Shuffle",
+            CollectionChoice::Shuffle,
+        ));
+    }
+    entries.extend([
         Entry::Line,
         Entry::Item(
             icons::NEXT,
             "Play Next",
-            PlaylistChoice::Enqueue(Enqueue::Next),
+            CollectionChoice::Enqueue(Enqueue::Next),
         ),
         Entry::Item(
             icons::LATER,
             "Add to Queue",
-            PlaylistChoice::Enqueue(Enqueue::Last),
+            CollectionChoice::Enqueue(Enqueue::Last),
         ),
-    ];
-    if editable || deletable {
-        entries.push(Entry::Line);
+    ]);
+    if !facts.songs {
+        return finish(response, theme, &entries);
     }
-    if editable {
-        entries.push(Entry::Item(icons::EDIT, "Edit…", PlaylistChoice::Edit));
-    }
-    if deletable {
-        entries.push(Entry::Item(
+    entries.push(Entry::Line);
+    let delete = || {
+        Entry::Item(
             icons::TRASH,
             "Delete from Library…",
-            PlaylistChoice::Delete,
-        ));
-    }
-    context_menu(response, theme, &entries)
-}
-
-/// What an album's or a playlist's menu offers; Add to Library when it isn't
-/// there yet.
-pub(super) fn collection_menu(
-    response: &Response,
-    theme: &Theme,
-    addable: bool,
-) -> Option<CardClick> {
-    let mut entries = vec![
-        Entry::Item(icons::PLAY_FILL, "Play", CardClick::Enqueue(Enqueue::Now)),
-        Entry::Line,
-        Entry::Item(icons::NEXT, "Play Next", CardClick::Enqueue(Enqueue::Next)),
-        Entry::Item(
-            icons::LATER,
-            "Add to Queue",
-            CardClick::Enqueue(Enqueue::Last),
-        ),
-    ];
-    if addable {
-        entries.push(Entry::Line);
+            CollectionChoice::Delete,
+        )
+    };
+    if facts.addable {
         entries.push(Entry::Item(
             icons::PLUS,
             "Add to Library",
-            CardClick::AddToLibrary,
+            CollectionChoice::AddToLibrary,
+        ));
+    } else if facts.deletable && !facts.playlist {
+        entries.push(delete());
+    }
+    entries.push(Entry::Item(
+        icons::LIST,
+        "Add to Playlist…",
+        CollectionChoice::AddToPlaylist,
+    ));
+    if facts.editable {
+        entries.push(Entry::Item(icons::EDIT, "Edit…", CollectionChoice::Edit));
+    }
+    match facts.favourite {
+        Some(true) => entries.push(Entry::Item(
+            icons::STAR_FILL,
+            "Remove from Favourites",
+            CollectionChoice::Favourite,
+        )),
+        Some(false) => entries.push(Entry::Item(
+            icons::STAR,
+            "Favourite",
+            CollectionChoice::Favourite,
+        )),
+        None => {}
+    }
+    match facts.less {
+        Some(true) => entries.push(Entry::Item(
+            icons::THUMBS_DOWN,
+            "Undo Suggest Less",
+            CollectionChoice::SuggestLess,
+        )),
+        Some(false) => entries.push(Entry::Item(
+            icons::THUMBS_DOWN,
+            "Suggest Less",
+            CollectionChoice::SuggestLess,
+        )),
+        None => {}
+    }
+    if facts.artist || facts.radio || facts.shareable {
+        entries.push(Entry::Line);
+    }
+    if facts.artist {
+        entries.push(Entry::Item(
+            icons::MIC,
+            "Go to Artist",
+            CollectionChoice::GoToArtist,
         ));
     }
-    context_menu(response, theme, &entries)
+    if facts.radio {
+        entries.push(Entry::Item(
+            icons::RADIO,
+            "Start Radio",
+            CollectionChoice::StartRadio,
+        ));
+    }
+    if facts.shareable {
+        let label = if facts.playlist {
+            "Share Playlist"
+        } else {
+            "Share Album"
+        };
+        entries.push(Entry::Item(icons::SHARE, label, CollectionChoice::Share));
+    }
+    if facts.deletable && facts.playlist {
+        entries.push(Entry::Line);
+        entries.push(delete());
+    }
+    finish(response, theme, &entries)
+}
+
+fn finish(
+    response: &Response,
+    theme: &Theme,
+    entries: &[Entry<CollectionChoice>],
+) -> Option<CollectionChoice> {
+    let chosen = context_menu(response, theme, entries);
+    // Opened now: what it says of the favourites is asked of the service.
+    if chosen.is_none() && response.secondary_clicked() {
+        return Some(CollectionChoice::Opened);
+    }
+    chosen
 }

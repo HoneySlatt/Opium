@@ -11,7 +11,7 @@ mod library;
 mod library_artist;
 mod loading;
 mod lyrics;
-mod menu;
+pub(crate) mod menu;
 mod motion;
 mod now_playing;
 mod pairing;

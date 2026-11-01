@@ -1,8 +1,9 @@
 //! The sidebar: search, navigation, library, playlists and the account row.
 
 use egui::{Id, Rect, Sense, Stroke, Ui, pos2, vec2};
+use music_core::model::Collection;
 
-use crate::app::{App, Page, PlaylistChoice};
+use crate::app::{App, CollectionChoice, Page};
 use crate::color::{alpha, mix};
 use crate::fonts::{Weight, font};
 use crate::icons::{self, Icon};
@@ -23,7 +24,7 @@ pub fn show(app: &mut App, ui: &mut Ui, collapsed: bool) {
     );
     let mut list = ui.new_child(egui::UiBuilder::new().max_rect(nav));
     let mut new_playlist = false;
-    let mut chosen: Option<(music_core::model::ItemId, PlaylistChoice)> = None;
+    let mut chosen: Option<(Collection, CollectionChoice)> = None;
     egui::ScrollArea::vertical()
         .id_salt("sidebar-scroll")
         .auto_shrink(false)
@@ -83,7 +84,6 @@ pub fn show(app: &mut App, ui: &mut Ui, collapsed: bool) {
                 let id = playlist.id.clone();
                 let active = app.page == Page::Playlist(id.clone());
                 let name = playlist.name.clone();
-                let editable = playlist.editable;
                 let response = nav_item(
                     ui,
                     &theme,
@@ -93,9 +93,10 @@ pub fn show(app: &mut App, ui: &mut Ui, collapsed: bool) {
                     collapsed,
                     &PLAYLIST,
                 );
-                if let Some(choice) = super::menu::playlist_menu(&response, &theme, editable, true)
-                {
-                    chosen = Some((id.clone(), choice));
+                let playlist = &app.playlists[i];
+                let facts = app.playlist_facts(playlist);
+                if let Some(choice) = super::menu::collection_menu(&response, &theme, facts) {
+                    chosen = Some((Collection::Playlist(playlist.clone()), choice));
                 }
                 if response.clicked() {
                     app.go(Page::Playlist(id));
@@ -107,8 +108,8 @@ pub fn show(app: &mut App, ui: &mut Ui, collapsed: bool) {
     if new_playlist {
         app.open_new_playlist(Vec::new());
     }
-    if let Some((id, choice)) = chosen {
-        app.playlist_choice(&id, choice, ui.input(|i| i.time));
+    if let Some((item, choice)) = chosen {
+        app.collection_choice(&item, choice, ui.input(|i| i.time));
     }
     account(app, ui, &theme, full, collapsed);
 }

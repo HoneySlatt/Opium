@@ -4,9 +4,9 @@
 //! over the albums. Collapsed, only the covers.
 
 use egui::{Color32, Id, Rect, Sense, Ui, pos2, vec2};
-use music_core::model::{ItemId, ProviderKind};
+use music_core::model::{Collection, ProviderKind};
 
-use crate::app::{App, Page, PlaylistChoice};
+use crate::app::{App, CollectionChoice, Page};
 use crate::color::alpha;
 use crate::fonts::{Weight, font};
 use crate::icons::{self, Icon};
@@ -40,8 +40,8 @@ struct Row {
     /// Artists are round.
     round: bool,
     page: Page,
-    /// A library playlist, with its menu: whether it is the user's own.
-    playlist: Option<(ItemId, bool)>,
+    /// A library playlist or album, with its menu.
+    menu: Option<Collection>,
 }
 
 pub fn show(app: &mut App, ui: &mut Ui, collapsed: bool) {
@@ -246,7 +246,7 @@ pub fn show(app: &mut App, ui: &mut Ui, collapsed: bool) {
     let row_height = if collapsed { 56.0 } else { 64.0 };
     let list = Rect::from_min_max(pos2(full.left(), top), full.max);
     let mut list_ui = ui.new_child(egui::UiBuilder::new().max_rect(list));
-    let mut chosen: Option<(ItemId, PlaylistChoice)> = None;
+    let mut chosen: Option<(Collection, CollectionChoice)> = None;
     let mut go = None;
     egui::ScrollArea::vertical()
         .id_salt(("library-scroll", filter as u8))
@@ -267,11 +267,14 @@ pub fn show(app: &mut App, ui: &mut Ui, collapsed: bool) {
                         }
                     };
                     let response = row_ui(app, ui, &theme, row, row_height, collapsed);
-                    if let Some((id, editable)) = &row.playlist
-                        && let Some(choice) =
-                            super::menu::playlist_menu(&response, &theme, *editable, true)
+                    if let Some(item) = &row.menu
+                        && let Some(choice) = super::menu::collection_menu(
+                            &response,
+                            &theme,
+                            app.collection_facts(item),
+                        )
                     {
-                        chosen = Some((id.clone(), choice));
+                        chosen = Some((item.clone(), choice));
                     }
                     if response.clicked() {
                         go = Some(row.page.clone());
@@ -318,8 +321,8 @@ pub fn show(app: &mut App, ui: &mut Ui, collapsed: bool) {
     if new_playlist {
         app.open_new_playlist(Vec::new());
     }
-    if let Some((id, choice)) = chosen {
-        app.playlist_choice(&id, choice, ui.input(|i| i.time));
+    if let Some((item, choice)) = chosen {
+        app.collection_choice(&item, choice, ui.input(|i| i.time));
     }
 }
 
@@ -331,7 +334,7 @@ fn pinned(app: &App, filter: Filter) -> Vec<Row> {
         art: Art::Tile(icon, colors),
         round: false,
         page,
-        playlist: None,
+        menu: None,
     };
     const PLAIN: [Color32; 2] = [
         Color32::from_rgb(0x2a, 0x2a, 0x2a),
@@ -382,7 +385,7 @@ fn listed_row(app: &App, filter: Filter, i: usize) -> Row {
                 art: Art::Cover(p.artwork.as_ref().map(|a| a.url(120))),
                 round: false,
                 page: Page::Playlist(p.id.clone()),
-                playlist: Some((p.id.clone(), p.editable)),
+                menu: Some(Collection::Playlist(p.clone())),
             }
         }
         Filter::Albums => {
@@ -393,7 +396,7 @@ fn listed_row(app: &App, filter: Filter, i: usize) -> Row {
                 art: Art::Cover(a.artwork.as_ref().map(|art| art.url(120))),
                 round: false,
                 page: Page::Album(a.id.clone()),
-                playlist: None,
+                menu: Some(Collection::Album(a.clone())),
             }
         }
         Filter::Artists => {
@@ -405,7 +408,7 @@ fn listed_row(app: &App, filter: Filter, i: usize) -> Row {
                 round: true,
                 // The library's own id, which its page asks by.
                 page: Page::LibraryArtist(a.library_id.clone().unwrap_or_else(|| a.id.clone())),
-                playlist: None,
+                menu: None,
             }
         }
     }

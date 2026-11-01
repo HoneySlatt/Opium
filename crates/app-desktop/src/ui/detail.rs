@@ -15,6 +15,7 @@ use crate::icons::{self, Icon};
 use crate::theme::Theme;
 
 use super::grid::{CARD_TEXT, CardClick, SHELF_HEAD, ShelfCard, cover_shelf, video_shelf};
+use super::menu::CollectionFacts;
 use super::tracks::{self, Columns, RowAction, RowState};
 use super::{Blob, PageButton, artwork, page_buttons, paint_icon, paint_text, text, wash};
 
@@ -819,6 +820,18 @@ fn album_header(album: &Album, tracks: &[Track], favourite: bool) -> Header {
     }
 }
 
+/// The album or playlist the page shows, once loaded.
+fn shown_collection(app: &App) -> Option<Collection> {
+    match &app.page {
+        Page::Album(id) => match app.albums.get(id) {
+            Some(Loaded::Ready((album, _))) => Some(Collection::Album(album.clone())),
+            _ => None,
+        },
+        Page::Playlist(id) => app.playlist(id).cloned().map(Collection::Playlist),
+        _ => None,
+    }
+}
+
 fn total_length(tracks: &[Track]) -> Option<Duration> {
     let total: Duration = tracks.iter().filter_map(|t| t.duration).sum();
     (!total.is_zero()).then_some(total)
@@ -886,6 +899,13 @@ fn page(
                 ui.allocate_exact_size(vec2(ui.available_width(), total), Sense::hover());
             let left = content.left() + pad;
             let width = content.width() - 2.0 * pad;
+            // A right click on the header opens the menu its cover has
+            // elsewhere; its buttons, over it, keep their clicks.
+            let top = Rect::from_min_max(
+                content.min,
+                pos2(content.right(), content.top() + table_top),
+            );
+            let top = ui.interact(top, egui::Id::unique("page-head"), Sense::click());
             let action = if banner {
                 banner_header(
                     ui,
@@ -931,6 +951,12 @@ fn page(
                     }
                 }
                 None => {}
+            }
+            if let Some(item) = shown_collection(app)
+                && let Some(choice) =
+                    super::menu::collection_menu(&top, &theme, app.collection_facts(&item))
+            {
+                app.collection_choice(&item, choice, ui.input(|i| i.time));
             }
 
             let columns = match listing.columns {
@@ -1411,7 +1437,7 @@ fn album_foot_ui(
                 },
                 url: a.artwork.as_ref().map(|art| art.url(400)),
                 explicit: a.explicit,
-                addable: app.can_add_album(&a.id),
+                facts: app.album_facts(a),
             })
             .collect();
         let id = egui::Id::unique("other-versions");
@@ -1421,8 +1447,8 @@ fn album_foot_ui(
             Some((i, CardClick::Enqueue(how))) => {
                 app.enqueue_album(versions[i].id.clone(), how, now);
             }
-            Some((i, CardClick::AddToLibrary)) => {
-                app.add_collection_to_library(&Collection::Album(versions[i].clone()), now);
+            Some((i, CardClick::Menu(choice))) => {
+                app.collection_choice(&Collection::Album(versions[i].clone()), choice, now);
             }
             None => {}
         }
@@ -1438,7 +1464,7 @@ fn album_foot_ui(
                 sub: v.artists.join(", "),
                 url: v.thumbnail.clone(),
                 explicit: v.explicit,
-                addable: false,
+                facts: CollectionFacts::default(),
             })
             .collect();
         let id = egui::Id::unique("music-videos");
@@ -1462,7 +1488,7 @@ fn album_foot_ui(
             sub: a.artists.join(", "),
             url: a.artwork.as_ref().map(|art| art.url(400)),
             explicit: a.explicit,
-            addable: app.can_add_album(&a.id),
+            facts: app.album_facts(a),
         })
         .collect();
     let id = egui::Id::unique(("more-by", &artist.id));
@@ -1482,8 +1508,8 @@ fn album_foot_ui(
     match cover_shelf(ui, theme, at, width, &title, &cards, MORE_BY_CARD, id) {
         Some((i, CardClick::Open)) => app.go(Page::Album(albums[i].id.clone())),
         Some((i, CardClick::Enqueue(how))) => app.enqueue_album(albums[i].id.clone(), how, now),
-        Some((i, CardClick::AddToLibrary)) => {
-            app.add_collection_to_library(&Collection::Album(albums[i].clone()), now);
+        Some((i, CardClick::Menu(choice))) => {
+            app.collection_choice(&Collection::Album(albums[i].clone()), choice, now);
         }
         None => {}
     }

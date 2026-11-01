@@ -15,6 +15,7 @@ use super::grid::{
     CARD_TEXT, CardClick, SHELF_HEAD, SONG_COLUMNS_HEIGHT, ShelfCard, cover_shelf, round_shelf,
     song_columns, video_shelf,
 };
+use super::menu::CollectionFacts;
 use super::search::{message, section_head};
 use super::{artwork, format_date, paint_icon, paint_text, text};
 
@@ -172,7 +173,7 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
                                 sub: v.artists.join(", "),
                                 url: v.thumbnail.clone(),
                                 explicit: v.explicit,
-                                addable: false,
+                                facts: CollectionFacts::default(),
                             })
                             .collect();
                         let shelf_id = Id::unique(("artist-videos", &artist.artist.id.id));
@@ -201,7 +202,7 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
                                 sub: p.curator.clone().unwrap_or_default(),
                                 url: p.artwork.as_ref().map(|art| art.url(400)),
                                 explicit: false,
-                                addable: app.can_add_to_library(&Collection::Playlist(p.clone())),
+                                facts: app.playlist_facts(p),
                             })
                             .collect();
                         let shelf_id = Id::unique(("artist-playlists", &artist.artist.id.id));
@@ -219,8 +220,9 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
                             match click {
                                 CardClick::Open => app.open_playlist(playlist),
                                 CardClick::Enqueue(how) => app.enqueue_playlist(playlist, how, now),
-                                CardClick::AddToLibrary => app.add_collection_to_library(
+                                CardClick::Menu(choice) => app.collection_choice(
                                     &Collection::Playlist(playlist.clone()),
+                                    choice,
                                     now,
                                 ),
                             }
@@ -238,7 +240,7 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
                                 sub: String::new(),
                                 url: a.artwork.as_ref().map(|art| art.url(400)),
                                 explicit: false,
-                                addable: false,
+                                facts: CollectionFacts::default(),
                             })
                             .collect();
                         let shelf_id = Id::unique(("artist-similar", &artist.artist.id.id));
@@ -558,7 +560,7 @@ fn show_banner(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
                         sub: v.artists.join(", "),
                         url: v.thumbnail.clone(),
                         explicit: v.explicit,
-                        addable: false,
+                        facts: CollectionFacts::default(),
                     })
                     .collect();
                 let shelf_id = Id::unique(("artist-videos", &artist.artist.id.id));
@@ -586,7 +588,7 @@ fn show_banner(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
                         sub: p.curator.clone().unwrap_or_default(),
                         url: p.artwork.as_ref().map(|art| art.url(400)),
                         explicit: false,
-                        addable: app.can_add_to_library(&Collection::Playlist(p.clone())),
+                        facts: app.playlist_facts(p),
                     })
                     .collect();
                 let shelf_id = Id::unique(("artist-playlists", &artist.artist.id.id));
@@ -605,8 +607,9 @@ fn show_banner(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
                     match click {
                         CardClick::Open => app.open_playlist(playlist),
                         CardClick::Enqueue(how) => app.enqueue_playlist(playlist, how, now),
-                        CardClick::AddToLibrary => app.add_collection_to_library(
+                        CardClick::Menu(choice) => app.collection_choice(
                             &Collection::Playlist(playlist.clone()),
+                            choice,
                             now,
                         ),
                     }
@@ -622,7 +625,7 @@ fn show_banner(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
                         sub: "Artist".into(),
                         url: a.artwork.as_ref().map(|art| art.url(400)),
                         explicit: false,
-                        addable: false,
+                        facts: CollectionFacts::default(),
                     })
                     .collect();
                 let shelf_id = Id::unique(("artist-similar", &artist.artist.id.id));
@@ -889,7 +892,7 @@ fn albums_shelf(
             },
             url: a.artwork.as_ref().map(|art| art.url(400)),
             explicit: a.explicit,
-            addable: app.can_add_album(&a.id),
+            facts: app.album_facts(a),
         })
         .collect();
     let shelf_id = Id::unique(("artist-shelf", title, &artist.artist.id.id));
@@ -901,8 +904,8 @@ fn albums_shelf(
         let now = ui.input(|i| i.time);
         match click {
             CardClick::Open => app.go(Page::Album(id)),
-            CardClick::AddToLibrary => {
-                app.add_collection_to_library(&Collection::Album(albums[i].clone()), now);
+            CardClick::Menu(choice) => {
+                app.collection_choice(&Collection::Album(albums[i].clone()), choice, now);
             }
             CardClick::Enqueue(how) => app.enqueue_album(id, how, now),
         }

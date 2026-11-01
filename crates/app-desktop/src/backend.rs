@@ -132,6 +132,22 @@ pub enum Request {
         kind: FavouriteKind,
         id: ItemId,
     },
+    /// Ask for less like this, or take that back.
+    SuggestLess {
+        kind: FavouriteKind,
+        id: ItemId,
+        on: bool,
+    },
+    /// Whether less like this was asked for.
+    SuggestsLess {
+        kind: FavouriteKind,
+        id: ItemId,
+    },
+    /// Its page on the service's website, to copy.
+    ShareLink {
+        kind: FavouriteKind,
+        id: ItemId,
+    },
     /// A track's audio, ready to hand to the player.
     Fetch {
         token: player::Token,
@@ -245,6 +261,14 @@ pub enum Reply {
         set: Option<bool>,
         result: Result<Option<bool>, String>,
     },
+    /// Suggest Less was set (`set: Some(on)`) or looked up; as `Favourite`.
+    SuggestsLess {
+        id: ItemId,
+        set: Option<bool>,
+        result: Result<Option<bool>, String>,
+    },
+    /// The link to copy, none if there is none, or why not.
+    ShareLink(Result<Option<String>, String>),
     NotSignedIn,
     Failed(String),
     /// Apple Music couldn't be reached.
@@ -1269,6 +1293,9 @@ async fn run(
             | Request::DeletePlaylist(_)
             | Request::AddToPlaylists { .. }
             | Request::Favourite { .. }
+            | Request::SuggestLess { .. }
+            | Request::SuggestsLess { .. }
+            | Request::ShareLink { .. }
             | Request::StationTracks(_) => {}
             Request::SignIn
             | Request::Reconnect
@@ -1704,6 +1731,36 @@ fn shared_request(p: Arc<dyn Provider>, request: Request, replies: Replies) -> O
                 });
             });
         }
+        Request::SuggestLess { kind, id, on } => {
+            tokio::spawn(async move {
+                let result = p
+                    .suggest_less(kind, &id, on)
+                    .await
+                    .map(|()| Some(on))
+                    .map_err(|e| e.to_string());
+                replies.send(Reply::SuggestsLess {
+                    id,
+                    set: Some(on),
+                    result,
+                });
+            });
+        }
+        Request::SuggestsLess { kind, id } => {
+            tokio::spawn(async move {
+                let result = p.suggests_less(kind, &id).await.map_err(|e| e.to_string());
+                replies.send(Reply::SuggestsLess {
+                    id,
+                    set: None,
+                    result,
+                });
+            });
+        }
+        Request::ShareLink { kind, id } => {
+            tokio::spawn(async move {
+                let result = p.share_link(kind, &id).await.map_err(|e| e.to_string());
+                replies.send(Reply::ShareLink(result));
+            });
+        }
         Request::StationTracks(id) => {
             tokio::spawn(async move {
                 let result = p
@@ -1780,6 +1837,12 @@ fn unanswered(request: Request, service: &str, replies: &Replies) {
         Request::RemoveFromLibrary(_) => {
             Reply::RemovedFromLibrary(Err(format!("Couldn't remove it from the library: {e}")))
         }
+        Request::SuggestLess { id, on, .. } => Reply::SuggestsLess {
+            id,
+            set: Some(on),
+            result: Err(e),
+        },
+        Request::ShareLink { .. } => Reply::ShareLink(Err(e)),
         Request::AddToPlaylists { .. } => {
             Reply::Changed(Err(format!("Couldn't add to the playlist: {e}")))
         }
@@ -1826,6 +1889,9 @@ fn target(request: &Request) -> Option<ProviderKind> {
         | Request::SetFavourite { id, .. }
         | Request::AddToLibrary { id, .. }
         | Request::Favourite { id, .. }
+        | Request::SuggestLess { id, .. }
+        | Request::SuggestsLess { id, .. }
+        | Request::ShareLink { id, .. }
         | Request::EditPlaylist { id, .. }
         | Request::RemoveFromPlaylist { playlist: id, .. } => id,
         Request::InLibrary { ids, .. } => ids.first()?,

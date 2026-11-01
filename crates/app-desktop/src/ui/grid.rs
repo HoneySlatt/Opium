@@ -6,12 +6,12 @@ use music_core::model::{
     Collection, FavouriteKind, ItemId, Playlist, ProviderKind, Station, Track,
 };
 
-use crate::app::{App, Enqueue, Loaded, Page, Shelves};
+use crate::app::{App, CollectionChoice, Enqueue, Loaded, Page, Shelves};
 use crate::fonts::{Weight, font};
 use crate::icons;
 use crate::theme::Theme;
 
-use super::menu::{TrackFacts, track_menu, track_menu_button};
+use super::menu::{CollectionFacts, TrackFacts, track_menu, track_menu_button};
 use super::songs::source_chips;
 use super::{artwork, explicit_badge, glow, icon_button, paint_icon, paint_text, text, thumb_url};
 
@@ -48,8 +48,8 @@ pub(super) struct CoverCard<'a> {
     pub round: bool,
     /// An E after the title.
     pub explicit: bool,
-    /// Its menu offers Add to Library.
-    pub addable: bool,
+    /// What its menu offers besides playing it.
+    pub facts: CollectionFacts,
     /// A right click opens the album's or playlist's menu.
     pub menu: bool,
 }
@@ -58,9 +58,10 @@ pub(super) struct CoverCard<'a> {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(super) enum CardClick {
     Open,
-    /// From the right-click menu of an album or a playlist.
+    /// Its play button.
     Enqueue(Enqueue),
-    AddToLibrary,
+    /// From the right-click menu of an album or a playlist.
+    Menu(CollectionChoice),
 }
 
 /// A cover with its title and a muted line under it; `art` is the cover's
@@ -179,9 +180,9 @@ pub(super) fn cover_card(
     paint_text(ui, g, x, art.bottom() + 39.0, align, muted);
     if !card.round
         && card.menu
-        && let Some(click) = super::menu::collection_menu(&response, theme, card.addable)
+        && let Some(choice) = super::menu::collection_menu(&response, theme, card.facts)
     {
-        return Some(click);
+        return Some(CardClick::Menu(choice));
     }
     if play.is_some() {
         return play;
@@ -309,7 +310,7 @@ pub(super) struct ShelfCard {
     pub sub: String,
     pub url: Option<String>,
     pub explicit: bool,
-    pub addable: bool,
+    pub facts: CollectionFacts,
 }
 
 /// A titled row of `size` px covers that scrolls sideways. Returns the cover
@@ -441,7 +442,7 @@ fn shelf_of(
             sub: &card.sub,
             round,
             explicit: card.explicit,
-            addable: card.addable,
+            facts: card.facts,
             menu: !video,
         };
         if let Some(click) = cover_card(&row_ui, theme, art, &cover, id.with(i)) {
@@ -525,7 +526,7 @@ pub fn shelf(app: &mut App, ui: &mut Ui, pad: f32, which: Shelves, title: &str) 
                     sub: &card.sub,
                     round: false,
                     explicit: card.explicit,
-                    addable: app.can_add_to_library(&items[position]),
+                    facts: app.collection_facts(&items[position]),
                     menu: true,
                 };
                 let id = Id::unique(("shelf-card", title, position));
@@ -805,11 +806,11 @@ fn page(app: &mut App, ui: &mut Ui, pad: f32, kind: Kind) -> f32 {
                     sub: &sub,
                     round: kind == Kind::Artists,
                     explicit,
-                    addable: false,
+                    facts: facts(app, kind, shown[position]),
                     menu: true,
                 };
                 if let Some(click) = cover_card(ui, &theme, art, &cover, id) {
-                    clicked = Some((open, click));
+                    clicked = Some((open, shown[position], click));
                 }
             }
 
@@ -832,17 +833,24 @@ fn page(app: &mut App, ui: &mut Ui, pad: f32, kind: Kind) -> f32 {
         });
     let now = ui.input(|i| i.time);
     match clicked {
-        Some((Open::Album(id), CardClick::Open)) => app.go(Page::Album(id)),
+        Some((Open::Album(id), _, CardClick::Open)) => app.go(Page::Album(id)),
         // An artist from the library opens as the library has them.
-        Some((Open::Artist(id), CardClick::Open)) => app.go(Page::LibraryArtist(id)),
-        Some((Open::Playlist(playlist), CardClick::Open)) => app.open_playlist(&playlist),
-        Some((Open::Station(station), _)) => app.play_station(&station),
-        Some((Open::Album(id), CardClick::Enqueue(how))) => app.enqueue_album(id, how, now),
-        Some((Open::Playlist(p), CardClick::Enqueue(how))) => app.enqueue_playlist(&p, how, now),
-        // The library's own covers: in the library already.
-        Some((_, CardClick::AddToLibrary))
-        | Some((Open::Artist(_), CardClick::Enqueue(_)))
-        | None => {}
+        Some((Open::Artist(id), _, CardClick::Open)) => app.go(Page::LibraryArtist(id)),
+        Some((Open::Playlist(playlist), _, CardClick::Open)) => app.open_playlist(&playlist),
+        Some((Open::Station(station), _, _)) => app.play_station(&station),
+        Some((Open::Album(id), _, CardClick::Enqueue(how))) => app.enqueue_album(id, how, now),
+        Some((Open::Playlist(p), _, CardClick::Enqueue(how))) => app.enqueue_playlist(&p, how, now),
+        Some((_, i, CardClick::Menu(choice))) => {
+            let item = match kind {
+                Kind::Albums => Some(Collection::Album(app.library_albums.items[i].clone())),
+                Kind::Recent => Some(app.recently_added.items[i].clone()),
+                Kind::Artists => None,
+            };
+            if let Some(item) = item {
+                app.collection_choice(&item, choice, now);
+            }
+        }
+        Some((Open::Artist(_), _, CardClick::Enqueue(_))) | None => {}
     }
     output.state.clamped_offset().y
 }
@@ -871,6 +879,15 @@ fn explicit_album(app: &App, kind: Kind, i: usize) -> bool {
         Kind::Albums => app.library_albums.items[i].explicit,
         Kind::Recent => matches!(&app.recently_added.items[i], Collection::Album(a) if a.explicit),
         Kind::Artists => false,
+    }
+}
+
+/// What the `i`-th cover's menu offers.
+fn facts(app: &App, kind: Kind, i: usize) -> CollectionFacts {
+    match kind {
+        Kind::Albums => app.album_facts(&app.library_albums.items[i]),
+        Kind::Recent => app.collection_facts(&app.recently_added.items[i]),
+        Kind::Artists => CollectionFacts::default(),
     }
 }
 

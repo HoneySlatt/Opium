@@ -184,7 +184,7 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
                         sub: &sub,
                         round: false,
                         explicit: album.explicit,
-                        addable: false,
+                        facts: app.album_facts(album),
                         menu: true,
                     };
                     let card_id = Id::unique(("library-artist-card", *title, i));
@@ -217,8 +217,8 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
     match clicked {
         Some((album, CardClick::Open)) => app.go(Page::Album(album.id)),
         Some((album, CardClick::Enqueue(how))) => app.enqueue_album(album.id, how, now),
-        Some((album, CardClick::AddToLibrary)) => {
-            app.add_collection_to_library(&Collection::Album(album), now);
+        Some((album, CardClick::Menu(choice))) => {
+            app.collection_choice(&Collection::Album(album), choice, now);
         }
         None => {}
     }

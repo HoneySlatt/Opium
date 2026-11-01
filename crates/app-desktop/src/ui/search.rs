@@ -628,7 +628,9 @@ fn shelf(
             sub: c.sub.clone(),
             url: c.art.as_ref().map(|a| a.url(376)),
             explicit: c.explicit,
-            addable: collection(app, &c.open, query).is_some_and(|c| app.can_add_to_library(&c)),
+            facts: collection(app, &c.open, query)
+                .map(|c| app.collection_facts(&c))
+                .unwrap_or_default(),
         })
         .collect();
     let id = id.with("shelf");
@@ -664,7 +666,9 @@ fn covers_grid(
             sub: &c.sub,
             round: section.round,
             explicit: c.explicit,
-            addable: collection(app, &c.open, query).is_some_and(|c| app.can_add_to_library(&c)),
+            facts: collection(app, &c.open, query)
+                .map(|c| app.collection_facts(&c))
+                .unwrap_or_default(),
             menu: !section.round,
         };
         if let Some(click) = cover_card(ui, theme, art, &card, id.with(("card", i))) {
@@ -688,9 +692,9 @@ fn card_clicked(
     let now = ui.input(|i| i.time);
     let how = match click {
         CardClick::Open => return open(app, target, query),
-        CardClick::AddToLibrary => {
+        CardClick::Menu(choice) => {
             if let Some(item) = collection(app, &target, query) {
-                app.add_collection_to_library(&item, now);
+                app.collection_choice(&item, choice, now);
             }
             return;
         }
