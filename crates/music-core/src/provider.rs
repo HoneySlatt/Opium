@@ -81,7 +81,7 @@ pub trait Provider: Send + Sync {
         Ok(SongLinks::default())
     }
 
-    /// Take a song out of the user's library, by its library id.
+    /// Take a song or an album out of the user's library, by its library id.
     async fn remove_from_library(&self, _library_id: &ItemId) -> Result<()> {
         Err(Error::Protocol(
             "this service has no library to remove from".into(),
@@ -136,6 +136,21 @@ pub trait Provider: Send + Sync {
 
     /// Whether `id` is among the user's favourites, when the service can say.
     async fn is_favourite(&self, _kind: FavouriteKind, _id: &ItemId) -> Result<Option<bool>> {
+        Ok(None)
+    }
+
+    /// Ask for less like `id`, or take that back. `id` names the catalog item.
+    async fn suggest_less(&self, _kind: FavouriteKind, _id: &ItemId, _on: bool) -> Result<()> {
+        Err(Error::Protocol("this service takes no such wish".into()))
+    }
+
+    /// Whether less like `id` was asked for, when the service can say.
+    async fn suggests_less(&self, _kind: FavouriteKind, _id: &ItemId) -> Result<Option<bool>> {
+        Ok(None)
+    }
+
+    /// The page of `id` on the service's website, to share; none if it has none.
+    async fn share_link(&self, _kind: FavouriteKind, _id: &ItemId) -> Result<Option<String>> {
         Ok(None)
     }
 

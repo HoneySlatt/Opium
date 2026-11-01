@@ -15,6 +15,7 @@
 //!   cargo run -p apple-music --example am -- live ra.978194965 out.aac [seconds]
 //!   cargo run -p apple-music --example am -- artist 5468295
 //!   cargo run -p apple-music --example am -- favourite song 1840800867 [on|off]
+//!   cargo run -p apple-music --example am -- suggest-less album 1840800866 [on|off]
 //!
 //! The browser defaults to `brave-origin`; set `MUSIC_BROWSER` for another one.
 //! The token is stored under `$XDG_CONFIG_HOME/music/apple-music/` and never printed.
@@ -51,6 +52,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some("artist") if args.len() == 2 => artist(&connect().await?, &args[1]).await,
         Some("favourite") if args.len() >= 3 => {
             favourite(
+                &connect().await?,
+                &args[1],
+                &args[2],
+                args.get(3).map(String::as_str),
+            )
+            .await
+        }
+        Some("suggest-less") if args.len() >= 3 => {
+            suggest_less(
                 &connect().await?,
                 &args[1],
                 &args[2],
@@ -216,6 +226,28 @@ async fn favourite(
         println!("set {set}");
     }
     println!("in favourites: {:?}", am.is_favourite(kind, &id).await?);
+    Ok(())
+}
+
+async fn suggest_less(
+    am: &AppleMusic,
+    kind: &str,
+    id: &str,
+    set: Option<&str>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use music_core::model::FavouriteKind;
+    let kind = match kind {
+        "song" => FavouriteKind::Song,
+        "album" => FavouriteKind::Album,
+        "playlist" => FavouriteKind::Playlist,
+        _ => return Err("kind is song, album or playlist".into()),
+    };
+    let id = music_core::model::ItemId::new(music_core::model::ProviderKind::AppleMusic, id);
+    if let Some(set) = set {
+        am.suggest_less(kind, &id, set == "on").await?;
+        println!("set {set}");
+    }
+    println!("suggests less: {:?}", am.suggests_less(kind, &id).await?);
     Ok(())
 }
 

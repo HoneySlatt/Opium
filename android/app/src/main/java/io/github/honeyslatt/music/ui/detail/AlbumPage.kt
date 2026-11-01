@@ -109,7 +109,7 @@ fun AlbumPage(c: LibraryContext, id: ItemId) {
         } else {
             null
         },
-        BarAction(Icons.More, "More") { rect -> album?.let { actions?.albumMenu(it, rect) } },
+        BarAction(Icons.More, "More") { rect -> album?.let { actions?.albumMenu(it, rect, onDeleted = { c.nav.pop() }) } },
     )
     DetailPage(c.nav, album?.title.orEmpty(), page, bar) {
         item {

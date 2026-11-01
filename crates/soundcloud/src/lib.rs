@@ -872,6 +872,31 @@ impl Provider for SoundCloud {
         self.like(FavouriteKind::Song, library_id, false).await
     }
 
+    /// Its permalink, as SoundCloud gives it.
+    async fn share_link(&self, kind: FavouriteKind, id: &ItemId) -> Result<Option<String>> {
+        let track = |id: &str| format!("/tracks/{id}");
+        Ok(match kind {
+            FavouriteKind::Song => {
+                self.get::<types::Track>(&track(&id.id))
+                    .await?
+                    .permalink_url
+            }
+            // A single is its track.
+            FavouriteKind::Album if id.id.starts_with(convert::SINGLE) => {
+                let path = track(&id.id[convert::SINGLE.len()..]);
+                self.get::<types::Track>(&path).await?.permalink_url
+            }
+            FavouriteKind::Album | FavouriteKind::Playlist => {
+                let path = format!("/playlists/{}", id.id);
+                self.get::<types::Playlist>(&path).await?.permalink_url
+            }
+            FavouriteKind::Artist => {
+                let path = format!("/users/{}", id.id);
+                self.get::<types::User>(&path).await?.permalink_url
+            }
+        })
+    }
+
     /// Private, as the user's own playlists are until they share them.
     async fn create_playlist(
         &self,

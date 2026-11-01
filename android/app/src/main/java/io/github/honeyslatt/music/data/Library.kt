@@ -282,6 +282,21 @@ class Library(private val core: Core, private val scope: CoroutineScope) {
         _lists.update { l -> l.copy(playlists = l.playlists.copy(items = l.playlists.items.filter { it.id != id })) }
     }
 
+    fun albumDeleted(id: io.github.honeyslatt.music.core.model.ItemId) {
+        _lists.update { l ->
+            l.copy(
+                albums = l.albums.copy(items = l.albums.items.filter { it.id != id }),
+                recentlyAdded = l.recentlyAdded.copy(items = l.recentlyAdded.items.filter { !(it is Collection.Album && it.v1.id == id) }),
+            )
+        }
+    }
+
+    /** An album deleted, back: the service refused. */
+    fun albumBack(album: Album) {
+        _lists.update { l -> l.copy(albums = l.albums.copy(items = listOf(album) + l.albums.items.filter { it.id != album.id })) }
+        recentChanged(album.id.provider)
+    }
+
     /**
      * `provider`'s part of a list: as it was kept last time, at once, then as
      * the service has it now, kept for next time. What was kept stays until

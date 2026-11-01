@@ -607,6 +607,40 @@ impl Session {
         off(async move { Ok(self.provider(id.provider)?.is_favourite(kind, &id).await?) }).await
     }
 
+    /// Ask for less like `id`, or take that back. `id` names the catalog item.
+    pub async fn suggest_less(
+        self: Arc<Self>,
+        kind: FavouriteKind,
+        id: ItemId,
+        on: bool,
+    ) -> Result<(), MusicError> {
+        off(async move {
+            Ok(self
+                .provider(id.provider)?
+                .suggest_less(kind, &id, on)
+                .await?)
+        })
+        .await
+    }
+
+    /// Whether less like `id` was asked for, when the service can say.
+    pub async fn suggests_less(
+        self: Arc<Self>,
+        kind: FavouriteKind,
+        id: ItemId,
+    ) -> Result<Option<bool>, MusicError> {
+        off(async move { Ok(self.provider(id.provider)?.suggests_less(kind, &id).await?) }).await
+    }
+
+    /// The page of `id` on its service's website, to share.
+    pub async fn share_link(
+        self: Arc<Self>,
+        kind: FavouriteKind,
+        id: ItemId,
+    ) -> Result<Option<String>, MusicError> {
+        off(async move { Ok(self.provider(id.provider)?.share_link(kind, &id).await?) }).await
+    }
+
     pub async fn add_to_library(
         self: Arc<Self>,
         kind: FavouriteKind,

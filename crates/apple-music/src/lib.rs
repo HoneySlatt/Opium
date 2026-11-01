@@ -1206,8 +1206,14 @@ impl Provider for AppleMusic {
         })
     }
 
+    /// A library album's id starts with `l.`, a song's with `i.`.
     async fn remove_from_library(&self, library_id: &ItemId) -> Result<()> {
-        let path = format!("/v1/me/library/songs/{}", library_id.id);
+        let kind = if library_id.id.starts_with("l.") {
+            "albums"
+        } else {
+            "songs"
+        };
+        let path = format!("/v1/me/library/{kind}/{}", library_id.id);
         let req = self.http.delete(format!("{API}{path}"));
         self.send_change(req, &path).await
     }
@@ -1326,6 +1332,50 @@ impl Provider for AppleMusic {
             .and_then(|r| r.data.into_iter().next())
             .and_then(|r| r.attributes)
             .and_then(|a| a.in_favorites))
+    }
+
+    /// Apple's Suggest Less: the item rated -1, as its clients dislike.
+    async fn suggest_less(&self, kind: FavouriteKind, id: &ItemId, on: bool) -> Result<()> {
+        let path = format!("/v1/me/ratings/{}/{}", catalog_type(kind), id.id);
+        let req = if on {
+            self.http
+                .put(format!("{API}{path}"))
+                .json(&serde_json::json!({
+                    "type": "rating",
+                    "attributes": { "value": -1 },
+                }))
+        } else {
+            self.http.delete(format!("{API}{path}"))
+        };
+        self.send_change(req, &path).await
+    }
+
+    /// Unrated, Apple says not found.
+    async fn suggests_less(&self, kind: FavouriteKind, id: &ItemId) -> Result<Option<bool>> {
+        #[derive(serde::Deserialize)]
+        struct Rating {
+            value: i8,
+        }
+        let path = format!("/v1/me/ratings/{}/{}", catalog_type(kind), id.id);
+        let resp: Option<types::Response<types::Resource<Rating>>> = self.fetch(&path).await?;
+        Ok(Some(
+            resp.and_then(|r| r.data.into_iter().next())
+                .and_then(|r| r.attributes)
+                .is_some_and(|a| a.value < 0),
+        ))
+    }
+
+    async fn share_link(&self, kind: FavouriteKind, id: &ItemId) -> Result<Option<String>> {
+        let kind = match kind {
+            FavouriteKind::Song => "song",
+            FavouriteKind::Album => "album",
+            FavouriteKind::Artist => "artist",
+            FavouriteKind::Playlist => "playlist",
+        };
+        Ok(Some(format!(
+            "https://music.apple.com/{}/{kind}/{}",
+            self.storefront, id.id
+        )))
     }
 
     /// Apple's radio page: the stations on air in a row of their own, then

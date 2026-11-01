@@ -51,7 +51,7 @@ val LocalActions = staticCompositionLocalOf<Actions?> { null }
  */
 @UnstableApi
 class Actions(
-    context: Context,
+    private val context: Context,
     private val core: Core,
     private val library: Library,
     private val playback: Playback,
@@ -244,11 +244,18 @@ class Actions(
         )
     }
 
-    fun albumMenu(album: Album, anchor: Rect) {
+    fun albumMenu(album: Album, anchor: Rect, onDeleted: () -> Unit = {}) {
         val head = MenuHead(album.artwork, album.title, album.artists.joinToString(", "))
         val saved = album.added != null || album.id.id.startsWith("l.")
+        val apple = album.id.provider == ProviderKind.APPLE_MUSIC
+        // Its id in the service's catalog: none for one the user uploaded.
+        val catalog = album.catalogId ?: album.id.takeUnless { it.id.startsWith("l.") }
+        // Apple's favourites and Suggest Less; a SoundCloud like is its library.
+        val rated = catalog?.takeIf { apple }
         menus.show(
             MenuSpec(anchor, head) {
+                val favourite = rated != null && isFavourite(FavouriteKind.ALBUM, rated, album.inFavourites)
+                val less = rated != null && suggestsLess(FavouriteKind.ALBUM, rated)
                 listOf(
                     listOf(
                         MenuItem("Play", Icons.Play) { withAlbum(album) { playback.play(it, 0) } },
@@ -259,17 +266,29 @@ class Actions(
                         MenuItem("Add to Queue", Icons.Later) { withAlbum(album) { addToQueue(it) } },
                     ),
                     listOfNotNull(
-                        if (!saved && album.id.provider == ProviderKind.APPLE_MUSIC) {
-                            MenuItem("Add to Library", Icons.Pluscircle) { addAlbumToLibrary(album) }
-                        } else {
-                            null
+                        when {
+                            !apple -> null
+                            !saved -> MenuItem("Add to Library", Icons.Pluscircle) { addAlbumToLibrary(album) }
+                            album.id.id.startsWith("l.") ->
+                                MenuItem("Delete from Library…", Icons.Trash, danger = true) { confirmDelete(album, onDeleted) }
+                            else -> null
                         },
                         MenuItem("Add to a Playlist…", Icons.Listplus) {
                             withAlbum(album) { sheet = SheetSpec.AddToPlaylists(it, songsCount(it.size), album.title, album.artwork) }
                         },
+                        rated?.let { id ->
+                            MenuItem(if (favourite) "Remove from Favourites" else "Favourite", if (favourite) Icons.Starf else Icons.Star) {
+                                toggleFavourite(FavouriteKind.ALBUM, id, was = favourite)
+                            }
+                        },
+                        rated?.let { id ->
+                            MenuItem(if (less) "Undo Suggest Less" else "Suggest Less", Icons.Thumbsdown) { toggleSuggestLess(FavouriteKind.ALBUM, id, was = less) }
+                        },
                     ),
                     listOfNotNull(
                         album.artistId?.let { id -> MenuItem("Go to Artist", Icons.Mic) { go(Route.Artist(id)) } },
+                        rated?.let { id -> MenuItem("Start Station", Icons.Radio) { startStation(ItemId(ProviderKind.APPLE_MUSIC, "ra.${id.id}"), album.title) } },
+                        catalog?.takeIf { shareable(it) }?.let { id -> MenuItem("Share Album", Icons.Share) { share(FavouriteKind.ALBUM, id) } },
                     ),
                 )
             },
@@ -279,16 +298,27 @@ class Actions(
     fun playlistMenu(playlist: Playlist, anchor: Rect, onDeleted: () -> Unit = {}) {
         val head = MenuHead(playlist.artwork, if (playlist.favourites) "Favourite Songs" else playlist.name, "Playlist", star = playlist.favourites)
         val favouriteId = playlist.catalogId ?: playlist.id
+        // Its page on the web: none for an Apple playlist of the user's never published.
+        val shared = (playlist.catalogId ?: playlist.id.takeUnless { it.id.startsWith("p.") })?.takeIf { shareable(it) }
         menus.show(
             MenuSpec(anchor, head) {
+                val play = listOf(
+                    MenuItem("Play", Icons.Play) { withPlaylist(playlist) { playback.play(it, 0) } },
+                    MenuItem("Shuffle", Icons.Shuffle) { withPlaylist(playlist) { playback.shuffle(it) } },
+                )
                 val queue = listOf(
                     MenuItem("Play Next", Icons.Next) { withPlaylist(playlist) { playNext(it) } },
                     MenuItem("Add to Queue", Icons.Later) { withPlaylist(playlist) { addToQueue(it) } },
                 )
+                val toPlaylist = MenuItem("Add to a Playlist…", Icons.Listplus) {
+                    withPlaylist(playlist) { sheet = SheetSpec.AddToPlaylists(it, songsCount(it.size), head.title, playlist.artwork) }
+                }
                 val favourite = !playlist.favourites && isFavourite(FavouriteKind.PLAYLIST, favouriteId, playlist.inFavourites)
-                if (playlist.favourites) listOf(queue) else listOf(
+                if (playlist.favourites) listOf(play, queue, listOf(toPlaylist)) else listOf(
+                    play,
                     queue,
                     listOfNotNull(
+                        toPlaylist,
                         if (playlist.editable) MenuItem("Edit…", Icons.Pencil) { sheet = SheetSpec.PlaylistForm(playlist) } else null,
                         if (playlist.id.provider == ProviderKind.APPLE_MUSIC) {
                             MenuItem(if (favourite) "Remove from Favourites" else "Favourite", if (favourite) Icons.Starf else Icons.Star) {
@@ -298,6 +328,7 @@ class Actions(
                             null
                         },
                     ),
+                    listOfNotNull(shared?.let { id -> MenuItem("Share Playlist", Icons.Share) { share(FavouriteKind.PLAYLIST, id) } }),
                     listOfNotNull(
                         if (playlist.editable) {
                             MenuItem("Delete from Library…", Icons.Trash, danger = true) { confirmDelete(playlist, onDeleted) }
@@ -416,6 +447,33 @@ class Actions(
         }
     }
 
+    /** An album's station, as Apple names it: `ra.` and the album's id. */
+    private fun startStation(station: ItemId, title: String) {
+        scope.launch {
+            try {
+                playback.playStation(station)
+                hud.show("$title Station", Icons.Radio)
+            } catch (e: MusicException) {
+                hud.show("Couldn't start the station", Icons.Alert)
+            }
+        }
+    }
+
+    /** Whether `id`'s service has pages on the web to share: Music's own and Navidrome's are private. */
+    private fun shareable(id: ItemId) = id.provider == ProviderKind.APPLE_MUSIC || id.provider == ProviderKind.SOUND_CLOUD
+
+    /** Its link on the service's website, through Android's share sheet. */
+    private fun share(kind: FavouriteKind, id: ItemId) {
+        scope.launch {
+            val link = runCatching { session.shareLink(kind, id) }.getOrNull()
+                ?: return@launch hud.show("Couldn't share it", Icons.Alert)
+            val send = android.content.Intent(android.content.Intent.ACTION_SEND)
+                .setType("text/plain")
+                .putExtra(android.content.Intent.EXTRA_TEXT, link)
+            context.startActivity(android.content.Intent.createChooser(send, null).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
+    }
+
     // ---- Library and favourites ----
 
     fun addToLibrary(track: Track) {
@@ -457,6 +515,22 @@ class Actions(
         }
     }
 
+    private fun confirmDelete(album: Album, onDeleted: () -> Unit) {
+        sheet = SheetSpec.Confirm(
+            "Delete from Library?",
+            "“${album.title}” and its songs go from your library on every device, and from your playlists.",
+            "Delete Album",
+        ) {
+            library.albumDeleted(album.id)
+            onDeleted()
+            hud.show("Deleted", Icons.Trash)
+            change("Couldn't delete it", undo = { library.albumBack(album) }) {
+                session.removeFromLibrary(album.id)
+                library.recentChanged(album.id.provider)
+            }
+        }
+    }
+
     private fun removeLike(track: Track) {
         inLibraryNow[track.id] = false
         hud.show("Removed from Library", Icons.Minuscircle)
@@ -493,6 +567,40 @@ class Actions(
             session.setFavourite(FavouriteKind.SONG, track.id, on)
             // A SoundCloud like is the library.
             if (soundCloud || joins) library.recentChanged(track.id.provider)
+        }
+    }
+
+    /** Favourite, or not, from `was` as the menu showed it. */
+    private fun toggleFavourite(kind: FavouriteKind, id: ItemId, was: Boolean) {
+        favourites[id] = !was
+        hud.show(if (was) "Removed from Favourites" else "Favourited", if (was) Icons.Star else Icons.Starf)
+        change("Couldn't change the favourites", undo = { favourites[id] = was }) {
+            session.setFavourite(kind, id, !was)
+        }
+    }
+
+    /** Suggest Less as known: what the service said, or what was just done. */
+    private val less = mutableStateMapOf<ItemId, Boolean>()
+    private val askingLess = mutableSetOf<ItemId>()
+
+    /** Whether less like `id` was asked for; asked of the service the first time. */
+    private fun suggestsLess(kind: FavouriteKind, id: ItemId): Boolean {
+        less[id]?.let { return it }
+        if (askingLess.add(id)) {
+            scope.launch {
+                runCatching { session.suggestsLess(kind, id) }.getOrNull()?.let { less[id] = it }
+                    // Asked again the next time it is shown.
+                    ?: askingLess.remove(id)
+            }
+        }
+        return false
+    }
+
+    private fun toggleSuggestLess(kind: FavouriteKind, id: ItemId, was: Boolean) {
+        less[id] = !was
+        hud.show(if (was) "Suggest Less Undone" else "Suggesting Less", Icons.Thumbsdown)
+        change("Couldn't change it", undo = { less[id] = was }) {
+            session.suggestLess(kind, id, !was)
         }
     }
 
