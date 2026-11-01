@@ -166,10 +166,19 @@ class Devices(context: Context) {
         }
     }
 
-    /** The app came on screen, or left it. */
+    private val awayEnough = Runnable { node.setAway(false) }
+
+    /**
+     * The app came on screen, or left it. Away from home, the devices are
+     * reached while it shows, and a minute after: the relay's keeping in
+     * touch, every few seconds, would keep the mobile radio from ever
+     * resting while music plays in the background.
+     */
     fun looking(on: Boolean) {
         onScreen = on
         watch()
+        main.removeCallbacks(awayEnough)
+        if (on) node.setAway(true) else main.postDelayed(awayEnough, AWAY_FOR)
     }
 
     /** Music started or stopped playing on this phone. */
@@ -211,3 +220,6 @@ class Devices(context: Context) {
 
 /** How long a paired device is looked out for once music starts in the background. */
 private const val LOOK_FOR = 60_000L
+
+/** How long the devices stay reached away from home once the app is left. */
+private const val AWAY_FOR = 60_000L

@@ -41,6 +41,8 @@ impl Devices {
                 ctx.request_repaint();
             },
         );
+        // Plugged in: always reachable away from home.
+        node.set_away(true);
         let peers = node.peers();
         Self {
             node,

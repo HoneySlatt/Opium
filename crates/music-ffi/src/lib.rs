@@ -1302,6 +1302,11 @@ impl Connect {
         self.1.flush();
     }
 
+    /// Reachable away from home, and reaching the devices away, or not.
+    pub fn set_away(&self, on: bool) {
+        self.0.set_away(on);
+    }
+
     pub fn me(&self) -> connect::Device {
         self.0.me()
     }

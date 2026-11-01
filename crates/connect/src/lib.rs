@@ -316,8 +316,15 @@ struct Inner {
     /// taken: each doubles the wait.
     pairing_pause: Mutex<(u32, Option<Instant>)>,
     kept: Kept,
-    /// This device on iroh, to reach the paired ones away from home.
-    away: Option<iroh::Endpoint>,
+    /// This device on iroh, to reach the paired ones away from home, while
+    /// it is wanted there: see [`Node::set_away`].
+    away: Mutex<Option<iroh::Endpoint>>,
+    /// Its key there, and so its id; none off the network (tests).
+    secret: Option<[u8; 32]>,
+    relay: Option<String>,
+    want_away: std::sync::atomic::AtomicBool,
+    /// One change at a time to whether it is on iroh.
+    switching: tokio::sync::Mutex<()>,
     events: Box<dyn Fn(Event) + Send + Sync>,
     serial: AtomicU64,
     rt: tokio::runtime::Handle,
@@ -382,10 +389,7 @@ impl Node {
             .build()
             .expect("a runtime for Music Connect");
         let store = Store::open(dir);
-        let away = on_network
-            .then(|| store.secret())
-            .flatten()
-            .and_then(|secret| rt.block_on(away::endpoint(secret, relay.as_deref())));
+        let secret = on_network.then(|| store.secret()).flatten();
         let me = Device {
             id: store.id().to_owned(),
             name,
@@ -400,7 +404,11 @@ impl Node {
             showing: Mutex::default(),
             pairing_pause: Mutex::default(),
             kept,
-            away: away.clone(),
+            away: Mutex::default(),
+            secret,
+            relay,
+            want_away: Default::default(),
+            switching: Default::default(),
             events,
             serial: AtomicU64::new(0),
             rt: rt.handle().clone(),
@@ -422,9 +430,6 @@ impl Node {
                 PORT
             }
         };
-        if let Some(away) = away {
-            rt.spawn(accept_away(inner.clone(), away));
-        }
         rt.spawn(redial(inner.clone()));
         let mdns = on_network
             .then(|| {
@@ -584,6 +589,14 @@ impl Node {
         lock(&self.inner.showing).take();
     }
 
+    /// Be reachable away from home, and reach the paired devices away, or
+    /// not: a phone is while the app shows, to spare its battery the
+    /// relay's keeping in touch. Going there, it reaches them at once.
+    pub fn set_away(&self, on: bool) {
+        self.inner.want_away.store(on, Ordering::Relaxed);
+        self.inner.rt.spawn(self.inner.clone().switch_away());
+    }
+
     /// Unpair `id`: it is no longer listened to.
     pub fn forget(&self, id: &str) {
         lock(&self.inner.store).forget(id);
@@ -616,7 +629,7 @@ impl Drop for Node {
         }
         if let Some(rt) = self.rt.take() {
             // Gone from iroh at once, rather than once the others give up.
-            if let Some(away) = self.inner.away.clone() {
+            if let Some(away) = lock(&self.inner.away).take() {
                 rt.block_on(async { timeout(Duration::from_secs(1), away.close()).await.ok() });
             }
             rt.shutdown_background();
@@ -625,6 +638,70 @@ impl Drop for Node {
 }
 
 impl Inner {
+    /// On iroh or off it, as last wanted.
+    async fn switch_away(self: Arc<Self>) {
+        let _one = self.switching.lock().await;
+        let want = self.want_away.load(Ordering::Relaxed);
+        if want == lock(&self.away).is_some() {
+            return;
+        }
+        if !want {
+            let endpoint = lock(&self.away).take();
+            if let Some(endpoint) = endpoint {
+                endpoint.close().await;
+            }
+            return;
+        }
+        let Some(secret) = self.secret else {
+            return;
+        };
+        let Some(endpoint) = away::endpoint(secret, self.relay.as_deref()).await else {
+            return;
+        };
+        *lock(&self.away) = Some(endpoint.clone());
+        tokio::spawn(accept_away(self.clone(), endpoint));
+        // Not left to the next try, nor to a wait grown with failures.
+        self.in_sight_away();
+        let ids: Vec<String> = {
+            let store = lock(&self.store);
+            let mut seen = lock(&self.seen);
+            seen.iter_mut()
+                .filter(|(id, s)| s.link.is_none() && store.away(id).is_some())
+                .map(|(id, s)| {
+                    s.failures = 0;
+                    s.retry_at = Instant::now();
+                    id.clone()
+                })
+                .collect()
+        };
+        for id in ids {
+            self.reach(&id);
+        }
+    }
+
+    /// The paired devices reachable away from home, among those in sight.
+    fn in_sight_away(&self) {
+        let away: Vec<Device> = {
+            let store = lock(&self.store);
+            store
+                .paired()
+                .filter(|d| store.away(&d.id).is_some())
+                .cloned()
+                .collect()
+        };
+        let mut seen = lock(&self.seen);
+        for device in away {
+            seen.entry(device.id.clone())
+                .or_insert_with(|| Seen::new(device));
+        }
+    }
+
+    /// This device's id on iroh, whether it is there now or not.
+    fn away_id(&self) -> Option<String> {
+        self.secret
+            .map(|secret| iroh::SecretKey::from_bytes(&secret).public().to_string())
+    }
+
     fn hello(&self, pair: bool) -> Hello {
         Hello {
             version: VERSION,
@@ -672,7 +749,7 @@ impl Inner {
             if store.key(id).is_none() {
                 return;
             }
-            self.away.is_some() && store.away(id).is_some()
+            lock(&self.away).is_some() && store.away(id).is_some()
         };
         {
             let mut seen = lock(&self.seen);
@@ -709,8 +786,9 @@ impl Inner {
             return Ok(Box::new(stream));
         }
         let to = lock(&self.store).away(id).map(str::to_owned);
-        match (&self.away, to) {
-            (Some(away), Some(to)) => Ok(Box::new(within(AWAY, away::dial(away, &to)).await?)),
+        let endpoint = lock(&self.away).clone();
+        match (endpoint, to) {
+            (Some(away), Some(to)) => Ok(Box::new(within(AWAY, away::dial(&away, &to)).await?)),
             _ => Err(failed("can't reach it")),
         }
     }
@@ -825,8 +903,8 @@ impl Inner {
             }
         }
         let _ = tx.send(Self::encode(&Message::Shared(self.kept.everything())));
-        if let Some(away) = &self.away {
-            let _ = tx.send(Self::encode(&Message::Away(away.id().to_string())));
+        if let Some(away) = self.away_id() {
+            let _ = tx.send(Self::encode(&Message::Away(away)));
         }
         drop(tx);
 
@@ -1146,20 +1224,8 @@ async fn redial(inner: Arc<Inner>) {
     let mut every = tokio::time::interval(REDIAL);
     loop {
         every.tick().await;
-        if inner.away.is_some() {
-            let away: Vec<Device> = {
-                let store = lock(&inner.store);
-                store
-                    .paired()
-                    .filter(|d| store.away(&d.id).is_some())
-                    .cloned()
-                    .collect()
-            };
-            let mut seen = lock(&inner.seen);
-            for device in away {
-                seen.entry(device.id.clone())
-                    .or_insert_with(|| Seen::new(device));
-            }
+        if lock(&inner.away).is_some() {
+            inner.in_sight_away();
         }
         let ids: Vec<String> = lock(&inner.seen).keys().cloned().collect();
         for id in ids {

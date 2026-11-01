@@ -28,6 +28,7 @@
              anew, so where the user was (tab, pages, sheets) stays. -->
         <activity
             android:name=".MainActivity"
+            android:screenOrientation="portrait"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|uiMode|keyboardHidden"
             android:exported="true">
             <intent-filter>
