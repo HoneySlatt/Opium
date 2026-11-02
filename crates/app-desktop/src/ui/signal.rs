@@ -356,11 +356,17 @@ pub fn show(app: &mut App, ui: &mut Ui, main: Rect) {
         }
         .as_shape(rect.shrink(8.0), 14.0),
     );
+    // M3E's popovers: radius 28, no outline.
+    let (radius, outline) = if theme.expressive() {
+        (28.0, Stroke::NONE)
+    } else {
+        (14.0, Stroke::new(1.0, theme.line()))
+    };
     ui.painter().rect(
         rect,
-        14.0,
+        radius,
         theme.mantle,
-        Stroke::new(1.0, theme.line()),
+        outline,
         egui::StrokeKind::Inside,
     );
     ui.interact(rect, Id::unique("signal-path-bg"), Sense::click());

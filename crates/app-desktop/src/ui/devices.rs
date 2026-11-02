@@ -57,9 +57,14 @@ pub fn button(app: &mut App, ui: &mut Ui, theme: &Theme, shown: &Shown) {
         icon_button(ui, theme, icons::DEVICES, 30.0, 16.0, color, true).on_hover_text(tip);
     let frame = Frame::new()
         .fill(theme.mantle)
-        .stroke(Stroke::new(1.0, theme.line()))
-        .corner_radius(14)
-        .inner_margin(6)
+        // M3E's popovers: radius 28, no outline.
+        .stroke(if theme.expressive() {
+            Stroke::NONE
+        } else {
+            Stroke::new(1.0, theme.line())
+        })
+        .corner_radius(if theme.expressive() { 28 } else { 14 })
+        .inner_margin(if theme.expressive() { 12 } else { 6 })
         .shadow(egui::Shadow {
             offset: [0, 10],
             blur: 30,

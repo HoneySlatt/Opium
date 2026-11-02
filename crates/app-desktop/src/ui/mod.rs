@@ -43,7 +43,7 @@ use egui::{
 };
 
 use crate::app::{App, Page, SignalAnchor};
-use crate::color::alpha;
+use crate::color::{alpha, mix};
 use crate::fonts::{Weight, font};
 use crate::icons::{self, Icon};
 use crate::theme::{Panel, PlayerBar, Sidebar, Theme, TopBar, Window};
@@ -816,6 +816,9 @@ fn toast(app: &mut App, ui: &mut Ui, main: Rect) {
     ui.ctx()
         .request_repaint_after(Duration::from_secs_f64(5.0 - (now - since)));
     let theme = &app.theme;
+    if theme.layout.player_bar == PlayerBar::Toolbar {
+        return snackbar(ui, theme, &message, main);
+    }
     let galley = text(ui, &message, font(13.0, Weight::Regular), theme.text, 560.0);
     let size = galley.size() + vec2(28.0, 18.0);
     let rect = Rect::from_center_size(
@@ -843,6 +846,36 @@ fn toast(app: &mut App, ui: &mut Ui, main: Rect) {
         egui::StrokeKind::Inside,
     );
     painter.galley(rect.min + vec2(14.0, 9.0), galley, theme.text);
+}
+
+/// M3E's snackbar: the inverse surface, radius 8, above the toolbar.
+fn snackbar(ui: &Ui, theme: &Theme, message: &str, main: Rect) {
+    let (fill, ink) = (theme.text, mix(theme.base, theme.text, 0.9));
+    let galley = text(ui, message, font(14.0, Weight::Regular), ink, 560.0);
+    let size = vec2(galley.size().x + 32.0, (galley.size().y + 28.0).max(48.0));
+    let rect = Rect::from_center_size(
+        pos2(main.center().x, main.bottom() - 70.0 - 12.0 - size.y / 2.0),
+        size,
+    );
+    let painter = ui.painter();
+    painter.add(
+        egui::Shadow {
+            offset: [0, 6],
+            blur: 20,
+            spread: 0,
+            color: Color32::from_black_alpha(90),
+        }
+        .as_shape(rect, 8.0),
+    );
+    painter.rect_filled(rect, 8.0, fill);
+    paint_text(
+        ui,
+        galley,
+        rect.left() + 16.0,
+        rect.center().y,
+        egui::Align::Min,
+        ink,
+    );
 }
 
 /// Whether the keys are someone else's: a field being typed in, or a dialog
@@ -1461,6 +1494,36 @@ pub fn glow(ui: &Ui, theme: &Theme, rect: Rect) {
             fade: 0.9,
         }];
         wash(ui, rect, theme.base, &blobs, false);
+        return;
+    }
+    if theme.layout.glow == crate::theme::Glow::Tonal {
+        // M3E's: the accent, the secondary and the tertiary containers
+        // across the top, fading into the page.
+        let blob = |x: f32, y: f32, rx: f32, ry: f32, color: Color32| Blob {
+            center: vec2(x, y),
+            radii: vec2(rx, ry),
+            color,
+            alpha: 0.9,
+            fade: 0.7,
+        };
+        let blobs = [
+            blob(0.12, 0.0, 0.60, 0.75, mix(theme.accent, theme.base, 0.55)),
+            blob(
+                0.52,
+                0.0,
+                0.45,
+                0.65,
+                mix(theme.tonal.secondary_container, theme.base, 0.8),
+            ),
+            blob(
+                0.92,
+                0.06,
+                0.45,
+                0.70,
+                mix(theme.tonal.tertiary_container, theme.base, 0.7),
+            ),
+        ];
+        wash(ui, rect, theme.base, &blobs, true);
         return;
     }
     let blobs = [

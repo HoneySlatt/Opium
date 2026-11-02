@@ -154,7 +154,14 @@ pub(super) fn queue(app: &mut App, ui: &mut Ui, theme: &Theme, salt: &str) {
         .auto_shrink(false)
         .show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
-            playing_next(app, ui, theme)
+            let action = playing_next(app, ui, theme);
+            // M3E's queue goes on with what has played.
+            if theme.expressive() && !app.history.is_empty() {
+                label(ui, theme, "HISTORY", &[]);
+                history(app, ui, theme);
+                ui.add_space(110.0);
+            }
+            action
         })
         .inner;
     match action {
@@ -405,28 +412,37 @@ fn row(ui: &mut Ui, theme: &Theme, track: &Track, kind: RowKind, salt: &str) -> 
     let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), ROW), Sense::click());
     let hovered = response.contains_pointer();
     let fade = if kind == RowKind::Past { 0.6 } else { 1.0 };
+    // M3E's: the song playing a card in the secondary container.
+    let expressive = theme.expressive();
     let fill = match kind {
+        RowKind::Current if expressive => Some(theme.tonal.secondary_container),
         RowKind::Current => Some(alpha(theme.accent, 0.14)),
         _ if hovered && kind == RowKind::Upcoming => Some(theme.hover()),
         _ => None,
     };
+    let (radius, art_radius) = match kind {
+        _ if !expressive => (9.0, 5.0),
+        RowKind::Current => (20.0, 12.0),
+        _ => (16.0, 10.0),
+    };
     if let Some(fill) = fill {
-        ui.painter().rect_filled(rect, 9.0, fill);
+        ui.painter().rect_filled(rect, radius, fill);
     }
     let art = Rect::from_min_size(
         pos2(rect.left() + 8.0, rect.center().y - 20.0),
         vec2(40.0, 40.0),
     );
-    artwork(ui, thumb_url(track), art, 5.0, theme);
+    artwork(ui, thumb_url(track), art, art_radius, theme);
     if fade < 1.0 {
         ui.painter()
-            .rect_filled(art, 5.0, alpha(theme.mantle, 1.0 - fade));
+            .rect_filled(art, art_radius, alpha(theme.mantle, 1.0 - fade));
     }
 
     let left = art.right() + 10.0;
     let right_reserve = 44.0;
     let width = rect.right() - 8.0 - right_reserve - left;
     let title_color = match kind {
+        RowKind::Current if expressive => theme.tonal.on_secondary_container,
         RowKind::Current => mix(theme.accent, theme.text, 0.8),
         _ => alpha(theme.text, fade),
     };

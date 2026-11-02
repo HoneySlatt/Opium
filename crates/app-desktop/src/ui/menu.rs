@@ -1,7 +1,7 @@
 //! Context menus, as the design draws them: a `mantle` card with a hairline,
 //! 32 px items with an icon, the hovered one filled with the accent.
 
-use egui::{Frame, Response, Sense, Stroke, Ui, pos2, vec2};
+use egui::{Frame, Rect, Response, Sense, Stroke, Ui, pos2, vec2};
 
 use crate::app::{CollectionChoice, Enqueue, TrackChoice};
 use crate::fonts::{Weight, font};
@@ -28,11 +28,17 @@ fn menu<T: Clone>(
     on_click: bool,
 ) -> Option<T> {
     let mut chosen = None;
+    // M3E's: radius 20, no outline, its groups split by gaps.
+    let expressive = theme.expressive();
     let frame = Frame::new()
         .fill(theme.mantle)
-        .stroke(Stroke::new(1.0, theme.line()))
-        .corner_radius(14)
-        .inner_margin(5)
+        .stroke(if expressive {
+            Stroke::NONE
+        } else {
+            Stroke::new(1.0, theme.line())
+        })
+        .corner_radius(if expressive { 20 } else { 14 })
+        .inner_margin(if expressive { 4 } else { 5 })
         .shadow(egui::Shadow {
             offset: [0, 10],
             blur: 30,
@@ -44,38 +50,104 @@ fn menu<T: Clone>(
     } else {
         egui::Popup::context_menu(response)
     };
-    popup.frame(frame).width(220.0).show(|ui| {
-        ui.spacing_mut().item_spacing.y = 0.0;
-        for entry in entries {
-            match entry {
-                Entry::Line => {
-                    let (rect, _) =
-                        ui.allocate_exact_size(vec2(ui.available_width(), 9.0), Sense::hover());
-                    ui.painter().hline(
-                        (rect.left() + 6.0)..=(rect.right() - 6.0),
-                        rect.center().y,
-                        Stroke::new(1.0, theme.line()),
-                    );
-                }
-                Entry::Item(icon, label, value) => {
-                    if item(ui, theme, *icon, label, false) {
-                        chosen = Some(value.clone());
-                        ui.close();
+    popup
+        .frame(frame)
+        .width(if expressive { 240.0 } else { 220.0 })
+        .show(|ui| {
+            ui.spacing_mut().item_spacing.y = 0.0;
+            for entry in entries {
+                match entry {
+                    // A 2 px gap of the window's crust, edge to edge.
+                    Entry::Line if expressive => {
+                        let (rect, _) =
+                            ui.allocate_exact_size(vec2(ui.available_width(), 6.0), Sense::hover());
+                        let gap =
+                            Rect::from_center_size(rect.center(), vec2(rect.width() + 8.0, 2.0));
+                        ui.painter().rect_filled(gap, 0.0, theme.crust);
                     }
-                }
-                Entry::Choice(icon, label, value, on) => {
-                    if item(ui, theme, *icon, label, *on) {
-                        chosen = Some(value.clone());
-                        ui.close();
+                    Entry::Line => {
+                        let (rect, _) =
+                            ui.allocate_exact_size(vec2(ui.available_width(), 9.0), Sense::hover());
+                        ui.painter().hline(
+                            (rect.left() + 6.0)..=(rect.right() - 6.0),
+                            rect.center().y,
+                            Stroke::new(1.0, theme.line()),
+                        );
+                    }
+                    Entry::Item(icon, label, value) => {
+                        if item(ui, theme, *icon, label, false) {
+                            chosen = Some(value.clone());
+                            ui.close();
+                        }
+                    }
+                    Entry::Choice(icon, label, value, on) => {
+                        if item(ui, theme, *icon, label, *on) {
+                            chosen = Some(value.clone());
+                            ui.close();
+                        }
                     }
                 }
             }
-        }
-    });
+        });
     chosen
 }
 
+/// M3E's item: 44 px, a tonal layer at radius 12 under the pointer, the
+/// chosen one in the secondary container.
+fn expressive_item(ui: &mut Ui, theme: &Theme, icon: Icon, label: &str, checked: bool) -> bool {
+    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), 44.0), Sense::click());
+    let (fg, glyph) = if checked {
+        ui.painter()
+            .rect_filled(rect, 12.0, theme.tonal.secondary_container);
+        (
+            theme.tonal.on_secondary_container,
+            theme.tonal.on_secondary_container,
+        )
+    } else {
+        (theme.text, theme.subtext0)
+    };
+    if response.hovered() {
+        ui.painter()
+            .rect_filled(rect, 12.0, crate::color::alpha(theme.text, 0.08));
+    }
+    paint_icon(
+        ui,
+        icon,
+        pos2(rect.left() + 12.0 + 10.0, rect.center().y),
+        20.0,
+        glyph,
+    );
+    let g = text(
+        ui,
+        label,
+        font(14.0, Weight::Regular),
+        fg,
+        rect.width() - 56.0,
+    );
+    paint_text(
+        ui,
+        g,
+        rect.left() + 12.0 + 20.0 + 12.0,
+        rect.center().y,
+        egui::Align::Min,
+        fg,
+    );
+    if checked {
+        paint_icon(
+            ui,
+            icons::CHECK,
+            pos2(rect.right() - 12.0 - 8.0, rect.center().y),
+            16.0,
+            glyph,
+        );
+    }
+    response.clicked()
+}
+
 fn item(ui: &mut Ui, theme: &Theme, icon: Icon, label: &str, checked: bool) -> bool {
+    if theme.expressive() {
+        return expressive_item(ui, theme, icon, label, checked);
+    }
     let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), 32.0), Sense::click());
     let (fg, glyph) = if response.hovered() {
         ui.painter().rect_filled(rect, 7.0, theme.accent);
