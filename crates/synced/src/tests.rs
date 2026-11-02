@@ -417,3 +417,38 @@ fn a_setting_set_last_wins_and_one_from_before_gives_way() {
     assert!(a.offer_setting("relay", "older".into()).is_empty());
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[test]
+fn songs_of_a_service_taken_out_of_the_app_are_dropped_not_everything() {
+    let dir = std::env::temp_dir().join(format!("synced-unknown-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    {
+        let kept = Kept::open(&dir, Vec::new);
+        kept.played(track(1));
+        kept.played(track(2));
+        kept.left(Handoff {
+            tracks: vec![track(2)],
+            order: vec![0],
+            at: 0,
+            shuffle: false,
+            repeat: music_core::Repeat::Off,
+            position_ms: 0,
+            playing: false,
+            station: None,
+        });
+        kept.flush();
+    }
+    // Song 2 as of a service this build no longer knows.
+    let path = dir.join("shared.json");
+    let text = std::fs::read_to_string(&path).unwrap();
+    let gone = text.replace(r#""provider":"AppleMusic","id":"2""#, r#""provider":"Gone","id":"2""#);
+    assert_ne!(gone, text);
+    std::fs::write(&path, gone).unwrap();
+    let kept = Kept::open(&dir, Vec::new);
+    assert_eq!(titles(kept.history()), ["Song 1"]);
+    assert!(kept.session().is_none());
+    assert!(!dir.join("shared.json.bad").exists());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+

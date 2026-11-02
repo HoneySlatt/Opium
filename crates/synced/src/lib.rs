@@ -165,6 +165,40 @@ struct Saved {
     shared: Shared,
 }
 
+/// What was kept, read again without the songs of a service this build
+/// doesn't know (one taken out of the app): those history entries and
+/// playlist rows go, and a last session holding any is forgotten.
+fn without_unknown_services(bytes: &[u8]) -> Option<Saved> {
+    use serde_json::Value;
+    fn unknown(value: &Value) -> bool {
+        match value {
+            Value::Object(map) => map.iter().any(|(key, v)| {
+                (key == "provider"
+                    && serde_json::from_value::<music_core::model::ProviderKind>(v.clone())
+                        .is_err())
+                    || unknown(v)
+            }),
+            Value::Array(items) => items.iter().any(unknown),
+            _ => false,
+        }
+    }
+    /// The history's entries and the playlists' rows, at any depth: each
+    /// holds a `track`; those of an unknown service go.
+    fn prune(value: &mut Value) {
+        if let Value::Object(map) = value {
+            map.retain(|_, v| v.get("track").is_none_or(|track| !unknown(track)));
+            map.values_mut().for_each(prune);
+        }
+    }
+    let mut saved: Value = serde_json::from_slice(bytes).ok()?;
+    let shared = saved.get_mut("shared")?;
+    if shared.get("session").is_some_and(unknown) {
+        shared["session"] = Value::Null;
+    }
+    prune(shared);
+    serde_json::from_value(saved).ok()
+}
+
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
 }
@@ -313,7 +347,11 @@ impl Kept {
         let path = dir.join("shared.json");
         let saved = std::fs::read(&path)
             .ok()
-            .and_then(|b| serde_json::from_slice::<Saved>(&b).ok())
+            .and_then(|b| {
+                serde_json::from_slice::<Saved>(&b)
+                    .ok()
+                    .or_else(|| without_unknown_services(&b))
+            })
             .filter(|s| !s.me.is_empty());
         // There but unreadable: put aside rather than written over.
         if saved.is_none() && path.exists() {
