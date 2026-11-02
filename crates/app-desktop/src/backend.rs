@@ -1139,6 +1139,16 @@ async fn run(
                 continue;
             }
             Request::NewestSongs => {
+                // As kept last time, at once; then as the services have it now.
+                for (provider, on) in [
+                    (ProviderKind::AppleMusic, apple.is_some()),
+                    (ProviderKind::SoundCloud, sc.is_some()),
+                    (ProviderKind::Navidrome, nd.is_some()),
+                ] {
+                    if on && let Some(ids) = cache::read::<Vec<ItemId>>(&newest_kept(provider)) {
+                        replies.send(Reply::NewestSongs { provider, ids });
+                    }
+                }
                 if let Some(am) = apple.clone() {
                     let replies = replies.clone();
                     tokio::spawn(async move {
@@ -1149,10 +1159,7 @@ async fn run(
                             })
                             .await;
                         if read.is_ok() {
-                            replies.send(Reply::NewestSongs {
-                                provider: ProviderKind::AppleMusic,
-                                ids,
-                            });
+                            newest_came(ProviderKind::AppleMusic, ids, &replies);
                         }
                     });
                 }
@@ -1183,7 +1190,7 @@ async fn run(
                                 None => break,
                             }
                         }
-                        replies.send(Reply::NewestSongs { provider, ids });
+                        newest_came(provider, ids, &replies);
                     });
                 }
                 continue;
@@ -2264,6 +2271,23 @@ async fn navidrome_lists(nd: Arc<Navidrome>, request: Request, replies: Replies)
 
 /// SoundCloud's side of the library: the playlists, then the liked tracks,
 /// kept as Apple Music's are.
+/// Where a service's songs, the last added first, are kept between launches.
+fn newest_kept(provider: ProviderKind) -> String {
+    let name = match provider {
+        ProviderKind::AppleMusic => "apple",
+        ProviderKind::SoundCloud => "soundcloud",
+        _ => "navidrome",
+    };
+    format!("{name}-newest")
+}
+
+/// A service's songs, the last added first, as it has them now: kept, and shown.
+fn newest_came(provider: ProviderKind, ids: Vec<ItemId>, replies: &Replies) {
+    let kept = ids.clone();
+    tokio::task::spawn_blocking(move || cache::write(&newest_kept(provider), &kept));
+    replies.send(Reply::NewestSongs { provider, ids });
+}
+
 async fn load_soundcloud_library(sc: Arc<SoundCloud>, replies: Replies) {
     let provider = ProviderKind::SoundCloud;
     if let Some(playlists) = cache::read::<Vec<Playlist>>("soundcloud-playlists") {
