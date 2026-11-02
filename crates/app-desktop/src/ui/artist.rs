@@ -32,6 +32,137 @@ fn hero_height(width: f32) -> f32 {
     (width * 0.42).clamp(360.0, 760.0)
 }
 
+/// M3E's header: 48 px, the picture, 28 px, the buttons' row.
+const EXPRESSIVE_HERO: f32 = 48.0 + 248.0 + 28.0 + 100.0;
+
+/// M3E's header for an artist: their picture in the Sunny shape over its
+/// colours, an eyebrow chip, the name in display type; the Play button,
+/// Shuffle and the heart under them.
+#[allow(clippy::too_many_arguments)]
+fn expressive_hero(
+    ui: &mut Ui,
+    theme: &Theme,
+    artist: &ArtistDetail,
+    top: Rect,
+    pad: f32,
+    colors: Option<[Color32; 3]>,
+    here: bool,
+    favourite: bool,
+) -> Option<HeroButton> {
+    use super::shapes::Shape;
+    if let Some(colors) = colors {
+        super::detail::cover_wash(
+            ui,
+            theme,
+            Rect::from_min_size(top.min, vec2(top.width(), 620.0)),
+            colors,
+        );
+    }
+    let art = Rect::from_min_size(pos2(top.left() + pad, top.top() + 48.0), vec2(248.0, 248.0));
+    let sunny = Shape::Sunny.radii();
+    match artist.artist.artwork.as_ref().map(|a| a.url(500)) {
+        Some(url) => sunny.image(ui, &url, art, 0.0, 0.0, theme.surface0),
+        None => {
+            sunny.fill(ui, art, 0.0, theme.surface0);
+            paint_icon(ui, icons::MIC, art.center(), 80.0, theme.muted());
+        }
+    }
+    let x = art.right() + 32.0;
+    let room = (top.right() - pad - x).max(0.0);
+    // The name: 5.2 % of the window between 40 and 72, smaller if it
+    // doesn't fit.
+    let largest = (ui.ctx().content_rect().width() * 0.052).clamp(40.0, 72.0);
+    let name_font = [largest, 56.0, 48.0, 40.0, 32.0]
+        .into_iter()
+        .filter(|s| *s <= largest)
+        .map(|s| font(s, Weight::Bold))
+        .find(|f| {
+            text(
+                ui,
+                &artist.artist.name,
+                f.clone(),
+                theme.text,
+                f32::INFINITY,
+            )
+            .size()
+            .x <= room
+        })
+        .unwrap_or(font(32.0, Weight::Bold));
+    let mut y = art.bottom();
+    let name = text(ui, &artist.artist.name, name_font, theme.text, room);
+    let h = name.size().y;
+    paint_text(ui, name, x, y - h / 2.0, egui::Align::Min, theme.text);
+    y -= h + 14.0;
+    let logo = icons::service(artist.artist.id.provider);
+    let g = text(
+        ui,
+        "Artist",
+        font(12.5, Weight::SemiBold),
+        theme.text,
+        200.0,
+    );
+    let chip = Rect::from_min_size(
+        pos2(x, y - 28.0),
+        vec2(12.0 + 22.0 + g.size().x + 12.0, 28.0),
+    );
+    ui.painter()
+        .rect_filled(chip, 14.0, crate::color::alpha(theme.base, 0.55));
+    paint_icon(
+        ui,
+        logo,
+        pos2(chip.left() + 12.0 + 7.0, chip.center().y),
+        14.0,
+        theme.text,
+    );
+    paint_text(
+        ui,
+        g,
+        chip.left() + 12.0 + 22.0,
+        chip.center().y,
+        egui::Align::Min,
+        theme.text,
+    );
+
+    let mid = art.bottom() + 28.0 + 4.0 + 36.0;
+    let mut clicked = None;
+    let play = Rect::from_min_size(pos2(top.left() + pad, mid - 36.0), vec2(72.0, 72.0));
+    let can_play = !artist.top_songs.is_empty();
+    if super::fab::fab(ui, theme, play, "artist-play", here, false, can_play).clicked() {
+        clicked = Some(HeroButton::Play);
+    }
+    let shuffle = super::fab::tonal(
+        ui,
+        theme,
+        pos2(play.right() + 12.0, mid),
+        "artist-shuffle",
+        icons::SHUFFLE,
+        "Shuffle",
+    );
+    if shuffle.clicked() && can_play {
+        clicked = Some(HeroButton::Shuffle);
+    }
+    let heart = Rect::from_min_size(
+        pos2(shuffle.rect.right() + 12.0, mid - 28.0),
+        vec2(56.0, 56.0),
+    );
+    let (icon, color, tip) = if favourite {
+        (
+            icons::HEART_FILL,
+            theme.tonal.primary,
+            "Remove from Favourites",
+        )
+    } else {
+        (icons::HEART, theme.subtext0, "Favourite")
+    };
+    if super::fab::round(ui, theme, heart, "artist-heart", icon, 24.0, color)
+        .on_hover_text(tip)
+        .clicked()
+    {
+        clicked = Some(HeroButton::Favourite);
+    }
+    clicked
+}
+
 /// A shelf of the page, in the order Cider shows them.
 enum Section<'a> {
     Albums(&'static str, &'a [Album]),
@@ -51,7 +182,14 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
         _ => (None, None),
     };
     let width = ui.available_width() - 2.0 * pad;
-    let hero = hero_height(ui.available_width());
+    let expressive = theme.layout.header == crate::theme::Header::Expressive;
+    let hero = if expressive {
+        EXPRESSIVE_HERO
+    } else {
+        hero_height(ui.available_width())
+    };
+    let colors = super::backdrop(app);
+    let here = app.page_playing();
     let top_songs = artist
         .as_ref()
         .is_some_and(|a| !a.top_songs.is_empty() || a.latest.is_some());
@@ -101,7 +239,27 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
             let left = content.left() + pad;
             let top = Rect::from_min_size(content.min, vec2(content.width(), hero));
             if let Some(artist) = &artist {
-                banner(app, ui, &theme, artist, top);
+                if expressive {
+                    let favourite = app.is_favourite(FavouriteKind::Artist, &artist.artist.id);
+                    let now = ui.input(|i| i.time);
+                    let clicked =
+                        expressive_hero(ui, &theme, artist, top, pad, colors, here, favourite);
+                    match clicked {
+                        Some(HeroButton::Play) if here => app.toggle_play(),
+                        Some(HeroButton::Play) => {
+                            app.play_shuffled_or_not(artist.top_songs.clone(), false, now);
+                        }
+                        Some(HeroButton::Shuffle) => {
+                            app.play_shuffled_or_not(artist.top_songs.clone(), true, now);
+                        }
+                        Some(HeroButton::Favourite) => {
+                            app.toggle_favourite(FavouriteKind::Artist, artist.artist.id.clone());
+                        }
+                        None => {}
+                    }
+                } else {
+                    banner(app, ui, &theme, artist, top);
+                }
             }
 
             let mut y = content.top() + hero + 16.0;
@@ -113,35 +271,38 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
                 super::tracks::skeleton(ui, &theme, y + 40.0, left, width, 5);
                 return;
             };
-            // The name and the buttons over the foot of the picture, white
-            // whatever the theme, as the picture is under them.
-            let name = text(
-                ui,
-                &artist.artist.name,
-                font(44.0, Weight::Bold),
-                Color32::WHITE,
-                width,
-            );
-            let name_y = top.bottom() - 132.0;
-            ui.painter().galley_with_override_text_color(
-                pos2(left, name_y - name.size().y / 2.0 + 2.0),
-                name.clone(),
-                Color32::from_black_alpha(90),
-            );
-            paint_text(ui, name, left, name_y, egui::Align::Min, Color32::WHITE);
-            let favourite = app.is_favourite(FavouriteKind::Artist, &artist.artist.id);
             let now = ui.input(|i| i.time);
-            match hero_buttons(ui, &theme, pos2(left, top.bottom() - 70.0), favourite) {
-                Some(HeroButton::Play) => {
-                    app.play_shuffled_or_not(artist.top_songs.clone(), false, now);
+            // The name and the buttons over the foot of the picture, white
+            // whatever the theme, as the picture is under them (M3E's are
+            // in its header).
+            if !expressive {
+                let name = text(
+                    ui,
+                    &artist.artist.name,
+                    font(44.0, Weight::Bold),
+                    Color32::WHITE,
+                    width,
+                );
+                let name_y = top.bottom() - 132.0;
+                ui.painter().galley_with_override_text_color(
+                    pos2(left, name_y - name.size().y / 2.0 + 2.0),
+                    name.clone(),
+                    Color32::from_black_alpha(90),
+                );
+                paint_text(ui, name, left, name_y, egui::Align::Min, Color32::WHITE);
+                let favourite = app.is_favourite(FavouriteKind::Artist, &artist.artist.id);
+                match hero_buttons(ui, &theme, pos2(left, top.bottom() - 70.0), favourite) {
+                    Some(HeroButton::Play) => {
+                        app.play_shuffled_or_not(artist.top_songs.clone(), false, now);
+                    }
+                    Some(HeroButton::Shuffle) => {
+                        app.play_shuffled_or_not(artist.top_songs.clone(), true, now);
+                    }
+                    Some(HeroButton::Favourite) => {
+                        app.toggle_favourite(FavouriteKind::Artist, artist.artist.id.clone());
+                    }
+                    None => {}
                 }
-                Some(HeroButton::Shuffle) => {
-                    app.play_shuffled_or_not(artist.top_songs.clone(), true, now);
-                }
-                Some(HeroButton::Favourite) => {
-                    app.toggle_favourite(FavouriteKind::Artist, artist.artist.id.clone());
-                }
-                None => {}
             }
 
             if top_songs {
