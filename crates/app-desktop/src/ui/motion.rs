@@ -25,6 +25,8 @@ pub fn arrival<T: Clone + PartialEq + Send + Sync + 'static>(
     let secs = match theme.layout.motion {
         Motion::Apple => 0.28,
         Motion::Spotify => 0.16,
+        // Material's page enter: a 380 ms fade and a 14 px rise.
+        Motion::Expressive => 0.38,
     };
     let t = ((now - since) as f32 / secs).clamp(0.0, 1.0);
     if t < 1.0 {
@@ -52,6 +54,7 @@ pub fn arriving<R>(
     let down = match theme.layout.motion {
         Motion::Apple => rise * (1.0 - t),
         Motion::Spotify => 0.0,
+        Motion::Expressive => 14.0 * (1.0 - t),
     };
     let rect = ui.max_rect().translate(vec2(0.0, down));
     let clip = ui.clip_rect();

@@ -859,14 +859,17 @@ fn layout_line(t: &Theme) -> String {
         match t.layout.window {
             Window::Flat => "Edge to edge",
             Window::Cards => "Cards",
+            Window::Panes => "Rounded panes",
         },
         match t.layout.sidebar {
             Sidebar::Navigation => "pages on the left",
             Sidebar::Library => "library on the left",
+            Sidebar::Rail => "rail with the library",
         },
         match t.layout.player_bar {
             PlayerBar::Floating => "floating player",
             PlayerBar::Docked => "player along the bottom",
+            PlayerBar::Toolbar => "floating toolbar",
         },
     ];
     parts.join(", ")

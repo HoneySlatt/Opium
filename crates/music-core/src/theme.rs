@@ -12,9 +12,10 @@
 use serde::Deserialize;
 
 /// The themes that come with the apps, by id.
-pub const BUILT_IN: [(&str, &str); 2] = [
+pub const BUILT_IN: [(&str, &str); 3] = [
     ("stock", include_str!("../assets/themes/stock.toml")),
     ("spotify", include_str!("../assets/themes/spotify.toml")),
+    ("m3e", include_str!("../assets/themes/m3e.toml")),
 ];
 
 /// A theme file, read.
@@ -57,6 +58,14 @@ pub struct Palette {
     pub capsule: Option<u32>,
     pub muted: Option<u32>,
     pub tint: Option<u32>,
+    /// Material's tonal roles, for a theme that draws with them; derived
+    /// from the accent when left out.
+    pub primary: Option<u32>,
+    pub on_primary: Option<u32>,
+    pub secondary_container: Option<u32>,
+    pub on_secondary_container: Option<u32>,
+    pub tertiary_container: Option<u32>,
+    pub on_tertiary_container: Option<u32>,
 }
 
 impl Palette {
@@ -83,6 +92,12 @@ impl Palette {
         capsule: None,
         muted: None,
         tint: None,
+        primary: None,
+        on_primary: None,
+        secondary_container: None,
+        on_secondary_container: None,
+        tertiary_container: None,
+        on_tertiary_container: None,
     };
 
     /// Stock's light colours, iOS's whites and greys.
@@ -108,6 +123,12 @@ impl Palette {
         capsule: None,
         muted: None,
         tint: None,
+        primary: None,
+        on_primary: None,
+        secondary_container: None,
+        on_secondary_container: None,
+        tertiary_container: None,
+        on_tertiary_container: None,
     };
 
     /// `table`'s colours over `self`'s.
@@ -142,6 +163,12 @@ impl Palette {
                 "capsule" => self.capsule = Some(color),
                 "muted" => self.muted = Some(color),
                 "tint" => self.tint = Some(color),
+                "primary" => self.primary = Some(color),
+                "on_primary" => self.on_primary = Some(color),
+                "secondary_container" => self.secondary_container = Some(color),
+                "on_secondary_container" => self.on_secondary_container = Some(color),
+                "tertiary_container" => self.tertiary_container = Some(color),
+                "on_tertiary_container" => self.on_tertiary_container = Some(color),
                 _ => return Err(format!("{key} is not a colour role")),
             }
         }
@@ -289,6 +316,9 @@ choice!(
         /// The cover on a band of its colour, the title in large type, Play
         /// in the accent and Shuffle a switch, as Spotify.
         Banner,
+        /// Material 3 Expressive's: the cover (an artist in the Sunny shape),
+        /// a display title, a shaped Play and a tonal Shuffle.
+        Expressive,
     }
 );
 choice!(
@@ -308,6 +338,9 @@ choice!(
         /// On hover, a tile behind the cover and its words, and a round Play
         /// on the cover, as Spotify's.
         Tiles,
+        /// Corners that grow on hover, a tonal tile behind, a Play that rises
+        /// and changes shape; artists in the Sunny shape.
+        Shapes,
     }
 );
 choice!(
@@ -317,6 +350,8 @@ choice!(
         Star,
         /// A check in the accent, as Spotify's saved songs.
         Check,
+        /// A filled heart in the primary colour.
+        Heart,
     }
 );
 choice!(
@@ -339,6 +374,9 @@ choice!(
         /// change by swiping the cover, grey shapes pulse while something
         /// loads.
         Spotify,
+        /// Material 3 Expressive's: springs that overshoot a little, shapes
+        /// that morph, a shape-shifting indicator while something loads.
+        Expressive,
     }
 );
 choice!(
@@ -348,6 +386,9 @@ choice!(
         Flat,
         /// Rounded cards with gaps between them on `crust`.
         Cards,
+        /// Panes with large rounded corners on `crust`, the rail on `crust`
+        /// itself, the player floating over them.
+        Panes,
     }
 );
 choice!(
@@ -358,6 +399,9 @@ choice!(
         /// Your Library, as Spotify: the playlists, albums or artists with
         /// their covers, Search and Home being in the top bar.
         Library,
+        /// A navigation rail: the pages as pills, then Your Library; folds
+        /// to icons with their labels under them.
+        Rail,
     }
 );
 choice!(
@@ -368,6 +412,9 @@ choice!(
         /// Across the window: back and forward, Home and Search in the
         /// middle, the account on the right.
         Window,
+        /// Across the window: the rail's toggle and the brand, back and
+        /// forward, a large search bar in the middle, the account.
+        Search,
     }
 );
 choice!(
@@ -378,6 +425,9 @@ choice!(
         /// Along the window's bottom: the song on the left, the controls and
         /// the position in the middle, the volume on the right.
         Docked,
+        /// A floating toolbar with a shaped Play and wavy progress, as
+        /// Material 3 Expressive's.
+        Toolbar,
     }
 );
 choice!(
@@ -396,6 +446,8 @@ choice!(
         Drawer,
         /// Over the whole page, on the cover's colour.
         Page,
+        /// A tab of the side panel, and of Now Playing.
+        Panel,
     }
 );
 choice!(
@@ -405,6 +457,8 @@ choice!(
         Accent,
         /// A grey fading into the page, as Spotify's.
         Grey,
+        /// Blobs of the tonal containers, blurred.
+        Tonal,
     }
 );
 choice!(
@@ -416,6 +470,9 @@ choice!(
         /// Spotify's: the cover large in the middle on its colour, cards
         /// under it, the player bar kept along the bottom.
         Cover,
+        /// Material 3 Expressive's: the cover and the controls on the left,
+        /// the lyrics or what's next on the right.
+        Expressive,
     }
 );
 choice!(

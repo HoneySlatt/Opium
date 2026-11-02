@@ -95,6 +95,51 @@ pub struct Theme {
     pub red: Color32,
     pub green: Color32,
     pub yellow: Color32,
+    /// Material's tonal roles: as the theme file gives them, else derived
+    /// from the accent (see [`Tonal::from_accent`]).
+    pub tonal: Tonal,
+}
+
+/// Material 3's tonal roles, which M3E draws with.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Tonal {
+    pub primary: Color32,
+    pub on_primary: Color32,
+    pub secondary_container: Color32,
+    pub on_secondary_container: Color32,
+    pub tertiary_container: Color32,
+    pub on_tertiary_container: Color32,
+}
+
+impl Tonal {
+    /// From an accent, in OKLCH: primary light and calm, the secondary a
+    /// grey of its hue, the tertiary 60° round.
+    pub fn from_accent(accent: Color32) -> Tonal {
+        let (c, h) = crate::color::chroma_hue(accent);
+        let oklch = crate::color::oklch;
+        Tonal {
+            primary: oklch(0.82, c.min(0.12), h),
+            on_primary: oklch(0.25, c.min(0.12), h),
+            secondary_container: oklch(0.36, 0.06, h),
+            on_secondary_container: oklch(0.92, 0.04, h),
+            tertiary_container: oklch(0.38, 0.07, h + 60.0),
+            on_tertiary_container: oklch(0.92, 0.04, h + 60.0),
+        }
+    }
+
+    /// A theme file's, what it leaves out derived from its accent.
+    fn of(p: &music_core::theme::Palette) -> Tonal {
+        let d = Tonal::from_accent(rgb(p.accent));
+        let or = |v: Option<u32>, f: Color32| v.map_or(f, rgb);
+        Tonal {
+            primary: or(p.primary, d.primary),
+            on_primary: or(p.on_primary, d.on_primary),
+            secondary_container: or(p.secondary_container, d.secondary_container),
+            on_secondary_container: or(p.on_secondary_container, d.on_secondary_container),
+            tertiary_container: or(p.tertiary_container, d.tertiary_container),
+            on_tertiary_container: or(p.on_tertiary_container, d.on_tertiary_container),
+        }
+    }
 }
 
 use music_core::theme::BUILT_IN;
@@ -123,6 +168,15 @@ impl Theme {
         red: rgb(0xff453a),
         green: rgb(0x4ade80),
         yellow: rgb(0xfbbf24),
+        // As `Tonal::from_accent` makes them of the pink.
+        tonal: Tonal {
+            primary: rgb(0xffa6a4),
+            on_primary: rgb(0x490007),
+            secondary_container: rgb(0x59302f),
+            on_secondary_container: rgb(0xffdbd9),
+            tertiary_container: rgb(0x553e0e),
+            on_tertiary_container: rgb(0xf2e2c7),
+        },
     };
 
     /// A theme file's `[colors]` table: every role as `#rrggbb`, and `light`.
@@ -131,7 +185,9 @@ impl Theme {
         let file: toml::Table = toml::from_str(source).ok()?;
         let colors = file.get("colors")?.as_table()?;
         let color = |key: &str| colors.get(key)?.as_str().and_then(hex);
+        let accent = color("accent")?;
         Some(Self {
+            tonal: Tonal::from_accent(accent),
             layout: Layout::STOCK,
             light: colors
                 .get("light")
@@ -192,11 +248,13 @@ impl Theme {
             red: rgb(p.red),
             green: rgb(p.green),
             yellow: rgb(p.yellow),
+            tonal: Tonal::of(&p),
         };
         Ok((file.name, theme))
     }
 
-    /// This theme's layout in `colors`' colours.
+    /// This theme's layout in `colors`' colours (their tonal roles derived
+    /// from their accent, as Amane's are).
     pub fn recoloured(&self, colors: &Theme) -> Theme {
         Theme {
             layout: self.layout,

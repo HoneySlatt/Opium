@@ -80,3 +80,31 @@ mod tests {
         assert_eq!(hex("#7c3"), None);
     }
 }
+
+/// A colour from OKLCH: lightness, chroma, hue in degrees; out of sRGB's
+/// gamut, its chroma comes down until it fits.
+pub fn oklch(l: f32, c: f32, hue: f32) -> Color32 {
+    let (sin, cos) = hue.to_radians().sin_cos();
+    let mut chroma = c;
+    loop {
+        let o = Oklab {
+            l,
+            a: chroma * cos,
+            b: chroma * sin,
+        };
+        let [r, g, b] = o.to_rgb();
+        let back = oklab(Color32::from_rgb(r, g, b));
+        let fits = (back.l - l).abs() < 0.01
+            && ((back.a - o.a).powi(2) + (back.b - o.b).powi(2)).sqrt() < 0.01;
+        if fits || chroma < 0.005 {
+            return Color32::from_rgb(r, g, b);
+        }
+        chroma -= 0.005;
+    }
+}
+
+/// A colour's chroma and hue (degrees), in OKLCH.
+pub fn chroma_hue(c: Color32) -> (f32, f32) {
+    let o = oklab(c);
+    (o.a.hypot(o.b), o.b.atan2(o.a).to_degrees())
+}

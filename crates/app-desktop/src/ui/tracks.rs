@@ -490,6 +490,9 @@ pub fn favourite_star(ui: &Ui, theme: &Theme, center: egui::Pos2) {
             ui.painter().circle_filled(center, 6.5, theme.accent);
             paint_icon(ui, icons::CHECK, center, 9.0, theme.on_accent());
         }
+        crate::theme::Favourite::Heart => {
+            paint_icon(ui, icons::HEART_FILL, center, 12.0, theme.tonal.primary)
+        }
     }
 }
 

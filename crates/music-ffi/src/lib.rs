@@ -1757,11 +1757,13 @@ pub struct BuiltInTheme {
     pub file: music_core::theme::ThemeFile,
 }
 
-/// The themes that come with the app: Stock, then Spotify.
+/// The themes that come with the app: Stock, then Spotify. M3E is the
+/// desktop's alone until the phone's is designed.
 #[uniffi::export]
 pub fn built_in_themes() -> Vec<BuiltInTheme> {
     music_core::theme::BUILT_IN
         .iter()
+        .filter(|(id, _)| *id != "m3e")
         .filter_map(|(id, _)| {
             Some(BuiltInTheme {
                 id: id.to_string(),

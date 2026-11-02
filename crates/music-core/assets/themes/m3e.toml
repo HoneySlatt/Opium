@@ -1,0 +1,44 @@
+# M3E: Material 3 Expressive. A rail with Your Library, rounded panes, a
+# floating toolbar with a shaped Play, tonal colours from a violet seed.
+name = "M3E"
+
+[layout]
+header = "expressive"
+rows = "stacked"
+cards = "shapes"
+favourite = "heart"
+headings = "large"
+motion = "expressive"
+
+[layout.desktop]
+window = "panes"
+sidebar = "rail"
+top_bar = "search"
+player_bar = "toolbar"
+panel = "side"
+lyrics = "panel"
+glow = "tonal"
+now_playing = "expressive"
+
+[colors]
+base = "#141316"
+mantle = "#201f22"
+crust = "#0f0d12"
+surface0 = "#2b292d"
+surface1 = "#363438"
+surface2 = "#4a4551"
+overlay0 = "#948e9c"
+overlay1 = "#afa9b7"
+text = "#e4e2e6"
+subtext0 = "#cac4d2"
+accent = "#7c4dff"
+mauve = "#d5baff"
+red = "#ffb4ab"
+green = "#8fd8a0"
+yellow = "#f2c35b"
+primary = "#d5baff"
+on_primary = "#37216c"
+secondary_container = "#4e4065"
+on_secondary_container = "#ebddff"
+tertiary_container = "#782c46"
+on_tertiary_container = "#ffd9e2"
