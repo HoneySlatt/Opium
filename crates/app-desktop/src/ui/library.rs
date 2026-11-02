@@ -19,7 +19,7 @@ pub const COLLAPSED: f32 = 72.0;
 
 /// What the chips narrow the list to.
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
-enum Filter {
+pub(super) enum Filter {
     #[default]
     Playlists,
     Albums,
@@ -27,21 +27,21 @@ enum Filter {
 }
 
 /// A row's picture.
-enum Art {
+pub(super) enum Art {
     Cover(Option<String>),
     /// A pinned page's: its icon on a gradient.
     Tile(Icon, [Color32; 2]),
 }
 
-struct Row {
-    title: String,
-    subtitle: String,
-    art: Art,
+pub(super) struct Row {
+    pub title: String,
+    pub subtitle: String,
+    pub art: Art,
     /// Artists are round.
-    round: bool,
-    page: Page,
+    pub round: bool,
+    pub page: Page,
     /// A library playlist or album, with its menu.
-    menu: Option<Collection>,
+    pub menu: Option<Collection>,
 }
 
 pub fn show(app: &mut App, ui: &mut Ui, collapsed: bool) {
@@ -368,7 +368,7 @@ fn pinned(app: &App, filter: Filter) -> Vec<Row> {
 }
 
 /// The `i`th item of the library's list the chip shows.
-fn listed_row(app: &App, filter: Filter, i: usize) -> Row {
+pub(super) fn listed_row(app: &App, filter: Filter, i: usize) -> Row {
     match filter {
         Filter::Playlists => {
             let p = &app.playlists[i];

@@ -94,3 +94,59 @@ pub fn theme_change(ui: &Ui, theme: &Theme) {
     );
     ui.ctx().request_repaint();
 }
+
+/// Material 3 Expressive's springs: spatial ones (size, position, shape,
+/// corners) overshoot a little, effects (colour, opacity) don't.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Spring {
+    /// Spatial, fast: stiffness 800, damping ratio 0.6.
+    Fast,
+    /// Spatial, slow: 380, 0.8.
+    Slow,
+    /// Effects: 1600, critically damped.
+    Effects,
+}
+
+impl Spring {
+    fn constants(self) -> (f32, f32) {
+        match self {
+            Spring::Fast => (800.0, 0.6),
+            Spring::Slow => (380.0, 0.8),
+            Spring::Effects => (1600.0, 1.0),
+        }
+    }
+}
+
+/// A value of `salt`'s that follows `target` on `spring`, from where it was
+/// last frame; the window is drawn again until it rests. The first time,
+/// it is at `target` already.
+pub fn spring(
+    ui: &Ui,
+    salt: impl std::hash::Hash + std::fmt::Debug,
+    target: f32,
+    spring: Spring,
+) -> f32 {
+    let id = Id::unique(("spring", salt));
+    let now = ui.input(|i| i.time);
+    let (mut x, mut v, then) = ui
+        .data(|d| d.get_temp::<(f32, f32, f64)>(id))
+        .unwrap_or((target, 0.0, now));
+    let (k, zeta) = spring.constants();
+    let c = 2.0 * zeta * k.sqrt();
+    // Small steps, so a long frame doesn't throw it off.
+    let mut left = ((now - then) as f32).min(0.1);
+    while left > 0.0 {
+        let dt = left.min(1.0 / 240.0);
+        v += (-k * (x - target) - c * v) * dt;
+        x += v * dt;
+        left -= dt;
+    }
+    let resting = (x - target).abs() < 1e-3 && v.abs() < 1e-2;
+    if resting {
+        (x, v) = (target, 0.0);
+    } else {
+        ui.ctx().request_repaint();
+    }
+    ui.data_mut(|d| d.insert_temp(id, (x, v, now)));
+    x
+}

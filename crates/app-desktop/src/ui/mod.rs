@@ -17,8 +17,11 @@ mod now_playing;
 mod pairing;
 mod player_bar;
 mod playlist_dialog;
+mod rail;
 mod search;
+mod search_bar;
 mod settings;
+mod shapes;
 mod side;
 mod sidebar;
 mod signal;
@@ -45,6 +48,8 @@ use crate::theme::{Panel, PlayerBar, Sidebar, Theme, TopBar, Window};
 pub const GAP: f32 = 8.0;
 /// The cards' corners.
 pub const RADIUS: f32 = 8.0;
+/// M3E's panes' corners.
+pub const PANE_RADIUS: f32 = 28.0;
 
 /// Below this window width the sidebar collapses and padding tightens.
 pub const NARROW: f32 = 1100.0;
@@ -96,7 +101,14 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     let collapsed = app.sidebar_collapsed || narrow;
     let theme = app.theme.clone();
     let layout = theme.layout;
-    let cards = layout.window == Window::Cards;
+    let cards = layout.window != Window::Flat;
+    // M3E's panes are rounder, and the rail sits on the window itself.
+    let radius = if layout.window == Window::Panes {
+        PANE_RADIUS
+    } else {
+        RADIUS
+    };
+    let rail = layout.sidebar == Sidebar::Rail;
     // Between the cards, and around them.
     let gap = if cards { GAP } else { 0.0 };
     let margin = |left: f32, right: f32, top: f32| {
@@ -110,14 +122,31 @@ pub fn show(app: &mut App, ui: &mut Ui) {
             })
     };
 
-    let window_bar = layout.top_bar == TopBar::Window;
+    // The rail's width, on the slow spring as it folds and opens.
+    let rail_width = motion::spring(
+        ui,
+        "rail-width",
+        if collapsed {
+            rail::COLLAPSED
+        } else {
+            rail::WIDTH
+        },
+        motion::Spring::Slow,
+    );
+    let window_bar = layout.top_bar != TopBar::Page;
     if window_bar {
         egui::Panel::top("window-bar")
             .exact_size(window_bar::HEIGHT)
             .resizable(false)
             .show_separator_line(false)
             .frame(egui::Frame::new().fill(theme.crust))
-            .show(ui, |ui| window_bar::show(app, ui));
+            .show(ui, |ui| {
+                if layout.top_bar == TopBar::Search {
+                    search_bar::show(app, ui, rail_width);
+                } else {
+                    window_bar::show(app, ui);
+                }
+            });
     }
     // Under the window's bar, the cards keep only the gap.
     let top = if window_bar { 0.0 } else { gap };
@@ -132,20 +161,30 @@ pub fn show(app: &mut App, ui: &mut Ui) {
 
     let library = layout.sidebar == Sidebar::Library;
     let width = match (library, collapsed) {
+        _ if rail => rail_width,
         (true, true) => library::COLLAPSED,
         (true, false) => library::WIDTH,
         (false, true) => 68.0,
         (false, false) => 232.0,
     };
     egui::Panel::left("sidebar")
-        .exact_size(width + gap)
+        .exact_size(if rail { width } else { width + gap })
         .resizable(false)
         .show_separator_line(false)
-        .frame(margin(gap, 0.0, top))
+        // The rail sits on the window, its own margins inside it.
+        .frame(if rail {
+            margin(0.0, 0.0, 0.0)
+        } else {
+            margin(gap, 0.0, top)
+        })
         .show(ui, |ui| {
             let rect = ui.max_rect();
+            if rail {
+                rail::show(app, ui, rail_width < (rail::WIDTH + rail::COLLAPSED) / 2.0);
+                return;
+            }
             if cards {
-                ui.painter().rect_filled(rect, RADIUS, theme.base);
+                ui.painter().rect_filled(rect, radius, theme.base);
             }
             if library {
                 library::show(app, ui, collapsed);
@@ -153,7 +192,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 sidebar::show(app, ui, collapsed);
             }
             if cards {
-                round_off(ui, rect, theme.crust);
+                round_off(ui, rect, theme.crust, radius);
             }
         });
 
@@ -172,7 +211,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                     .interact(rect, egui::Id::unique("side-open"), Sense::click())
                     .on_hover_text("Show Now Playing view")
                     .on_hover_cursor(egui::CursorIcon::PointingHand);
-                ui.painter().rect_filled(rect, RADIUS, theme.base);
+                ui.painter().rect_filled(rect, radius, theme.base);
                 let color = if response.hovered() {
                     theme.text
                 } else {
@@ -180,7 +219,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 };
                 paint_icon(ui, icons::LEFT, rect.center(), 20.0, color);
                 if cards {
-                    round_off(ui, rect, theme.crust);
+                    round_off(ui, rect, theme.crust, radius);
                 }
                 if response.clicked() {
                     app.side = Some(crate::app::Side::NowPlaying);
@@ -195,10 +234,10 @@ pub fn show(app: &mut App, ui: &mut Ui) {
             .frame(margin(0.0, gap, top))
             .show(ui, |ui| {
                 let rect = ui.max_rect();
-                ui.painter().rect_filled(rect, RADIUS, theme.base);
+                ui.painter().rect_filled(rect, radius, theme.base);
                 side::show(app, ui, shows);
                 if cards {
-                    round_off(ui, rect, theme.crust);
+                    round_off(ui, rect, theme.crust, radius);
                 }
             });
     }
@@ -212,7 +251,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         .show(ui, |ui| {
             let main = ui.max_rect();
             if cards {
-                ui.painter().rect_filled(main, RADIUS, theme.base);
+                ui.painter().rect_filled(main, radius, theme.base);
             }
             let lyrics = app.lyrics_page && layout.lyrics == crate::theme::Lyrics::Page;
             // Each page comes in as the theme moves.
@@ -238,13 +277,13 @@ pub fn show(app: &mut App, ui: &mut Ui) {
             if layout.panel == Panel::Drawer || narrow {
                 drawer::show(app, ui, main);
             }
-            if layout.player_bar == PlayerBar::Floating {
+            if matches!(layout.player_bar, PlayerBar::Floating | PlayerBar::Toolbar) {
                 player_bar::show(app, ui, main);
             }
             signal::show(app, ui, main);
             toast(app, ui, main);
             if cards {
-                round_off(ui, main, theme.crust);
+                round_off(ui, main, theme.crust, radius);
             }
         });
 
@@ -362,7 +401,7 @@ fn top_bar(app: &mut App, ui: &mut Ui, main: Rect, scrolled: f32) {
         ui.painter().galley(pos, title, alpha(theme.text, solid));
     }
     // Back, forward and the drawer's buttons are in the window's bar then.
-    if theme.layout.top_bar == TopBar::Window {
+    if theme.layout.top_bar != TopBar::Page {
         return;
     }
 
@@ -633,12 +672,11 @@ pub fn banner_bar(
 /// Paint `rect`'s corners over in `color`, so that it reads as a card with
 /// [`RADIUS`] corners whatever was drawn in it. Above the page, under the
 /// player bar, menus and windows.
-fn round_off(ui: &Ui, rect: Rect, color: Color32) {
+fn round_off(ui: &Ui, rect: Rect, color: Color32, r: f32) {
     let painter = ui.ctx().layer_painter(egui::LayerId::new(
         egui::Order::Middle,
         egui::Id::unique(("round-off", rect.min.x as i32, rect.min.y as i32)),
     ));
-    let r = RADIUS;
     let corners = [
         (rect.left_top(), vec2(1.0, 1.0)),
         (rect.right_top(), vec2(-1.0, 1.0)),
