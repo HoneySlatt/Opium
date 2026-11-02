@@ -5,6 +5,7 @@ mod detail;
 mod devices;
 mod dock;
 mod drawer;
+mod fab;
 mod grid;
 mod home;
 mod library;
@@ -317,6 +318,9 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     detail::notes_window(app, ui.ctx());
     pairing::show(app, ui.ctx());
     shortcuts(app, ui);
+    if layout.player_bar == PlayerBar::Toolbar {
+        ui.ctx().move_to_top(toolbar::layer());
+    }
 }
 
 /// The cover colours behind album and playlist pages, fitted to the theme.
@@ -697,10 +701,14 @@ pub fn banner_bar(
 /// [`RADIUS`] corners whatever was drawn in it. Above the page, under the
 /// player bar, menus and windows.
 fn round_off(ui: &Ui, rect: Rect, color: Color32, r: f32) {
-    let painter = ui.ctx().layer_painter(egui::LayerId::new(
+    let layer = egui::LayerId::new(
         egui::Order::Middle,
         egui::Id::unique(("round-off", rect.min.x as i32, rect.min.y as i32)),
-    ));
+    );
+    // In egui's order of layers, so that M3E's toolbar can go over it;
+    // the pointer goes through.
+    register_layer(ui.ctx(), layer, rect, false);
+    let painter = ui.ctx().layer_painter(layer);
     let corners = [
         (rect.left_top(), vec2(1.0, 1.0)),
         (rect.right_top(), vec2(-1.0, 1.0)),
@@ -723,6 +731,28 @@ fn round_off(ui: &Ui, rect: Rect, color: Color32, r: f32) {
         }
         painter.add(mesh);
     }
+}
+
+/// Put a layer drawn without an `Area` in egui's order of layers, which
+/// paints the others after them all, and lets it take the pointer over
+/// `rect` when `interactable`.
+pub(super) fn register_layer(
+    ctx: &egui::Context,
+    layer: egui::LayerId,
+    rect: Rect,
+    interactable: bool,
+) {
+    ctx.memory_mut(|m| {
+        m.areas_mut().set_state(
+            layer,
+            egui::AreaState {
+                pivot_pos: Some(rect.min),
+                size: Some(rect.size()),
+                interactable,
+                ..Default::default()
+            },
+        )
+    });
 }
 
 /// The lyrics over the whole page, on the colour of the song's cover.

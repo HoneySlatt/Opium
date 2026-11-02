@@ -254,15 +254,29 @@ pub fn row(
     let lit = ui
         .ctx()
         .animate_bool_with_time(response.id.with("lit"), hovered, 0.1);
-    let fill = if state.selected {
+    // M3E's: radius 16, and the song playing a pill in the secondary
+    // container.
+    let expressive = theme.expressive();
+    let playing_pill = expressive && state.now;
+    let fill = if playing_pill {
+        Some(theme.tonal.secondary_container)
+    } else if state.selected {
         Some(alpha(theme.accent, 0.16))
     } else if lit > 0.0 {
-        Some(alpha(theme.text, 0.07 * lit))
+        Some(alpha(
+            theme.text,
+            if expressive { 0.05 } else { 0.07 } * lit,
+        ))
     } else {
         None
     };
     if let Some(fill) = fill {
-        ui.painter().rect_filled(rect, 8.0, fill);
+        let radius = match () {
+            _ if playing_pill => rect.height() / 2.0,
+            _ if expressive => 16.0,
+            _ => 8.0,
+        };
+        ui.painter().rect_filled(rect, radius, fill);
     }
     let y = rect.center().y;
     let mut action = RowAction::None;
@@ -303,12 +317,17 @@ pub fn row(
     let (t0, t1) = columns.title;
     let tx = if columns.thumbs {
         let art = Rect::from_min_size(pos2(t0, y - 18.0), vec2(36.0, 36.0));
-        artwork(ui, thumb_url(track), art, 5.0, theme);
+        let radius = if expressive { 10.0 } else { 5.0 };
+        artwork(ui, thumb_url(track), art, radius, theme);
         art.right() + 12.0
     } else {
         t0
     };
-    let title_color = if state.now { theme.accent } else { theme.text };
+    let title_color = match () {
+        _ if playing_pill => theme.tonal.on_secondary_container,
+        _ if state.now => theme.accent,
+        _ => theme.text,
+    };
     let max = if stacked {
         t1 - tx
     } else {
@@ -513,7 +532,12 @@ fn bars(ui: &Ui, theme: &Theme, center: egui::Pos2, moving: bool) {
             pos2(x - 1.5, center.y + 6.0 - h),
             pos2(x + 1.5, center.y + 6.0),
         );
-        ui.painter().rect_filled(rect, 1.0, theme.accent);
+        let color = if theme.expressive() {
+            theme.tonal.primary
+        } else {
+            theme.accent
+        };
+        ui.painter().rect_filled(rect, 1.0, color);
     }
     // 20 frames a second are plenty for them.
     if moving {

@@ -15,6 +15,7 @@ use crate::fonts::{Weight, font};
 use crate::icons::{self, Icon};
 use crate::theme::Theme;
 
+use super::fab;
 use super::menu::{TrackFacts, track_menu};
 use super::motion::{Spring, spring};
 use super::player_bar::shown_position;
@@ -22,6 +23,12 @@ use super::shapes::Shape;
 use super::{explicit_badge, format_time, paint_icon, paint_text, text, thumb_url};
 
 const HEIGHT: f32 = 70.0;
+
+/// The toolbar's layer, which the window puts over the panes' rounded
+/// corners, which it reaches, once they are drawn.
+pub fn layer() -> egui::LayerId {
+    egui::LayerId::new(egui::Order::Middle, Id::unique("toolbar"))
+}
 
 /// The toolbar over `span`, the main pane and the side pane together;
 /// `side` says whether the side pane shows, where lyrics and the queue open.
@@ -33,10 +40,8 @@ pub fn show(app: &mut App, ui: &mut Ui, span: Rect, side: bool) {
     );
 
     // Above the page and the side pane, under menus and windows.
-    let layer_id = egui::LayerId::new(egui::Order::Middle, Id::unique("toolbar"));
-    let mut layer = ui.new_child(egui::UiBuilder::new().max_rect(bar).layer_id(layer_id));
-    // Over the panes' rounded corners too, which it reaches.
-    ui.ctx().move_to_top(layer_id);
+    super::register_layer(ui.ctx(), layer(), bar, true);
+    let mut layer = ui.new_child(egui::UiBuilder::new().max_rect(bar).layer_id(layer()));
     layer.set_clip_rect(bar.expand(48.0));
     let ui = &mut layer;
     let painter = ui.painter();
@@ -70,23 +75,6 @@ pub fn show(app: &mut App, ui: &mut Ui, span: Rect, side: bool) {
     song(app, ui, &theme, left);
     transport(app, ui, &theme, centre);
     tools(app, ui, &theme, right, side);
-}
-
-/// An angle that goes round once in `period` seconds while `on`, and stays
-/// where it is otherwise.
-fn turning(ui: &Ui, salt: &str, on: bool, period: f32) -> f32 {
-    let id = Id::unique(("turning", salt));
-    let now = ui.input(|i| i.time);
-    let (mut angle, then) = ui
-        .data(|d| d.get_temp::<(f32, f64)>(id))
-        .unwrap_or((0.0, now));
-    if on {
-        let dt = (now - then).min(0.1) as f32;
-        angle = (angle + dt * TAU / period) % TAU;
-        ui.ctx().request_repaint();
-    }
-    ui.data_mut(|d| d.insert_temp(id, (angle, now)));
-    angle
 }
 
 /// A round icon button, 40 px, whose corners close in while pressed.
@@ -187,7 +175,7 @@ fn song(app: &mut App, ui: &mut Ui, theme: &Theme, column: Rect) {
             .rect_filled(pill, pill.height() / 2.0, theme.hover());
     }
 
-    let spin = turning(ui, "toolbar-cover", shown.playing, 24.0);
+    let spin = fab::turning(ui, "toolbar-cover", shown.playing, 24.0);
     let circle = Shape::Circle.radii();
     match thumb_url(&track) {
         Some(url) => circle.image(ui, &url, cover, 0.0, spin, theme.surface1),
@@ -282,15 +270,17 @@ fn transport(app: &mut App, ui: &mut Ui, theme: &Theme, column: Rect) {
         app.previous();
     }
     row.add_space(6.0);
-    if play(
+    let (rect, _) = row.allocate_exact_size(vec2(42.0, 42.0), Sense::hover());
+    let play = fab::fab(
         &mut row,
         theme,
+        rect,
+        "toolbar-play",
         shown.playing,
         shown.loading.is_some(),
         has_track,
-    )
-    .clicked()
-    {
+    );
+    if play.clicked() {
         app.toggle_play();
     }
     row.add_space(6.0);
@@ -332,63 +322,6 @@ fn transport(app: &mut App, ui: &mut Ui, theme: &Theme, column: Rect) {
         pos2(column.right() - 48.0, y + 10.0),
     );
     wavy(app, ui, theme, wave, duration, shown.playing);
-}
-
-/// The Play button: 42 px in the accent, a squircle while paused and a
-/// cookie turning while playing, morphing on the slow spring.
-fn play(ui: &mut Ui, theme: &Theme, playing: bool, loading: bool, enabled: bool) -> egui::Response {
-    let sense = if enabled {
-        Sense::click()
-    } else {
-        Sense::hover()
-    };
-    let (rect, response) = ui.allocate_exact_size(vec2(42.0, 42.0), sense);
-    let t = spring(
-        ui,
-        "toolbar-play",
-        if playing { 1.0 } else { 0.0 },
-        Spring::Slow,
-    );
-    let turn = turning(ui, "toolbar-play", playing, 14.0) * t.clamp(0.0, 1.0);
-    let shape = Shape::Squircle.radii().toward(&Shape::Cookie9.radii(), t);
-    let mut fill = theme.accent;
-    if enabled && response.hovered() {
-        fill = mix(
-            Color32::WHITE,
-            fill,
-            if response.is_pointer_button_down_on() {
-                0.16
-            } else {
-                0.08
-            },
-        );
-    }
-    if !enabled {
-        fill = alpha(fill, 0.38);
-    }
-    shape.fill(ui, rect, turn, fill);
-    if loading {
-        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
-        child.put(
-            Rect::from_center_size(rect.center(), vec2(18.0, 18.0)),
-            egui::Spinner::new().size(18.0).color(theme.on_accent()),
-        );
-    } else {
-        let icon = if playing {
-            icons::PAUSE_FILL
-        } else {
-            icons::PLAY_FILL
-        };
-        paint_icon(ui, icon, rect.center(), 20.0, theme.on_accent());
-    }
-    let tip = if playing { "Pause" } else { "Play" };
-    if enabled {
-        response
-            .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .on_hover_text(tip)
-    } else {
-        response
-    }
 }
 
 /// M3E's wavy progress: the part played a wave in primary, moving while it

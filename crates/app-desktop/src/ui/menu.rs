@@ -19,15 +19,6 @@ pub(super) enum Entry<T> {
     Line,
 }
 
-/// Open a menu on a secondary click of `response`; returns the item chosen.
-pub(super) fn context_menu<T: Clone>(
-    response: &Response,
-    theme: &Theme,
-    entries: &[Entry<T>],
-) -> Option<T> {
-    menu(response, theme, entries, false)
-}
-
 /// The menu, opened by a secondary click on `response`, or by a primary one
 /// (a "…" button).
 fn menu<T: Clone>(
@@ -340,6 +331,19 @@ pub(super) fn collection_menu(
     theme: &Theme,
     facts: CollectionFacts,
 ) -> Option<CollectionChoice> {
+    finish(response, theme, &collection_entries(facts), false)
+}
+
+/// The same menu, opened by a click on a "…" button.
+pub(super) fn collection_menu_on_click(
+    response: &Response,
+    theme: &Theme,
+    facts: CollectionFacts,
+) -> Option<CollectionChoice> {
+    finish(response, theme, &collection_entries(facts), true)
+}
+
+fn collection_entries(facts: CollectionFacts) -> Vec<Entry<CollectionChoice>> {
     let mut entries = vec![Entry::Item(
         icons::PLAY_FILL,
         "Play",
@@ -366,7 +370,7 @@ pub(super) fn collection_menu(
         ),
     ]);
     if !facts.songs {
-        return finish(response, theme, &entries);
+        return entries;
     }
     entries.push(Entry::Line);
     let delete = || {
@@ -448,17 +452,23 @@ pub(super) fn collection_menu(
         entries.push(Entry::Line);
         entries.push(delete());
     }
-    finish(response, theme, &entries)
+    entries
 }
 
 fn finish(
     response: &Response,
     theme: &Theme,
     entries: &[Entry<CollectionChoice>],
+    on_click: bool,
 ) -> Option<CollectionChoice> {
-    let chosen = context_menu(response, theme, entries);
+    let chosen = menu(response, theme, entries, on_click);
     // Opened now: what it says of the favourites is asked of the service.
-    if chosen.is_none() && response.secondary_clicked() {
+    let opened = if on_click {
+        response.clicked()
+    } else {
+        response.secondary_clicked()
+    };
+    if chosen.is_none() && opened {
         return Some(CollectionChoice::Opened);
     }
     chosen

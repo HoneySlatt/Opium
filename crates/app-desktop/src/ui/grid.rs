@@ -64,6 +64,142 @@ pub(super) enum CardClick {
     Menu(CollectionChoice),
 }
 
+/// M3E's card: a tile in the lowest container behind it on hover, the
+/// cover's corners going from 16 to 28, an artist in the Sunny shape that
+/// turns into a cookie, and a 48 px Play rising onto the cover.
+fn shaped_card(ui: &Ui, theme: &Theme, art: Rect, card: &CoverCard, id: Id) -> Option<CardClick> {
+    use super::motion::{Spring, spring};
+    use super::shapes::Shape;
+    let tile = Rect::from_min_max(
+        art.min - vec2(10.0, 10.0),
+        art.max + vec2(10.0, CARD_TEXT - 4.0),
+    );
+    let response = ui.interact(tile, id, Sense::click());
+    let hovered = response.hovered() || ui.rect_contains_pointer(tile);
+    let lit = ui
+        .ctx()
+        .animate_bool_with_time(id.with("lit"), hovered, 0.12);
+    if lit > 0.0 {
+        let low = crate::color::mix(theme.mantle, theme.base, 0.5);
+        ui.painter()
+            .rect_filled(tile, 20.0, crate::color::alpha(low, lit));
+    }
+    let t = spring(
+        ui,
+        ("card", id),
+        if hovered { 1.0 } else { 0.0 },
+        Spring::Slow,
+    );
+    if card.round {
+        let shape = Shape::Sunny.radii().toward(&Shape::Cookie9.radii(), t);
+        match &card.url {
+            Some(url) => shape.image(ui, url, art, 0.0, 0.0, theme.surface0),
+            None => {
+                shape.fill(ui, art, 0.0, theme.surface0);
+                paint_icon(
+                    ui,
+                    icons::MIC,
+                    art.center(),
+                    art.height() / 3.0,
+                    theme.muted(),
+                );
+            }
+        }
+    } else {
+        let radius = 16.0 + 12.0 * t.clamp(0.0, 1.2);
+        artwork(ui, card.url.clone(), art, radius, theme);
+        if card.url.is_none() {
+            paint_icon(
+                ui,
+                icons::DISC,
+                art.center(),
+                art.height() / 3.0,
+                theme.muted(),
+            );
+        }
+    }
+    // The Play, rising and growing in as the card is hovered; round, a
+    // cookie under the pointer.
+    let mut play = None;
+    if !card.round && card.menu {
+        let shown = spring(
+            ui,
+            ("card-play", id),
+            if hovered { 1.0 } else { 0.0 },
+            Spring::Fast,
+        );
+        if shown > 0.01 {
+            let size = 48.0 * (0.8 + 0.2 * shown);
+            let center = pos2(
+                art.right() - 8.0 - 24.0,
+                art.bottom() - 8.0 - 24.0 + 8.0 * (1.0 - shown),
+            );
+            let button = Rect::from_center_size(center, vec2(size, size));
+            let over = ui.rect_contains_pointer(button);
+            let m = spring(
+                ui,
+                ("card-play-shape", id),
+                if over { 1.0 } else { 0.0 },
+                Spring::Slow,
+            );
+            let shape = Shape::Circle.radii().toward(&Shape::Cookie9.radii(), m);
+            let opacity = shown.clamp(0.0, 1.0);
+            shape.fill(ui, button, 0.0, crate::color::alpha(theme.accent, opacity));
+            paint_icon(
+                ui,
+                icons::PLAY_FILL,
+                center,
+                20.0,
+                crate::color::alpha(theme.on_accent(), opacity),
+            );
+            if over && response.clicked() {
+                play = Some(CardClick::Enqueue(Enqueue::Now));
+            }
+        }
+    }
+    let (x, align) = if card.round {
+        (art.center().x, egui::Align::Center)
+    } else {
+        (art.left(), egui::Align::Min)
+    };
+    let width = art.width();
+    let explicit = card.explicit && !card.round;
+    let badge = if explicit { 18.0 } else { 0.0 };
+    let g = text(
+        ui,
+        card.title,
+        font(14.0, Weight::SemiBold),
+        theme.text,
+        width - badge,
+    );
+    let title_end = x + g.size().x;
+    paint_text(ui, g, x, art.bottom() + 22.0, align, theme.text);
+    if explicit {
+        explicit_badge(ui, theme, pos2(title_end + 4.0 + 6.0, art.bottom() + 22.0));
+    }
+    let g = text(
+        ui,
+        card.sub,
+        font(13.0, Weight::Regular),
+        theme.subtext0,
+        width,
+    );
+    paint_text(ui, g, x, art.bottom() + 40.0, align, theme.subtext0);
+    if !card.round
+        && card.menu
+        && let Some(choice) = super::menu::collection_menu(&response, theme, card.facts)
+    {
+        return Some(CardClick::Menu(choice));
+    }
+    if play.is_some() {
+        return play;
+    }
+    response
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .clicked()
+        .then_some(CardClick::Open)
+}
+
 /// A cover with its title and a muted line under it; `art` is the cover's
 /// square. Albums and playlists (square covers) have a right-click menu.
 pub(super) fn cover_card(
@@ -73,6 +209,10 @@ pub(super) fn cover_card(
     card: &CoverCard,
     id: Id,
 ) -> Option<CardClick> {
+    let shapes = theme.layout.cards == crate::theme::Cards::Shapes;
+    if shapes {
+        return shaped_card(ui, theme, art, card, id);
+    }
     let tiles = theme.layout.cards == crate::theme::Cards::Tiles;
     // A tile takes the cover and its words.
     let tile = Rect::from_min_max(
@@ -423,7 +563,7 @@ fn shelf_of(
 
     let mut row_ui = ui.new_child(egui::UiBuilder::new().max_rect(row));
     // Room for a tile around the covers, in a theme of tiles.
-    let around = if theme.layout.cards == crate::theme::Cards::Tiles {
+    let around = if theme.layout.cards != crate::theme::Cards::Covers {
         10.0
     } else {
         0.0
@@ -967,7 +1107,7 @@ pub(super) fn song_columns(
 
     let mut row_ui = ui.new_child(egui::UiBuilder::new().max_rect(row));
     // Room for a tile around the covers, in a theme of tiles.
-    let around = if theme.layout.cards == crate::theme::Cards::Tiles {
+    let around = if theme.layout.cards != crate::theme::Cards::Covers {
         10.0
     } else {
         0.0

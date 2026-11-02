@@ -208,6 +208,11 @@ fn page(app: &mut App, ui: &mut Ui, pad: f32, which: Which) -> f32 {
                             );
                             None
                         }
+                        (true, Which::Home)
+                            if theme.layout.cards == crate::theme::Cards::Shapes =>
+                        {
+                            carousel(ui, &theme, at, width, shelf, &facts, id)
+                        }
                         (true, Which::Home) => hero_shelf(ui, &theme, at, width, shelf, &facts, id),
                         (true, Which::New) => picks_shelf(ui, &theme, at, width, shelf, &facts, id),
                         (true, Which::Radio) => {
@@ -361,6 +366,234 @@ pub(super) fn card(item: &Collection) -> ShelfCard {
             facts: CollectionFacts::default(),
         },
     }
+}
+
+/// M3E's multi-browse carousel: one large item with its words and a Play,
+/// one medium and one small, radius 28. A click on the medium or the small
+/// one makes it the large one, the widths moving on the slow spring.
+fn carousel(
+    ui: &mut Ui,
+    theme: &Theme,
+    at: egui::Pos2,
+    width: f32,
+    shelf: &Shelf,
+    facts: &[CollectionFacts],
+    id: Id,
+) -> Option<(usize, CardClick)> {
+    use super::motion::{Spring, spring};
+    const MEDIUM: f32 = 168.0;
+    const SMALL: f32 = 72.0;
+    const GAP: f32 = 8.0;
+    section_head(ui, theme, at.x, at.y, &shelf.title);
+    let count = shelf.items.len();
+    let focus_id = id.with("focus");
+    let mut focus = ui
+        .data(|d| d.get_temp::<usize>(focus_id))
+        .unwrap_or(0)
+        .min(count.saturating_sub(1));
+
+    // The arrows step through the picks.
+    for (k, (icon, step)) in [(icons::LEFT, -1i32), (icons::RIGHT, 1)]
+        .into_iter()
+        .enumerate()
+    {
+        let center = pos2(at.x + width - 16.0 - (1 - k) as f32 * 40.0, at.y + 11.0);
+        let rect = Rect::from_center_size(center, vec2(32.0, 32.0));
+        let enabled = if step < 0 {
+            focus > 0
+        } else {
+            focus + 1 < count
+        };
+        ui.painter().circle_filled(center, 16.0, theme.surface1);
+        let color = if enabled {
+            theme.subtext0
+        } else {
+            crate::color::alpha(theme.subtext0, 0.38)
+        };
+        let response =
+            super::fab::round(ui, theme, rect, &format!("{id:?}-{k}"), icon, 18.0, color);
+        if enabled && response.clicked() {
+            focus = (focus as i32 + step) as usize;
+        }
+    }
+
+    let row = Rect::from_min_size(pos2(at.x, at.y + SHELF_HEAD), vec2(width, HERO + HERO_FOOT));
+    let shown = (count - focus).min(3);
+    let large = width
+        - match shown {
+            3 => MEDIUM + SMALL + 2.0 * GAP,
+            2 => MEDIUM + GAP,
+            _ => 0.0,
+        };
+    let mut clicked = None;
+    let mut x = row.left();
+    for (i, item) in shelf.items.iter().enumerate() {
+        let target = match i.checked_sub(focus) {
+            Some(0) => large,
+            Some(1) => MEDIUM,
+            Some(2) => SMALL,
+            _ => 0.0,
+        };
+        let w = spring(ui, ("carousel", id, i), target, Spring::Slow).max(0.0);
+        if w < 1.0 {
+            continue;
+        }
+        let rect = Rect::from_min_size(
+            pos2(x, row.top()),
+            vec2(w.min(row.right() - x), row.height()),
+        );
+        x += w + GAP;
+        if rect.width() < 1.0 {
+            continue;
+        }
+        let (name, sub, art) = match item {
+            Collection::Playlist(p) => (&p.name, p.description.clone(), p.artwork.as_ref()),
+            Collection::Album(a) => (&a.title, Some(a.artists.join(", ")), a.artwork.as_ref()),
+            Collection::Station(s) => (&s.name, s.description.clone(), s.artwork.as_ref()),
+        };
+        let kind = match item {
+            Collection::Playlist(_) => "Playlist",
+            Collection::Album(_) => "Album",
+            Collection::Station(_) => "Station",
+        };
+        let response = ui.interact(rect, id.with(i), Sense::click());
+        let big = i == focus;
+        cover_fill(ui, theme, art.map(|a| a.url(720)), rect, 28.0);
+        // On the large one, its words over a shade rising from the bottom.
+        let words = spring(
+            ui,
+            ("carousel-words", id, i),
+            if big { 1.0 } else { 0.0 },
+            Spring::Fast,
+        )
+        .clamp(0.0, 1.0);
+        if words > 0.01 {
+            let shade = Rect::from_min_max(
+                pos2(rect.left(), rect.top() + rect.height() * 0.45),
+                rect.max,
+            );
+            // Its bottom corners rounded as the item's: a convex outline,
+            // each point as dark as it is low.
+            let r = 28.0;
+            let mut outline = vec![shade.left_top(), shade.right_top()];
+            for (c, from) in [
+                (pos2(shade.right() - r, shade.bottom() - r), 0.0),
+                (pos2(shade.left() + r, shade.bottom() - r), 90.0),
+            ] {
+                for k in 0..=8 {
+                    let a = (from + k as f32 * 90.0 / 8.0_f32).to_radians();
+                    outline.push(c + vec2(a.cos(), a.sin()) * r);
+                }
+            }
+            let mut mesh = egui::Mesh::default();
+            for p in &outline {
+                let t = ((p.y - shade.top()) / shade.height()).clamp(0.0, 1.0);
+                mesh.colored_vertex(*p, Color32::from_black_alpha((184.0 * words * t) as u8));
+            }
+            for k in 1..outline.len() as u32 - 1 {
+                mesh.add_triangle(0, k, k + 1);
+            }
+            ui.painter().add(mesh);
+            let white = |a: f32| Color32::from_white_alpha((255.0 * a * words) as u8);
+            let lift = 10.0 * (1.0 - words);
+            let fab = Rect::from_min_size(
+                pos2(
+                    rect.right() - 28.0 - 72.0,
+                    rect.bottom() - 24.0 - 72.0 + lift,
+                ),
+                vec2(72.0, 72.0),
+            );
+            let room = (fab.left() - 16.0 - rect.left() - 28.0).max(0.0);
+            let tx = rect.left() + 28.0;
+            let mut y = rect.bottom() - 24.0 + lift;
+            if let Some(sub) = sub.as_deref().and_then(|s| s.lines().next()) {
+                let g = text(
+                    ui,
+                    sub,
+                    font(14.0, Weight::Regular),
+                    white(0.82),
+                    room.min(460.0),
+                );
+                let h = g.size().y;
+                paint_text(ui, g, tx, y - h / 2.0, egui::Align::Min, white(0.82));
+                y -= h + 4.0;
+            }
+            let g = text(ui, name, font(32.0, Weight::Bold), white(1.0), room);
+            let h = g.size().y;
+            paint_text(ui, g, tx, y - h / 2.0, egui::Align::Min, white(1.0));
+            y -= h;
+            let g = text(ui, kind, font(13.0, Weight::Medium), white(0.8), room);
+            let h = g.size().y;
+            paint_text(ui, g, tx, y - h / 2.0, egui::Align::Min, white(0.8));
+            if big
+                && super::fab::fab(
+                    ui,
+                    theme,
+                    fab,
+                    &format!("{id:?}-play-{i}"),
+                    false,
+                    false,
+                    true,
+                )
+                .clicked()
+            {
+                clicked = Some((i, CardClick::Enqueue(crate::app::Enqueue::Now)));
+            }
+        }
+        let shown = facts.get(i).copied().unwrap_or_default();
+        if let Some(choice) = super::menu::collection_menu(&response, theme, shown) {
+            clicked = Some((i, CardClick::Menu(choice)));
+        } else if response
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .clicked()
+            && clicked.is_none()
+        {
+            if big {
+                clicked = Some((i, CardClick::Open));
+            } else {
+                focus = i;
+            }
+        }
+    }
+    ui.data_mut(|d| d.insert_temp(focus_id, focus));
+    clicked
+}
+
+/// The picture at `url` filling `rect` as a cover does, cropped to its
+/// shape, with rounded corners.
+fn cover_fill(ui: &Ui, theme: &Theme, url: Option<String>, rect: Rect, radius: f32) {
+    let texture = url.as_ref().and_then(|url| {
+        crate::covers::seen(ui.ctx(), url);
+        let side = (rect.width().max(rect.height()) * ui.pixels_per_point()).round() as u32;
+        let size = egui::load::SizeHint::Size {
+            width: side,
+            height: side,
+            maintain_aspect_ratio: true,
+        };
+        match ui
+            .ctx()
+            .try_load_texture(url, egui::TextureOptions::LINEAR, size)
+        {
+            Ok(egui::load::TexturePoll::Ready { texture }) => Some(texture),
+            _ => None,
+        }
+    });
+    let Some(texture) = texture else {
+        ui.painter().rect_filled(rect, radius, theme.surface0);
+        return;
+    };
+    // The square cover's middle, as wide as the rect asks.
+    let aspect = rect.width() / rect.height();
+    let uv = if aspect < 1.0 {
+        let w = aspect;
+        Rect::from_min_max(pos2(0.5 - w / 2.0, 0.0), pos2(0.5 + w / 2.0, 1.0))
+    } else {
+        let h = 1.0 / aspect;
+        Rect::from_min_max(pos2(0.0, 0.5 - h / 2.0), pos2(1.0, 0.5 + h / 2.0))
+    };
+    ui.painter().add(
+        egui::epaint::RectShape::filled(rect, radius, Color32::WHITE).with_texture(texture.id, uv),
+    );
 }
 
 /// Tall cards: the artwork, then a foot in its colour with the name and the

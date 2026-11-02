@@ -149,6 +149,12 @@ const fn rgb(v: u32) -> Color32 {
 }
 
 impl Theme {
+    /// M3E's look, in the parts no choice of its own names (the rows, the
+    /// menus): the expressive motion goes with it.
+    pub fn expressive(&self) -> bool {
+        self.layout.motion == Motion::Expressive
+    }
+
     /// Carbonfox's black and neutral greys, Apple Music's pink as the accent.
     pub const STOCK: Theme = Theme {
         layout: Layout::STOCK,

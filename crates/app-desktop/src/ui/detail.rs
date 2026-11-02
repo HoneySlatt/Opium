@@ -866,6 +866,7 @@ fn page(
         (tracks, None)
     };
     let banner = theme.layout.header == crate::theme::Header::Banner;
+    let expressive = theme.layout.header == crate::theme::Header::Expressive;
     let search_row = if listing.searchable && !banner {
         SEARCH_ROW
     } else {
@@ -873,12 +874,18 @@ fn page(
     };
     let table_top = if banner {
         BANNER + ACTIONS
+    } else if expressive {
+        expressive_height(pad) + search_row
     } else {
         ART_TOP + art_size(pad) + 34.0 + search_row
     };
     // Albums have no column titles, as in Cider; Spotify gives them some.
+    // M3E's list narrower than 620 px goes without the album and the
+    // column titles.
+    let slim = expressive && ui.available_width() - 2.0 * pad < 620.0;
     let head = match listing.columns {
         Kind::Album { .. } if !banner => 0.0,
+        _ if slim => 0.0,
         _ => tracks::HEAD_SPACE,
     };
     let rows = tracks.len();
@@ -906,7 +913,13 @@ fn page(
                 pos2(content.right(), content.top() + table_top),
             );
             let top = ui.interact(top, egui::Id::unique("page-head"), Sense::click());
-            let action = if banner {
+            let mut more = None;
+            let action = if expressive {
+                let (action, response) =
+                    expressive_header(ui, &theme, content, pad, header.as_ref(), colors, here);
+                more = response;
+                action
+            } else if banner {
                 banner_header(
                     ui,
                     &theme,
@@ -923,6 +936,8 @@ fn page(
             // The cover moves, where Apple made it move.
             let (art, radius) = if banner {
                 (banner_art(content, pad), 4.0)
+            } else if expressive {
+                (expressive_art(content, pad), 28.0)
             } else {
                 (art_rect(content, pad), 10.0)
             };
@@ -958,10 +973,20 @@ fn page(
             {
                 app.collection_choice(&item, choice, ui.input(|i| i.time));
             }
+            if let Some(more) = more
+                && let Some(item) = shown_collection(app)
+                && let Some(choice) = super::menu::collection_menu_on_click(
+                    &more,
+                    &theme,
+                    app.collection_facts(&item),
+                )
+            {
+                app.collection_choice(&item, choice, ui.input(|i| i.time));
+            }
 
             let columns = match listing.columns {
                 Kind::Album { with_artist } => Columns::album(left, width, with_artist),
-                Kind::Playlist => Columns::new(left, width, true),
+                Kind::Playlist => Columns::new(left, width, !slim),
             };
             let table = content.top() + table_top;
             if listing.searchable {
@@ -1129,6 +1154,303 @@ fn page(
         }
     }
     offset
+}
+
+/// M3E's header: from its top, 48 px, the cover, 28 px, the buttons' row.
+fn expressive_height(pad: f32) -> f32 {
+    48.0 + expressive_art_size(pad) + 28.0 + EXPRESSIVE_ACTIONS
+}
+
+/// The row of the Play button and the others: 4 above, 24 under.
+const EXPRESSIVE_ACTIONS: f32 = 4.0 + 72.0 + 24.0;
+
+fn expressive_art_size(pad: f32) -> f32 {
+    if pad < 40.0 { 200.0 } else { 248.0 }
+}
+
+fn expressive_art(content: Rect, pad: f32) -> Rect {
+    let size = expressive_art_size(pad);
+    Rect::from_min_size(
+        pos2(content.left() + pad, content.top() + 48.0),
+        vec2(size, size),
+    )
+}
+
+/// M3E's header over the cover's colours: the cover, radius 28; beside it
+/// at its bottom an eyebrow chip (the service, what it is, the year, the
+/// quality), the title in display type and the byline; under them the Play
+/// button, Shuffle as a large tonal button, the favourite, add and more.
+/// Returns what was clicked, and the more button to hang its menu from.
+#[allow(clippy::too_many_arguments)]
+fn expressive_header(
+    ui: &mut Ui,
+    theme: &Theme,
+    content: Rect,
+    pad: f32,
+    header: Option<&Header>,
+    colors: Option<[Color32; 3]>,
+    here: bool,
+) -> (Option<HeaderAction>, Option<egui::Response>) {
+    if let Some(colors) = colors {
+        cover_wash(
+            ui,
+            theme,
+            Rect::from_min_size(content.min, vec2(content.width(), 620.0)),
+            colors,
+        );
+    }
+    let art = expressive_art(content, pad);
+    if header.is_some_and(|h| h.loved) {
+        ui.painter().rect_filled(art, 28.0, theme.accent);
+        paint_icon(ui, icons::HEART_FILL, art.center(), 96.0, theme.on_accent());
+    } else {
+        ui.painter().add(
+            egui::Shadow {
+                offset: [0, 24],
+                blur: 56,
+                spread: 0,
+                color: Color32::from_black_alpha(115),
+            }
+            .as_shape(art, 28.0),
+        );
+        artwork(ui, header.and_then(|h| h.art.clone()), art, 28.0, theme);
+    }
+    let Some(header) = header else {
+        return (None, None);
+    };
+    let mut action = None;
+    let x = art.right() + 32.0;
+    let room = (content.right() - pad - x).max(0.0);
+
+    // What the details say, sorted: the service's logo, the year, the
+    // count, the length, the quality.
+    let (mut logo, mut year, mut count, mut length, mut quality) = (None, None, None, None, None);
+    for (icon, label) in &header.meta {
+        match *icon {
+            Some(i) if i == icons::MIC => {}
+            Some(i) if i == icons::CLOCK && label.chars().all(|c| c.is_ascii_digit()) => {
+                year = Some(label.clone())
+            }
+            Some(i) if i == icons::CLOCK => length = Some(label.to_lowercase()),
+            // Music's own playlists have the note for a logo too.
+            Some(i) if i == icons::NOTE && !label.is_empty() => {
+                count = Some(
+                    label
+                        .to_lowercase()
+                        .replace(" tracks", " songs")
+                        .replace(" track", " song"),
+                )
+            }
+            Some(i) => {
+                logo = Some(i);
+                if !label.is_empty() {
+                    quality = Some(title_case(label));
+                }
+            }
+            None => {}
+        }
+    }
+    let length = header.length.map(spoken_length).or(length);
+
+    // From the cover's bottom up: the byline, the title, the eyebrow.
+    let mut y = art.bottom();
+    let mut by_parts: Vec<String> = Vec::new();
+    by_parts.extend(count.into_iter().map(|c| match &length {
+        Some(l) => format!("{c}, {l}"),
+        None => c,
+    }));
+    let by_line = by_parts.join(" · ");
+    let line_y = y - 10.0;
+    let mut lx = x;
+    if let Some(by) = &header.by {
+        let g = text(ui, by, font(14.0, Weight::SemiBold), theme.text, room);
+        let link = Rect::from_min_size(pos2(lx, line_y - g.size().y / 2.0), g.size());
+        if let Some(id) = &header.by_link {
+            let hit = ui
+                .interact(link, egui::Id::unique("expressive-by"), Sense::click())
+                .on_hover_cursor(egui::CursorIcon::PointingHand);
+            if hit.hovered() {
+                ui.painter().hline(
+                    link.x_range(),
+                    link.bottom(),
+                    egui::Stroke::new(1.0, theme.text),
+                );
+            }
+            if hit.clicked() {
+                action = Some(HeaderAction::OpenArtist(id.clone()));
+            }
+        }
+        lx = link.right();
+        paint_text(ui, g, link.left(), line_y, egui::Align::Min, theme.text);
+    }
+    if !by_line.is_empty() {
+        let line = if header.by.is_some() {
+            format!("  ·  {by_line}")
+        } else {
+            by_line
+        };
+        let g = text(
+            ui,
+            &line,
+            font(14.0, Weight::Regular),
+            theme.subtext0,
+            (x + room - lx).max(0.0),
+        );
+        paint_text(ui, g, lx, line_y, egui::Align::Min, theme.subtext0);
+    }
+    y = line_y - 10.0 - 12.0;
+    // A playlist's description, or an album's notes, under the title.
+    if let Some(d) = &header.description {
+        let g = text(
+            ui,
+            d.lines().next().unwrap_or_default(),
+            font(14.0, Weight::Regular),
+            theme.subtext0,
+            room.min(640.0),
+        );
+        let h = g.size().y;
+        let rect = Rect::from_min_size(pos2(x, y - h), g.size());
+        let hit = ui
+            .interact(rect, egui::Id::unique("expressive-notes"), Sense::click())
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .on_hover_text("Notes");
+        let color = if hit.hovered() {
+            theme.text
+        } else {
+            theme.subtext0
+        };
+        paint_text(ui, g, x, y - h / 2.0, egui::Align::Min, color);
+        if hit.clicked() {
+            action = Some(HeaderAction::ShowNotes);
+        }
+        y -= h + 10.0;
+    }
+    // The title: 5.2 % of the window between 40 and 72, smaller if it
+    // doesn't fit.
+    let window = ui.ctx().content_rect().width();
+    let largest = (window * 0.052).clamp(40.0, 72.0);
+    let title_font = [largest, 56.0, 48.0, 40.0, 32.0]
+        .into_iter()
+        .filter(|s| *s <= largest)
+        .map(|size| font(size, Weight::Bold))
+        .find(|f| {
+            text(ui, &header.title, f.clone(), theme.text, f32::INFINITY)
+                .size()
+                .x
+                <= room
+        })
+        .unwrap_or(font(32.0, Weight::Bold));
+    let title = text(ui, &header.title, title_font, theme.text, room);
+    let h = title.size().y;
+    paint_text(ui, title, x, y - h / 2.0, egui::Align::Min, theme.text);
+    y -= h + 14.0;
+
+    // The eyebrow: on a veil of the page, fully round.
+    let mut words = vec![header.kind.to_owned()];
+    words.extend(year);
+    words.extend(quality);
+    let g = text(
+        ui,
+        &words.join(" · "),
+        font(12.5, Weight::SemiBold),
+        theme.text,
+        room - 40.0,
+    );
+    let logo_w = if logo.is_some() { 14.0 + 8.0 } else { 0.0 };
+    let chip = Rect::from_min_size(
+        pos2(x, y - 28.0),
+        vec2(12.0 + logo_w + g.size().x + 12.0, 28.0),
+    );
+    ui.painter()
+        .rect_filled(chip, 14.0, crate::color::alpha(theme.base, 0.55));
+    if let Some(logo) = logo {
+        paint_icon(
+            ui,
+            logo,
+            pos2(chip.left() + 12.0 + 7.0, chip.center().y),
+            14.0,
+            theme.text,
+        );
+    }
+    paint_text(
+        ui,
+        g,
+        chip.left() + 12.0 + logo_w,
+        chip.center().y,
+        egui::Align::Min,
+        theme.text,
+    );
+
+    // The buttons.
+    let mid = art.bottom() + 28.0 + 4.0 + 36.0;
+    let play = Rect::from_min_size(pos2(content.left() + pad, mid - 36.0), vec2(72.0, 72.0));
+    if super::fab::fab(ui, theme, play, "page-play", here, false, true).clicked() {
+        action = Some(if here {
+            HeaderAction::PlayPage
+        } else {
+            HeaderAction::Play { shuffle: false }
+        });
+    }
+    let shuffle = super::fab::tonal(
+        ui,
+        theme,
+        pos2(play.right() + 12.0, mid),
+        "page-shuffle",
+        icons::SHUFFLE,
+        "Shuffle",
+    );
+    if shuffle.clicked() {
+        action = Some(HeaderAction::Play { shuffle: true });
+    }
+    let mut bx = shuffle.rect.right() + 12.0;
+    let mut button = |salt: &str, icon, color| {
+        let rect = Rect::from_min_size(pos2(bx, mid - 28.0), vec2(56.0, 56.0));
+        bx = rect.right() + 4.0;
+        super::fab::round(ui, theme, rect, salt, icon, 24.0, color)
+    };
+    if let Some((kind, id, on)) = &header.favourite {
+        let (icon, color, tip) = if *on {
+            (
+                icons::HEART_FILL,
+                theme.tonal.primary,
+                "Remove from Favourites",
+            )
+        } else {
+            (icons::HEART, theme.subtext0, "Favourite")
+        };
+        if button("page-favourite", icon, color)
+            .on_hover_text(tip)
+            .clicked()
+        {
+            action = Some(HeaderAction::Favourite(*kind, id.clone()));
+        }
+    }
+    if header.add.is_some()
+        && button("page-add", icons::PLUS, theme.subtext0)
+            .on_hover_text("Add to Library")
+            .clicked()
+    {
+        action = Some(HeaderAction::AddToLibrary);
+    }
+    let more = button("page-more", icons::MORE, theme.subtext0).on_hover_text("More");
+    (action, Some(more))
+}
+
+/// LOSSLESS, DOLBY ATMOS: each word capitalised.
+fn title_case(label: &str) -> String {
+    let mut after_letter = false;
+    label
+        .chars()
+        .map(|c| {
+            let out = if after_letter {
+                c.to_lowercase().next().unwrap_or(c)
+            } else {
+                c
+            };
+            after_letter = c.is_alphabetic();
+            out
+        })
+        .collect()
 }
 
 /// The cover's colours behind, the artwork, and the text beside it.
