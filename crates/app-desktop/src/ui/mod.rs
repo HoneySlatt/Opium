@@ -15,6 +15,7 @@ pub(crate) mod menu;
 mod motion;
 mod now_playing;
 mod pairing;
+mod pane;
 mod player_bar;
 mod playlist_dialog;
 mod rail;
@@ -227,16 +228,27 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 }
             });
     }
+    // M3E's, with the lyrics as one of its tabs.
+    let pane = layout.lyrics == crate::theme::Lyrics::Panel;
     if side && let Some(shows) = app.side {
+        let width = if pane {
+            pane::width(ui.ctx().content_rect().width())
+        } else {
+            side::WIDTH
+        };
         egui::Panel::right("side")
-            .exact_size(side::WIDTH + gap)
+            .exact_size(width + gap)
             .resizable(false)
             .show_separator_line(false)
             .frame(margin(0.0, gap, top))
             .show(ui, |ui| {
                 let rect = ui.max_rect();
                 ui.painter().rect_filled(rect, radius, theme.base);
-                side::show(app, ui, shows);
+                if pane {
+                    pane::show(app, ui, shows);
+                } else {
+                    side::show(app, ui, shows);
+                }
                 if cards {
                     round_off(ui, rect, theme.crust, radius);
                 }

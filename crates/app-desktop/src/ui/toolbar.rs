@@ -354,8 +354,8 @@ fn play(ui: &mut Ui, theme: &Theme, playing: bool, loading: bool, enabled: bool)
     let mut fill = theme.accent;
     if enabled && response.hovered() {
         fill = mix(
-            fill,
             Color32::WHITE,
+            fill,
             if response.is_pointer_button_down_on() {
                 0.16
             } else {
@@ -591,7 +591,7 @@ fn quality(app: &mut App, ui: &mut Ui, theme: &Theme, track: &music_core::model:
     ui.add_space(4.0);
     let (rect, response) = ui.allocate_exact_size(vec2(width, 28.0), Sense::click());
     let fill = if response.hovered() {
-        mix(fill, Color32::WHITE, 0.08)
+        mix(Color32::WHITE, fill, 0.08)
     } else {
         fill
     };

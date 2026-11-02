@@ -96,21 +96,21 @@ fn para(
 }
 
 /// One step of the path: an icon in a disc, a title, and lines under it.
-struct Step {
-    icon: Icon,
-    tone: Tone,
-    title: String,
-    lines: Vec<String>,
+pub(super) struct Step {
+    pub icon: Icon,
+    pub tone: Tone,
+    pub title: String,
+    pub lines: Vec<String>,
 }
 
 #[derive(Clone, Copy, PartialEq)]
-enum Tone {
+pub(super) enum Tone {
     Neutral,
     Ok,
     Warn,
 }
 
-fn steps(app: &App, track: &Track) -> Vec<Step> {
+pub(super) fn steps(app: &App, track: &Track) -> Vec<Step> {
     let source = app.status.source.as_ref();
     let output = app.status.output.as_ref();
     let rate = source.map(|s| s.sample_rate).unwrap_or(44_100);
