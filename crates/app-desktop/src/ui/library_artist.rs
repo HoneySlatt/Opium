@@ -63,6 +63,8 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
     // Spotify's: their picture across the top under their name, Play,
     // Shuffle and a pill to their page under it.
     let spotify = theme.layout.header == crate::theme::Header::Banner;
+    let expressive = theme.layout.header == crate::theme::Header::Expressive;
+    let here = app.page_playing();
     let singles = if spotify {
         "Singles and EPs"
     } else {
@@ -78,6 +80,8 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
     let hero = (ui.available_width() * 0.3).clamp(340.0, 500.0);
     let body_top = if spotify {
         hero + super::artist::BANNER_ACTIONS
+    } else if expressive {
+        EXPRESSIVE_TOP
     } else {
         BODY_TOP
     };
@@ -128,6 +132,35 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
                 );
                 play_page = p;
                 profile = pill;
+            } else if expressive {
+                // `2 albums · 1 single or EP`.
+                let counts = sections
+                    .iter()
+                    .map(|(title, a)| {
+                        let n = a.len();
+                        let what = match (*title == "Albums", n == 1) {
+                            (true, true) => "album",
+                            (true, false) => "albums",
+                            (false, true) => "single or EP",
+                            (false, false) => "singles and EPs",
+                        };
+                        format!("{n} {what}")
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" · ");
+                let top = Rect::from_min_size(content.min, vec2(content.width(), EXPRESSIVE_TOP));
+                expressive_header(
+                    ui,
+                    &theme,
+                    &artist,
+                    top,
+                    pad,
+                    &counts,
+                    here,
+                    &mut play_page,
+                    &mut profile,
+                    &mut play,
+                );
             } else {
                 glow(
                     ui,
@@ -223,6 +256,168 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
         None => {}
     }
     output.state.clamped_offset().y
+}
+
+/// From the top of M3E's page to its first section: 48 px, the picture,
+/// 28 px, the buttons' row.
+const EXPRESSIVE_TOP: f32 = 48.0 + 248.0 + 28.0 + 100.0;
+
+/// M3E's header, as the artist page's: their picture in the Sunny shape,
+/// the eyebrow chip, the name in display type (to their page on the
+/// service) over what the library has of them; the shaped Play, Shuffle and
+/// their page.
+#[allow(clippy::too_many_arguments)]
+fn expressive_header(
+    ui: &mut Ui,
+    theme: &crate::theme::Theme,
+    artist: &Option<music_core::model::Artist>,
+    top: Rect,
+    pad: f32,
+    counts: &str,
+    here: bool,
+    play_page: &mut bool,
+    profile: &mut bool,
+    play: &mut Option<bool>,
+) {
+    use super::shapes::Shape;
+    glow(
+        ui,
+        theme,
+        Rect::from_min_size(top.min, vec2(top.width(), 460.0)),
+    );
+    let art = Rect::from_min_size(pos2(top.left() + pad, top.top() + 48.0), vec2(248.0, 248.0));
+    let sunny = Shape::Sunny.radii();
+    match artist
+        .as_ref()
+        .and_then(|a| a.artwork.as_ref())
+        .map(|a| a.url(500))
+    {
+        Some(url) => sunny.image(ui, &url, art, 0.0, 0.0, theme.surface0),
+        None => {
+            sunny.fill(ui, art, 0.0, theme.surface0);
+            paint_icon(ui, icons::MIC, art.center(), 80.0, theme.muted());
+        }
+    }
+    let x = art.right() + 32.0;
+    let room = (top.right() - pad - x).max(0.0);
+    let mut y = art.bottom() - 10.0;
+    if !counts.is_empty() {
+        let g = text(
+            ui,
+            counts,
+            font(14.0, Weight::Regular),
+            theme.subtext0,
+            room,
+        );
+        paint_text(ui, g, x, y, egui::Align::Min, theme.subtext0);
+        y -= 10.0 + 12.0;
+    } else {
+        y += 10.0;
+    }
+    let name = artist.as_ref().map_or("", |a| a.name.as_str());
+    let largest = (ui.ctx().content_rect().width() * 0.052).clamp(40.0, 72.0);
+    let name_font = [largest, 56.0, 48.0, 40.0, 32.0]
+        .into_iter()
+        .filter(|s| *s <= largest)
+        .map(|s| font(s, Weight::Bold))
+        .find(|f| {
+            text(ui, name, f.clone(), theme.text, f32::INFINITY)
+                .size()
+                .x
+                <= room
+        })
+        .unwrap_or(font(32.0, Weight::Bold));
+    let g = text(ui, name, name_font, theme.text, room);
+    let size = g.size();
+    let link = Rect::from_min_size(pos2(x, y - size.y), size);
+    let hit = ui.interact(link, Id::unique("m3e-library-artist-name"), Sense::click());
+    if hit.hovered() {
+        ui.painter().hline(
+            link.x_range(),
+            link.bottom() - 6.0,
+            egui::Stroke::new(2.0, theme.text),
+        );
+    }
+    paint_text(ui, g, x, y - size.y / 2.0, egui::Align::Min, theme.text);
+    if hit
+        .on_hover_text("Artist page")
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .clicked()
+    {
+        *profile = true;
+    }
+    y -= size.y + 14.0;
+    let logo = artist.as_ref().map(|a| icons::service(a.id.provider));
+    let g = text(
+        ui,
+        "Artist · In your library",
+        font(12.5, Weight::SemiBold),
+        theme.text,
+        room,
+    );
+    let logo_w = if logo.is_some() { 22.0 } else { 0.0 };
+    let chip = Rect::from_min_size(
+        pos2(x, y - 28.0),
+        vec2(12.0 + logo_w + g.size().x + 12.0, 28.0),
+    );
+    ui.painter()
+        .rect_filled(chip, 14.0, crate::color::alpha(theme.base, 0.55));
+    if let Some(logo) = logo {
+        paint_icon(
+            ui,
+            logo,
+            pos2(chip.left() + 12.0 + 7.0, chip.center().y),
+            14.0,
+            theme.text,
+        );
+    }
+    paint_text(
+        ui,
+        g,
+        chip.left() + 12.0 + logo_w,
+        chip.center().y,
+        egui::Align::Min,
+        theme.text,
+    );
+
+    let mid = art.bottom() + 28.0 + 4.0 + 36.0;
+    let fab = Rect::from_min_size(pos2(top.left() + pad, mid - 36.0), vec2(72.0, 72.0));
+    if super::fab::fab(ui, theme, fab, "library-artist-play", here, false, true).clicked() {
+        if here {
+            *play_page = true;
+        } else {
+            *play = Some(false);
+        }
+    }
+    let shuffle = super::fab::tonal(
+        ui,
+        theme,
+        pos2(fab.right() + 12.0, mid),
+        "library-artist-shuffle",
+        icons::SHUFFLE,
+        "Shuffle",
+    );
+    if shuffle.clicked() {
+        *play = Some(true);
+    }
+    let page = Rect::from_min_size(
+        pos2(shuffle.rect.right() + 12.0, mid - 28.0),
+        vec2(56.0, 56.0),
+    );
+    if super::fab::round(
+        ui,
+        theme,
+        page,
+        "library-artist-page",
+        icons::USER,
+        24.0,
+        theme.subtext0,
+    )
+    .on_hover_text("Artist page")
+    .clicked()
+    {
+        *profile = true;
+    }
 }
 
 /// Spotify's line under a release: `2023 • Album`, or Single, or EP.

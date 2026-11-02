@@ -5260,7 +5260,7 @@ impl eframe::App for App {
         if let Some(page) = self
             .screenshot
             .as_mut()
-            .and_then(|s| s.page(&self.playlists))
+            .and_then(|s| s.page(&self.playlists, &self.library_artists.items))
         {
             self.go(page);
             // Going to a page closes Now Playing: the screenshot may want it.

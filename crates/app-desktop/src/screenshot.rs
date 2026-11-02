@@ -1,7 +1,7 @@
 //! A development aid: `MUSIC_SCREENSHOT=out.png [MUSIC_SCREENSHOT_AFTER=seconds]
 //! [MUSIC_SCREENSHOT_PLAY=row]` saves the window once it has had time to load,
 //! then quits, optionally playing a Songs row first. `MUSIC_SCREENSHOT_PAGE`
-//! opens a page first: `playlist:<index>`, `album:<id>`, `artist:<id>` or
+//! opens a page first: `playlist:<index>`, `library-artist:<index>`, `album:<id>`, `artist:<id>` or
 //! `search:<query>`, `shelf:home|new|radio:<title>`, or `page:home|new|radio|albums|artists|recent|songs|settings|favourites`; `MUSIC_SCREENSHOT_DRAWER`
 //! opens the queue drawer; `MUSIC_SCREENSHOT_LYRICS` the lyrics page; `MUSIC_SCREENSHOT_STATION=ra.…` tunes in to a station.
 //! Only the app's own window is captured.
@@ -14,6 +14,8 @@ pub struct Screenshot {
     requested: bool,
     play: Option<usize>,
     page: Option<String>,
+    /// For an artist of the library's: Artists opened, so that they load.
+    artists_asked: bool,
     /// A station to tune in to: `MUSIC_SCREENSHOT_STATION=ra.…`.
     station: Option<String>,
 }
@@ -34,6 +36,7 @@ impl Screenshot {
             requested: false,
             play,
             page: std::env::var("MUSIC_SCREENSHOT_PAGE").ok(),
+            artists_asked: false,
             station: std::env::var("MUSIC_SCREENSHOT_STATION").ok(),
         })
     }
@@ -49,13 +52,37 @@ impl Screenshot {
     }
 
     /// The page to open, once, when the playlists have loaded.
-    pub fn page(&mut self, playlists: &[music_core::model::Playlist]) -> Option<crate::app::Page> {
+    pub fn page(
+        &mut self,
+        playlists: &[music_core::model::Playlist],
+        artists: &[music_core::model::Artist],
+    ) -> Option<crate::app::Page> {
         if playlists.is_empty() {
             return None;
+        }
+        // An artist of the library's waits for them, Artists open meanwhile
+        // so that they load.
+        if artists.is_empty()
+            && self
+                .page
+                .as_deref()
+                .is_some_and(|p| p.starts_with("library-artist:"))
+        {
+            let first = !std::mem::replace(&mut self.artists_asked, true);
+            return first.then_some(crate::app::Page::Artists);
         }
         let spec = self.page.take()?;
         let (kind, value) = spec.split_once(':')?;
         match kind {
+            "library-artist" => value
+                .parse::<usize>()
+                .ok()
+                .and_then(|i| artists.get(i))
+                .map(|a| {
+                    crate::app::Page::LibraryArtist(
+                        a.library_id.clone().unwrap_or_else(|| a.id.clone()),
+                    )
+                }),
             "playlist" => value
                 .parse::<usize>()
                 .ok()
