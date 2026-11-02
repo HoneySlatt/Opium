@@ -133,6 +133,7 @@ pub enum Side {
     NowPlaying,
     Queue,
     History,
+    Lyrics,
 }
 
 /// The queue drawer's tabs.

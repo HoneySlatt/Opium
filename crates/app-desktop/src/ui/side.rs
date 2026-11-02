@@ -55,6 +55,17 @@ pub fn show(app: &mut App, ui: &mut Ui, shows: Side) {
                 app.go_to_playing();
             }
         }
+        Side::Lyrics => {
+            let g = text(ui, "Lyrics", font(16.0, Weight::Bold), theme.text, 200.0);
+            paint_text(
+                ui,
+                g,
+                head.left() + 16.0,
+                head.center().y,
+                egui::Align::Min,
+                theme.text,
+            );
+        }
         Side::Queue | Side::History => {
             let mut x = head.left() + 16.0;
             for (tab, label) in [(Side::Queue, "Queue"), (Side::History, "Recently played")] {
@@ -116,6 +127,15 @@ pub fn show(app: &mut App, ui: &mut Ui, shows: Side) {
     match shows {
         Side::NowPlaying => now_playing(app, &mut body_ui, &theme),
         Side::Queue => super::drawer::queue(app, &mut body_ui, &theme, "side-queue"),
+        Side::Lyrics => super::lyrics::show(
+            app,
+            &mut body_ui,
+            &theme,
+            body,
+            24.0,
+            body.height(),
+            "side-lyrics",
+        ),
         Side::History => {
             egui::ScrollArea::vertical()
                 .id_salt("side-history")

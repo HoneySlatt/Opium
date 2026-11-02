@@ -505,7 +505,7 @@ fn row_ui(app: &App, ui: &mut Ui, theme: &Theme, row: &Row, collapsed: bool) -> 
     response
 }
 
-fn logo(provider: ProviderKind) -> Option<Icon> {
+pub(super) fn logo(provider: ProviderKind) -> Option<Icon> {
     match provider {
         ProviderKind::AppleMusic => Some(icons::APPLE_MUSIC),
         ProviderKind::SoundCloud => Some(icons::SOUNDCLOUD),

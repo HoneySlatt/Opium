@@ -26,6 +26,7 @@ mod side;
 mod sidebar;
 mod signal;
 mod songs;
+mod toolbar;
 mod tracks;
 mod window_bar;
 
@@ -277,8 +278,19 @@ pub fn show(app: &mut App, ui: &mut Ui) {
             if layout.panel == Panel::Drawer || narrow {
                 drawer::show(app, ui, main);
             }
-            if matches!(layout.player_bar, PlayerBar::Floating | PlayerBar::Toolbar) {
-                player_bar::show(app, ui, main);
+            match layout.player_bar {
+                PlayerBar::Floating => player_bar::show(app, ui, main),
+                // Over the side pane too.
+                PlayerBar::Toolbar => {
+                    let right = if side {
+                        ui.ctx().content_rect().right() - gap
+                    } else {
+                        main.right()
+                    };
+                    let span = Rect::from_min_max(main.min, pos2(right, main.bottom()));
+                    toolbar::show(app, ui, span, side);
+                }
+                PlayerBar::Docked => {}
             }
             signal::show(app, ui, main);
             toast(app, ui, main);

@@ -85,8 +85,9 @@ impl Radii {
             .add(Drawn::mesh(self.mesh(rect, turn, color, None)));
     }
 
-    /// The image at `url` cut to the shape in `rect`; `fallback` until it is loaded.
-    pub fn image(&self, ui: &Ui, url: &str, rect: Rect, turn: f32, fallback: Color32) {
+    /// The image at `url` cut to the shape in `rect`, itself turned by
+    /// `spin` radians; `fallback` until it is loaded.
+    pub fn image(&self, ui: &Ui, url: &str, rect: Rect, turn: f32, spin: f32, fallback: Color32) {
         crate::covers::seen(ui.ctx(), url);
         let size = egui::load::SizeHint::Size {
             width: (rect.width() * ui.pixels_per_point()).round() as u32,
@@ -98,7 +99,7 @@ impl Radii {
             .try_load_texture(url, egui::TextureOptions::LINEAR, size)
         {
             Ok(egui::load::TexturePoll::Ready { texture }) => {
-                let mesh = self.mesh(rect, turn, Color32::WHITE, Some(texture.id));
+                let mesh = self.mesh(rect, turn, Color32::WHITE, Some((texture.id, spin)));
                 ui.painter().add(Drawn::mesh(mesh));
             }
             _ => self.fill(ui, rect, turn, fallback),
@@ -110,15 +111,19 @@ impl Radii {
         rect: Rect,
         turn: f32,
         color: Color32,
-        texture: Option<egui::TextureId>,
+        texture: Option<(egui::TextureId, f32)>,
     ) -> Mesh {
-        let mut mesh = texture.map_or_else(Mesh::default, Mesh::with_texture);
-        // A cover stays still while the shape turns over it.
+        let mut mesh = texture.map_or_else(Mesh::default, |(id, _)| Mesh::with_texture(id));
+        // A cover stays still while the shape turns over it, unless it spins.
         let uv = |p: Pos2| match texture {
-            Some(_) => pos2(
-                (p.x - rect.left()) / rect.width(),
-                (p.y - rect.top()) / rect.height(),
-            ),
+            Some((_, spin)) => {
+                let (sin, cos) = (-spin).sin_cos();
+                let (x, y) = (
+                    (p.x - rect.center().x) / rect.width(),
+                    (p.y - rect.center().y) / rect.height(),
+                );
+                pos2(0.5 + x * cos - y * sin, 0.5 + x * sin + y * cos)
+            }
             None => egui::epaint::WHITE_UV,
         };
         mesh.vertices.push(Vertex {
