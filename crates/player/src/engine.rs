@@ -480,7 +480,8 @@ impl Engine {
     /// Take every track after the playing one back out of the ring's future, so
     /// the playing one can be moved. The first goes back to `next`.
     fn park_queued(&mut self) {
-        let queued = self.segments.drain(1..).map(|s| s.item);
+        let start = self.segments.len().min(1);
+        let queued = self.segments.drain(start..).map(|s| s.item);
         let parked: Vec<Item> = queued.chain(self.switch.take()).collect();
         for mut item in parked {
             if self.next.is_none() && item.decoder.seek(Duration::ZERO).is_ok() {
@@ -762,4 +763,23 @@ fn push(producer: &mut Producer<f32>, samples: &[f32]) -> usize {
     b.copy_from_slice(rest);
     chunk.commit_all();
     n
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn transport_commands_are_safe_without_a_playing_segment() {
+        let (events, _) = std::sync::mpsc::channel();
+        let mut engine = Engine::new(
+            Arc::new(Mutex::new(Status::default())),
+            events,
+            Arc::new(Shared::default()),
+        );
+        engine.handle(Command::Seek(Duration::from_secs(60)));
+        engine.handle(Command::SkipToNext);
+        assert!(engine.segments.is_empty());
+        assert!(engine.next.is_none());
+    }
 }
