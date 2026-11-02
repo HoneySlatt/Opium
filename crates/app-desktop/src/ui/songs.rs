@@ -53,7 +53,8 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
 
             let columns = Columns::new(left, width, true);
             let table_top = content.top() + table_offset;
-            let sort = Some(app.songs_view.sort);
+            // Spotify's look keeps the last added first: its titles don't sort.
+            let sort = (!banner).then_some(app.songs_view.sort);
             if let Some(key) = tracks::head(ui, &theme, &columns, table_top, left, width, sort) {
                 app.songs_view.sort = tracks::cycle(app.songs_view.sort, key);
                 app.songs_view.selected = None;
@@ -155,7 +156,8 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
                 crate::color::mix(theme.surface0, theme.base, 0.5),
             );
             let columns = Columns::new(left, width, true);
-            let sort = Some(app.songs_view.sort);
+            // Spotify's look keeps the last added first: its titles don't sort.
+            let sort = (!banner).then_some(app.songs_view.sort);
             if let Some(key) = tracks::head(&mut layer, &theme, &columns, top, left, width, sort) {
                 app.songs_view.sort = tracks::cycle(app.songs_view.sort, key);
                 app.songs_view.selected = None;
@@ -325,16 +327,11 @@ fn shown_tracks(app: &App) -> Vec<Track> {
 fn rebuild_order(app: &mut App) {
     let view = &mut app.songs_view;
     let query = crate::app::fold(app.page_search.trim());
-    // Spotify's look lists the last added first, unless a column is sorted.
-    let newest = (app.theme.layout.header == crate::theme::Header::Banner && view.sort.is_none())
-        .then_some(app.newest_version);
-    let key = Some((
-        app.songs.len(),
-        view.sort,
-        view.source,
-        query.clone(),
-        newest,
-    ));
+    // Spotify's look lists the last added first, whatever was sorted in another.
+    let banner = app.theme.layout.header == crate::theme::Header::Banner;
+    let newest = banner.then_some(app.newest_version);
+    let sort = if banner { None } else { view.sort };
+    let key = Some((app.songs.len(), sort, view.source, query.clone(), newest));
     if view.order_key == key {
         return;
     }
@@ -374,7 +371,7 @@ fn rebuild_order(app: &mut App) {
                 && found(i)
         })
         .collect();
-    if let Some((by, ascending)) = view.sort {
+    if let Some((by, ascending)) = sort {
         // Each song's key made once, not at each comparison.
         let text = |t: &Track| match by {
             SortKey::Title => t.title.to_lowercase(),
