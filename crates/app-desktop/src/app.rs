@@ -381,8 +381,14 @@ pub struct PreparedSongs {
 }
 
 /// What `SongsView::order` was built from: the song count, sort, source
-/// filter and search.
-pub type OrderKey = (usize, Option<(SortKey, bool)>, Option<ProviderKind>, String);
+/// filter and search, and the newest order's version when it is followed.
+pub type OrderKey = (
+    usize,
+    Option<(SortKey, bool)>,
+    Option<ProviderKind>,
+    String,
+    Option<u64>,
+);
 
 /// A station of songs asks for more when fewer than this many are left.
 const STATION_REFILL: usize = 5;
@@ -524,6 +530,13 @@ pub struct App {
     leaving: Vec<(ItemId, std::collections::HashSet<ItemId>)>,
     /// Library albums read for their menu, whose Suggest Less is asked once in.
     less_for_menu: std::collections::HashSet<ItemId>,
+    /// Where each library song comes when the last added are first: its
+    /// service's place among them (Apple Music's, SoundCloud's, then the
+    /// server's), and its own within it.
+    pub newest: HashMap<ItemId, (u8, u32)>,
+    /// Moves on with every list of them that comes.
+    pub newest_version: u64,
+    newest_asked: bool,
     /// A link to put on the clipboard, at the next frame.
     copy: Option<String>,
     /// The new music page's shelves, once asked for.
@@ -756,6 +769,9 @@ impl App {
             playlist_dialog: None,
             favourites_known: HashMap::new(),
             less_known: HashMap::new(),
+            newest: HashMap::new(),
+            newest_version: 0,
+            newest_asked: false,
             less_for_menu: Default::default(),
             leaving: Vec::new(),
             copy: None,
@@ -1417,6 +1433,8 @@ impl App {
 
     /// Load the library again, as at start: after signing in anew.
     fn reload_library(&mut self) {
+        self.newest.clear();
+        self.newest_asked = false;
         self.songs.clear();
         self.songs_done = false;
         self.library_songs.clear();
@@ -2455,6 +2473,14 @@ impl App {
     pub fn want_library_albums(&mut self) {
         if self.library_albums.first_ask() {
             self.backend.send(Request::LibraryAlbums);
+        }
+    }
+
+    /// Every service's songs in the order they were added, asked once.
+    pub fn want_newest_songs(&mut self) {
+        if !self.newest_asked {
+            self.newest_asked = true;
+            self.backend.send(Request::NewestSongs);
         }
     }
 
@@ -4069,6 +4095,20 @@ impl App {
                         self.songs_coming.insert(provider);
                     }
                     self.songs_done = self.songs_coming.is_empty();
+                }
+                Reply::NewestSongs { provider, ids } => {
+                    let rank = match provider {
+                        ProviderKind::AppleMusic => 0,
+                        ProviderKind::SoundCloud => 1,
+                        _ => 2,
+                    };
+                    self.newest.retain(|id, _| id.provider != provider);
+                    self.newest.extend(
+                        ids.into_iter()
+                            .enumerate()
+                            .map(|(i, id)| (id, (rank, i as u32))),
+                    );
+                    self.newest_version += 1;
                 }
                 Reply::Playlists {
                     provider,

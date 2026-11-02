@@ -19,6 +19,10 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
     let theme = app.theme.clone();
     // Spotify's layout shows the songs as its Liked Songs playlist.
     let banner = theme.layout.header == crate::theme::Header::Banner;
+    // Spotify's Liked Songs: the last added first.
+    if banner {
+        app.want_newest_songs();
+    }
     let table_offset = if banner {
         super::detail::BANNER + super::detail::ACTIONS
     } else {
@@ -321,7 +325,16 @@ fn shown_tracks(app: &App) -> Vec<Track> {
 fn rebuild_order(app: &mut App) {
     let view = &mut app.songs_view;
     let query = crate::app::fold(app.page_search.trim());
-    let key = Some((app.songs.len(), view.sort, view.source, query.clone()));
+    // Spotify's look lists the last added first, unless a column is sorted.
+    let newest = (app.theme.layout.header == crate::theme::Header::Banner && view.sort.is_none())
+        .then_some(app.newest_version);
+    let key = Some((
+        app.songs.len(),
+        view.sort,
+        view.source,
+        query.clone(),
+        newest,
+    ));
     if view.order_key == key {
         return;
     }
@@ -376,6 +389,14 @@ fn rebuild_order(app: &mut App) {
         if !ascending {
             order.reverse();
         }
+    } else if newest.is_some() {
+        // Those not listed among the newest yet, after.
+        order.sort_by_key(|&i| {
+            app.newest
+                .get(&songs[i].id)
+                .copied()
+                .unwrap_or((u8::MAX, 0))
+        });
     }
     if order.len() != view.order.len() {
         view.selected = None;

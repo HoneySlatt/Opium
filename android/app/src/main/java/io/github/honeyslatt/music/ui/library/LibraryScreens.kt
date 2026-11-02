@@ -347,7 +347,10 @@ fun Songs(c: LibraryContext) {
     var sources by rememberSaveable { mutableStateOf(false) }
     var searching by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
-    var order by remember { mutableStateOf(c.core.setting("songs-sort")?.let { runCatching { SongSort.valueOf(it) }.getOrNull() } ?: SongSort.Name) }
+    var chosen by remember { mutableStateOf(c.core.setting("songs-sort")?.let { runCatching { SongSort.valueOf(it) }.getOrNull() } ?: SongSort.Name) }
+    // Spotify's Liked Songs: the last added first, always.
+    val liked = io.github.honeyslatt.music.ui.theme.look.layout.header == io.github.honeyslatt.music.core.model.Header.BANNER
+    val order = if (liked) SongSort.Added else chosen
     val menus = LocalMenus.current
     // Newest first is a list of its own, in the order Apple keeps.
     LaunchedEffect(order) { if (order == SongSort.Added) c.library?.loadNewestSongs() }
@@ -371,11 +374,8 @@ fun Songs(c: LibraryContext) {
             some.filter { matches(query, it.title, it.artists.joinToString(", "), it.album) }.sortedBy(order)
         }
     }
-    if (io.github.honeyslatt.music.ui.theme.look.layout.header == io.github.honeyslatt.music.core.model.Header.BANNER) {
-        LikedSongs(c, listing, shown, source, { source = it }, searching, { searching = !searching }, query, { query = it }, order) {
-            order = it
-            c.core.setSetting("songs-sort", it.name)
-        }
+    if (liked) {
+        LikedSongs(c, listing, shown, source, { source = it }, searching, { searching = !searching }, query, { query = it })
         return
     }
     ListPage(
@@ -385,7 +385,7 @@ fun Songs(c: LibraryContext) {
             BarAction(Icons.Search, "Search Songs") { searching = !searching },
             BarAction(Icons.Sort, "Sort") { rect ->
                 menus.sort(rect, SongSort.entries, order, SongSort::label) {
-                    order = it
+                    chosen = it
                     c.core.setSetting("songs-sort", it.name)
                 }
             },
@@ -427,8 +427,6 @@ private fun LikedSongs(
     toggleSearch: () -> Unit,
     query: String,
     setQuery: (String) -> Unit,
-    order: SongSort,
-    setOrder: (SongSort) -> Unit,
 ) {
     val menus = LocalMenus.current
     val profile by c.core.appleProfile.collectAsStateWithLifecycle()
@@ -438,7 +436,6 @@ private fun LikedSongs(
         Color(0xFF5038A0),
         listOf(
             BarAction(Icons.Search, "Search Songs") { toggleSearch() },
-            BarAction(Icons.Sort, "Sort") { rect -> menus.sort(rect, SongSort.entries, order, SongSort::label, setOrder) },
         ),
     ) {
         item {

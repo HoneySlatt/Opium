@@ -173,6 +173,8 @@ pub enum Request {
         original: bool,
         spatial: bool,
     },
+    /// Every service's library songs as they were added, the last first.
+    NewestSongs,
     /// An album and its tracks.
     Album(ItemId),
     /// An artist's top songs and releases.
@@ -269,6 +271,11 @@ pub enum Reply {
     },
     /// The link to copy, none if there is none, or why not.
     ShareLink(Result<Option<String>, String>),
+    /// A service's library songs, the last added first, all of them.
+    NewestSongs {
+        provider: ProviderKind,
+        ids: Vec<ItemId>,
+    },
     NotSignedIn,
     Failed(String),
     /// Apple Music couldn't be reached.
@@ -1131,6 +1138,56 @@ async fn run(
                 }
                 continue;
             }
+            Request::NewestSongs => {
+                if let Some(am) = apple.clone() {
+                    let replies = replies.clone();
+                    tokio::spawn(async move {
+                        let mut ids = Vec::new();
+                        let read = am
+                            .each_newest_library_track(|tracks, _| {
+                                ids.extend(tracks.into_iter().map(|t| t.id))
+                            })
+                            .await;
+                        if read.is_ok() {
+                            replies.send(Reply::NewestSongs {
+                                provider: ProviderKind::AppleMusic,
+                                ids,
+                            });
+                        }
+                    });
+                }
+                let others: [(ProviderKind, Option<Arc<dyn Provider>>); 2] = [
+                    (
+                        ProviderKind::SoundCloud,
+                        sc.clone().map(|p| p as Arc<dyn Provider>),
+                    ),
+                    (
+                        ProviderKind::Navidrome,
+                        nd.clone().map(|p| p as Arc<dyn Provider>),
+                    ),
+                ];
+                for (provider, p) in others {
+                    let (Some(p), replies) = (p, replies.clone()) else {
+                        continue;
+                    };
+                    tokio::spawn(async move {
+                        let mut ids = Vec::new();
+                        let mut cursor: Option<Cursor> = None;
+                        loop {
+                            let Ok(page) = p.library_tracks_newest(cursor.as_ref()).await else {
+                                return;
+                            };
+                            ids.extend(page.items.into_iter().map(|t| t.id));
+                            match page.next {
+                                Some(next) => cursor = Some(next),
+                                None => break,
+                            }
+                        }
+                        replies.send(Reply::NewestSongs { provider, ids });
+                    });
+                }
+                continue;
+            }
             // The server's own lists; Apple Music's are its own below.
             Request::LibraryAlbums | Request::LibraryArtists | Request::RecentlyAdded
                 if apple.is_none() =>
@@ -1306,6 +1363,7 @@ async fn run(
             | Request::SetService { .. }
             | Request::SiteLyrics { .. }
             | Request::Library
+            | Request::NewestSongs
             | Request::Playlists
             | Request::Palette(_)
             | Request::Search(..) => {}
