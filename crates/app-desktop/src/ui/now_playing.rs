@@ -390,7 +390,7 @@ pub fn show_cover(app: &mut App, ui: &mut Ui) {
 
 /// The cover's three colours as four large blobs across the window, drifting
 /// slowly, under a vignette of the background.
-fn backdrop(app: &mut App, ui: &Ui, theme: &Theme, full: Rect) {
+pub(super) fn backdrop(app: &mut App, ui: &Ui, theme: &Theme, full: Rect) {
     let colors = app
         .shown()
         .track

@@ -321,27 +321,30 @@ fn transport(app: &mut App, ui: &mut Ui, theme: &Theme, column: Rect) {
         pos2(column.left() + 48.0, y - 10.0),
         pos2(column.right() - 48.0, y + 10.0),
     );
-    wavy(app, ui, theme, wave, duration, shown.playing);
+    wavy(app, ui, theme, wave, duration, shown.playing, false);
 }
 
 /// M3E's wavy progress: the part played a wave in primary, moving while it
 /// plays and flattening when paused, a gap, the rest flat, a stop dot at the
-/// end and a bar at the position. Click or drag to seek.
-fn wavy(
+/// end and a bar at the position. Click or drag to seek. `big`, Now
+/// Playing's, is thicker and taller.
+pub(super) fn wavy(
     app: &mut App,
     ui: &mut Ui,
     theme: &Theme,
     rect: Rect,
     duration: Option<Duration>,
     playing: bool,
+    big: bool,
 ) {
-    const STROKE: f32 = 4.0;
-    const AMPLITUDE: f32 = 3.2;
-    const WAVELENGTH: f32 = 32.0;
-    const GAP: f32 = 6.0;
+    let (stroke, amplitude, wavelength, gap, handle) = if big {
+        (6.0, 5.0, 44.0, 8.0, 28.0)
+    } else {
+        (4.0, 3.2, 32.0, 6.0, 22.0)
+    };
 
     // How tall the wave stands, and where it is along.
-    let id = Id::unique("toolbar-wave");
+    let id = Id::unique(("wave", big));
     let now = ui.input(|i| i.time);
     let (mut amp, mut phase, then) = ui.data(|d| d.get_temp::<(f32, f32, f64)>(id)).unwrap_or((
         if playing { 1.0 } else { 0.0 },
@@ -360,15 +363,15 @@ fn wavy(
     ui.data_mut(|d| d.insert_temp(id, (amp, phase, now)));
 
     let cy = rect.center().y;
-    let (start, end) = (rect.left() + STROKE / 2.0, rect.right() - STROKE / 2.0);
+    let (start, end) = (rect.left() + stroke / 2.0, rect.right() - stroke / 2.0);
     let painter = ui.painter();
     let flat = |painter: &egui::Painter, from: f32, to: f32, color: Color32| {
         if to > from {
             let r = Rect::from_min_max(
-                pos2(from - STROKE / 2.0, cy - STROKE / 2.0),
-                pos2(to + STROKE / 2.0, cy + STROKE / 2.0),
+                pos2(from - stroke / 2.0, cy - stroke / 2.0),
+                pos2(to + stroke / 2.0, cy + stroke / 2.0),
             );
-            painter.rect_filled(r, STROKE / 2.0, color);
+            painter.rect_filled(r, stroke / 2.0, color);
         }
     };
     let Some(total) = duration else {
@@ -379,7 +382,7 @@ fn wavy(
 
     let response = ui.interact(
         rect.expand2(vec2(0.0, 6.0)),
-        Id::unique("seek"),
+        Id::unique(("seek", big)),
         Sense::click_and_drag(),
     );
     let preview_id = Id::unique("seek-preview");
@@ -397,10 +400,10 @@ fn wavy(
     let position = shown_position(app, ui);
     let p = (position.as_secs_f32() / total.as_secs_f32()).clamp(0.0, 1.0);
     let x = start + p * (end - start);
-    let played_end = (x - GAP / 2.0 - if dragging { 2.0 } else { 0.0 }).max(start);
+    let played_end = (x - gap / 2.0 - if dragging { 2.0 } else { 0.0 }).max(start);
 
     let painter = ui.painter();
-    let y = |x: f32| cy + AMPLITUDE * amp * ((x - rect.left()) / WAVELENGTH * TAU + phase).sin();
+    let y = |x: f32| cy + amplitude * amp * ((x - rect.left()) / wavelength * TAU + phase).sin();
     if played_end > start {
         let mut points: Vec<_> = (0..)
             .map(|i| start + 2.0 * i as f32)
@@ -410,14 +413,14 @@ fn wavy(
         points.push(pos2(played_end, y(played_end)));
         let color = theme.tonal.primary;
         // Round ends, as the stroke's caps.
-        painter.circle_filled(points[0], STROKE / 2.0, color);
-        painter.circle_filled(*points.last().unwrap(), STROKE / 2.0, color);
-        painter.add(egui::Shape::line(points, Stroke::new(STROKE, color)));
+        painter.circle_filled(points[0], stroke / 2.0, color);
+        painter.circle_filled(*points.last().unwrap(), stroke / 2.0, color);
+        painter.add(egui::Shape::line(points, Stroke::new(stroke, color)));
     }
-    flat(painter, x + GAP, end, theme.tonal.secondary_container);
-    painter.circle_filled(pos2(end, cy), STROKE / 2.0 - 0.5, theme.tonal.primary);
+    flat(painter, x + gap, end, theme.tonal.secondary_container);
+    painter.circle_filled(pos2(end, cy), stroke / 2.0 - 0.5, theme.tonal.primary);
     painter.rect_filled(
-        Rect::from_center_size(pos2(x, cy), vec2(4.0, 22.0)),
+        Rect::from_center_size(pos2(x, cy), vec2(4.0, handle)),
         2.0,
         theme.tonal.primary,
     );
@@ -496,7 +499,7 @@ fn tools(app: &mut App, ui: &mut Ui, theme: &Theme, column: Rect, side: bool) {
 
 /// What plays, as a label: lossless in the tertiary container, a yellow
 /// dot when the signal isn't bit-perfect. It opens the signal path.
-fn quality(app: &mut App, ui: &mut Ui, theme: &Theme, track: &music_core::model::Track) {
+pub(super) fn quality(app: &mut App, ui: &mut Ui, theme: &Theme, track: &music_core::model::Track) {
     let (label, lossless) = if super::plays_in_atmos(track) {
         ("Dolby Atmos".to_string(), true)
     } else {

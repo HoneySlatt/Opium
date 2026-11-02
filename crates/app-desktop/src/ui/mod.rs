@@ -15,6 +15,7 @@ mod lyrics;
 pub(crate) mod menu;
 mod motion;
 mod now_playing;
+mod np_expressive;
 mod pairing;
 mod pane;
 mod player_bar;
@@ -84,6 +85,8 @@ pub fn show(app: &mut App, ui: &mut Ui) {
             motion::arriving(ui, &theme, "now-playing", t, 48.0, |ui| {
                 if cover {
                     now_playing::show_cover(app, ui);
+                } else if layout.now_playing == crate::theme::NowPlaying::Expressive {
+                    np_expressive::show(app, ui);
                 } else {
                     now_playing::show(app, ui);
                 }
