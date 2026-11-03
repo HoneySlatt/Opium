@@ -637,6 +637,8 @@ pub struct App {
     pub playlist_dialog: Option<PlaylistDialog>,
     /// The cover chosen for the playlist being made, given once it is.
     cover_for_created: Option<Vec<u8>>,
+    /// The service Home, New and Radio were last asked of.
+    browse_from: Option<ProviderKind>,
     /// Navidrome asks for the password again: what wanted it, the password
     /// typed, and whether the last one was refused.
     pub navidrome_password: Option<(Request, String, bool)>,
@@ -905,6 +907,7 @@ impl App {
             open_created: false,
             playlist_dialog: None,
             cover_for_created: None,
+            browse_from: None,
             navidrome_password: None,
             favourites_known: HashMap::new(),
             downloads: HashMap::new(),
@@ -1102,6 +1105,9 @@ impl App {
             && let Some(id) = self.favourites()
         {
             self.page = Page::Playlist(id);
+        }
+        if self.browse_page() {
+            return;
         }
         match &self.page {
             // Not asked yet, or failed (offline, a service not connected
@@ -1647,16 +1653,97 @@ impl App {
         self.zoom = None;
     }
 
+    /// The services connected now that can fill Home, New and Radio.
+    pub fn browse_sources(&self) -> Vec<ProviderKind> {
+        let connected = |provider| match provider {
+            ProviderKind::AppleMusic => matches!(self.connection, Connection::Connected),
+            ProviderKind::SoundCloud => matches!(self.soundcloud, SoundCloudState::Connected(_)),
+            ProviderKind::Navidrome => matches!(self.navidrome, SoundCloudState::Connected(_)),
+            ProviderKind::Music => false,
+        };
+        [ProviderKind::AppleMusic, ProviderKind::SoundCloud, ProviderKind::Navidrome]
+            .into_iter()
+            .filter(|&p| self.service_on(p) && connected(p))
+            .collect()
+    }
+
+    /// Where Home, New and Radio come from: the one chosen if connected,
+    /// else Apple Music, else the first connected.
+    pub fn browse_source(&self) -> Option<ProviderKind> {
+        let connected = self.browse_sources();
+        self.settings
+            .browse_source
+            .filter(|s| connected.contains(s))
+            .or_else(|| connected.iter().copied().find(|&p| p == ProviderKind::AppleMusic))
+            .or_else(|| connected.first().copied())
+    }
+
+    /// Home, New and Radio from `source`, kept for next time: asked again.
+    pub fn set_browse_source(&mut self, source: ProviderKind) {
+        self.settings.browse_source = Some(source);
+        self.settings.save();
+        self.browse_page();
+    }
+
+    /// The pages' service is another now (chosen, or connected): what they
+    /// showed goes, to be asked of it on arriving.
+    fn browse_changed(&mut self) {
+        let source = self.browse_source();
+        if source != self.browse_from {
+            self.browse_from = source;
+            self.home = None;
+            self.new_music = None;
+            self.radio = None;
+        }
+    }
+
+    /// On Home, New or Radio, their service another now (chosen, or just
+    /// connected): asked of it. Whether it was.
+    fn browse_page(&mut self) -> bool {
+        let shelves = match &self.page {
+            Page::Home => Some(Shelves::Home),
+            Page::New => Some(Shelves::New),
+            Page::Radio => Some(Shelves::Radio),
+            Page::Shelf(which, _) => Some(*which),
+            _ => None,
+        };
+        let Some(which) = shelves else { return false };
+        if self.browse_source() == self.browse_from {
+            return false;
+        }
+        self.browse_changed();
+        self.refresh(which);
+        true
+    }
+
+    /// Ask `which` of the pages' service, or say none is connected.
+    fn ask_browse(&mut self, request: fn(ProviderKind) -> Request) -> Loaded<Arc<Vec<Shelf>>> {
+        self.browse_changed();
+        match self.browse_from {
+            Some(source) => {
+                self.backend.send(request(source));
+                Loaded::Loading
+            }
+            // One connecting: asked once it has (see `browse_page`).
+            None if [&self.soundcloud, &self.navidrome]
+                .iter()
+                .any(|s| matches!(s, SoundCloudState::Connecting))
+                || matches!(self.connection, Connection::Connecting) =>
+            {
+                Loaded::Loading
+            }
+            None => Loaded::Failed("Connect a service in Settings to see its picks here.".into()),
+        }
+    }
+
     /// Ask for the new music page again.
     pub fn refresh_new_music(&mut self) {
-        self.new_music = Some(Loaded::Loading);
-        self.backend.send(Request::NewMusic);
+        self.new_music = Some(self.ask_browse(Request::NewMusic));
     }
 
     /// Ask for the radio page again.
     pub fn refresh_radio(&mut self) {
-        self.radio = Some(Loaded::Loading);
-        self.backend.send(Request::Radio);
+        self.radio = Some(self.ask_browse(Request::Radio));
     }
 
     /// Play a station: what airs (or an episode) as one endless track, a
@@ -1723,8 +1810,7 @@ impl App {
 
     /// Ask for the home shelves again.
     pub fn refresh_home(&mut self) {
-        self.home = Some(Loaded::Loading);
-        self.backend.send(Request::Home);
+        self.home = Some(self.ask_browse(Request::Home));
     }
 
     /// Whether `id` is among the favourites, as far as the app knows.
@@ -4392,6 +4478,7 @@ impl App {
                     if reconnected {
                         self.reload_library();
                     }
+                    self.browse_page();
                 }
                 Reply::SignedIn(result) => {
                     self.signing_in = false;
@@ -4413,6 +4500,7 @@ impl App {
                         Ok(None) => SoundCloudState::NotSignedIn,
                         Err(e) => SoundCloudState::Failed(e),
                     };
+                    self.browse_page();
                 }
                 Reply::Navidrome(result) => {
                     self.navidrome_retry = match &result {
@@ -4424,6 +4512,7 @@ impl App {
                         Ok(None) => SoundCloudState::NotSignedIn,
                         Err(e) => SoundCloudState::Failed(e),
                     };
+                    self.browse_page();
                 }
                 Reply::SignedInNavidrome(result) => {
                     self.navidrome_signing_in = false;
@@ -4565,13 +4654,18 @@ impl App {
                     };
                     self.artist_albums.insert(id, loaded);
                 }
-                Reply::NewMusic(result) => {
+                // Asked of another service since: not shown.
+                Reply::NewMusic { source, .. }
+                | Reply::Radio { source, .. }
+                | Reply::Home { source, .. }
+                    if Some(source) != self.browse_from => {}
+                Reply::NewMusic { result, .. } => {
                     self.new_music = Some(match result {
                         Ok(shelves) => Loaded::Ready(Arc::new(shelves)),
                         Err(e) => Loaded::Failed(e),
                     });
                 }
-                Reply::Radio(result) => {
+                Reply::Radio { result, .. } => {
                     self.radio = Some(match result {
                         Ok(shelves) => Loaded::Ready(Arc::new(shelves)),
                         Err(e) => Loaded::Failed(e),
@@ -4599,7 +4693,7 @@ impl App {
                         }
                     }
                 }
-                Reply::Home(result) => {
+                Reply::Home { result, .. } => {
                     self.home = Some(match result {
                         Ok(shelves) => Loaded::Ready(Arc::new(shelves)),
                         Err(e) => Loaded::Failed(e),

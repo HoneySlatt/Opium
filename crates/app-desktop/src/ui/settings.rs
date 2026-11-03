@@ -28,7 +28,11 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
     let theme = app.theme.clone();
     let width = (ui.available_width() - 2.0 * pad).min(MAX_WIDTH);
     let paired = app.devices.peers.iter().filter(|p| p.paired).count().max(1);
+    // Where Home, New and Radio come from, when there is a choice.
+    let sources = app.browse_sources();
+    let choosing = sources.len() > 1;
     let total = BODY_TOP
+        + if choosing { GROUP_HEAD + GROUP_GAP + ROW } else { 0.0 }
         + 11.0 * (GROUP_HEAD + GROUP_GAP)
         + 3.0 * ROW
         + THEMES * (1 + theme_rows()) as f32
@@ -70,6 +74,30 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
             panel(ui, &theme, card, 3);
             services(app, ui, &theme, card);
             y = card.bottom() + GROUP_GAP;
+
+            if choosing {
+                y = group(
+                    ui,
+                    &theme,
+                    left,
+                    y,
+                    width,
+                    "Home, New and Radio",
+                    "These pages show one service's picks and stations. Search and your library show every service.",
+                );
+                let card = Rect::from_min_size(pos2(left, y), vec2(width, ROW));
+                panel(ui, &theme, card, 1);
+                let x = browse_source(app, ui, &theme, &sources, card.right() - 16.0, card.center().y);
+                labels(
+                    ui,
+                    &theme,
+                    pos2(card.left() + 16.0, card.center().y),
+                    "From",
+                    "The service these pages come from.",
+                    x - card.left() - 32.0,
+                );
+                y = card.bottom() + GROUP_GAP;
+            }
 
             y = group(
                 ui,
@@ -1120,6 +1148,45 @@ fn motion_quality(app: &mut App, ui: &mut Ui, theme: &Theme, right: f32, y: f32)
                 .clicked()
         {
             app.set_motion_quality(quality);
+        }
+    }
+    left
+}
+
+/// The services Home, New and Radio may come from, as pills ending at
+/// `right`, the one in use filled; where they start.
+fn browse_source(app: &mut App, ui: &mut Ui, theme: &Theme, sources: &[ProviderKind], right: f32, y: f32) -> f32 {
+    let chosen = app.browse_source();
+    let body = font(12.5, Weight::Medium);
+    let name = |p: ProviderKind| match p {
+        ProviderKind::AppleMusic => "Apple Music",
+        ProviderKind::SoundCloud => "SoundCloud",
+        ProviderKind::Navidrome => "Navidrome",
+        ProviderKind::Music => "Music",
+    };
+    let widths: Vec<f32> = sources
+        .iter()
+        .map(|&p| text(ui, name(p), body.clone(), theme.text, 200.0).size().x + 24.0)
+        .collect();
+    let mut x = right - widths.iter().sum::<f32>() - 6.0 * (sources.len() - 1) as f32;
+    let left = x;
+    for (&source, w) in sources.iter().zip(widths) {
+        let rect = Rect::from_min_size(pos2(x, y - 14.0), vec2(w, 28.0));
+        x += w + 6.0;
+        let response = ui.interact(rect, Id::unique(("browse-source", name(source))), Sense::click());
+        let on = Some(source) == chosen;
+        let (fill, fg) = if on {
+            (theme.text_a(0.9), theme.base)
+        } else if response.hovered() {
+            (theme.text_a(0.14), theme.text)
+        } else {
+            (theme.text_a(0.08), theme.text)
+        };
+        ui.painter().rect_filled(rect, 14.0, fill);
+        let g = text(ui, name(source), body.clone(), fg, w);
+        paint_text(ui, g, rect.center().x, rect.center().y, egui::Align::Center, fg);
+        if response.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() && !on {
+            app.set_browse_source(source);
         }
     }
     left

@@ -22,6 +22,9 @@ pub struct Settings {
     pub grid_source: Option<music_core::model::ProviderKind>,
     pub songs_source: Option<music_core::model::ProviderKind>,
     pub search_source: Option<music_core::model::ProviderKind>,
+    /// The service Home, New and Radio come from, when several are
+    /// connected; unset: Apple Music, else the first connected.
+    pub browse_source: Option<music_core::model::ProviderKind>,
     /// Unset: Amane when its theme file exists, Stock otherwise.
     pub appearance: Option<Appearance>,
     /// The theme's id: a built-in one, or a file's stem in

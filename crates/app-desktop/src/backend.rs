@@ -44,12 +44,12 @@ pub enum Request {
     AlbumExtras(ItemId),
     /// What was added to the library lately.
     RecentlyAdded,
-    /// The home page's shelves.
-    Home,
+    /// The home page's shelves, as this service shows them.
+    Home(ProviderKind),
     /// The radio page's shelves.
-    Radio,
+    Radio(ProviderKind),
     /// The new music page's shelves.
-    NewMusic,
+    NewMusic(ProviderKind),
     /// The next songs of a station of songs.
     StationTracks(ItemId),
     /// Sign in to Apple Music in the browser, then connect with the new token.
@@ -364,7 +364,11 @@ pub enum Reply {
         items: Vec<Collection>,
         done: bool,
     },
-    Home(Result<Vec<Shelf>, String>),
+    /// Home's, Radio's or New's shelves, from `source`.
+    Home {
+        source: ProviderKind,
+        result: Result<Vec<Shelf>, String>,
+    },
     Fetched {
         token: player::Token,
         result: Result<Playable, String>,
@@ -373,8 +377,14 @@ pub enum Reply {
         id: ItemId,
         result: Result<Vec<Track>, String>,
     },
-    Radio(Result<Vec<Shelf>, String>),
-    NewMusic(Result<Vec<Shelf>, String>),
+    Radio {
+        source: ProviderKind,
+        result: Result<Vec<Shelf>, String>,
+    },
+    NewMusic {
+        source: ProviderKind,
+        result: Result<Vec<Shelf>, String>,
+    },
     Album {
         id: ItemId,
         result: Result<Box<(Album, Vec<Track>)>, String>,
@@ -1467,6 +1477,37 @@ async fn run(
                 });
                 continue;
             }
+            // Home, Radio and New: the service chosen for them, whichever.
+            Request::Home(source) | Request::Radio(source) | Request::NewMusic(source) => {
+                let provider: Option<Arc<dyn Provider>> = match source {
+                    ProviderKind::AppleMusic => apple.clone().map(|a| a as Arc<dyn Provider>),
+                    ProviderKind::SoundCloud => sc.clone().map(|s| s as Arc<dyn Provider>),
+                    ProviderKind::Navidrome => nd.clone().map(|n| n as Arc<dyn Provider>),
+                    ProviderKind::Music => None,
+                };
+                let Some(provider) = provider else {
+                    unanswered(request, "the service chosen", &replies);
+                    continue;
+                };
+                tokio::spawn(async move {
+                    let reply = match request {
+                        Request::Home(_) => Reply::Home {
+                            source,
+                            result: provider.home().await.map_err(|e| e.to_string()),
+                        },
+                        Request::Radio(_) => Reply::Radio {
+                            source,
+                            result: provider.radio().await.map_err(|e| e.to_string()),
+                        },
+                        _ => Reply::NewMusic {
+                            source,
+                            result: provider.new_music().await.map_err(|e| e.to_string()),
+                        },
+                    };
+                    replies.send(reply);
+                });
+                continue;
+            }
             Request::SetPlaylistCover { id, jpeg } => {
                 let refused = |reason: &str| CoverRefused::Failed(reason.to_owned());
                 match (id.provider, nd.clone()) {
@@ -1562,6 +1603,9 @@ async fn run(
             | Request::DeletePlaylist(_)
             | Request::SetPlaylistCover { .. }
             | Request::NavidromeSession(_)
+            | Request::Home(_)
+            | Request::Radio(_)
+            | Request::NewMusic(_)
             | Request::AddToPlaylists { .. }
             | Request::Favourite { .. }
             | Request::SuggestLess { .. }
@@ -1610,23 +1654,6 @@ async fn run(
                 tokio::spawn(async move {
                     let result = am.lyrics(&id).await.map_err(|e| e.to_string());
                     replies.send(Reply::Lyrics { id, result });
-                });
-            }
-            Request::NewMusic => {
-                tokio::spawn(async move {
-                    replies.send(Reply::NewMusic(
-                        am.new_music().await.map_err(|e| e.to_string()),
-                    ));
-                });
-            }
-            Request::Radio => {
-                tokio::spawn(async move {
-                    replies.send(Reply::Radio(am.radio().await.map_err(|e| e.to_string())));
-                });
-            }
-            Request::Home => {
-                tokio::spawn(async move {
-                    replies.send(Reply::Home(am.home().await.map_err(|e| e.to_string())));
                 });
             }
             Request::LibraryAlbums => {
@@ -2169,9 +2196,9 @@ fn unanswered(request: Request, service: &str, replies: &Replies) {
         Request::AlbumExtras(id) => Reply::AlbumExtras { id, result: Err(e) },
         Request::LibraryArtistAlbums(id) => Reply::LibraryArtistAlbums { id, result: Err(e) },
         Request::StationTracks(id) => Reply::StationTracks { id, result: Err(e) },
-        Request::Home => Reply::Home(Err(e)),
-        Request::Radio => Reply::Radio(Err(e)),
-        Request::NewMusic => Reply::NewMusic(Err(e)),
+        Request::Home(source) => Reply::Home { source, result: Err(e) },
+        Request::Radio(source) => Reply::Radio { source, result: Err(e) },
+        Request::NewMusic(source) => Reply::NewMusic { source, result: Err(e) },
         // A change shown at once is undone, and the user told why.
         Request::SetFavourite { id, on, .. } => Reply::Favourite {
             id,

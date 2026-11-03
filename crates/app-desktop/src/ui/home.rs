@@ -163,7 +163,7 @@ fn page(app: &mut App, ui: &mut Ui, pad: f32, which: Which) -> f32 {
             };
             if shelves.is_empty() {
                 let detail =
-                    "Apple Music has nothing to suggest yet. Listen a little, then refresh.";
+                    "Nothing to suggest yet. Listen a little, then refresh.";
                 message(ui, &theme, left, y, width, "Nothing here yet", detail);
                 return;
             }
