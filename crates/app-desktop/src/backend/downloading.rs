@@ -1,40 +1,20 @@
-//! Songs downloaded to play offline: one at a time, through the same
-//! fetch as playing them, read to the end into the store sealed. A song
-//! kept plays from there before anything is asked of its service.
+//! Songs downloaded to play offline, as the phone downloads them (the
+//! `downloads` crate's queue): fetched as playing them would, with the
+//! desktop's CDM. A song kept plays from the store before anything is asked
+//! of its service.
 
-use std::collections::VecDeque;
-use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
 
 use apple_music::AppleMusic;
-use downloads::store::{Song, Standing, Store};
+pub use downloads::queue::{Downloading, KeptSong};
+use downloads::queue::{Fetched, Fetcher, Listener};
+use downloads::store::{Song, Store};
 use music_core::model::{ItemId, ProviderKind, Track};
 use navidrome::Navidrome;
 use soundcloud::SoundCloud;
 
 use super::{Playable, Replies, Reply};
-
-/// How a song stands as a download, for its badge.
-#[derive(Debug, Clone, PartialEq)]
-pub enum Downloading {
-    Queued,
-    /// How much has come, from 0 to 1.
-    Coming(f32),
-    Kept(Standing),
-    Failed(String),
-    /// Not kept, or no longer.
-    Gone,
-}
-
-/// A song kept, for the library's Downloaded.
-#[derive(Debug, Clone)]
-pub struct KeptSong {
-    pub track: Track,
-    pub standing: Standing,
-    pub added: u64,
-}
 
 /// Where the downloads are kept: the user's data, not a cache that may be
 /// cleared.
@@ -46,12 +26,6 @@ fn dir() -> PathBuf {
         .join("music/downloads")
 }
 
-pub(super) fn now() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs())
-}
-
 /// The services as they are now, for the download that comes next.
 #[derive(Clone, Default)]
 pub(super) struct Services {
@@ -61,56 +35,50 @@ pub(super) struct Services {
     pub cdm: Option<widevine::Cdm>,
 }
 
-#[derive(Default)]
-struct Queue {
-    tracks: VecDeque<(Track, bool)>,
-    running: bool,
-    /// Those coming (the one read, the next one fetched meanwhile), and
-    /// whether each was called off.
-    active: Vec<(ItemId, bool)>,
+fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-impl Queue {
-    /// Whether `id` was called off, or isn't coming at all.
-    fn called_off(&self, id: &ItemId) -> bool {
-        self.active
-            .iter()
-            .find(|(a, _)| a == id)
-            .is_none_or(|(_, off)| *off)
+/// Fetches with the services as they are when a song's turn comes.
+struct Desktop(Mutex<Services>);
+
+#[async_trait::async_trait]
+impl Fetcher for Desktop {
+    async fn fetch(&self, track: Track, original: bool) -> Result<Fetched, String> {
+        let services = lock(&self.0).clone();
+        fetch(services, track, original).await
     }
 }
 
-/// A song fetched, to read into the store.
-struct Fetched {
-    reader: Box<dyn Read + Send>,
-    len: u64,
-    song: Song,
-}
+/// Tells the UI.
+struct Told(Replies);
 
-type Fetching = tokio::task::JoinHandle<Result<Fetched, String>>;
+impl Listener for Told {
+    fn state(&self, id: ItemId, state: Downloading) {
+        self.0.send(Reply::Download { id, state });
+    }
+
+    fn kept(&self, kept: Vec<KeptSong>) {
+        self.0.send(Reply::Downloads(kept));
+    }
+
+    fn failed(&self, message: String) {
+        self.0.send(Reply::Failed(message));
+    }
+}
 
 #[derive(Clone)]
 pub(super) struct Downloads {
-    /// Until the keyring gave the key: `None`; why it didn't, after.
-    store: Arc<Mutex<Option<Result<Store, String>>>>,
-    queue: Arc<Mutex<Queue>>,
-    services: Arc<Mutex<Services>>,
-}
-
-fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    m.lock().unwrap_or_else(|e| e.into_inner())
+    queue: downloads::queue::Downloads,
+    fetcher: Arc<Desktop>,
 }
 
 impl Downloads {
     /// Open the store, its key from the keyring, and tell what it keeps.
     pub fn open(replies: Replies) -> Self {
-        let downloads = Self {
-            store: Arc::default(),
-            queue: Arc::default(),
-            services: Arc::default(),
-        };
-        let store = downloads.store.clone();
-        let told = downloads.clone();
+        let fetcher = Arc::new(Desktop(Mutex::default()));
+        let queue = downloads::queue::Downloads::new(fetcher.clone(), Arc::new(Told(replies)));
+        let opening = queue.clone();
         tokio::spawn(async move {
             let opened = match downloads::keyring::key().await {
                 Ok(key) => tokio::task::spawn_blocking(move || {
@@ -124,245 +92,41 @@ impl Downloads {
             if let Err(e) = &opened {
                 eprintln!("downloads: {e}");
             }
-            *lock(&store) = Some(opened);
-            told.tell(&replies);
+            opening.opened(opened);
         });
-        downloads
-    }
-
-    /// What is kept, to the UI.
-    pub fn tell(&self, replies: &Replies) {
-        let now = now();
-        let kept = match &*lock(&self.store) {
-            Some(Ok(store)) => store
-                .items()
-                .map(|item| KeptSong {
-                    track: item.track.clone(),
-                    standing: store.standing(item, now),
-                    added: item.added,
-                })
-                .collect(),
-            _ => Vec::new(),
-        };
-        replies.send(Reply::Downloads(kept));
+        Self { queue, fetcher }
     }
 
     pub fn services(&self, services: Services) {
-        *lock(&self.services) = services;
+        *lock(&self.fetcher.0) = services;
     }
 
     /// The song kept as `id`, to play, if it is kept and plays.
     pub fn playable(&self, id: &ItemId) -> Option<Playable> {
-        let store = lock(&self.store);
-        let Some(Ok(store)) = &*store else {
-            return None;
-        };
-        match store.open_song(id, now())? {
-            Ok(open) => Some(Playable::Stored(Box::new(open))),
-            // Damaged: it plays from the service, as if not kept.
-            Err(e) => {
-                eprintln!("downloads: {id}: {e}");
-                None
-            }
-        }
+        self.queue
+            .open(id)
+            .map(|open| Playable::Stored(Box::new(open)))
     }
 
     /// Download `tracks`, after those waiting; `original`: a SoundCloud
     /// uploader's own file, where they allow it.
-    pub fn add(&self, tracks: Vec<Track>, original: bool, replies: &Replies) {
-        let start = {
-            let mut queue = lock(&self.queue);
-            for track in tracks {
-                let id = &track.id;
-                let waiting = queue.tracks.iter().any(|(t, _)| &t.id == id)
-                    || queue.active.iter().any(|(a, off)| a == id && !off);
-                if waiting {
-                    continue;
-                }
-                replies.send(Reply::Download {
-                    id: id.clone(),
-                    state: Downloading::Queued,
-                });
-                queue.tracks.push_back((track, original));
-            }
-            !std::mem::replace(&mut queue.running, true)
-        };
-        if start {
-            tokio::spawn(self.clone().work(replies.clone()));
-        }
+    pub fn add(&self, tracks: Vec<Track>, original: bool) {
+        self.queue.add(tracks, original);
     }
 
     /// No longer kept, nor to be downloaded.
-    pub fn remove(&self, ids: Vec<ItemId>, replies: &Replies) {
-        {
-            let mut queue = lock(&self.queue);
-            queue.tracks.retain(|(t, _)| !ids.contains(&t.id));
-            for (id, off) in &mut queue.active {
-                if ids.contains(id) {
-                    *off = true;
-                }
-            }
-        }
-        let store = self.store.clone();
-        let replies = replies.clone();
-        tokio::task::spawn_blocking(move || {
-            if let Some(Ok(store)) = &mut *lock(&store) {
-                for id in &ids {
-                    if let Err(e) = store.remove(id) {
-                        replies.send(Reply::Failed(format!("Couldn't remove the download: {e}")));
-                    }
-                }
-            }
-            for id in ids {
-                replies.send(Reply::Download {
-                    id,
-                    state: Downloading::Gone,
-                });
-            }
-        });
+    pub fn remove(&self, ids: Vec<ItemId>) {
+        self.queue.remove(ids);
     }
 
     /// Signed out of `provider`: its songs go.
-    pub fn forget(&self, provider: ProviderKind, replies: &Replies) {
-        lock(&self.queue)
-            .tracks
-            .retain(|(t, _)| t.id.provider != provider);
-        if let Some(Ok(store)) = &mut *lock(&self.store) {
-            let _ = store.remove_service(provider);
-        }
-        self.tell(replies);
+    pub fn forget(&self, provider: ProviderKind) {
+        self.queue.forget(provider);
     }
 
-    /// `provider` said whether its subscription is active: its protected
-    /// songs play for 30 days more, or no longer.
-    pub fn subscription(&self, provider: ProviderKind, active: bool, replies: &Replies) {
-        if let Some(Ok(store)) = &mut *lock(&self.store) {
-            let _ = store.subscription(provider, active, now());
-        }
-        self.tell(replies);
-    }
-
-    /// The next song waiting, now coming; with `stop`, none is: the worker
-    /// stops, as one added later knows.
-    fn next(&self, stop: bool) -> Option<(Track, bool)> {
-        let mut queue = lock(&self.queue);
-        let next = queue.tracks.pop_front();
-        match &next {
-            Some((track, _)) => queue.active.push((track.id.clone(), false)),
-            None if stop => queue.running = false,
-            None => {}
-        }
-        next
-    }
-
-    /// Start fetching `track`; Apple's licences a second apart at least,
-    /// not in a burst.
-    fn fetch(&self, track: Track, original: bool, last_apple: &mut Option<Instant>) -> Fetching {
-        let services = lock(&self.services).clone();
-        let wait = match track.id.provider {
-            ProviderKind::AppleMusic => {
-                let wait = last_apple.map_or(Duration::ZERO, |at| {
-                    Duration::from_secs(1).saturating_sub(at.elapsed())
-                });
-                *last_apple = Some(Instant::now() + wait);
-                wait
-            }
-            _ => Duration::ZERO,
-        };
-        tokio::spawn(async move {
-            tokio::time::sleep(wait).await;
-            fetch(services, track, original).await
-        })
-    }
-
-    /// Download one song at a time, the next one's fetch (its licence, its
-    /// first bytes) under way while one is read: the CDM, which decrypts no
-    /// faster than it does, isn't left waiting between songs.
-    async fn work(self, replies: Replies) {
-        let mut ahead: Option<(ItemId, Fetching)> = None;
-        let mut last_apple = None;
-        loop {
-            let (id, fetching) = match ahead.take() {
-                Some(ahead) => ahead,
-                None => match self.next(true) {
-                    Some((track, original)) => {
-                        let id = track.id.clone();
-                        (id, self.fetch(track, original, &mut last_apple))
-                    }
-                    None => return,
-                },
-            };
-            replies.send(Reply::Download {
-                id: id.clone(),
-                state: Downloading::Coming(0.0),
-            });
-            let fetched = fetching.await.map_err(|e| e.to_string()).and_then(|f| f);
-            if let Some((track, original)) = self.next(false) {
-                ahead = Some((
-                    track.id.clone(),
-                    self.fetch(track, original, &mut last_apple),
-                ));
-            }
-            let state = match fetched {
-                _ if lock(&self.queue).called_off(&id) => Ok(None),
-                Ok(fetched) => self.keep(fetched, &replies).await,
-                Err(e) => Err(e),
-            };
-            lock(&self.queue).active.retain(|(a, _)| a != &id);
-            let state = match state {
-                Ok(Some(standing)) => Downloading::Kept(standing),
-                Ok(None) => Downloading::Gone,
-                Err(e) => {
-                    eprintln!("downloads: {id}: {e}");
-                    Downloading::Failed(e)
-                }
-            };
-            let kept = matches!(state, Downloading::Kept(_));
-            replies.send(Reply::Download { id, state });
-            // The library's Downloaded has it.
-            if kept {
-                self.tell(&replies);
-            }
-        }
-    }
-
-    /// Read `fetched` into the store: how it then stands, or `None` if it
-    /// was called off.
-    async fn keep(&self, fetched: Fetched, replies: &Replies) -> Result<Option<Standing>, String> {
-        let Fetched { reader, len, song } = fetched;
-        let (store, queue, replies) = (self.store.clone(), self.queue.clone(), replies.clone());
-        tokio::task::spawn_blocking(move || {
-            let pending = match &*lock(&store) {
-                Some(Ok(store)) => store.begin().map_err(|e| e.to_string())?,
-                Some(Err(e)) => return Err(e.clone()),
-                None => return Err("the downloads aren't open yet".into()),
-            };
-            let id = song.track.id.clone();
-            let called_off = || lock(&queue).called_off(&id);
-            match copy(reader, pending, len, &called_off, |coming| {
-                replies.send(Reply::Download {
-                    id: id.clone(),
-                    state: Downloading::Coming(coming),
-                })
-            })? {
-                Some(pending) => {
-                    let mut store = lock(&store);
-                    let Some(Ok(store)) = &mut *store else {
-                        pending.abandon();
-                        return Err("the downloads closed".into());
-                    };
-                    let now = now();
-                    let item = store
-                        .keep(pending, song, now)
-                        .map_err(|e| format!("Couldn't keep the download: {e}"))?
-                        .clone();
-                    Ok(Some(store.standing(&item, now)))
-                }
-                None => Ok(None),
-            }
-        })
-        .await
-        .map_err(|e| e.to_string())?
+    /// `provider` said whether its subscription is active.
+    pub fn subscription(&self, provider: ProviderKind, active: bool) {
+        self.queue.subscription(provider, active);
     }
 }
 
@@ -431,51 +195,4 @@ async fn fetch(services: Services, track: Track, original: bool) -> Result<Fetch
         Playable::Live(_) => return Err("a station can't be downloaded".into()),
         Playable::Stored(_) => return Err("already downloaded".into()),
     })
-}
-
-/// Read `reader` to its end into `pending`, telling how far it came now
-/// and then; `None` if it was called off meanwhile.
-fn copy(
-    mut reader: Box<dyn Read + Send>,
-    mut pending: downloads::store::Pending,
-    len: u64,
-    called_off: &dyn Fn() -> bool,
-    mut coming: impl FnMut(f32),
-) -> Result<Option<downloads::store::Pending>, String> {
-    let mut buf = vec![0; 256 * 1024];
-    let mut received = 0u64;
-    let mut told = Instant::now();
-    loop {
-        let n = match reader.read(&mut buf) {
-            Ok(0) => break,
-            Ok(n) => n,
-            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
-            Err(e) => {
-                pending.abandon();
-                return Err(e.to_string());
-            }
-        };
-        if let Err(e) = pending.write_all(&buf[..n]) {
-            pending.abandon();
-            return Err(format!("Couldn't write the download: {e}"));
-        }
-        received += n as u64;
-        if told.elapsed() >= Duration::from_millis(250) {
-            if called_off() {
-                pending.abandon();
-                return Ok(None);
-            }
-            coming((received as f64 / len.max(1) as f64) as f32);
-            told = Instant::now();
-        }
-    }
-    if received != len {
-        pending.abandon();
-        return Err(format!("the download ended at {received} of {len} bytes"));
-    }
-    if called_off() {
-        pending.abandon();
-        return Ok(None);
-    }
-    Ok(Some(pending))
 }

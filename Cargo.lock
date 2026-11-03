@@ -1762,6 +1762,7 @@ version = "0.1.0"
 dependencies = [
  "aes-gcm",
  "apple-music",
+ "async-trait",
  "music-core",
  "navidrome",
  "oo7",

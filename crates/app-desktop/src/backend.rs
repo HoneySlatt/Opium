@@ -946,10 +946,10 @@ async fn run(
     let mut warming: Option<tokio::task::JoinHandle<()>> = None;
     let downloads = downloading::Downloads::open(replies.clone());
     if let Some(am) = apple.clone() {
-        confirm_subscription(am, downloads.clone(), replies.clone());
+        confirm_subscription(am, downloads.clone());
     }
     if sc.is_some() {
-        downloads.subscription(ProviderKind::SoundCloud, true, &replies);
+        downloads.subscription(ProviderKind::SoundCloud, true);
     }
     loop {
         // What the next download fetches with.
@@ -975,7 +975,7 @@ async fn run(
                         apple = am;
                         if let Some(am) = apple.clone() {
                             kept_shown.remove(&provider);
-                            confirm_subscription(am, downloads.clone(), replies.clone());
+                            confirm_subscription(am, downloads.clone());
                         }
                         if let Some(am) = apple.clone().filter(|_| load && library_wanted) {
                             loading.start(ProviderKind::AppleMusic, load_library(am, replies));
@@ -986,7 +986,7 @@ async fn run(
                         // Signed in still: its songs play on.
                         if sc.is_some() {
                             kept_shown.remove(&provider);
-                            downloads.subscription(ProviderKind::SoundCloud, true, &replies);
+                            downloads.subscription(ProviderKind::SoundCloud, true);
                         }
                         if let Some(sc) = sc.clone().filter(|_| load && recent_wanted) {
                             tokio::spawn(soundcloud_recent(sc, replies.clone()));
@@ -1060,11 +1060,11 @@ async fn run(
         }
         match request {
             Request::Download { tracks, original } => {
-                downloads.add(tracks, original, &replies);
+                downloads.add(tracks, original);
                 continue;
             }
             Request::RemoveDownloads(ids) => {
-                downloads.remove(ids, &replies);
+                downloads.remove(ids);
                 continue;
             }
             Request::SignIn => {
@@ -1142,7 +1142,7 @@ async fn run(
             Request::SignOut(provider) => {
                 // A connection on its way is dropped as it comes.
                 signed_out.insert(provider);
-                downloads.forget(provider, &replies);
+                downloads.forget(provider);
                 loading.stop(provider);
                 match provider {
                     ProviderKind::AppleMusic => apple = None,
@@ -1749,10 +1749,10 @@ fn keep_album(id: &ItemId, result: &Result<Box<(Album, Vec<Track>)>, String>) {
 
 /// Ask Apple whether the subscription is active, which keeps its
 /// downloaded songs playing; nothing changes when it doesn't say.
-fn confirm_subscription(am: Arc<AppleMusic>, downloads: downloading::Downloads, replies: Replies) {
+fn confirm_subscription(am: Arc<AppleMusic>, downloads: downloading::Downloads) {
     tokio::spawn(async move {
         if let Ok(Some(active)) = am.subscribed().await {
-            downloads.subscription(ProviderKind::AppleMusic, active, &replies);
+            downloads.subscription(ProviderKind::AppleMusic, active);
         }
     });
 }
