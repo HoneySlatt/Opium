@@ -1,7 +1,7 @@
 //! Track lists, shared by Songs, albums and playlists: the design's grid, its
 //! header and its rows.
 
-use egui::{Id, Rect, Sense, Stroke, Ui, pos2, vec2};
+use egui::{Id, Rect, Response, Sense, Stroke, Ui, pos2, vec2};
 use music_core::model::{ItemId, Track};
 
 use crate::app::{SortKey, TrackChoice};
@@ -226,9 +226,140 @@ pub struct RowState {
     pub in_library: bool,
     /// The list is a playlist of the user's, which the song can leave.
     pub in_playlist: bool,
+    /// How it stands as a download, if it is one.
+    pub download: Option<Badge>,
+    /// It can be downloaded: a song of a service.
+    pub downloadable: bool,
     /// Rows are told apart by this and their position.
     pub list: &'static str,
     pub position: usize,
+}
+
+/// A download's mark on its row.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Badge {
+    Queued,
+    /// How much has come, from 0 to 1.
+    Coming(f32),
+    Kept,
+    /// Kept, but its subscription wasn't confirmed in time.
+    Expired,
+    Failed,
+}
+
+/// What a page's download button shows of its songs.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PageDownload {
+    /// Not all kept: a click downloads the rest.
+    Offer,
+    /// On their way, this much of it: a click calls them off.
+    Coming(f32),
+    /// All kept: a click removes them.
+    Kept,
+}
+
+/// A page's download button, an arrow in a ring `size` wide, as Spotify's:
+/// filled in the accent once all is kept, the ring filling as it comes.
+pub fn download_button(
+    ui: &Ui,
+    theme: &Theme,
+    center: egui::Pos2,
+    size: f32,
+    salt: &str,
+    state: PageDownload,
+) -> Response {
+    let rect = Rect::from_center_size(center, vec2(size, size));
+    let response = ui
+        .interact(rect, Id::unique(("page-download", salt)), Sense::click())
+        .on_hover_cursor(egui::CursorIcon::PointingHand);
+    let r = size * 0.3;
+    let glyph = size * 0.36;
+    let hover = response.hovered();
+    let ink = if hover { theme.text } else { theme.subtext0 };
+    let ring = Stroke::new(1.8, ink);
+    let tip = match state {
+        PageDownload::Offer => {
+            ui.painter().circle_stroke(center, r, ring);
+            paint_icon(ui, icons::ARROW_DOWN, center, glyph, ink);
+            "Download"
+        }
+        PageDownload::Coming(p) => {
+            ui.painter()
+                .circle_stroke(center, r, Stroke::new(1.8, alpha(ink, 0.35)));
+            let p = p.clamp(0.02, 1.0);
+            let steps = (p * 64.0).ceil() as usize;
+            let points: Vec<egui::Pos2> = (0..=steps)
+                .map(|i| {
+                    let a = -std::f32::consts::FRAC_PI_2
+                        + std::f32::consts::TAU * p * i as f32 / steps as f32;
+                    center + r * vec2(a.cos(), a.sin())
+                })
+                .collect();
+            ui.painter()
+                .add(egui::Shape::line(points, Stroke::new(1.8, theme.accent)));
+            let stop = Rect::from_center_size(center, vec2(glyph * 0.45, glyph * 0.45));
+            ui.painter().rect_filled(stop, 1.0, theme.accent);
+            "Stop downloading"
+        }
+        PageDownload::Kept => {
+            ui.painter().circle_filled(center, r + 0.9, theme.accent);
+            paint_icon(ui, icons::ARROW_DOWN, center, glyph, theme.on_accent());
+            "Remove Download"
+        }
+    };
+    response.on_hover_text(tip)
+}
+
+/// A download's mark, `center`ed: an arrow in a disc once kept, a ring
+/// filling as it comes, as Apple Music and Spotify mark them.
+pub fn download_badge(ui: &Ui, theme: &Theme, center: egui::Pos2, badge: Badge) -> Response {
+    let r = 7.0;
+    let ring = |color| {
+        ui.painter()
+            .circle_stroke(center, r - 0.75, Stroke::new(1.5, color));
+    };
+    let tip = match badge {
+        Badge::Queued => {
+            ring(theme.muted());
+            "Waiting to download"
+        }
+        Badge::Coming(p) => {
+            ring(alpha(theme.muted(), 0.5));
+            let p = p.clamp(0.02, 1.0);
+            let steps = (p * 48.0).ceil() as usize;
+            let points: Vec<egui::Pos2> = (0..=steps)
+                .map(|i| {
+                    let a = -std::f32::consts::FRAC_PI_2
+                        + std::f32::consts::TAU * p * i as f32 / steps as f32;
+                    center + (r - 0.75) * vec2(a.cos(), a.sin())
+                })
+                .collect();
+            ui.painter()
+                .add(egui::Shape::line(points, Stroke::new(1.5, theme.accent)));
+            "Downloading"
+        }
+        Badge::Kept => {
+            ui.painter().circle_filled(center, r, theme.accent);
+            paint_icon(ui, icons::ARROW_DOWN, center, 9.0, theme.on_accent());
+            "Downloaded"
+        }
+        Badge::Expired => {
+            ui.painter().circle_filled(center, r, theme.muted());
+            paint_icon(ui, icons::ARROW_DOWN, center, 9.0, theme.base);
+            "Downloaded, but the subscription wasn't confirmed: plays again once online"
+        }
+        Badge::Failed => {
+            ring(theme.red);
+            paint_icon(ui, icons::ARROW_DOWN, center, 9.0, theme.red);
+            "Couldn't download"
+        }
+    };
+    ui.interact(
+        Rect::from_center_size(center, vec2(2.0 * r, 2.0 * r)),
+        Id::unique(("badge", center.x as i32, center.y as i32)),
+        Sense::hover(),
+    )
+    .on_hover_text(tip)
 }
 
 pub fn row(
@@ -346,8 +477,13 @@ pub fn row(
         // by the length, as Spotify's.
         paint_text(ui, title, tx, y - 9.0, egui::Align::Min, title_color);
         let mut ax = tx;
+        // Spotify's mark of a download, first on the artists' line.
+        if let Some(badge) = state.download {
+            download_badge(ui, theme, pos2(ax + 7.0, y + 10.0), badge);
+            ax += 14.0 + 5.0;
+        }
         if track.explicit {
-            explicit_badge(ui, theme, pos2(tx + 6.0, y + 10.0));
+            explicit_badge(ui, theme, pos2(ax + 6.0, y + 10.0));
             ax += 12.0 + 5.0;
         }
         let g = text(
@@ -464,6 +600,11 @@ pub fn row(
         paint_text(ui, g, c0, y, egui::Align::Min, color);
     }
 
+    // Apple Music's mark of a download, before the length.
+    if !stacked && let Some(badge) = state.download {
+        download_badge(ui, theme, pos2(columns.duration.0 + 8.0, y), badge);
+    }
+
     // Duration.
     let (_, d1) = columns.duration;
     if let Some(duration) = track.duration {
@@ -487,6 +628,9 @@ pub fn row(
         in_playlist: state.in_playlist
             && (track.library_id.is_some()
                 || track.id.provider == music_core::model::ProviderKind::SoundCloud),
+        download: state
+            .downloadable
+            .then_some(state.download.is_some_and(|b| b != Badge::Failed)),
     };
     if let Some(choice) = super::menu::track_menu(&response, theme, facts) {
         action = RowAction::Menu(choice);

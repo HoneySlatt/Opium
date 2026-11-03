@@ -30,7 +30,7 @@ mod sidebar;
 mod signal;
 mod songs;
 mod toolbar;
-mod tracks;
+pub(crate) mod tracks;
 mod window_bar;
 
 use std::sync::Arc;

@@ -217,6 +217,7 @@ fn song(app: &mut App, ui: &mut Ui, theme: &Theme, column: Rect) {
         in_library: app.track_in_library(&track),
         removable: track.library_id.is_some(),
         in_playlist: false,
+        download: app.download_offer(&track.id),
     };
     let choice = if station {
         None

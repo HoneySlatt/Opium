@@ -631,6 +631,7 @@ fn controls(app: &mut App, ui: &mut Ui, theme: &Theme, track: &Track, card: Rect
             in_library: app.track_in_library(track),
             removable: track.library_id.is_some(),
             in_playlist: false,
+            download: app.download_offer(&track.id),
         };
         if let Some(choice) = track_menu_button(&open, theme, facts) {
             app.track_choice(track.clone(), choice, ui.input(|i| i.time));

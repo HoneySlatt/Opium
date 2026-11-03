@@ -384,6 +384,7 @@ fn top_buttons(app: &mut App, ui: &mut Ui, theme: &Theme, full: Rect) {
         in_library: app.track_in_library(&track),
         removable: track.library_id.is_some(),
         in_playlist: false,
+        download: app.download_offer(&track.id),
     };
     if let Some(choice) = track_menu_button(&open, theme, facts) {
         app.track_choice(track, choice, ui.input(|i| i.time));

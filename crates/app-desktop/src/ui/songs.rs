@@ -72,7 +72,7 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
             for position in tracks::visible(viewport, table_offset + tracks::HEAD_SPACE, rows) {
                 let top = rows_top + position as f32 * tracks::ROW;
                 let rect = Rect::from_min_size(pos2(left, top), vec2(width, tracks::ROW));
-                let track = &app.songs[app.songs_view.order[position]];
+                let track = &listed(app)[app.songs_view.order[position]];
                 let now = app.is_current(track);
                 let state = RowState {
                     number: Some(position as u32 + 1),
@@ -82,6 +82,8 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
                     favourite: app.is_favourite(FavouriteKind::Song, &track.id),
                     in_library: app.track_in_library(track),
                     in_playlist: false,
+                    download: app.badge(&track.id),
+                    downloadable: app.downloadable(&track.id),
                     list: "songs",
                     position,
                 };
@@ -186,6 +188,7 @@ fn banner_header(app: &mut App, ui: &mut Ui, theme: &Theme, content: Rect, pad: 
     if search.changed {
         app.songs_view.selected = None;
     }
+    let chip_left = downloaded_chip(app, ui, theme, search.left - 16.0, top + 2.0);
     let services = app.services_in_use();
     if services.len() < 2 {
         return;
@@ -199,7 +202,7 @@ fn banner_header(app: &mut App, ui: &mut Ui, theme: &Theme, content: Rect, pad: 
     };
     let f = font(14.0, Weight::Regular);
     let w = text(ui, label, f.clone(), theme.text, 200.0).size().x + 8.0 + 14.0;
-    let rect = Rect::from_min_size(pos2(search.left - 16.0 - w, top), vec2(w, 32.0));
+    let rect = Rect::from_min_size(pos2(chip_left - 16.0 - w, top), vec2(w, 32.0));
     let response = ui
         .interact(rect, Id::unique("songs-services"), Sense::click())
         .on_hover_cursor(egui::CursorIcon::PointingHand);
@@ -259,6 +262,8 @@ fn header(app: &mut App, ui: &mut Ui, theme: &Theme, top: f32, left: f32, width:
         app.set_songs_source(source);
     }
 
+    downloaded_chip(app, ui, theme, left + width, top + 129.0);
+
     // Play and Shuffle.
     if !app.songs_view.order.is_empty()
         && let Some(button) = page_buttons(ui, theme, pos2(left, top + 125.0), "songs", false)
@@ -270,6 +275,10 @@ fn header(app: &mut App, ui: &mut Ui, theme: &Theme, top: f32, left: f32, width:
 
 fn empty(app: &App, ui: &Ui, theme: &Theme, top: f32, left: f32, width: f32) {
     let (title, detail) = match &app.connection {
+        _ if app.songs_view.downloaded && app.page_search.trim().is_empty() => (
+            "No downloads yet",
+            "Download a song, an album or a playlist from its menu to play it offline.".to_owned(),
+        ),
         Connection::Connecting => ("Loading your library…", String::new()),
         Connection::NotSignedIn => (
             "Apple Music isn't connected",
@@ -315,12 +324,75 @@ fn empty(app: &App, ui: &Ui, theme: &Theme, top: f32, left: f32, width: f32) {
     );
 }
 
+/// The songs the page lists from: the library's, or those downloaded.
+fn listed(app: &App) -> &[Track] {
+    if app.songs_view.downloaded {
+        &app.downloaded
+    } else {
+        &app.songs
+    }
+}
+
+/// The Downloaded chip, ending at `right`: a click shows only the songs
+/// downloaded, or all again. Returns where it starts.
+fn downloaded_chip(app: &mut App, ui: &Ui, theme: &Theme, right: f32, top: f32) -> f32 {
+    let on = app.songs_view.downloaded;
+    let f = font(13.0, Weight::Regular);
+    let w = text(ui, "Downloaded", f.clone(), theme.text, 300.0)
+        .size()
+        .x
+        + 24.0
+        + 19.0;
+    let rect = Rect::from_min_size(pos2(right - w, top), vec2(w, 28.0));
+    let response = ui
+        .interact(rect, Id::unique("songs-downloaded"), Sense::click())
+        .on_hover_cursor(egui::CursorIcon::PointingHand);
+    let (fill, fg) = if on {
+        (Some(theme.text), theme.base)
+    } else if response.hovered() {
+        (Some(theme.hover()), theme.text)
+    } else {
+        (None, theme.subtext0)
+    };
+    if let Some(fill) = fill {
+        ui.painter().rect_filled(rect, 14.0, fill);
+    }
+    ui.painter().rect_stroke(
+        rect,
+        14.0,
+        Stroke::new(1.0, if on { theme.text } else { theme.line() }),
+        egui::StrokeKind::Inside,
+    );
+    let icon = if on { theme.base } else { theme.muted() };
+    paint_icon(
+        ui,
+        icons::ARROW_DOWN,
+        pos2(rect.left() + 12.0 + 6.5, rect.center().y),
+        13.0,
+        icon,
+    );
+    let g = text(ui, "Downloaded", f, fg, 300.0);
+    paint_text(
+        ui,
+        g,
+        rect.left() + 12.0 + 19.0,
+        rect.center().y,
+        egui::Align::Min,
+        fg,
+    );
+    if response.clicked() {
+        app.songs_view.downloaded = !on;
+        app.songs_view.selected = None;
+    }
+    rect.left()
+}
+
 /// The tracks as listed, to become the queue.
 fn shown_tracks(app: &App) -> Vec<Track> {
     app.songs_view
         .order
         .iter()
-        .map(|&i| app.songs[i].clone())
+        .map(|&i| listed(app)[i].clone())
         .collect()
 }
 
@@ -331,20 +403,33 @@ fn rebuild_order(app: &mut App) {
     let banner = app.theme.layout.header == crate::theme::Header::Banner;
     let newest = banner.then_some(app.newest_version);
     let sort = if banner { None } else { view.sort };
-    let key = Some((app.songs.len(), sort, view.source, query.clone(), newest));
+    let downloaded = view.downloaded;
+    let songs: &[Track] = if downloaded {
+        &app.downloaded
+    } else {
+        &app.songs
+    };
+    let key = Some((
+        songs.len(),
+        sort,
+        view.source,
+        query.clone(),
+        newest,
+        downloaded,
+    ));
     if view.order_key == key {
         return;
     }
     view.order_key = key;
-    let songs = &app.songs;
     // Made again only when songs come or go, not at each key typed.
     if view
         .prepared
         .as_ref()
-        .is_none_or(|p| p.count != songs.len())
+        .is_none_or(|p| p.count != songs.len() || p.downloaded != downloaded)
     {
         view.prepared = Some(crate::app::PreparedSongs {
             count: songs.len(),
+            downloaded,
             copies: music_core::dedupe::songs(songs),
             folded: songs
                 .iter()

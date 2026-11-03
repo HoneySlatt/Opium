@@ -38,3 +38,4 @@ reqwest = { version = "0.13.5", default-features = false, features = ["rustls", 
 mpris-server = "0.11"
 connect = { version = "0.1.0", path = "../connect" }
 synced = { path = "../synced" }
+downloads = { path = "../downloads", features = ["keyring"] }

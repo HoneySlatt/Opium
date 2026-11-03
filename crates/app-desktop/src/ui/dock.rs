@@ -99,12 +99,14 @@ fn now_playing(app: &mut App, ui: &mut Ui, theme: &Theme, area: Rect) {
         app.track_in_library(&track),
     );
     let removable = track.library_id.is_some();
+    let download = app.download_offer(&track.id);
     let facts = || TrackFacts {
         has_album,
         favourite,
         in_library,
         removable,
         in_playlist: false,
+        download,
     };
     let mut choice = None;
     if !station {

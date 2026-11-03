@@ -1202,6 +1202,7 @@ pub(super) fn song_columns(
             in_library: app.track_in_library(track),
             removable: track.library_id.is_some(),
             in_playlist: false,
+            download: app.download_offer(&track.id),
         };
         // "…" at the end of the row, as in Cider: the same menu, on a click.
         let more =

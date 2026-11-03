@@ -571,6 +571,8 @@ fn song_list(app: &mut App, ui: &mut Ui, theme: &Theme, area: Rect, top: f32, so
             favourite: app.is_favourite(FavouriteKind::Song, &track.id),
             in_library: app.track_in_library(track),
             in_playlist: false,
+            download: app.badge(&track.id),
+            downloadable: app.downloadable(&track.id),
             list: "search",
             position,
         };

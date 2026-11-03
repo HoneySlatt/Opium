@@ -12,7 +12,7 @@ use music_core::model::{
 use music_core::{Queue, Repeat};
 use player::{Event, Player, Status, Token};
 
-use crate::backend::{Backend, Playable, Reply, Request};
+use crate::backend::{Backend, Downloading, Playable, Reply, Request};
 use crate::palette::Palette;
 use crate::theme::Theme;
 use crate::ui;
@@ -214,6 +214,9 @@ pub enum CollectionChoice {
     StartRadio,
     Share,
     Delete,
+    /// Download its songs, or no longer keep them.
+    Download,
+    RemoveDownload,
 }
 
 /// What an album's or a playlist's songs are fetched for.
@@ -224,6 +227,9 @@ enum ForSongs {
     Shuffle,
     /// Into the Add to Playlists window.
     AddToPlaylist,
+    /// Downloaded, or no longer kept.
+    Download,
+    RemoveDownload,
     /// The album deleted from the library, its songs out of the playlists
     /// first if Settings → Library says so.
     DeleteFromLibrary,
@@ -264,6 +270,9 @@ pub enum TrackChoice {
     /// Take it out of the playlist shown; the page does it, knowing which.
     RemoveFromPlaylist,
     RemoveFromLibrary,
+    /// Keep it to play offline, or no longer.
+    Download,
+    RemoveDownload,
 }
 
 /// An album or playlist waiting for its tracks before going into the queue.
@@ -364,6 +373,9 @@ pub struct SongsView {
     /// The column and whether it is ascending.
     pub sort: Option<(SortKey, bool)>,
     pub source: Option<ProviderKind>,
+    /// Only the songs downloaded, as Spotify's Downloaded and Apple Music's
+    /// Downloaded Music.
+    pub downloaded: bool,
     /// A position in `order`.
     pub selected: Option<usize>,
     /// Indices into `App::songs`, sorted and filtered; rebuilt when `order_key` changes.
@@ -377,6 +389,8 @@ pub struct SongsView {
 #[derive(Default)]
 pub struct PreparedSongs {
     pub count: usize,
+    /// Made of the downloads, not the library.
+    pub downloaded: bool,
     pub copies: std::collections::HashSet<usize>,
     pub folded: Vec<String>,
 }
@@ -389,6 +403,7 @@ pub type OrderKey = (
     Option<ProviderKind>,
     String,
     Option<u64>,
+    bool,
 );
 
 /// A station of songs asks for more when fewer than this many are left.
@@ -524,6 +539,12 @@ pub struct App {
     /// What is known to be a favourite or not: set by the user here, or read
     /// from the service. It wins over `favourite_songs`.
     favourites_known: HashMap<ItemId, bool>,
+    /// Songs downloaded or downloading, by their id: how each stands.
+    downloads: HashMap<ItemId, Downloading>,
+    /// The titles of songs asked to download, to say which failed.
+    downloading_titles: HashMap<ItemId, String>,
+    /// The songs kept to play offline, the last downloaded first.
+    pub downloaded: Arc<Vec<Track>>,
     /// Whether less like an album was asked for: set here, or read.
     less_known: HashMap<ItemId, bool>,
     /// Playlists the songs taken out of the library are to leave, once their
@@ -769,6 +790,9 @@ impl App {
             open_created: false,
             playlist_dialog: None,
             favourites_known: HashMap::new(),
+            downloads: HashMap::new(),
+            downloading_titles: HashMap::new(),
+            downloaded: Arc::default(),
             less_known: HashMap::new(),
             newest: HashMap::new(),
             newest_version: 0,
@@ -1874,6 +1898,10 @@ impl App {
                     .unwrap_or(false)
             }),
             less: rated.map(|id| self.less_known.get(id).copied().unwrap_or(false)),
+            download: Some(self.downloaded_songs(match self.albums.get(&listed.id) {
+                Some(Loaded::Ready((_, tracks))) => Some(tracks.as_slice()),
+                _ => None,
+            })),
             artist: album.artist_id.is_some(),
             radio: rated.is_some(),
             shareable: catalog.is_some_and(|id| {
@@ -1905,6 +1933,14 @@ impl App {
                         .unwrap_or(false)
                 }),
             less: None,
+            download: Some(
+                self.downloaded_songs(
+                    self.playlist_tracks
+                        .get(&playlist.id)
+                        .filter(|p| p.done)
+                        .map(|p| p.tracks.as_slice()),
+                ),
+            ),
             artist: false,
             radio: false,
             shareable: Self::playlist_share_id(playlist).is_some(),
@@ -1935,6 +1971,18 @@ impl App {
             }
             (Collection::Playlist(p), CollectionChoice::Shuffle) => {
                 self.playlist_songs(p, ForSongs::Shuffle, now)
+            }
+            (Collection::Album(a), CollectionChoice::Download) => {
+                self.album_songs(a.id.clone(), ForSongs::Download, now)
+            }
+            (Collection::Playlist(p), CollectionChoice::Download) => {
+                self.playlist_songs(p, ForSongs::Download, now)
+            }
+            (Collection::Album(a), CollectionChoice::RemoveDownload) => {
+                self.album_songs(a.id.clone(), ForSongs::RemoveDownload, now)
+            }
+            (Collection::Playlist(p), CollectionChoice::RemoveDownload) => {
+                self.playlist_songs(p, ForSongs::RemoveDownload, now)
             }
             (Collection::Album(a), CollectionChoice::AddToPlaylist) => {
                 self.album_songs(a.id.clone(), ForSongs::AddToPlaylist, now)
@@ -2569,6 +2617,115 @@ impl App {
             Page::Search(_) => "Search".into(),
             Page::Settings => "Settings".into(),
             Page::Shelf(_, title) => title.clone(),
+        }
+    }
+
+    /// `id`'s mark as a download, if it is one.
+    pub fn badge(&self, id: &ItemId) -> Option<crate::ui::tracks::Badge> {
+        use crate::ui::tracks::Badge;
+        Some(match self.downloads.get(id)? {
+            Downloading::Queued => Badge::Queued,
+            Downloading::Coming(p) => Badge::Coming(*p),
+            Downloading::Kept(downloads::store::Standing::Expired) => Badge::Expired,
+            Downloading::Kept(_) => Badge::Kept,
+            Downloading::Failed(_) => Badge::Failed,
+            Downloading::Gone => return None,
+        })
+    }
+
+    /// A page's download button for its `tracks`, if any can be.
+    pub fn page_download(&self, tracks: &[Track]) -> Option<crate::ui::tracks::PageDownload> {
+        use crate::ui::tracks::PageDownload;
+        let (mut total, mut kept, mut came, mut coming) = (0usize, 0usize, 0.0f32, false);
+        for t in tracks.iter().filter(|t| self.downloadable(&t.id)) {
+            total += 1;
+            match self.downloads.get(&t.id) {
+                Some(Downloading::Kept(_)) => {
+                    kept += 1;
+                    came += 1.0;
+                }
+                Some(Downloading::Coming(p)) => {
+                    coming = true;
+                    came += p;
+                }
+                Some(Downloading::Queued) => coming = true,
+                _ => {}
+            }
+        }
+        Some(match () {
+            _ if total == 0 => return None,
+            _ if coming => PageDownload::Coming(came / total as f32),
+            _ if kept == total => PageDownload::Kept,
+            _ => PageDownload::Offer,
+        })
+    }
+
+    /// Whether an album's or a playlist's songs, when they are known, are
+    /// all downloaded or on their way: its menu offers Remove Download.
+    fn downloaded_songs(&self, tracks: Option<&[Track]>) -> bool {
+        tracks.is_some_and(|t| {
+            matches!(
+                self.page_download(t),
+                Some(
+                    crate::ui::tracks::PageDownload::Kept
+                        | crate::ui::tracks::PageDownload::Coming(_)
+                )
+            )
+        })
+    }
+
+    /// Whether `id` can be downloaded: a service's song, not a station.
+    pub fn downloadable(&self, id: &ItemId) -> bool {
+        id.provider != ProviderKind::Music && !id.id.starts_with("ra.")
+    }
+
+    /// What a song's menu offers of downloads: Download, or Remove
+    /// Download once kept or on its way.
+    pub fn download_offer(&self, id: &ItemId) -> Option<bool> {
+        self.downloadable(id).then(|| {
+            matches!(
+                self.downloads.get(id),
+                Some(Downloading::Queued | Downloading::Coming(_) | Downloading::Kept(_))
+            )
+        })
+    }
+
+    /// Download those of `tracks` not kept nor on their way; Music's own
+    /// songs are other services', and Apple's stations aren't songs.
+    pub fn download(&mut self, tracks: &[Track]) {
+        let tracks: Vec<Track> = tracks
+            .iter()
+            .filter(|t| self.downloadable(&t.id))
+            .filter(|t| {
+                !matches!(
+                    self.downloads.get(&t.id),
+                    Some(Downloading::Queued | Downloading::Coming(_) | Downloading::Kept(_))
+                )
+            })
+            .cloned()
+            .collect();
+        if tracks.is_empty() {
+            return;
+        }
+        for t in &tracks {
+            self.downloading_titles
+                .insert(t.id.clone(), t.title.clone());
+            self.downloads.insert(t.id.clone(), Downloading::Queued);
+        }
+        self.backend.send(Request::Download {
+            tracks,
+            original: self.soundcloud_originals(),
+        });
+    }
+
+    /// No longer keep `ids`, nor download them.
+    pub fn remove_downloads(&mut self, ids: Vec<ItemId>) {
+        let ids: Vec<ItemId> = ids
+            .into_iter()
+            .filter(|id| self.downloads.contains_key(id))
+            .collect();
+        if !ids.is_empty() {
+            self.backend.send(Request::RemoveDownloads(ids));
         }
     }
 
@@ -3630,6 +3787,8 @@ impl App {
                 }
             }
             TrackChoice::RemoveFromPlaylist => {}
+            TrackChoice::Download => self.download(std::slice::from_ref(&track)),
+            TrackChoice::RemoveDownload => self.remove_downloads(vec![track.id]),
             TrackChoice::GoToArtist => self.backend.send(Request::SongLinks {
                 song: track.id,
                 radio: false,
@@ -3840,6 +3999,21 @@ impl App {
                     self.playing_from = Some(from);
                 }
             }
+            ForSongs::Download => {
+                let count = tracks
+                    .iter()
+                    .filter(|t| self.download_offer(&t.id) == Some(false))
+                    .count();
+                self.download(&tracks);
+                match count {
+                    0 => {}
+                    1 => self.notify("Downloading 1 song", now),
+                    n => self.notify(format!("Downloading {n} songs"), now),
+                }
+            }
+            ForSongs::RemoveDownload => {
+                self.remove_downloads(tracks.into_iter().map(|t| t.id).collect());
+            }
             ForSongs::AddToPlaylist if !tracks.is_empty() => self.open_playlist_dialog(tracks),
             ForSongs::AddToPlaylist => {}
             ForSongs::DeleteFromLibrary => {
@@ -3946,6 +4120,14 @@ impl App {
             Playable::Navidrome(audio) => {
                 player::Source::new(audio.reader, audio.len, Some(audio.extension))
             }
+            Playable::Stored(song) => {
+                let song = *song;
+                let source = player::Source::new(song.reader, song.len, Some(&song.extension));
+                match song.priming {
+                    0 => source,
+                    frames => source.with_priming(frames),
+                }
+            }
             Playable::SoundCloud(audio) => {
                 let hint = audio.reader.seek_hint();
                 let source = player::Source::new(audio.reader, audio.len, Some(audio.extension));
@@ -3995,6 +4177,42 @@ impl App {
     fn pump(&mut self, now: f64) {
         while let Some(reply) = self.backend.try_recv() {
             match reply {
+                Reply::Downloads(mut kept) => {
+                    self.downloads
+                        .retain(|_, state| !matches!(state, Downloading::Kept(_)));
+                    kept.sort_by_key(|k| std::cmp::Reverse(k.added));
+                    for k in &kept {
+                        self.downloads
+                            .insert(k.track.id.clone(), Downloading::Kept(k.standing));
+                    }
+                    self.downloaded = Arc::new(kept.into_iter().map(|k| k.track).collect());
+                }
+                Reply::Download { id, state } => match state {
+                    Downloading::Gone => {
+                        self.downloads.remove(&id);
+                        if self.downloaded.iter().any(|t| t.id == id) {
+                            self.downloaded = Arc::new(
+                                self.downloaded
+                                    .iter()
+                                    .filter(|t| t.id != id)
+                                    .cloned()
+                                    .collect(),
+                            );
+                        }
+                    }
+                    Downloading::Failed(e) => {
+                        let title = self
+                            .downloading_titles
+                            .get(&id)
+                            .cloned()
+                            .unwrap_or_else(|| "a song".into());
+                        self.notify(format!("Couldn't download “{title}”: {e}"), now);
+                        self.downloads.insert(id, Downloading::Failed(e));
+                    }
+                    state => {
+                        self.downloads.insert(id, state);
+                    }
+                },
                 Reply::ProfilePicture(picture) => self.profile_picture = Some(picture),
                 Reply::Connected { storefront } => {
                     // After a sign-in, the library loads now; at start it was
@@ -5266,6 +5484,7 @@ impl eframe::App for App {
             // Going to a page closes Now Playing: the screenshot may want it.
             self.now_playing = std::env::var_os("MUSIC_SCREENSHOT_NP").is_some();
             self.lyrics_page = std::env::var_os("MUSIC_SCREENSHOT_LYRICS").is_some();
+            self.songs_view.downloaded = std::env::var_os("MUSIC_SCREENSHOT_DOWNLOADED").is_some();
         }
         // Play a row of the open playlist, or of Songs, once it has loaded.
         if self.screenshot.is_some() {
@@ -5276,6 +5495,10 @@ impl eframe::App for App {
                     .filter(|p| p.done)
                     .map(|p| p.tracks.to_vec())
                     .unwrap_or_default(),
+                Page::Album(id) => match self.albums.get(id) {
+                    Some(Loaded::Ready((_, tracks))) => tracks.to_vec(),
+                    _ => Vec::new(),
+                },
                 _ => self
                     .songs_view
                     .order
@@ -5289,7 +5512,14 @@ impl eframe::App for App {
                 .and_then(|s| s.play_row(!shown.is_empty()))
                 .filter(|&row| row < shown.len())
             {
-                self.play_list(shown, row);
+                self.play_list(shown.clone(), row);
+            }
+            if self
+                .screenshot
+                .as_mut()
+                .is_some_and(|s| s.download(!shown.is_empty()))
+            {
+                self.download(&shown);
             }
         }
         let connected = self.connection == Connection::Connected;

@@ -4,6 +4,8 @@
 //! opens a page first: `playlist:<index>`, `library-artist:<index>`, `album:<id>`, `artist:<id>` or
 //! `search:<query>`, `shelf:home|new|radio:<title>`, or `page:home|new|radio|albums|artists|recent|songs|settings|favourites`; `MUSIC_SCREENSHOT_DRAWER`
 //! opens the queue drawer; `MUSIC_SCREENSHOT_LYRICS` the lyrics page; `MUSIC_SCREENSHOT_STATION=ra.…` tunes in to a station.
+//! `MUSIC_SCREENSHOT_DOWNLOAD` downloads the album or playlist opened, once
+//! loaded; `MUSIC_SCREENSHOT_DOWNLOADED` shows Songs' downloads only.
 //! Only the app's own window is captured.
 
 use std::path::PathBuf;
@@ -18,6 +20,8 @@ pub struct Screenshot {
     artists_asked: bool,
     /// A station to tune in to: `MUSIC_SCREENSHOT_STATION=ra.…`.
     station: Option<String>,
+    /// The page's songs to download, once loaded.
+    download: bool,
 }
 
 impl Screenshot {
@@ -38,12 +42,18 @@ impl Screenshot {
             page: std::env::var("MUSIC_SCREENSHOT_PAGE").ok(),
             artists_asked: false,
             station: std::env::var("MUSIC_SCREENSHOT_STATION").ok(),
+            download: std::env::var_os("MUSIC_SCREENSHOT_DOWNLOAD").is_some(),
         })
     }
 
     /// The Songs row to play, once, when the library has loaded.
     pub fn play_row(&mut self, loaded: bool) -> Option<usize> {
         if loaded { self.play.take() } else { None }
+    }
+
+    /// Whether to download the page's songs now: once, when they loaded.
+    pub fn download(&mut self, loaded: bool) -> bool {
+        loaded && std::mem::take(&mut self.download)
     }
 
     /// The station to tune in to, once, when connected.

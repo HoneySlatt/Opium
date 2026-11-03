@@ -572,6 +572,8 @@ fn show_banner(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
                         favourite: app.is_favourite(FavouriteKind::Song, &track.id),
                         in_library: app.track_in_library(track),
                         in_playlist: false,
+                        download: app.badge(&track.id),
+                        downloadable: app.downloadable(&track.id),
                         list: "artist-popular",
                         position: i,
                     };

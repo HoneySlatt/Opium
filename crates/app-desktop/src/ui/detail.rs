@@ -42,6 +42,8 @@ struct Header {
     length: Option<Duration>,
     /// The library's songs: Spotify's Liked Songs tile for a cover.
     loved: bool,
+    /// Its download button, when it has songs to download; set by the page.
+    download: Option<tracks::PageDownload>,
 }
 
 /// What a click in the header asked for.
@@ -59,6 +61,17 @@ enum HeaderAction {
     AddToLibrary,
     /// The notes, cut to three lines, in full.
     ShowNotes,
+    /// Download the page's songs, or no longer keep them.
+    Download,
+    RemoveDownloads,
+}
+
+/// The header's download button, `state` it shows: what its click asks.
+fn download_action(response: &egui::Response, state: tracks::PageDownload) -> Option<HeaderAction> {
+    response.clicked().then_some(match state {
+        tracks::PageDownload::Offer => HeaderAction::Download,
+        _ => HeaderAction::RemoveDownloads,
+    })
 }
 
 const ART_TOP: f32 = 60.0;
@@ -417,6 +430,7 @@ pub fn playlist(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
         motion: None,
         length: total_length(&tracks),
         loved: false,
+        download: None,
     };
     let listing = Listing {
         columns: Kind::Playlist,
@@ -473,6 +487,7 @@ pub(super) fn songs_banner(
         motion: None,
         length: None,
         loved: true,
+        download: None,
     };
     match banner_header(
         ui,
@@ -659,10 +674,11 @@ fn banner_header(
     if response.clicked() {
         action = Some(HeaderAction::PlayPage);
     }
-    let mut bx = play.right() + 16.0;
-    let mut button = |ui: &mut Ui, icon, size, color, tip: &str| {
-        let rect = Rect::from_min_size(pos2(bx, mid - 20.0), vec2(40.0, 40.0));
-        bx = rect.right() + 8.0;
+    // Where the next button goes.
+    let bx = std::cell::Cell::new(play.right() + 16.0);
+    let button = |ui: &mut Ui, icon, size, color, tip: &str| {
+        let rect = Rect::from_min_size(pos2(bx.get(), mid - 20.0), vec2(40.0, 40.0));
+        bx.set(rect.right() + 8.0);
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
         super::icon_button(&mut child, theme, icon, 40.0, size, color, true)
             .on_hover_text(tip)
@@ -694,6 +710,12 @@ fn banner_header(
     }
     if header.add.is_some() && button(ui, icons::PLUS, 26.0, theme.subtext0, "Add to Library") {
         action = Some(HeaderAction::AddToLibrary);
+    }
+    if let Some(state) = header.download {
+        let center = pos2(bx.get() + 20.0, mid);
+        bx.set(bx.get() + 40.0 + 8.0);
+        let response = tracks::download_button(ui, theme, center, 40.0, "banner", state);
+        action = download_action(&response, state).or(action);
     }
     if header.description.is_some() && button(ui, icons::MORE, 26.0, theme.subtext0, "Notes") {
         action = Some(HeaderAction::ShowNotes);
@@ -817,6 +839,7 @@ fn album_header(album: &Album, tracks: &[Track], favourite: bool) -> Header {
         motion: None,
         length: None,
         loved: false,
+        download: None,
     }
 }
 
@@ -856,10 +879,16 @@ fn page(
     listing: Listing,
 ) -> f32 {
     let theme = app.theme.clone();
+    let mut header = header;
+    if let Some(h) = &mut header {
+        h.download = app.page_download(&tracks);
+    }
     // What the search finds, numbered as in the playlist: Play, Shuffle and
     // the rows play what is shown.
     let query = app.page_search.clone();
     let searching = listing.searchable && !query.trim().is_empty();
+    // The page's songs, all of them, for its download button.
+    let all = tracks.clone();
     let (tracks, numbers) = if listing.searchable {
         app.search_in(tracks, &query)
     } else {
@@ -965,6 +994,10 @@ fn page(
                         app.add_collection_to_library(item, ui.input(|i| i.time));
                     }
                 }
+                Some(HeaderAction::Download) => app.download(&all),
+                Some(HeaderAction::RemoveDownloads) => {
+                    app.remove_downloads(all.iter().map(|t| t.id.clone()).collect());
+                }
                 None => {}
             }
             if let Some(item) = shown_collection(app)
@@ -1069,6 +1102,8 @@ fn page(
                     favourite: app.is_favourite(FavouriteKind::Song, &track.id),
                     in_library: app.track_in_library(track),
                     in_playlist: listing.playlist.is_some(),
+                    download: app.badge(&track.id),
+                    downloadable: app.downloadable(&track.id),
                     list: listing.list,
                     position,
                 };
@@ -1402,10 +1437,11 @@ fn expressive_header(
     if shuffle.clicked() {
         action = Some(HeaderAction::Play { shuffle: true });
     }
-    let mut bx = shuffle.rect.right() + 12.0;
-    let mut button = |salt: &str, icon, color| {
-        let rect = Rect::from_min_size(pos2(bx, mid - 28.0), vec2(56.0, 56.0));
-        bx = rect.right() + 4.0;
+    // Where the next button goes.
+    let bx = std::cell::Cell::new(shuffle.rect.right() + 12.0);
+    let button = |salt: &str, icon, color| {
+        let rect = Rect::from_min_size(pos2(bx.get(), mid - 28.0), vec2(56.0, 56.0));
+        bx.set(rect.right() + 4.0);
         super::fab::round(ui, theme, rect, salt, icon, 24.0, color)
     };
     if let Some((kind, id, on)) = &header.favourite {
@@ -1431,6 +1467,12 @@ fn expressive_header(
             .clicked()
     {
         action = Some(HeaderAction::AddToLibrary);
+    }
+    if let Some(state) = header.download {
+        let center = pos2(bx.get() + 28.0, mid);
+        bx.set(bx.get() + 56.0 + 4.0);
+        let response = tracks::download_button(ui, theme, center, 56.0, "expressive", state);
+        action = download_action(&response, state).or(action);
     }
     let more = button("page-more", icons::MORE, theme.subtext0).on_hover_text("More");
     (action, Some(more))
@@ -1677,6 +1719,12 @@ fn header_text(
     }
     y += 6.0;
 
+    // Apple Music's download button, at the end of the buttons' row.
+    if let Some(state) = header.download {
+        let center = pos2(right - 18.0, y + 18.0);
+        let response = tracks::download_button(ui, theme, center, 36.0, "hero", state);
+        action = download_action(&response, state).or(action);
+    }
     match page_buttons(ui, theme, pos2(x, y), header.kind, header.add.is_some()) {
         Some(PageButton::Play) => Some(HeaderAction::Play { shuffle: false }),
         Some(PageButton::Shuffle) => Some(HeaderAction::Play { shuffle: true }),

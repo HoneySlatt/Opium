@@ -287,6 +287,8 @@ pub(super) struct TrackFacts {
     pub removable: bool,
     /// It is shown in a playlist of the user's, which it can leave.
     pub in_playlist: bool,
+    /// Whether it is downloaded (or on its way), when it can be.
+    pub download: Option<bool>,
 }
 
 /// The track menu; Add to Library only when the song isn't there yet, Go to
@@ -337,6 +339,19 @@ fn track_entries(facts: TrackFacts) -> Vec<Entry<TrackChoice>> {
         "Add to Playlist…",
         TrackChoice::AddToPlaylist,
     ));
+    match facts.download {
+        Some(false) => entries.push(Entry::Item(
+            icons::ARROW_DOWN,
+            "Download",
+            TrackChoice::Download,
+        )),
+        Some(true) => entries.push(Entry::Item(
+            icons::MINUS,
+            "Remove Download",
+            TrackChoice::RemoveDownload,
+        )),
+        None => {}
+    }
     entries.push(Entry::Line);
     entries.push(Entry::Item(
         icons::MIC,
@@ -394,6 +409,8 @@ pub(crate) struct CollectionFacts {
     pub radio: bool,
     /// It has a page on the service's website.
     pub shareable: bool,
+    /// Whether its songs are downloaded (or on their way), when it has songs.
+    pub download: Option<bool>,
 }
 
 /// An album's or a playlist's menu, as the phone's: playing it, the library
@@ -466,6 +483,19 @@ fn collection_entries(facts: CollectionFacts) -> Vec<Entry<CollectionChoice>> {
         "Add to Playlist…",
         CollectionChoice::AddToPlaylist,
     ));
+    match facts.download {
+        Some(false) => entries.push(Entry::Item(
+            icons::ARROW_DOWN,
+            "Download",
+            CollectionChoice::Download,
+        )),
+        Some(true) => entries.push(Entry::Item(
+            icons::MINUS,
+            "Remove Download",
+            CollectionChoice::RemoveDownload,
+        )),
+        None => {}
+    }
     if facts.editable {
         entries.push(Entry::Item(icons::EDIT, "Edit…", CollectionChoice::Edit));
     }

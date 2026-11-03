@@ -21,6 +21,9 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use crate::app::SearchScope;
 use crate::cache;
 
+mod downloading;
+pub use downloading::{Downloading, KeptSong};
+
 pub enum Request {
     /// The library songs and playlists, page by page.
     Library,
@@ -173,6 +176,14 @@ pub enum Request {
         original: bool,
         spatial: bool,
     },
+    /// Download songs to play offline; `original`: a SoundCloud
+    /// uploader's own file, where they allow it.
+    Download {
+        tracks: Vec<Track>,
+        original: bool,
+    },
+    /// Downloads no longer kept, or no longer to come.
+    RemoveDownloads(Vec<ItemId>),
     /// Every service's library songs as they were added, the last first.
     NewestSongs,
     /// An album and its tracks.
@@ -197,6 +208,13 @@ pub enum Request {
 }
 
 pub enum Reply {
+    /// Every song kept to play offline.
+    Downloads(Vec<KeptSong>),
+    /// How a song's download goes.
+    Download {
+        id: ItemId,
+        state: Downloading,
+    },
     /// Connected to Apple Music, in this storefront (country).
     Connected {
         storefront: String,
@@ -381,6 +399,8 @@ pub enum Playable {
     /// A Navidrome file, as it is on the server, still downloading.
     Navidrome(navidrome::Audio),
     Live(LiveStream),
+    /// A song downloaded, played from the disk.
+    Stored(Box<downloads::store::Open>),
 }
 
 pub struct Backend {
@@ -920,7 +940,21 @@ async fn run(
     let finder = Arc::new(lyrics::Finder::new());
     let mut loading = Loading::default();
     let mut warming: Option<tokio::task::JoinHandle<()>> = None;
+    let downloads = downloading::Downloads::open(replies.clone());
+    if let Some(am) = apple.clone() {
+        confirm_subscription(am, downloads.clone(), replies.clone());
+    }
+    if sc.is_some() {
+        downloads.subscription(ProviderKind::SoundCloud, true, &replies);
+    }
     loop {
+        // What the next download fetches with.
+        downloads.services(downloading::Services {
+            apple: apple.clone(),
+            soundcloud: sc.clone(),
+            navidrome: nd.clone(),
+            cdm: cdm.clone().ok(),
+        });
         let request = tokio::select! {
             Some(came) = arrived.recv() => {
                 let replies = replies.clone();
@@ -935,12 +969,19 @@ async fn run(
                 match came {
                     Arrived::Apple(am, load) => {
                         apple = am;
+                        if let Some(am) = apple.clone() {
+                            confirm_subscription(am, downloads.clone(), replies.clone());
+                        }
                         if let Some(am) = apple.clone().filter(|_| load && library_wanted) {
                             loading.start(ProviderKind::AppleMusic, load_library(am, replies));
                         }
                     }
                     Arrived::SoundCloud(c, load) => {
                         sc = c;
+                        // Signed in still: its songs play on.
+                        if sc.is_some() {
+                            downloads.subscription(ProviderKind::SoundCloud, true, &replies);
+                        }
                         if let Some(sc) = sc.clone().filter(|_| load && recent_wanted) {
                             tokio::spawn(soundcloud_recent(sc, replies.clone()));
                         }
@@ -974,7 +1015,43 @@ async fn run(
                 tokio::spawn(soundcloud_recent(sc, replies.clone()));
             }
         }
+        // A song downloaded plays from the disk, whatever is connected.
+        if let Request::Fetch {
+            token,
+            track,
+            fallback,
+            ..
+        }
+        | Request::Warm {
+            token,
+            track,
+            fallback,
+            ..
+        } = &request
+            && let Some(playable) = std::iter::once(track)
+                .chain(fallback)
+                .find_map(|id| downloads.playable(id))
+        {
+            if matches!(request, Request::Warm { .. })
+                && let Some(last) = warming.take()
+            {
+                last.abort();
+            }
+            replies.send(Reply::Fetched {
+                token: *token,
+                result: Ok(playable),
+            });
+            continue;
+        }
         match request {
+            Request::Download { tracks, original } => {
+                downloads.add(tracks, original, &replies);
+                continue;
+            }
+            Request::RemoveDownloads(ids) => {
+                downloads.remove(ids, &replies);
+                continue;
+            }
             Request::SignIn => {
                 let again = again.clone();
                 tokio::spawn(async move {
@@ -1050,6 +1127,7 @@ async fn run(
             Request::SignOut(provider) => {
                 // A connection on its way is dropped as it comes.
                 signed_out.insert(provider);
+                downloads.forget(provider, &replies);
                 loading.stop(provider);
                 match provider {
                     ProviderKind::AppleMusic => apple = None,
@@ -1373,6 +1451,8 @@ async fn run(
             | Request::NewestSongs
             | Request::Playlists
             | Request::Palette(_)
+            | Request::Download { .. }
+            | Request::RemoveDownloads(_)
             | Request::Search(..) => {}
             Request::Album(id) => {
                 tokio::spawn(async move {
@@ -1563,6 +1643,16 @@ async fn run(
             }
         }
     }
+}
+
+/// Ask Apple whether the subscription is active, which keeps its
+/// downloaded songs playing; nothing changes when it doesn't say.
+fn confirm_subscription(am: Arc<AppleMusic>, downloads: downloading::Downloads, replies: Replies) {
+    tokio::spawn(async move {
+        if let Ok(Some(active)) = am.subscribed().await {
+            downloads.subscription(ProviderKind::AppleMusic, active, &replies);
+        }
+    });
 }
 
 /// How many songs a station of songs is asked for at a time.

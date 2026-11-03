@@ -291,6 +291,7 @@ dependencies = [
  "browser-signin",
  "bytemuck",
  "connect",
+ "downloads",
  "eframe",
  "egui",
  "egui_extras",
