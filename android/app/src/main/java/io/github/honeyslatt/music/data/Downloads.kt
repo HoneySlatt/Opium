@@ -56,6 +56,8 @@ class Downloads(private val context: Context, private val core: Core, private va
             _states.update { if (state is DownloadState.Gone) it - id else it + (id to state) }
             if (state is DownloadState.Gone) _kept.update { kept -> kept.filter { it.track.id != id } }
             if (state is DownloadState.Queued || state is DownloadState.Coming) DownloadService.keepUp(context)
+            if (state is DownloadState.Kept) synchronized(coming) { coming.remove(id) }?.let(::keepCover)
+            if (state is DownloadState.Gone) synchronized(coming) { coming.remove(id) }
         }
 
         override fun kept(kept: List<KeptDownload>) {
@@ -106,10 +108,32 @@ class Downloads(private val context: Context, private val core: Core, private va
         return store.song(track.id) ?: track.libraryId?.takeIf { it != track.id }?.let { store.song(it) }
     }
 
+    /** The songs asked for, until kept: their covers are fetched then. */
+    private val coming = mutableMapOf<ItemId, Track>()
+
+    /**
+     * A song kept: its cover fetched at the sizes the rows, the pages and
+     * Now Playing draw it, into the covers' cache, to show offline.
+     */
+    private fun keepCover(track: Track) {
+        val artwork = track.artwork ?: return
+        val loader = coil3.SingletonImageLoader.get(context)
+        listOf(120, 240, 600, 1000, 1500).forEach { size ->
+            loader.enqueue(
+                coil3.request.ImageRequest.Builder(context)
+                    .data(artwork.urlTemplate.replace("{size}", size.toString()))
+                    .memoryCachePolicy(coil3.request.CachePolicy.DISABLED)
+                    .build(),
+            )
+        }
+    }
+
     /** Download `tracks`, after those waiting, as the settings say (SoundCloud's originals). */
     fun add(tracks: List<Track>) {
         val settings = (context.applicationContext as io.github.honeyslatt.music.MusicApp).settings
-        store?.add(tracks.filter(::downloadable), settings.soundcloudOriginals)
+        val own = tracks.filter(::downloadable)
+        synchronized(coming) { own.forEach { coming[it.id] = it } }
+        store?.add(own, settings.soundcloudOriginals)
     }
 
     fun remove(ids: List<ItemId>) {
