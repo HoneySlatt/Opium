@@ -28,6 +28,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.ui.draw.alpha
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -348,22 +349,33 @@ private fun PickCard(item: Collection, pick: Pick?, onClick: () -> Unit) {
 @Composable
 private fun Editorial(item: Collection, pick: Pick?, width: androidx.compose.ui.unit.Dp, onClick: () -> Unit) {
     val (artwork, title, subtitle) = item.texts()
+    // M3E's: at radius 28, a shape of its own in a corner.
+    val m3e = io.github.honeyslatt.music.ui.theme.look.layout.motion == io.github.honeyslatt.music.core.model.Motion.EXPRESSIVE
+    val radius = if (m3e) 28 else 12
     Column(Modifier.width(width).press(shrink = 0.98f, onClick = onClick)) {
         pick?.badge?.takeIf { it.isNotBlank() }?.let {
             BasicText(it.uppercase(), style = geist(11.5.sp, FontWeight.SemiBold, 0.05f).copy(color = roles.sub), maxLines = 1)
         }
         Line(title, geist(21.sp, FontWeight.SemiBold).copy(color = roles.text), Modifier.padding(top = 2.dp))
         Line(subtitle ?: "", geist(16.sp).copy(color = roles.sub), Modifier.padding(bottom = 10.dp))
-        Box(Modifier.fillMaxWidth().aspectRatio(16f / 10f).background(roles.surface, RoundedCornerShape(12.dp))) {
+        Box(Modifier.fillMaxWidth().aspectRatio(16f / 10f).background(roles.surface, RoundedCornerShape(radius.dp)).clipRounded(radius)) {
             AsyncImage(
                 (pick?.wide ?: artwork)?.at(1000),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize().clipRounded(12),
+                modifier = Modifier.fillMaxSize().clipRounded(radius),
             )
+            if (m3e) {
+                val shapes = listOf(io.github.honeyslatt.music.ui.m3e.M3Shape.Cookie9, io.github.honeyslatt.music.ui.m3e.M3Shape.Clover4, io.github.honeyslatt.music.ui.m3e.M3Shape.Burst, io.github.honeyslatt.music.ui.m3e.M3Shape.Sunny)
+                val shape = shapes[(title.hashCode() and 0x7fffffff) % shapes.size]
+                Box(
+                    Modifier.align(Alignment.TopEnd).offset(x = 18.dp, y = (-18).dp).size(72.dp)
+                        .clip(io.github.honeyslatt.music.ui.m3e.RadialShape(shape.radii)).background(roles.primary.copy(alpha = 0.9f)),
+                )
+            }
             pick?.blurb?.let {
                 Box(
-                    Modifier.fillMaxSize().clipRounded(12).background(Brush.verticalGradient(0.55f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.6f))),
+                    Modifier.fillMaxSize().clipRounded(radius).background(Brush.verticalGradient(0.55f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.6f))),
                     contentAlignment = Alignment.BottomStart,
                 ) {
                     BasicText(it, Modifier.padding(14.dp), style = geist(14.sp, FontWeight.Medium).copy(color = Color.White, lineHeight = 19.sp), maxLines = 2)
@@ -379,20 +391,27 @@ private fun Editorial(item: Collection, pick: Pick?, width: androidx.compose.ui.
 private fun StationCard(c: LibraryContext, station: Station) {
     val actions = LocalActions.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
-    val shape = RoundedCornerShape(16.dp)
+    // M3E's: at radius 28, LIVE in primary-container, the shaped Play.
+    val m3e = io.github.honeyslatt.music.ui.theme.look.layout.motion == io.github.honeyslatt.music.core.model.Motion.EXPRESSIVE
+    val radius = if (m3e) 28 else 16
+    val shape = RoundedCornerShape(radius.dp)
+    val tune = { open(c, Collection.Station(station), scope) { actions?.hud?.show("Couldn't tune in", io.github.honeyslatt.music.ui.Icons.Alert) } }
     Box(
         Modifier
             .padding(start = 20.dp, end = 20.dp, bottom = 14.dp)
             .fillMaxWidth()
             .aspectRatio(16f / 10f)
-            .press(shape, shrink = 0.98f) { open(c, Collection.Station(station), scope) { actions?.hud?.show("Couldn't tune in", io.github.honeyslatt.music.ui.Icons.Alert) } }
+            .press(shape, shrink = 0.98f) { tune() }
             .background(roles.surface, shape)
-            .clipRounded(16),
+            .clipRounded(radius),
     ) {
         AsyncImage(station.artwork?.at(1000), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.45f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.7f))))
         if (station.kind == StationKind.LIVE) LiveBadge(Modifier.padding(12.dp))
-        Column(Modifier.align(Alignment.BottomStart).padding(start = 16.dp, bottom = 14.dp, end = 16.dp)) {
+        if (m3e) {
+            io.github.honeyslatt.music.ui.chrome.ShapedPlay(false, false, 48.dp, { tune() }, Modifier.align(Alignment.BottomEnd).padding(14.dp))
+        }
+        Column(Modifier.align(Alignment.BottomStart).padding(start = 16.dp, bottom = 14.dp, end = if (m3e) 80.dp else 16.dp)) {
             BasicText(
                 (station.description ?: kindLabel(station.kind)).uppercase(),
                 style = geist(12.sp, FontWeight.SemiBold, 0.05f).copy(color = Color.White.copy(alpha = 0.8f)),
@@ -407,10 +426,13 @@ private fun StationCard(c: LibraryContext, station: Station) {
 private fun LiveBadge(modifier: Modifier = Modifier) {
     BasicText(
         "LIVE",
-        modifier.background(roles.red, RoundedCornerShape(5.dp)).padding(horizontal = 7.dp, vertical = 3.dp),
-        style = geist(11.sp, FontWeight.Bold, 0.04f).copy(color = Color.White),
+        modifier.background(if (expressiveLive) roles.accent else roles.red, RoundedCornerShape(if (expressiveLive) 8.dp else 5.dp)).padding(horizontal = 7.dp, vertical = 3.dp),
+        style = geist(11.sp, FontWeight.Bold, 0.04f).copy(color = if (expressiveLive) roles.onAccent else Color.White),
     )
 }
+
+private val expressiveLive @Composable get() =
+    io.github.honeyslatt.music.ui.theme.look.layout.motion == io.github.honeyslatt.music.core.model.Motion.EXPRESSIVE
 
 private fun Modifier.clipRounded(radius: Int) = clip(RoundedCornerShape(radius.dp))
 
