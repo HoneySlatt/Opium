@@ -101,7 +101,12 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
             if let Some((track, choice)) = chosen {
                 app.track_choice(track, choice, ui.input(|i| i.time));
             }
-            let foot_text = if app.songs_done {
+            let foot_text = if app.songs_view.downloaded {
+                match rows {
+                    1 => "1 song downloaded".to_owned(),
+                    n => format!("{n} songs downloaded"),
+                }
+            } else if app.songs_done {
                 format!("{rows} songs")
             } else {
                 format!("{rows} songs so far, loading…")

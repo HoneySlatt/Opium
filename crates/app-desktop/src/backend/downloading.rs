@@ -248,7 +248,10 @@ impl Downloads {
             let state = match self.download(track, original, &replies).await {
                 Ok(Some(standing)) => Downloading::Kept(standing),
                 Ok(None) => Downloading::Gone,
-                Err(e) => Downloading::Failed(e),
+                Err(e) => {
+                    eprintln!("downloads: {id}: {e}");
+                    Downloading::Failed(e)
+                }
             };
             let kept = matches!(state, Downloading::Kept(_));
             replies.send(Reply::Download { id, state });

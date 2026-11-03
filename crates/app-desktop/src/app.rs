@@ -5432,7 +5432,8 @@ impl eframe::App for App {
                 // Its next failure sets the next try.
                 self.apple_retry = Some((f64::INFINITY, wait));
                 self.backend.send(Request::Reconnect);
-            } else {
+            } else if at.is_finite() {
+                // A try on its way (`at` infinite) wakes nothing.
                 ctx.request_repaint_after(Duration::from_secs_f64(at - now));
             }
         }
@@ -5499,12 +5500,18 @@ impl eframe::App for App {
                     Some(Loaded::Ready((_, tracks))) => tracks.to_vec(),
                     _ => Vec::new(),
                 },
-                _ => self
-                    .songs_view
-                    .order
-                    .iter()
-                    .filter_map(|&i| self.songs.get(i).cloned())
-                    .collect(),
+                _ => {
+                    let listed: &[Track] = if self.songs_view.downloaded {
+                        &self.downloaded
+                    } else {
+                        &self.songs
+                    };
+                    self.songs_view
+                        .order
+                        .iter()
+                        .filter_map(|&i| listed.get(i).cloned())
+                        .collect()
+                }
             };
             if let Some(row) = self
                 .screenshot
