@@ -1237,6 +1237,16 @@ pub fn kept_artists(path: String) -> Vec<Artist> {
 }
 
 #[uniffi::export]
+pub fn keep_collections(path: String, items: Vec<Collection>) {
+    keep(&path, &items);
+}
+
+#[uniffi::export]
+pub fn kept_collections(path: String) -> Vec<Collection> {
+    kept(&path)
+}
+
+#[uniffi::export]
 pub fn keep_playlists(path: String, items: Vec<Playlist>) {
     keep(&path, &items);
 }

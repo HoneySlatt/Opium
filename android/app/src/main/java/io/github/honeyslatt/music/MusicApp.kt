@@ -50,6 +50,7 @@ class MusicApp : Application(), coil3.SingletonImageLoader.Factory {
     override fun onCreate() {
         super.onCreate()
         Tls.init(this)
+        io.github.honeyslatt.music.ui.detail.CoverColours.cache = cacheDir
         io.github.honeyslatt.music.data.forgetYouTube(this)
         core = Core(this)
         io.github.honeyslatt.music.data.Covers.sign = { core.session.signedCover(it) }

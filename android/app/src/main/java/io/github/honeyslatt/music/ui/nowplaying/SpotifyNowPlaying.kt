@@ -215,7 +215,7 @@ private fun TitleAndSaved(t: Track, actions: NpActions, playback: Playback) {
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
 private fun Position(playback: Playback, playing: Boolean) {
-    val position = rememberPosition(playback, playing, everyMs = 33)
+    val position = rememberPosition(playback, playing, everyMs = 32)
     val duration = playback.duration ?: 0L
     var dragging by remember { mutableStateOf<Float?>(null) }
     val shownMs = { dragging?.let { (it * duration).toLong() } ?: position.value }

@@ -214,7 +214,7 @@ private fun androidx.compose.foundation.layout.ColumnScope.Playing(
         }
     }
     // The position, the times about the quality.
-    val position by rememberPosition(playback, playing, everyMs = 250)
+    val position by rememberPosition(playback, playing, everyMs = 256)
     val duration = playback.duration?.takeIf { it > 0 }
     Box(Modifier.padding(top = 16.dp)) {
         WavyLine(duration?.let { (position.toFloat() / it).coerceIn(0f, 1f) }, playing, big = true) { p ->
@@ -290,7 +290,7 @@ private fun Output(playback: Playback, onDevices: () -> Unit) {
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
 private fun Docked(playback: Playback, t: Track, playing: Boolean, loading: Boolean) {
-    val position by rememberPosition(playback, playing, everyMs = 250)
+    val position by rememberPosition(playback, playing, everyMs = 256)
     val duration = playback.duration?.takeIf { it > 0 }
     Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
         WavyLine(duration?.let { (position.toFloat() / it).coerceIn(0f, 1f) }, playing, big = false) { p ->

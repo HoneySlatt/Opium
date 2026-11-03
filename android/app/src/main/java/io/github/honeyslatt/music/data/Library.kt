@@ -3,10 +3,12 @@ package io.github.honeyslatt.music.data
 import io.github.honeyslatt.music.core.MusicException
 import io.github.honeyslatt.music.core.keepAlbums
 import io.github.honeyslatt.music.core.keepArtists
+import io.github.honeyslatt.music.core.keepCollections
 import io.github.honeyslatt.music.core.keepPlaylists
 import io.github.honeyslatt.music.core.keepTracks
 import io.github.honeyslatt.music.core.keptAlbums
 import io.github.honeyslatt.music.core.keptArtists
+import io.github.honeyslatt.music.core.keptCollections
 import io.github.honeyslatt.music.core.keptPlaylists
 import io.github.honeyslatt.music.core.keptTracks
 import io.github.honeyslatt.music.core.model.Album
@@ -106,6 +108,9 @@ class Library(private val core: Core, private val scope: CoroutineScope) {
         core.libraryRead(provider, 0)
         shown.keys.filter { it.endsWith("-${provider.name}.json") }.forEach { shown.remove(it)?.cancel() }
         loaded.removeAll { it.endsWith("-${provider.name}.json") }
+        recentKept -= provider
+        recentShown -= provider
+        recentFresh -= provider
         _lists.update { l ->
             l.copy(
                 playlists = l.playlists.copy(items = l.playlists.items.filter { it.id.provider != provider }).answered(provider),
@@ -151,6 +156,7 @@ class Library(private val core: Core, private val scope: CoroutineScope) {
         showing += provider
         if (newestAsked) newest(provider, ask = false)
         lists(provider, ask = false)
+        showKeptRecent(provider)
     }
 
     /** Load `provider`'s lists, adding to those of the others. */
@@ -197,8 +203,30 @@ class Library(private val core: Core, private val scope: CoroutineScope) {
         recentlyAdded(provider)
     }
 
+    /** The services whose Recently Added was read from disk, asked to be (once), shown, and since answered. */
+    private val recentKept = mutableSetOf<ProviderKind>()
+    private val recentShown = mutableSetOf<ProviderKind>()
+    private val recentFresh = mutableSetOf<ProviderKind>()
+
+    private fun recentFile(provider: ProviderKind) = File(core.kept, "recently-added-${provider.name}.json").path
+
+    /**
+     * `provider`'s Recently Added as kept last time, at once, while it
+     * connects: the service answers it only seconds after the app opens.
+     */
+    private fun showKeptRecent(provider: ProviderKind) {
+        if (!recentKept.add(provider)) return
+        scope.launch {
+            val old = withContext(Dispatchers.IO) { keptCollections(recentFile(provider)) }
+            if (old.isEmpty() || provider in recentFresh || provider !in showing) return@launch
+            recentShown += provider
+            _lists.update { l -> l.copy(recentlyAdded = l.recentlyAdded.copy(items = l.recentlyAdded.items.with(provider, old) { it.provider() })) }
+        }
+    }
+
     private fun recentlyAdded(provider: ProviderKind) {
         val session = core.session
+        showKeptRecent(provider)
         _lists.update { it.copy(recentlyAdded = it.recentlyAdded.asked(provider)) }
         // Apple's comes whole, in the order of what was added to last; the
         // others' by pages, up to three. Loaded again (the screen made anew),
@@ -208,6 +236,15 @@ class Library(private val core: Core, private val scope: CoroutineScope) {
             pages({ session.recentlyAdded(provider, it).let { p -> p.items to p.next } }, limit = 3) { items, done, error ->
                 if (error != null) failed(provider)
                 fresh += items
+                // What was kept stays until the new list is all there.
+                if (!done && provider in recentShown) return@pages
+                recentFresh += provider
+                if (done && error == null) fresh.toList().let { all -> scope.launch(Dispatchers.IO) { keepCollections(recentFile(provider), all) } }
+                // Failed with what was kept shown: that stays.
+                if (error != null && provider in recentShown && fresh.isEmpty()) {
+                    _lists.update { l -> l.copy(recentlyAdded = l.recentlyAdded.copy(error = error).answered(provider)) }
+                    return@pages
+                }
                 _lists.update { l ->
                     l.copy(
                         recentlyAdded = l.recentlyAdded.copy(

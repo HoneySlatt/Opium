@@ -221,40 +221,69 @@ private suspend fun LazyListState.glideTo(index: Int, anchor: Int, show: (Glide?
 @Composable
 private fun lyricStyle() = geist(27.sp, FontWeight.Bold, -0.01f).copy(lineHeight = 33.sp)
 
-/** The line being sung: each word lit as far as it has been sung. */
+/**
+ * The line being sung: each word lit as far as it has been sung. Composed
+ * once; only drawn again as the song goes on, each word's lit part laid
+ * over its dim one.
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun Sung(line: LyricLine, next: LyricLine?, positionState: State<Long>) {
     val np = LocalNp.current
-    val position = positionState.value
-    val words = line.text.split(' ').filter { it.isNotEmpty() }
-    val progress: List<Float> = if (line.words.isNotEmpty()) {
-        // The source timed each word.
-        val timed = line.words.map { it.text.trim() }.filter { it.isNotEmpty() }
-        if (timed.size == words.size) {
-            line.words.filter { it.text.isNotBlank() }.map { w ->
-                val start = w.start.toMillis()
-                val end = w.end.toMillis().coerceAtLeast(start + 1)
-                ((position - start).toFloat() / (end - start)).coerceIn(0f, 1f)
-            }
-        } else {
-            shares(words, line, next, position)
-        }
-    } else {
-        shares(words, line, next, position)
-    }
+    val words = remember(line) { line.text.split(' ').filter { it.isNotEmpty() } }
+    val sung = remember(line, next) { Singing(line, next, words) }
     val glow = Shadow(np.fg.copy(alpha = 0.22f), blurRadius = 28f)
+    val dim = lyricStyle().copy(color = np.dim, shadow = glow)
+    val lit = lyricStyle().copy(color = np.fg)
     FlowRow {
         words.forEachIndexed { i, word ->
-            val p = progress.getOrElse(i) { 0f }
-            val edge = (p * 1.25f).coerceIn(0f, 1f)
-            val lit = (p * 1.25f - 0.25f).coerceIn(0f, 1f)
-            val brush = Brush.horizontalGradient(0f to np.fg, lit to np.fg, edge to np.dim, 1f to np.dim)
-            BasicText(
-                if (i < words.lastIndex) "$word " else word,
-                style = lyricStyle().copy(brush = brush, shadow = glow),
-            )
+            val text = if (i < words.lastIndex) "$word " else word
+            Box {
+                BasicText(text, style = dim)
+                BasicText(
+                    text,
+                    Modifier
+                        .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                        .drawWithContent {
+                            // Read here: the song going on draws the word again, nothing more.
+                            val p = sung.at(positionState.value, i)
+                            val edge = (p * 1.25f).coerceIn(0f, 1f)
+                            if (edge <= 0f) return@drawWithContent
+                            val upTo = (p * 1.25f - 0.25f).coerceIn(0f, 1f)
+                            drawContent()
+                            if (upTo < 1f) {
+                                drawRect(
+                                    Brush.horizontalGradient(0f to Color.Black, upTo to Color.Black, edge to Color.Transparent, 1f to Color.Transparent),
+                                    blendMode = BlendMode.DstIn,
+                                )
+                            }
+                        },
+                    style = lit,
+                )
+            }
         }
+    }
+}
+
+/** How far each word of `line` is sung, at a time; worked out once a frame for all of them. */
+private class Singing(private val line: LyricLine, private val next: LyricLine?, private val words: List<String>) {
+    /** The source timed each word: from when to when, in ms. */
+    private val timed: List<Pair<Long, Long>>? = line.words.filter { it.text.isNotBlank() }
+        .takeIf { line.words.isNotEmpty() && it.size == words.size }
+        ?.map { w ->
+            val start = w.start.toMillis()
+            start to w.end.toMillis().coerceAtLeast(start + 1)
+        }
+    private var at = Long.MIN_VALUE
+    private var progress = emptyList<Float>()
+
+    fun at(position: Long, word: Int): Float {
+        if (position != at) {
+            at = position
+            progress = timed?.map { (start, end) -> ((position - start).toFloat() / (end - start)).coerceIn(0f, 1f) }
+                ?: shares(words, line, next, position)
+        }
+        return progress.getOrElse(word) { 0f }
     }
 }
 

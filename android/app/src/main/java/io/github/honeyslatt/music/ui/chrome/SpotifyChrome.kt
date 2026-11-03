@@ -187,7 +187,7 @@ fun MiniCard(state: MiniState, playback: Playback, onDevices: () -> Unit, modifi
             }
         }
         // The position along the foot.
-        val position by rememberPosition(playback, state.playing, everyMs = 500)
+        val position by rememberPosition(playback, state.playing, everyMs = 512)
         val duration = playback.duration ?: 0L
         val done = if (duration > 0) (position.toFloat() / duration).coerceIn(0f, 1f) else 0f
         Box(

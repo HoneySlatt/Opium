@@ -91,11 +91,14 @@ fun App(core: Core, library: Library, playback: io.github.honeyslatt.music.playb
     // The account's picture on Apple Music, once connected.
     val profile by core.appleProfile.collectAsStateWithLifecycle()
     val picture = profile?.picture
-    val account: @Composable () -> Unit = { Avatar("H", picture) { settingsOpen = true } }
+    val account: @Composable () -> Unit = remember(picture) { { Avatar("H", picture) { settingsOpen = true } } }
     val now by playback.now.collectAsStateWithLifecycle()
     val playing by playback.playing.collectAsStateWithLifecycle()
     val loading by playback.loading.collectAsStateWithLifecycle()
-    val context = LibraryContext(core, nav, lists, services, account, animatedArtwork = settings.animatedArtwork, recentByDate = settings.recentByDate, playback = playback, library = library)
+    // The same while what it holds is: the pages skip as the song or a download moves on.
+    val context = remember(lists, services, account, settings.animatedArtwork, settings.recentByDate) {
+        LibraryContext(core, nav, lists, services, account, animatedArtwork = settings.animatedArtwork, recentByDate = settings.recentByDate, playback = playback, library = library)
+    }
     var npOpen by rememberSaveable { mutableStateOf(false) }
     val mini = MiniState(now, playing, loading, playback::toggle, playback::next, playback::previousSong, onOpen = { npOpen = true }, npOpen = npOpen && now != null)
     val scope = rememberCoroutineScope()

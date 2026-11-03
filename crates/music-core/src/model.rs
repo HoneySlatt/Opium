@@ -172,7 +172,7 @@ pub enum FavouriteKind {
 }
 
 /// An album or a playlist: what Recently Added and the home shelves list.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
 pub enum Collection {
     Album(Album),

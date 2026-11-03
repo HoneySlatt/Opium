@@ -269,7 +269,7 @@ fun Albums(c: LibraryContext) {
     val menus = LocalMenus.current
     val all = c.lists.albums.items
     // What another service has too is left out once, not at every letter typed.
-    val some by produceState(all.distinctBy { it.id }, all, source) {
+    val some by produceState(remember(all) { all.distinctBy { it.id } }, all, source) {
         value = withContext(Dispatchers.Default) {
             if (source != null) {
                 all.filter { it.id.provider == source }
@@ -320,7 +320,7 @@ private fun AlbumCard(c: LibraryContext, album: Album) {
 @Composable
 fun Artists(c: LibraryContext) {
     val all = c.lists.artists.items
-    val shown by produceState(all.distinctBy { it.id }, all) {
+    val shown by produceState(remember(all) { all.distinctBy { it.id } }, all) {
         value = withContext(Dispatchers.Default) {
             val out = artistsLeftOut(all).toSet()
             // Two of the library's artists can be one in the catalog
@@ -365,7 +365,7 @@ fun Songs(c: LibraryContext, downloadedOnly: Boolean = false) {
     }
     val all = listing.items
     // What another service has too is left out once, not at every letter typed.
-    val some by produceState(all.distinctBy { it.id }, all, source) {
+    val some by produceState(remember(all) { all.distinctBy { it.id } }, all, source) {
         value = withContext(Dispatchers.Default) {
             val some = if (source != null) {
                 all.filter { it.id.provider == source }

@@ -286,18 +286,19 @@ internal fun Wash(track: Track, playing: Boolean) {
         url?.let { CoverColours.wash(it, light) }?.let { value = it }
     }
     // There and back over 40 s, moved on 15 times a second: a few pixels a
-    // second needn't redraw the screen at every frame.
+    // second needn't redraw the screen at every frame (see `alignedDelay`).
     val wash = remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
     var rising by remember { mutableStateOf(true) }
     LaunchedEffect(playing) {
         while (playing) {
-            kotlinx.coroutines.delay(66)
+            alignedDelay(64)
             // Waits for a frame: none come with the screen off or the app
             // away, and the drift rests with them.
-            withFrameMillis { }
-            val next = wash.floatValue + if (rising) 66f / 40_000 else -66f / 40_000
-            if (next !in 0f..1f) rising = !rising
-            wash.floatValue = next.coerceIn(0f, 1f)
+            withFrameMillis {
+                val next = wash.floatValue + if (rising) 64f / 40_000 else -64f / 40_000
+                if (next !in 0f..1f) rising = !rising
+                wash.floatValue = next.coerceIn(0f, 1f)
+            }
         }
     }
     val fade = tween<Color>(600)
@@ -400,6 +401,15 @@ fun clock(ms: Long): String {
 }
 
 /**
+ * Until the next multiple of `everyMs` on the one clock: what moves every
+ * 16, 32, 64… ms moves in the same frames as the rest, rather than each
+ * drawing frames of its own between theirs.
+ */
+internal suspend fun alignedDelay(everyMs: Long) {
+    kotlinx.coroutines.delay(everyMs - android.os.SystemClock.uptimeMillis() % everyMs)
+}
+
+/**
  * The position, read at every frame while the song plays. A state, to be
  * read where it is used (in drawing, or through `derivedStateOf`), so that
  * only that follows each frame rather than the whole screen.
@@ -413,13 +423,13 @@ fun rememberPosition(playback: Playback, playing: Boolean, everyMs: Long = 0): S
         while (playing) {
             // At every frame, or as often as asked: a bar that moves a few
             // pixels a second needn't redraw the screen 120 times a second.
-            if (everyMs > 0) kotlinx.coroutines.delay(everyMs)
+            if (everyMs > 0) alignedDelay(everyMs)
             withFrameMillis { position.longValue = playback.position }
         }
         // Paused, it moves only when sought: looked at a few times a second,
         // and only while shown.
         while (true) {
-            kotlinx.coroutines.delay(250)
+            alignedDelay(256)
             withFrameMillis { position.longValue = playback.position }
         }
     }
@@ -472,7 +482,7 @@ private fun LiveControls() {
 @Composable
 private fun Scrubber(playback: Playback, t: Track, playing: Boolean, onSignal: () -> Unit) {
     val np = LocalNp.current
-    val position = rememberPosition(playback, playing, everyMs = 33)
+    val position = rememberPosition(playback, playing, everyMs = 32)
     val duration = playback.duration ?: 0L
     var dragging by remember { mutableStateOf<Float?>(null) }
     // Where the bar is, read as it is drawn; the times, once a second.

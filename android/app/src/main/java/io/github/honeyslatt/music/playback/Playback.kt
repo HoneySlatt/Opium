@@ -103,9 +103,18 @@ class Playback(private val context: Context, private val core: Core, private val
         )
         .setHandleAudioBecomingNoisy(true)
         // Start once half a second is in, rather than the default 2.5 s.
-        .setLoadControl(DefaultLoadControl.Builder().setBufferDurationsMs(20_000, 60_000, 500, 1_500).build())
-        // The screen off, the Wi-Fi kept awake while it plays: a stream
-        // starved by power saving would stall.
+        // Then up to five minutes ahead, fetched again once under two: the
+        // radio rests three minutes at a time rather than forty seconds;
+        // at most 48 MB of it, for a lossless song.
+        .setLoadControl(
+            DefaultLoadControl.Builder()
+                .setBufferDurationsMs(120_000, 300_000, 500, 1_500)
+                .setTargetBufferBytes(48 * 1024 * 1024)
+                .setPrioritizeTimeOverSizeThresholds(false)
+                .build(),
+        )
+        // The screen off, the Wi-Fi kept awake while it streams: a stream
+        // starved by power saving would stall (see `wakeFor`).
         .setWakeMode(C.WAKE_MODE_NETWORK)
         .build()
 
@@ -371,6 +380,7 @@ class Playback(private val context: Context, private val core: Core, private val
                     while (player.currentMediaItemIndex > 0) player.removeMediaItem(0)
                     _now.value?.let(::played)
                     _now.value = queue.current()
+                    wakeFor(item?.mediaId)
                     changed()
                     failedInRow = 0
                     lineUpNext()
@@ -506,16 +516,26 @@ class Playback(private val context: Context, private val core: Core, private val
         return listOfNotNull(track.id, track.libraryId).any { states[it] is io.github.honeyslatt.music.core.DownloadState.Kept }
     }
 
+    private var placing: kotlinx.coroutines.Job? = null
+
     private fun playHere(all: List<Track>, from: Int) {
-        // Offline, only what can play: from the song asked for, or the next that can.
-        val playable = all.indices.filter { reachable(all[it]) }
-        if (playable.isEmpty()) return
-        val tracks = playable.map { all[it] }
-        val start = playable.indexOfFirst { it >= from }.takeIf { it >= 0 } ?: 0
         failedInRow = 0
         station = null
-        queue.replace(tracks, start.toUInt())
-        startCurrent()
+        placing?.cancel()
+        // The whole library, maybe: looked through, and handed to the
+        // queue (which keeps a hundred of it), off the main thread.
+        placing = scope.launch {
+            val placed = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                // Offline, only what can play: from the song asked for, or the next that can.
+                val playable = all.indices.filter { reachable(all[it]) }
+                if (playable.isEmpty()) return@withContext false
+                val tracks = playable.map { all[it] }
+                val start = playable.indexOfFirst { it >= from }.takeIf { it >= 0 } ?: 0
+                queue.replace(tracks, start.toUInt())
+                true
+            }
+            if (placed) startCurrent()
+        }
     }
 
     /** Stations playing as the queue's one song, by their id. */
@@ -703,6 +723,14 @@ class Playback(private val context: Context, private val core: Core, private val
     }
 
     /** Make the queue's current song playable and play it, at once. */
+    /** The songs played from the phone, by media id: no network to keep awake for them. */
+    private val kept = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+
+    /** The Wi-Fi held at full power only while a stream plays. */
+    private fun wakeFor(mediaId: String?) {
+        player.setWakeMode(if (mediaId != null && mediaId in kept) C.WAKE_MODE_LOCAL else C.WAKE_MODE_NETWORK)
+    }
+
     private fun startCurrent() {
         val track = queue.current() ?: return
         var from = startAt
@@ -742,6 +770,7 @@ class Playback(private val context: Context, private val core: Core, private val
             }
             if (mine != generation) return@launch
             _loading.value = false
+            wakeFor("${track.id.provider}:${track.id.id}")
             if (from > 0) player.setMediaSource(source, from) else player.setMediaSource(source)
             player.prepare()
             // Paused on its way (earbuds, the lock screen): it stays so.
@@ -984,7 +1013,12 @@ class Playback(private val context: Context, private val core: Core, private val
             )
         if (track.id.id in stations) return liveSource(core.session.liveStation(track.id), item)
         // Downloaded: from the phone, before any service is asked.
-        (context.applicationContext as io.github.honeyslatt.music.MusicApp).downloads.song(track)?.let { return keptSource(it, item) }
+        val id = "${track.id.provider}:${track.id.id}"
+        (context.applicationContext as io.github.honeyslatt.music.MusicApp).downloads.song(track)?.let {
+            kept += id
+            return keptSource(it, item)
+        }
+        kept -= id
         return when (track.id.provider) {
             ProviderKind.APPLE_MUSIC -> {
                 // A catalog song Apple no longer offers here plays from the

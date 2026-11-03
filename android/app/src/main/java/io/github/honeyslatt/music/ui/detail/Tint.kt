@@ -21,7 +21,12 @@ import okhttp3.Request
 
 /** Each cover's colours, per theme, worked out once from a small copy. */
 object CoverColours {
-    private val http = OkHttpClient()
+    /** The small copies kept on disk, as the services allow: known again at the next launch without the network. */
+    var cache: java.io.File? = null
+
+    private val http by lazy {
+        OkHttpClient.Builder().apply { cache?.let { cache(okhttp3.Cache(java.io.File(it, "cover-colours"), 16L * 1024 * 1024)) } }.build()
+    }
     private val pages = ConcurrentHashMap<Pair<String, Boolean>, Int>()
     private val washes = ConcurrentHashMap<Pair<String, Boolean>, List<Int>>()
 
