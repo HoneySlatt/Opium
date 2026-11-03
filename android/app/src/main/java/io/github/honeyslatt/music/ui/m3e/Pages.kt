@@ -184,24 +184,46 @@ fun ExpressiveArtistHero(
     onName: (() -> Unit)? = null,
 ) {
     Column(Modifier.fillMaxWidth()) {
-        Spacer(Modifier.windowInsetsTopHeight(WindowInsets.statusBars))
-        Spacer(Modifier.height(56.dp))
         val name = artist?.name.orEmpty()
         if (motion != null || wide != null) {
-            BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
-                val shape = RoundedCornerShape(28.dp)
+            // Across the page from its top, as Stock's and Spotify's, fading into it.
+            val base = roles.base
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
                 val width = maxWidth
-                Box(Modifier.fillMaxWidth().height(width * 1.1f).clip(shape)) {
+                Box(Modifier.fillMaxWidth().height(if (motion != null) width * 1.3f else 420.dp)) {
                     Cover(wide ?: artist?.artwork, width, androidx.compose.ui.graphics.RectangleShape, Modifier.fillMaxSize())
                     if (motion != null) io.github.honeyslatt.music.ui.detail.MotionArtwork(motion, Modifier.fillMaxSize(), crop = true)
-                    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.55f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.7f))))
-                    Column(Modifier.align(Alignment.BottomStart).padding(20.dp)) {
-                        BasicText(eyebrow, style = geist(13.sp, FontWeight.Medium).copy(color = Color.White.copy(alpha = 0.85f)))
-                        BasicText(name, Modifier.padding(top = 4.dp), style = geist(40.sp, FontWeight.Bold, -0.03f).copy(color = Color.White, lineHeight = 44.sp))
+                    Box(
+                        Modifier.fillMaxSize().background(
+                            Brush.verticalGradient(
+                                0f to Color.Black.copy(alpha = 0.3f),
+                                0.2f to Color.Transparent,
+                                0.5f to Color.Transparent,
+                                0.8f to base.copy(alpha = 0.6f),
+                                1f to base,
+                            ),
+                        ),
+                    )
+                    Column(Modifier.align(Alignment.BottomStart).padding(start = 20.dp, end = 20.dp, bottom = 4.dp)) {
+                        Eyebrow { BasicText(eyebrow, style = geist(13.sp, FontWeight.Medium).copy(color = roles.text)) }
+                        Row(
+                            Modifier.padding(top = 8.dp).then(if (onName != null) Modifier.press(RoundedCornerShape(12.dp), onClick = onName) else Modifier),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            BasicText(
+                                name,
+                                Modifier.weight(1f, fill = false),
+                                style = geist(44.sp, FontWeight.Bold, -0.035f).copy(color = roles.text, lineHeight = 48.sp),
+                                maxLines = 2,
+                            )
+                            if (onName != null) Glyph(Icons.Right, roles.sub, 30.dp)
+                        }
                     }
                 }
             }
         } else {
+            Spacer(Modifier.windowInsetsTopHeight(WindowInsets.statusBars))
+            Spacer(Modifier.height(56.dp))
             val pressed = androidx.compose.runtime.remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
             val down by pressed.collectIsPressedAsState()
             val radii = rememberMorph(if (down) M3Shape.Cookie9 else M3Shape.Sunny)
