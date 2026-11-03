@@ -294,7 +294,7 @@ fn kept_on_disk_from_one_launch_to_the_next() {
     // The writer goes on a moment after.
     let path = dir.join("shared.json");
     for _ in 0..100 {
-        if std::fs::read_to_string(&path).is_ok_and(|t| t.contains("Song 4")) {
+        if std::fs::read_to_string(dir.join("playlists.json")).is_ok_and(|t| t.contains("Song 4")) {
             break;
         }
         std::thread::sleep(std::time::Duration::from_millis(20));
@@ -310,6 +310,99 @@ fn kept_on_disk_from_one_launch_to_the_next() {
         assert_eq!(mode & 0o077, 0, "only the user reads it");
     }
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn the_playlists_are_written_only_as_they_change() {
+    let dir = std::env::temp_dir().join(format!("synced-lists-{}", new_id()));
+    let kept = Kept::open(&dir, Vec::new);
+    let (id, _) = kept.create_playlist("Mix".into(), String::new(), vec![track(1)]);
+    kept.flush();
+    let lists = dir.join("playlists.json");
+    let written = std::fs::metadata(&lists).unwrap().modified().unwrap();
+    assert!(
+        !std::fs::read_to_string(dir.join("shared.json"))
+            .unwrap()
+            .contains("Song 1")
+    );
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    kept.played(track(2));
+    kept.flush();
+    assert_eq!(
+        std::fs::metadata(&lists).unwrap().modified().unwrap(),
+        written
+    );
+    kept.add_to_playlist(&id, vec![track(3)]);
+    kept.flush();
+    assert!(std::fs::read_to_string(&lists).unwrap().contains("Song 3"));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn playlists_kept_with_the_rest_move_to_their_own_file() {
+    let dir = std::env::temp_dir().join(format!("synced-move-{}", new_id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut before = device("a");
+    before.create_playlist("p", "Mix".into(), String::new(), vec![track(1)], 1000);
+    before.played(track(2), 2000);
+    let old = serde_json::json!({ "me": "a", "shared": before.shared });
+    std::fs::write(dir.join("shared.json"), old.to_string()).unwrap();
+    let kept = Kept::open(&dir, Vec::new);
+    assert_eq!(
+        titles(
+            kept.playlist("p")
+                .unwrap()
+                .songs
+                .into_iter()
+                .map(|s| s.track)
+                .collect()
+        ),
+        ["Song 1"]
+    );
+    kept.flush();
+    assert!(
+        std::fs::read_to_string(dir.join("playlists.json"))
+            .unwrap()
+            .contains("Song 1")
+    );
+    assert!(
+        !std::fs::read_to_string(dir.join("shared.json"))
+            .unwrap()
+            .contains("Song 1")
+    );
+    drop(kept);
+    let again = Kept::open(&dir, Vec::new);
+    assert!(again.playlist("p").is_some());
+    assert_eq!(titles(again.history()), ["Song 2"]);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn devices_meeting_send_each_other_only_what_differs() {
+    let (mut a, mut b) = (device("a"), device("b"));
+    a.create_playlist("p", "Mix".into(), String::new(), vec![track(1)], 1000);
+    a.create_playlist("q", "Other".into(), String::new(), vec![track(2)], 1100);
+    meet(&mut a, &mut b);
+    // Alike: nothing to send.
+    assert!(a.shared.unlike(&b.shared.digest()).is_empty());
+    // Apart: songs added to one playlist on each, one played on b.
+    a.add_to_playlist("p", vec![track(3)], 2000);
+    b.add_to_playlist("p", vec![track(4)], 2100);
+    b.played(track(5), 2200);
+    let to_b = a.shared.unlike(&b.shared.digest());
+    let to_a = b.shared.unlike(&a.shared.digest());
+    assert_eq!(
+        to_b.playlists.digests().keys().collect::<Vec<_>>(),
+        ["p"],
+        "q is alike"
+    );
+    a.merge(to_a);
+    b.merge(to_b);
+    assert_eq!(a.shared, b.shared, "met, they hold the same");
+    let mut p = songs(&a, "p");
+    p.sort();
+    assert_eq!(p, ["Song 1", "Song 3", "Song 4"]);
+    assert_eq!(history(&a), ["Song 5"]);
 }
 
 fn session(songs: &[u32], at: u32, position_ms: u64) -> Handoff {
@@ -442,7 +535,10 @@ fn songs_of_a_service_taken_out_of_the_app_are_dropped_not_everything() {
     // Song 2 as of a service this build no longer knows.
     let path = dir.join("shared.json");
     let text = std::fs::read_to_string(&path).unwrap();
-    let gone = text.replace(r#""provider":"AppleMusic","id":"2""#, r#""provider":"Gone","id":"2""#);
+    let gone = text.replace(
+        r#""provider":"AppleMusic","id":"2""#,
+        r#""provider":"Gone","id":"2""#,
+    );
     assert_ne!(gone, text);
     std::fs::write(&path, gone).unwrap();
     let kept = Kept::open(&dir, Vec::new);
@@ -451,4 +547,3 @@ fn songs_of_a_service_taken_out_of_the_app_are_dropped_not_everything() {
     assert!(!dir.join("shared.json.bad").exists());
     let _ = std::fs::remove_dir_all(&dir);
 }
-

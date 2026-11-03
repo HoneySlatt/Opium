@@ -208,6 +208,30 @@ impl Playlists {
         changed
     }
 
+    pub(crate) fn is_empty(&self) -> bool {
+        self.lists.is_empty()
+    }
+
+    /// Each playlist's digest, by id: alike on two devices that have it alike.
+    pub(crate) fn digests(&self) -> BTreeMap<String, u64> {
+        self.lists
+            .iter()
+            .map(|(id, l)| (id.clone(), crate::digest(l)))
+            .collect()
+    }
+
+    /// The playlists that aren't as `theirs` says another device has them.
+    pub(crate) fn unlike(&self, theirs: &BTreeMap<String, u64>) -> Playlists {
+        Playlists {
+            lists: self
+                .lists
+                .iter()
+                .filter(|(id, l)| theirs.get(*id) != Some(&crate::digest(l)))
+                .map(|(id, l)| (id.clone(), l.clone()))
+                .collect(),
+        }
+    }
+
     fn change(id: &str, list: List) -> Self {
         Self {
             lists: BTreeMap::from([(id.to_owned(), list)]),

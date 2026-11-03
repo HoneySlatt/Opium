@@ -38,7 +38,7 @@ use tokio::time::timeout;
 
 pub use lend::{Borrowed, Lender, Lent};
 use store::Store;
-use synced::{Kept, Shared};
+use synced::{Digest, Kept, Shared};
 
 #[cfg(feature = "ffi")]
 uniffi::setup_scaffolding!();
@@ -237,6 +237,10 @@ struct Hello {
     /// To borrow a song (see `lend`), not to talk.
     #[serde(default)]
     borrow: bool,
+    /// It sends what it keeps in common in short first (a [`Message::Digest`]),
+    /// for the other to send only what differs.
+    #[serde(default)]
+    digests: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -246,8 +250,11 @@ enum Message {
     Command(Command),
     Take(Handoff),
     Themes(Vec<SharedTheme>),
-    /// All this device keeps in common, as it connects, or a change to it.
+    /// All this device keeps in common, as it connects, or a change to it;
+    /// or, once a digest came, what differs of it.
     Shared(Shared),
+    /// What this device keeps in common in short, as it connects.
+    Digest(Digest),
     /// Where this device is reached away from home: its id on iroh.
     Away(String),
     /// Another device paired with this one, and the key to know it by:
@@ -752,6 +759,7 @@ impl Inner {
             device: self.me.clone(),
             pair,
             borrow: false,
+            digests: true,
         }
     }
 
@@ -890,7 +898,7 @@ impl Inner {
         if let Some(s) = lock(&self.seen).get_mut(id) {
             s.failures = 0;
         }
-        self.talk(hello.device, stream, keys, true).await
+        self.talk(hello.device, hello.digests, stream, keys, true).await
     }
 
     /// A device connected to this one: to talk, or to pair (on the network
@@ -917,13 +925,14 @@ impl Inner {
             return lend::lend(stream, keys, lender.as_deref()).await;
         }
         lock(&self.store).update(&hello.device);
-        self.talk(hello.device, stream, keys, false).await
+        self.talk(hello.device, hello.digests, stream, keys, false).await
     }
 
     /// Talk with `peer` over a connection both have proved theirs.
     async fn talk(
         self: Arc<Self>,
         peer: Device,
+        digests: bool,
         stream: Conn,
         keys: wire::Keys,
         dialed: bool,
@@ -971,7 +980,12 @@ impl Inner {
                 let _ = tx.send(Self::encode(&Message::Themes(local.themes.clone())));
             }
         }
-        let _ = tx.send(Self::encode(&Message::Shared(self.kept.everything())));
+        // In short, to be sent what differs, if it knows how; else all of it.
+        let _ = tx.send(Self::encode(&if digests {
+            Message::Digest(self.kept.digest())
+        } else {
+            Message::Shared(self.kept.everything())
+        }));
         if let Some(away) = self.away_id() {
             let _ = tx.send(Self::encode(&Message::Away(away)));
         }
@@ -1091,6 +1105,12 @@ impl Inner {
                 if self.kept.merge(shared.clone()) {
                     (self.events)(Event::Synced);
                     self.broadcast(&Message::Shared(shared), Some(from));
+                }
+            }
+            Message::Digest(theirs) => {
+                let unlike = self.kept.unlike(&theirs);
+                if !unlike.is_empty() {
+                    self.send(from, &Message::Shared(unlike));
                 }
             }
             Message::Away(away) => lock(&self.store).set_away(from, away),

@@ -108,6 +108,49 @@ pub struct Shared {
     settings: BTreeMap<String, Latest<String>>,
 }
 
+/// [`Shared`] but its playlists, serialized as it is, borrowed.
+#[derive(Serialize)]
+struct Rest<'a> {
+    history: &'a History,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    session: &'a Option<Latest<Handoff>>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    seen: &'a BTreeMap<String, u64>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    used: &'a BTreeMap<String, u64>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    settings: &'a BTreeMap<String, Latest<String>>,
+}
+
+/// A copy in short: two devices whose digests are alike have it alike, and
+/// those meeting send each other only the parts whose digests differ
+/// rather than all of it.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Digest {
+    rest: u64,
+    /// Each playlist's, by id.
+    playlists: BTreeMap<String, u64>,
+}
+
+/// `value`'s digest, the same on every device: FNV-1a over its JSON.
+fn digest(value: &impl Serialize) -> u64 {
+    struct Fnv(u64);
+    impl std::io::Write for Fnv {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            for b in bytes {
+                self.0 = (self.0 ^ u64::from(*b)).wrapping_mul(0x0100_0000_01b3);
+            }
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let mut fnv = Fnv(0xcbf2_9ce4_8422_2325);
+    let _ = serde_json::to_writer(&mut fnv, value);
+    fnv.0
+}
+
 /// As many playlists as Add to Playlist shows as the last ones.
 pub const USED: usize = 3;
 
@@ -118,6 +161,12 @@ impl Shared {
 
     /// Take `other` in: whether anything changed.
     pub fn merge(&mut self, other: Shared) -> bool {
+        let (playlists, rest) = self.merge_parts(other);
+        playlists || rest
+    }
+
+    /// Take `other` in: whether the playlists changed, and whether the rest did.
+    fn merge_parts(&mut self, other: Shared) -> (bool, bool) {
         let history = self.history.merge(other.history);
         let playlists = self.playlists.merge(other.playlists);
         let session = latest(&mut self.session, other.session);
@@ -129,7 +178,44 @@ impl Shared {
             settings |= latest(&mut mine, Some(value));
             self.settings.extend(mine.map(|m| (name, m)));
         }
-        history || playlists || session || seen || used || settings
+        (playlists, history || session || seen || used || settings)
+    }
+
+    /// All but the playlists, as kept and digested apart from them.
+    fn rest(&self) -> Rest<'_> {
+        Rest {
+            history: &self.history,
+            session: &self.session,
+            seen: &self.seen,
+            used: &self.used,
+            settings: &self.settings,
+        }
+    }
+
+    pub fn digest(&self) -> Digest {
+        Digest {
+            rest: digest(&self.rest()),
+            playlists: self.playlists.digests(),
+        }
+    }
+
+    /// What of this copy isn't as `theirs` says another device has it:
+    /// what to send it, the rest being alike.
+    pub fn unlike(&self, theirs: &Digest) -> Shared {
+        let mut unlike = if digest(&self.rest()) == theirs.rest {
+            Shared::default()
+        } else {
+            Shared {
+                history: self.history.clone(),
+                playlists: Playlists::default(),
+                session: self.session.clone(),
+                seen: self.seen.clone(),
+                used: self.used.clone(),
+                settings: self.settings.clone(),
+            }
+        };
+        unlike.playlists = self.playlists.unlike(&theirs.playlists);
+        unlike
     }
 
     fn newest(&self) -> u64 {
@@ -148,6 +234,29 @@ pub struct Kept {
     state: Arc<Mutex<State>>,
     /// Asks for the copy to be written; with a sender, told once it is.
     save: mpsc::Sender<Option<mpsc::Sender<()>>>,
+    /// The playlists read from disk, after the rest.
+    loaded: Arc<Loaded>,
+}
+
+/// Whether something done in the background is.
+#[derive(Default)]
+struct Loaded {
+    done: Mutex<bool>,
+    ready: std::sync::Condvar,
+}
+
+impl Loaded {
+    fn finish(&self) {
+        *lock(&self.done) = true;
+        self.ready.notify_all();
+    }
+
+    fn wait(&self) {
+        let mut done = lock(&self.done);
+        while !*done {
+            done = self.ready.wait(done).unwrap_or_else(|e| e.into_inner());
+        }
+    }
 }
 
 struct State {
@@ -156,13 +265,24 @@ struct State {
     /// those it knows of, even with this device's clock behind.
     clock: u64,
     shared: Shared,
+    /// The playlists changed since they were last written: kept in a file
+    /// of their own, much the largest, they are written only then.
+    playlists_changed: bool,
 }
 
-#[derive(Serialize, Deserialize)]
+/// `shared.json`: this device's id and its copy, but for the playlists,
+/// in `playlists.json` (in it too before they had a file of their own).
+#[derive(Deserialize)]
 struct Saved {
     me: String,
     #[serde(default)]
     shared: Shared,
+}
+
+#[derive(Serialize)]
+struct SavedRef<'a> {
+    me: &'a str,
+    shared: Rest<'a>,
 }
 
 /// What was kept, read again without the songs of a service this build
@@ -170,26 +290,6 @@ struct Saved {
 /// playlist rows go, and a last session holding any is forgotten.
 fn without_unknown_services(bytes: &[u8]) -> Option<Saved> {
     use serde_json::Value;
-    fn unknown(value: &Value) -> bool {
-        match value {
-            Value::Object(map) => map.iter().any(|(key, v)| {
-                (key == "provider"
-                    && serde_json::from_value::<music_core::model::ProviderKind>(v.clone())
-                        .is_err())
-                    || unknown(v)
-            }),
-            Value::Array(items) => items.iter().any(unknown),
-            _ => false,
-        }
-    }
-    /// The history's entries and the playlists' rows, at any depth: each
-    /// holds a `track`; those of an unknown service go.
-    fn prune(value: &mut Value) {
-        if let Value::Object(map) = value {
-            map.retain(|_, v| v.get("track").is_none_or(|track| !unknown(track)));
-            map.values_mut().for_each(prune);
-        }
-    }
     let mut saved: Value = serde_json::from_slice(bytes).ok()?;
     let shared = saved.get_mut("shared")?;
     if shared.get("session").is_some_and(unknown) {
@@ -197,6 +297,35 @@ fn without_unknown_services(bytes: &[u8]) -> Option<Saved> {
     }
     prune(shared);
     serde_json::from_value(saved).ok()
+}
+
+/// The playlists kept, read again so too.
+fn playlists_without_unknown_services(bytes: &[u8]) -> Option<Playlists> {
+    let mut playlists: serde_json::Value = serde_json::from_slice(bytes).ok()?;
+    prune(&mut playlists);
+    serde_json::from_value(playlists).ok()
+}
+
+fn unknown(value: &serde_json::Value) -> bool {
+    use serde_json::Value;
+    match value {
+        Value::Object(map) => map.iter().any(|(key, v)| {
+            (key == "provider"
+                && serde_json::from_value::<music_core::model::ProviderKind>(v.clone()).is_err())
+                || unknown(v)
+        }),
+        Value::Array(items) => items.iter().any(unknown),
+        _ => false,
+    }
+}
+
+/// The history's entries and the playlists' rows, at any depth: each
+/// holds a `track`; those of an unknown service go.
+fn prune(value: &mut serde_json::Value) {
+    if let serde_json::Value::Object(map) = value {
+        map.retain(|_, v| v.get("track").is_none_or(|track| !unknown(track)));
+        map.values_mut().for_each(prune);
+    }
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -216,7 +345,12 @@ fn new_id() -> String {
 impl State {
     fn new(me: String, shared: Shared) -> Self {
         let clock = shared.newest();
-        Self { me, clock, shared }
+        Self {
+            me,
+            clock,
+            shared,
+            playlists_changed: false,
+        }
     }
 
     fn stamp(&mut self, now: u64) -> Stamp {
@@ -228,9 +362,10 @@ impl State {
     }
 
     fn merge(&mut self, other: Shared) -> bool {
-        let changed = self.shared.merge(other);
+        let (playlists, rest) = self.shared.merge_parts(other);
+        self.playlists_changed |= playlists;
         self.clock = self.clock.max(self.shared.newest());
-        changed
+        playlists || rest
     }
 
     /// Make `change` here; it is also what to send, with whether anything
@@ -362,7 +497,11 @@ impl Kept {
             me: new_id(),
             shared: Shared::default(),
         });
+        // In `shared.json` still, as before they had a file of their own:
+        // moved to it.
+        let moving = !saved.shared.playlists.is_empty();
         let mut state = State::new(saved.me, saved.shared);
+        state.playlists_changed = moving;
         if fresh {
             let at = now();
             let me = state.me.clone();
@@ -379,15 +518,54 @@ impl Kept {
             }
         }
         let state = Arc::new(Mutex::new(state));
+        let loaded = Arc::new(Loaded::default());
+        // The playlists, much the largest, read meanwhile: what needs them
+        // waits for them, not the app's start.
+        let lists = dir.join("playlists.json");
+        let (kept, done) = (state.clone(), loaded.clone());
+        let load = move || {
+            let playlists = std::fs::read(&lists).ok().and_then(|b| {
+                serde_json::from_slice::<Playlists>(&b)
+                    .ok()
+                    .or_else(|| playlists_without_unknown_services(&b))
+            });
+            if playlists.is_none() && lists.exists() {
+                let _ = std::fs::rename(&lists, lists.with_extension("json.bad"));
+            }
+            if let Some(playlists) = playlists {
+                let mut state = lock(&kept);
+                state.merge(Shared {
+                    playlists,
+                    ..Shared::default()
+                });
+                state.playlists_changed = moving;
+            }
+            done.finish();
+        };
+        if std::thread::Builder::new()
+            .name("synced-load".into())
+            .spawn(load.clone())
+            .is_err()
+        {
+            load();
+        }
         let (save, saves) = mpsc::channel();
-        let kept = state.clone();
+        let (kept, done) = (state.clone(), loaded.clone());
         let _ = std::thread::Builder::new()
             .name("synced-save".into())
-            .spawn(move || keep(&kept, &path, &saves));
-        if fresh {
+            .spawn(move || {
+                // Not before they are all in.
+                done.wait();
+                keep(&kept, &path, &saves)
+            });
+        if fresh || moving {
             let _ = save.send(None);
         }
-        Self { state, save }
+        Self {
+            state,
+            save,
+            loaded,
+        }
     }
 
     /// This device, in the stamps of its changes.
@@ -401,11 +579,11 @@ impl Kept {
     }
 
     pub fn playlists(&self) -> Vec<Playlist> {
-        lock(&self.state).shared.playlists.all()
+        self.with_playlists().shared.playlists.all()
     }
 
     pub fn playlist(&self, id: &str) -> Option<Playlist> {
-        lock(&self.state).shared.playlists.get(id)
+        self.with_playlists().shared.playlists.get(id)
     }
 
     /// Where the music last stopped, and on which device: its id in the
@@ -420,16 +598,32 @@ impl Kept {
 
     /// Everything kept: what a device gets on meeting this one.
     pub fn everything(&self) -> Shared {
-        lock(&self.state).shared.clone()
+        self.with_playlists().shared.clone()
+    }
+
+    /// This copy in short, for a device meeting this one.
+    pub fn digest(&self) -> Digest {
+        self.with_playlists().shared.digest()
+    }
+
+    /// What a device whose copy is `theirs` in short lacks of this one.
+    pub fn unlike(&self, theirs: &Digest) -> Shared {
+        self.with_playlists().shared.unlike(theirs)
     }
 
     /// Take in what another device sent: whether anything changed here.
     pub fn merge(&self, other: Shared) -> bool {
-        let changed = lock(&self.state).merge(other);
+        let changed = self.with_playlists().merge(other);
         if changed {
             let _ = self.save.send(None);
         }
         changed
+    }
+
+    /// The copy, its playlists read.
+    fn with_playlists(&self) -> MutexGuard<'_, State> {
+        self.loaded.wait();
+        lock(&self.state)
     }
 
     fn change(&self, make: impl FnOnce(&mut State) -> (Shared, bool)) -> Shared {
@@ -587,33 +781,51 @@ impl Kept {
         tracks: Vec<Track>,
     ) -> (String, Shared) {
         let id = new_id();
-        let change = self.change(|s| s.create_playlist(&id, name, description, tracks, now()));
+        let change = {
+            self.loaded.wait();
+            self.change(|s| s.create_playlist(&id, name, description, tracks, now()))
+        };
         (id, change)
     }
 
     /// Playlist `id` named `name`, described by `description`.
     pub fn edit_playlist(&self, id: &str, name: String, description: String) -> Shared {
-        self.change(|s| s.edit_playlist(id, name, description, now()))
+        {
+            self.loaded.wait();
+            self.change(|s| s.edit_playlist(id, name, description, now()))
+        }
     }
 
     pub fn delete_playlist(&self, id: &str) -> Shared {
-        self.change(|s| s.delete_playlist(id, now()))
+        {
+            self.loaded.wait();
+            self.change(|s| s.delete_playlist(id, now()))
+        }
     }
 
     /// `tracks` added at the end of playlist `id`.
     pub fn add_to_playlist(&self, id: &str, tracks: Vec<Track>) -> Shared {
-        self.change(|s| s.add_to_playlist(id, tracks, now()))
+        {
+            self.loaded.wait();
+            self.change(|s| s.add_to_playlist(id, tracks, now()))
+        }
     }
 
     /// The songs of `entries` taken out of playlist `id`.
     pub fn remove_from_playlist(&self, id: &str, entries: &[String]) -> Shared {
-        self.change(|s| s.remove_from_playlist(id, entries))
+        {
+            self.loaded.wait();
+            self.change(|s| s.remove_from_playlist(id, entries))
+        }
     }
 
     /// The song of `entry` moved to be the `to`-th of playlist `id`,
     /// counted without it.
     pub fn move_in_playlist(&self, id: &str, entry: &str, to: usize) -> Shared {
-        self.change(|s| s.move_in_playlist(id, entry, to, now()))
+        {
+            self.loaded.wait();
+            self.change(|s| s.move_in_playlist(id, entry, to, now()))
+        }
     }
 }
 
@@ -625,14 +837,26 @@ fn keep(state: &Mutex<State>, path: &Path, saves: &mpsc::Receiver<Option<mpsc::S
         while let Ok(more) = saves.try_recv() {
             waiting.extend(more);
         }
-        let bytes = {
-            let state = lock(state);
-            serde_json::to_vec(&Saved {
-                me: state.me.clone(),
-                shared: state.shared.clone(),
-            })
+        // Serialized as it stands, rather than copied first.
+        let (rest, playlists) = {
+            let mut state = lock(state);
+            let playlists = std::mem::take(&mut state.playlists_changed)
+                .then(|| serde_json::to_vec(&state.shared.playlists).ok())
+                .flatten();
+            let rest = serde_json::to_vec(&SavedRef {
+                me: &state.me,
+                shared: state.shared.rest(),
+            });
+            (rest, playlists)
         };
-        if let Ok(bytes) = bytes {
+        // The playlists first: a power cut between the two leaves them in
+        // both files, read again alike.
+        if let Some(bytes) = playlists
+            && !write(&path.with_file_name("playlists.json"), &bytes)
+        {
+            lock(state).playlists_changed = true;
+        }
+        if let Ok(bytes) = rest {
             write(path, &bytes);
         }
         for done in waiting {
@@ -641,7 +865,8 @@ fn keep(state: &Mutex<State>, path: &Path, saves: &mpsc::Receiver<Option<mpsc::S
     }
 }
 
-fn write(path: &Path, bytes: &[u8]) {
+/// Whether it was written.
+fn write(path: &Path, bytes: &[u8]) -> bool {
     if let Some(dir) = path.parent() {
         let _ = std::fs::create_dir_all(dir);
     }
@@ -658,9 +883,7 @@ fn write(path: &Path, bytes: &[u8]) {
             .open(&partial)
             .and_then(|mut f| f.write_all(bytes).and_then(|()| f.sync_all()))
     };
-    if written.is_ok() {
-        let _ = std::fs::rename(&partial, path);
-    }
+    written.is_ok() && std::fs::rename(&partial, path).is_ok()
 }
 
 #[cfg(test)]

@@ -497,17 +497,21 @@ impl Session {
         kind: ProviderKind,
         page: Option<String>,
     ) -> Result<PlaylistPage, MusicError> {
+        // Off the caller's thread: they may still be on their way from disk.
         if kind == ProviderKind::Music {
-            return Ok(PlaylistPage {
-                items: self
-                    .connect()?
-                    .1
-                    .playlists()
-                    .iter()
-                    .map(synced::Playlist::model)
-                    .collect(),
-                next: None,
-            });
+            return off(async move {
+                Ok(PlaylistPage {
+                    items: self
+                        .connect()?
+                        .1
+                        .playlists()
+                        .iter()
+                        .map(synced::Playlist::model)
+                        .collect(),
+                    next: None,
+                })
+            })
+            .await;
         }
         off(async move {
             let page = self
@@ -566,10 +570,13 @@ impl Session {
         page: Option<String>,
     ) -> Result<TrackPage, MusicError> {
         if id.provider == ProviderKind::Music {
-            return Ok(TrackPage {
-                items: self.own_playlist(&id)?.tracks(),
-                next: None,
-            });
+            return off(async move {
+                Ok(TrackPage {
+                    items: self.own_playlist(&id)?.tracks(),
+                    next: None,
+                })
+            })
+            .await;
         }
         off(async move {
             let page = self
