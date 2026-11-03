@@ -573,6 +573,7 @@ fn song_list(app: &mut App, ui: &mut Ui, theme: &Theme, area: Rect, top: f32, so
             in_playlist: false,
             download: app.badge(&track.id),
             downloadable: app.downloadable(&track.id),
+            unplayable: app.unplayable(track),
             list: "search",
             position,
         };

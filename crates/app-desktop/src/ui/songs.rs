@@ -84,6 +84,7 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
                     in_playlist: false,
                     download: app.badge(&track.id),
                     downloadable: app.downloadable(&track.id),
+                    unplayable: app.unplayable(track),
                     list: "songs",
                     position,
                 };

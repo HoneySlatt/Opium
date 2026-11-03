@@ -2674,6 +2674,24 @@ impl App {
         })
     }
 
+    /// Whether `track` can't play now: its service is out of reach and it
+    /// isn't downloaded (or no longer plays, its subscription unconfirmed).
+    pub fn unplayable(&self, track: &Track) -> bool {
+        let reached = match track.id.provider {
+            ProviderKind::AppleMusic => self.connection == Connection::Connected,
+            ProviderKind::SoundCloud => matches!(self.soundcloud, SoundCloudState::Connected(_)),
+            ProviderKind::Navidrome => matches!(self.navidrome, SoundCloudState::Connected(_)),
+            ProviderKind::Music => true,
+        };
+        !reached
+            && !matches!(
+                self.downloads.get(&track.id),
+                Some(Downloading::Kept(
+                    downloads::store::Standing::Plays | downloads::store::Standing::PlaysUntil(_)
+                ))
+            )
+    }
+
     /// Whether `id` can be downloaded: a service's song, not a station.
     pub fn downloadable(&self, id: &ItemId) -> bool {
         id.provider != ProviderKind::Music && !id.id.starts_with("ra.")
@@ -4278,7 +4296,7 @@ impl App {
                     }
                     let wait = self
                         .apple_retry
-                        .map_or(10.0, |(_, wait)| (wait * 2.0).min(300.0));
+                        .map_or(10.0, |(_, wait)| (wait * 2.0).min(60.0));
                     self.apple_retry = Some((now + wait, wait));
                     self.connection = Connection::Failed(e);
                 }

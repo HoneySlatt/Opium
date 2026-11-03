@@ -574,6 +574,7 @@ fn show_banner(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
                         in_playlist: false,
                         download: app.badge(&track.id),
                         downloadable: app.downloadable(&track.id),
+                        unplayable: app.unplayable(track),
                         list: "artist-popular",
                         position: i,
                     };

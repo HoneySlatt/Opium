@@ -1104,6 +1104,7 @@ fn page(
                     in_playlist: listing.playlist.is_some(),
                     download: app.badge(&track.id),
                     downloadable: app.downloadable(&track.id),
+                    unplayable: app.unplayable(track),
                     list: listing.list,
                     position,
                 };

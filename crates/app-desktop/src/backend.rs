@@ -995,6 +995,9 @@ async fn run(
                     Arrived::Navidrome(server, load) => {
                         nd = server;
                         sign_covers_with(&nd);
+                        if nd.is_none() && library_wanted && signed_in(provider) {
+                            show_kept(provider, replies.clone());
+                        }
                         if let Some(nd) = nd.clone().filter(|_| load && library_wanted) {
                             loading.start(ProviderKind::Navidrome, load_navidrome_library(nd, replies));
                         }
@@ -1008,6 +1011,10 @@ async fn run(
             },
         };
         let replies = replies.clone();
+        // Apple signed in and on, but out of reach: its lists as kept.
+        let apple_kept = !turned_off.contains(&ProviderKind::AppleMusic)
+            && !signed_out.contains(&ProviderKind::AppleMusic)
+            && signed_in(ProviderKind::AppleMusic);
         // SoundCloud's likes, beside the other services' Recently Added.
         if matches!(request, Request::RecentlyAdded) {
             recent_wanted = true;
@@ -1212,7 +1219,24 @@ async fn run(
                     );
                 }
                 if let Some(nd) = nd.clone() {
-                    loading.start(ProviderKind::Navidrome, load_navidrome_library(nd, replies));
+                    loading.start(
+                        ProviderKind::Navidrome,
+                        load_navidrome_library(nd, replies.clone()),
+                    );
+                }
+                // Those signed in but out of reach: as they were kept.
+                for (provider, connected) in [
+                    (ProviderKind::AppleMusic, apple.is_some()),
+                    (ProviderKind::SoundCloud, sc.is_some()),
+                    (ProviderKind::Navidrome, nd.is_some()),
+                ] {
+                    if !connected
+                        && !turned_off.contains(&provider)
+                        && !signed_out.contains(&provider)
+                        && signed_in(provider)
+                    {
+                        show_kept(provider, replies.clone());
+                    }
                 }
                 continue;
             }
@@ -1281,17 +1305,18 @@ async fn run(
                     Some(nd) => {
                         tokio::spawn(navidrome_lists(nd, request, replies));
                     }
-                    // No service has such lists: they are empty, not loading.
+                    // No service has such lists: they are empty, not loading;
+                    // Apple's out of reach, as they were kept.
                     None => replies.send(match request {
                         Request::LibraryAlbums => Reply::LibraryAlbums {
                             provider: ProviderKind::AppleMusic,
-                            albums: Vec::new(),
+                            albums: kept_list(apple_kept, "albums"),
                             done: true,
                             whole: true,
                         },
                         Request::LibraryArtists => Reply::LibraryArtists {
                             provider: ProviderKind::AppleMusic,
-                            artists: Vec::new(),
+                            artists: kept_list(apple_kept, "artists"),
                             done: true,
                             whole: true,
                         },
@@ -1459,6 +1484,7 @@ async fn run(
                     let result = tokio::try_join!(am.album(&id), am.album_tracks(&id))
                         .map(Box::new)
                         .map_err(|e| e.to_string());
+                    keep_album(&id, &result);
                     replies.send(Reply::Album { id, result });
                 });
             }
@@ -1642,6 +1668,64 @@ async fn run(
                 }));
             }
         }
+    }
+}
+
+/// Whether `provider`'s sign-in is kept on the disk: out of reach, its
+/// library shows as it was kept.
+fn signed_in(provider: ProviderKind) -> bool {
+    match provider {
+        ProviderKind::AppleMusic => apple_music_dir().join("media-user-token").exists(),
+        ProviderKind::SoundCloud => soundcloud_dir().join("tokens.json").exists(),
+        ProviderKind::Navidrome => navidrome_file().exists(),
+        ProviderKind::Music => false,
+    }
+}
+
+/// A service out of reach: its songs and playlists as they were kept, so
+/// that the library shows offline (its downloads play).
+fn show_kept(provider: ProviderKind, replies: Replies) {
+    let (songs, playlists) = match provider {
+        ProviderKind::AppleMusic => ("songs", "playlists"),
+        ProviderKind::SoundCloud => ("soundcloud-songs", "soundcloud-playlists"),
+        ProviderKind::Navidrome => ("navidrome-songs", "navidrome-playlists"),
+        ProviderKind::Music => return,
+    };
+    tokio::task::spawn_blocking(move || {
+        if let Some(playlists) = cache::read::<Vec<Playlist>>(playlists) {
+            replies.send(Reply::Playlists {
+                provider,
+                playlists,
+            });
+        }
+        if let Some(tracks) = cache::read::<Vec<Track>>(songs) {
+            replies.send(Reply::Songs {
+                provider,
+                tracks,
+                done: true,
+                whole: true,
+            });
+        }
+    });
+}
+
+/// The list kept under `name`, if `kept` says to show it; else none.
+fn kept_list<T: DeserializeOwned>(kept: bool, name: &str) -> Vec<T> {
+    kept.then(|| cache::read(name))
+        .flatten()
+        .unwrap_or_default()
+}
+
+/// Where an album's page is kept, to open offline.
+fn album_kept(id: &ItemId) -> String {
+    format!("album {:?} {}", id.provider, id.id)
+}
+
+/// Keep an album's page as it was read.
+fn keep_album(id: &ItemId, result: &Result<Box<(Album, Vec<Track>)>, String>) {
+    if let Ok(page) = result {
+        let (name, page) = (album_kept(id), page.clone());
+        tokio::task::spawn_blocking(move || cache::write(&name, &*page));
     }
 }
 
@@ -1962,11 +2046,17 @@ fn unanswered(request: Request, service: &str, replies: &Replies) {
             token,
             result: Err(e),
         },
-        Request::Album(id) => Reply::Album { id, result: Err(e) },
+        // An album or a playlist opened before shows as it was.
+        Request::Album(id) => {
+            let result = cache::read::<(Album, Vec<Track>)>(&album_kept(&id))
+                .map(Box::new)
+                .ok_or(e);
+            Reply::Album { id, result }
+        }
         Request::Artist(id) => Reply::Artist { id, result: Err(e) },
         Request::Playlist(id) => Reply::PlaylistTracks {
+            result: cache::read::<Vec<Track>>(&format!("playlist {}", id.id)).ok_or(e),
             id,
-            result: Err(e),
             done: true,
             whole: true,
         },
@@ -2066,6 +2156,7 @@ fn item_request(p: Arc<dyn Provider>, request: Request, replies: Replies) -> Opt
                 let result = tokio::try_join!(p.album(&id), p.album_tracks(&id))
                     .map(Box::new)
                     .map_err(|e| e.to_string());
+                keep_album(&id, &result);
                 replies.send(Reply::Album { id, result });
             });
         }

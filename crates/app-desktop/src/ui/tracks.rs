@@ -230,6 +230,8 @@ pub struct RowState {
     pub download: Option<Badge>,
     /// It can be downloaded: a song of a service.
     pub downloadable: bool,
+    /// Its service is out of reach and it isn't downloaded: it shows faded.
+    pub unplayable: bool,
     /// Rows are told apart by this and their position.
     pub list: &'static str,
     pub position: usize,
@@ -616,6 +618,11 @@ pub fn row(
             52.0,
         );
         paint_text(ui, g, d1, y, egui::Align::Max, theme.muted());
+    }
+
+    // Out of reach, as Spotify fades what it can't play offline.
+    if state.unplayable && !state.now {
+        ui.painter().rect_filled(rect, 0.0, alpha(theme.base, 0.6));
     }
 
     let facts = TrackFacts {
