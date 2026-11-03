@@ -65,9 +65,29 @@ pub(super) struct Services {
 struct Queue {
     tracks: VecDeque<(Track, bool)>,
     running: bool,
-    /// The one coming, and whether it was called off.
-    current: Option<(ItemId, bool)>,
+    /// Those coming (the one read, the next one fetched meanwhile), and
+    /// whether each was called off.
+    active: Vec<(ItemId, bool)>,
 }
+
+impl Queue {
+    /// Whether `id` was called off, or isn't coming at all.
+    fn called_off(&self, id: &ItemId) -> bool {
+        self.active
+            .iter()
+            .find(|(a, _)| a == id)
+            .is_none_or(|(_, off)| *off)
+    }
+}
+
+/// A song fetched, to read into the store.
+struct Fetched {
+    reader: Box<dyn Read + Send>,
+    len: u64,
+    song: Song,
+}
+
+type Fetching = tokio::task::JoinHandle<Result<Fetched, String>>;
 
 #[derive(Clone)]
 pub(super) struct Downloads {
@@ -155,10 +175,7 @@ impl Downloads {
             for track in tracks {
                 let id = &track.id;
                 let waiting = queue.tracks.iter().any(|(t, _)| &t.id == id)
-                    || queue
-                        .current
-                        .as_ref()
-                        .is_some_and(|(c, off)| c == id && !off);
+                    || queue.active.iter().any(|(a, off)| a == id && !off);
                 if waiting {
                     continue;
                 }
@@ -180,10 +197,10 @@ impl Downloads {
         {
             let mut queue = lock(&self.queue);
             queue.tracks.retain(|(t, _)| !ids.contains(&t.id));
-            if let Some((current, off)) = &mut queue.current
-                && ids.contains(current)
-            {
-                *off = true;
+            for (id, off) in &mut queue.active {
+                if ids.contains(id) {
+                    *off = true;
+                }
             }
         }
         let store = self.store.clone();
@@ -225,27 +242,74 @@ impl Downloads {
         self.tell(replies);
     }
 
+    /// The next song waiting, now coming; with `stop`, none is: the worker
+    /// stops, as one added later knows.
+    fn next(&self, stop: bool) -> Option<(Track, bool)> {
+        let mut queue = lock(&self.queue);
+        let next = queue.tracks.pop_front();
+        match &next {
+            Some((track, _)) => queue.active.push((track.id.clone(), false)),
+            None if stop => queue.running = false,
+            None => {}
+        }
+        next
+    }
+
+    /// Start fetching `track`; Apple's licences a second apart at least,
+    /// not in a burst.
+    fn fetch(&self, track: Track, original: bool, last_apple: &mut Option<Instant>) -> Fetching {
+        let services = lock(&self.services).clone();
+        let wait = match track.id.provider {
+            ProviderKind::AppleMusic => {
+                let wait = last_apple.map_or(Duration::ZERO, |at| {
+                    Duration::from_secs(1).saturating_sub(at.elapsed())
+                });
+                *last_apple = Some(Instant::now() + wait);
+                wait
+            }
+            _ => Duration::ZERO,
+        };
+        tokio::spawn(async move {
+            tokio::time::sleep(wait).await;
+            fetch(services, track, original).await
+        })
+    }
+
+    /// Download one song at a time, the next one's fetch (its licence, its
+    /// first bytes) under way while one is read: the CDM, which decrypts no
+    /// faster than it does, isn't left waiting between songs.
     async fn work(self, replies: Replies) {
+        let mut ahead: Option<(ItemId, Fetching)> = None;
+        let mut last_apple = None;
         loop {
-            let next = {
-                let mut queue = lock(&self.queue);
-                let next = queue.tracks.pop_front();
-                queue.current = next.as_ref().map(|(t, _)| (t.id.clone(), false));
-                if next.is_none() {
-                    queue.running = false;
-                }
-                next
+            let (id, fetching) = match ahead.take() {
+                Some(ahead) => ahead,
+                None => match self.next(true) {
+                    Some((track, original)) => {
+                        let id = track.id.clone();
+                        (id, self.fetch(track, original, &mut last_apple))
+                    }
+                    None => return,
+                },
             };
-            let Some((track, original)) = next else {
-                return;
-            };
-            let id = track.id.clone();
-            let apple = id.provider == ProviderKind::AppleMusic;
             replies.send(Reply::Download {
                 id: id.clone(),
                 state: Downloading::Coming(0.0),
             });
-            let state = match self.download(track, original, &replies).await {
+            let fetched = fetching.await.map_err(|e| e.to_string()).and_then(|f| f);
+            if let Some((track, original)) = self.next(false) {
+                ahead = Some((
+                    track.id.clone(),
+                    self.fetch(track, original, &mut last_apple),
+                ));
+            }
+            let state = match fetched {
+                _ if lock(&self.queue).called_off(&id) => Ok(None),
+                Ok(fetched) => self.keep(fetched, &replies).await,
+                Err(e) => Err(e),
+            };
+            lock(&self.queue).active.retain(|(a, _)| a != &id);
+            let state = match state {
                 Ok(Some(standing)) => Downloading::Kept(standing),
                 Ok(None) => Downloading::Gone,
                 Err(e) => {
@@ -259,83 +323,13 @@ impl Downloads {
             if kept {
                 self.tell(&replies);
             }
-            // Apple's licences one after the other, not in a burst.
-            if apple {
-                tokio::time::sleep(Duration::from_secs(1)).await;
-            }
         }
     }
 
-    /// Download `track` into the store: how it then stands, or `None` if it
+    /// Read `fetched` into the store: how it then stands, or `None` if it
     /// was called off.
-    async fn download(
-        &self,
-        track: Track,
-        original: bool,
-        replies: &Replies,
-    ) -> Result<Option<Standing>, String> {
-        let services = lock(&self.services).clone();
-        let id = &track.id;
-        let playable = match id.provider {
-            ProviderKind::AppleMusic => {
-                let am = services.apple.ok_or("Apple Music isn't connected")?;
-                let cdm = services.cdm.ok_or("no Widevine module found");
-                // In stereo: Spatial Audio isn't downloaded.
-                super::playable_as(&am, cdm.map_err(str::to_owned), id, false).await?
-            }
-            ProviderKind::SoundCloud => {
-                let sc = services.soundcloud.ok_or("SoundCloud isn't connected")?;
-                super::soundcloud_playable(&sc, id, original, services.cdm.as_ref()).await?
-            }
-            ProviderKind::Navidrome => {
-                let nd = services.navidrome.ok_or("Navidrome isn't connected")?;
-                Playable::Navidrome(nd.audio(id).await.map_err(|e| e.to_string())?)
-            }
-            ProviderKind::Music => return Err("Music has no songs of its own".into()),
-        };
-        let (reader, len, song): (Box<dyn Read + Send>, u64, Song) = match playable {
-            Playable::Track {
-                stream,
-                kbps,
-                spatial,
-            } => {
-                let len = stream.len();
-                let song = Song {
-                    track,
-                    extension: stream.extension().to_owned(),
-                    priming: apple_music::PRIMING,
-                    // Apple's songs, uploads too, are the subscription's.
-                    protected: true,
-                    kbps,
-                    spatial,
-                };
-                (Box::new(stream), len, song)
-            }
-            Playable::SoundCloud(audio) => {
-                let song = Song {
-                    track,
-                    extension: audio.extension.to_owned(),
-                    priming: 0,
-                    protected: matches!(audio.reader, soundcloud::Reader::Decrypting(_)),
-                    kbps: audio.quality.bitrate_kbps,
-                    spatial: false,
-                };
-                (Box::new(audio.reader), audio.len, song)
-            }
-            Playable::Navidrome(audio) => {
-                let song = Song {
-                    track,
-                    extension: audio.extension.to_owned(),
-                    priming: 0,
-                    protected: false,
-                    kbps: None,
-                    spatial: false,
-                };
-                (Box::new(audio.reader), audio.len, song)
-            }
-            Playable::Live(_) => return Err("a station can't be downloaded".into()),
-            Playable::Stored(_) => return Err("already downloaded".into()),
-        };
+    async fn keep(&self, fetched: Fetched, replies: &Replies) -> Result<Option<Standing>, String> {
+        let Fetched { reader, len, song } = fetched;
         let (store, queue, replies) = (self.store.clone(), self.queue.clone(), replies.clone());
         tokio::task::spawn_blocking(move || {
             let pending = match &*lock(&store) {
@@ -344,12 +338,7 @@ impl Downloads {
                 None => return Err("the downloads aren't open yet".into()),
             };
             let id = song.track.id.clone();
-            let called_off = || {
-                lock(&queue)
-                    .current
-                    .as_ref()
-                    .is_none_or(|(c, off)| c != &id || *off)
-            };
+            let called_off = || lock(&queue).called_off(&id);
             match copy(reader, pending, len, &called_off, |coming| {
                 replies.send(Reply::Download {
                     id: id.clone(),
@@ -375,6 +364,73 @@ impl Downloads {
         .await
         .map_err(|e| e.to_string())?
     }
+}
+
+/// Fetch `track` as playing it would, in stereo, to read it into the store.
+async fn fetch(services: Services, track: Track, original: bool) -> Result<Fetched, String> {
+    let id = &track.id;
+    let playable = match id.provider {
+        ProviderKind::AppleMusic => {
+            let am = services.apple.ok_or("Apple Music isn't connected")?;
+            let cdm = services.cdm.ok_or("no Widevine module found");
+            // In stereo: Spatial Audio isn't downloaded.
+            super::playable_as(&am, cdm.map_err(str::to_owned), id, false).await?
+        }
+        ProviderKind::SoundCloud => {
+            let sc = services.soundcloud.ok_or("SoundCloud isn't connected")?;
+            super::soundcloud_playable(&sc, id, original, services.cdm.as_ref()).await?
+        }
+        ProviderKind::Navidrome => {
+            let nd = services.navidrome.ok_or("Navidrome isn't connected")?;
+            Playable::Navidrome(nd.audio(id).await.map_err(|e| e.to_string())?)
+        }
+        ProviderKind::Music => return Err("Music has no songs of its own".into()),
+    };
+    Ok(match playable {
+        Playable::Track {
+            stream,
+            kbps,
+            spatial,
+        } => Fetched {
+            len: stream.len(),
+            song: Song {
+                extension: stream.extension().to_owned(),
+                track,
+                priming: apple_music::PRIMING,
+                // Apple's songs, uploads too, are the subscription's.
+                protected: true,
+                kbps,
+                spatial,
+            },
+            reader: Box::new(stream),
+        },
+        Playable::SoundCloud(audio) => Fetched {
+            song: Song {
+                track,
+                extension: audio.extension.to_owned(),
+                priming: 0,
+                protected: matches!(audio.reader, soundcloud::Reader::Decrypting(_)),
+                kbps: audio.quality.bitrate_kbps,
+                spatial: false,
+            },
+            len: audio.len,
+            reader: Box::new(audio.reader),
+        },
+        Playable::Navidrome(audio) => Fetched {
+            song: Song {
+                track,
+                extension: audio.extension.to_owned(),
+                priming: 0,
+                protected: false,
+                kbps: None,
+                spatial: false,
+            },
+            len: audio.len,
+            reader: Box::new(audio.reader),
+        },
+        Playable::Live(_) => return Err("a station can't be downloaded".into()),
+        Playable::Stored(_) => return Err("already downloaded".into()),
+    })
 }
 
 /// Read `reader` to its end into `pending`, telling how far it came now
