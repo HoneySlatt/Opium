@@ -148,7 +148,40 @@ fun SpotifyHome(c: LibraryContext, browse: Browse, account: @Composable () -> Un
 @Composable
 fun HomePage(c: LibraryContext, browse: Browse, account: @Composable () -> Unit) {
     val shelves by browse.shelves(Browse.Page.Home).collectAsStateWithLifecycle()
-    ListPage(c.nav, "Home", account = account) { shelves(c, shelves, Hero.Picks) }
+    // Offline: what was downloaded, in place of the catalogue's picks.
+    val offline = io.github.honeyslatt.music.ui.components.LocalDownloads.current.offline
+    val kept by (androidx.compose.ui.platform.LocalContext.current.applicationContext as io.github.honeyslatt.music.MusicApp)
+        .downloads.kept.collectAsStateWithLifecycle()
+    ListPage(c.nav, "Home", account = account) {
+        if (offline) {
+            item { OfflineNote() }
+            val songs = kept.map { it.track }
+            if (songs.isNotEmpty()) songColumns("Downloaded", songs, { c.nav.push(Route.DownloadedSongs) }) { i -> c.playback.play(songs, i) }
+        } else {
+            shelves(c, shelves, Hero.Picks)
+        }
+    }
+}
+
+/** Home's word while the network is gone. */
+@Composable
+private fun OfflineNote() {
+    val shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp)
+    androidx.compose.foundation.layout.Row(
+        Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 8.dp).background(roles.surface, shape).padding(14.dp),
+        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
+    ) {
+        io.github.honeyslatt.music.ui.components.Glyph(io.github.honeyslatt.music.ui.MoreIcons.CloudOff, roles.sub, 20.dp)
+        BasicText(
+            androidx.compose.ui.text.buildAnnotatedString {
+                pushStyle(androidx.compose.ui.text.SpanStyle(fontWeight = FontWeight.SemiBold, color = roles.text))
+                append("You’re offline. ")
+                pop()
+                append("Your library shows as it was last kept; downloaded songs play.")
+            },
+            style = geist(14.sp).copy(color = roles.sub, lineHeight = 20.sp),
+        )
+    }
 }
 
 @Composable

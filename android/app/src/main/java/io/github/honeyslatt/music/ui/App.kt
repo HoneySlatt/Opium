@@ -105,6 +105,20 @@ fun App(core: Core, library: Library, playback: io.github.honeyslatt.music.playb
     val actions = remember { Actions(appContext, core, library, playback, nav, hud, menus, scope) }
     val browse = remember { Browse(core, scope) }
     LaunchedEffect(Unit) { playback.devices.notices.collect { hud.show(it) } }
+    val downloads = (appContext as io.github.honeyslatt.music.MusicApp).downloads
+    val downloadStates by downloads.states.collectAsStateWithLifecycle()
+    // A service signed in to but out of reach: its songs not downloaded can't play.
+    val connections = io.github.honeyslatt.music.data.SERVICES.associateWith { core.connection(it).collectAsStateWithLifecycle().value }
+    val unreachable = connections.filterValues { it is io.github.honeyslatt.music.data.Connection.Failed }.keys
+    val offline = unreachable.isNotEmpty() && connections.values.none { it is io.github.honeyslatt.music.data.Connection.Connected }
+    LaunchedEffect(Unit) {
+        downloads.failed.collect { message ->
+            if (message != null) {
+                hud.show(message, Icons.Alert)
+                downloads.failedSeen()
+            }
+        }
+    }
     LaunchedEffect(Unit) {
         playback.remoteVolume.collect { v -> hud.show("${Math.round(v * 100)} %", if (v == 0f) Icons.Vlow else Icons.Vhigh) }
     }
@@ -173,6 +187,7 @@ fun App(core: Core, library: Library, playback: io.github.honeyslatt.music.playb
         io.github.honeyslatt.music.ui.detail.LocalMotionQuality provides settings.motionQuality,
         LocalActions provides actions,
         LocalMenus provides menus,
+        io.github.honeyslatt.music.ui.components.LocalDownloads provides io.github.honeyslatt.music.ui.components.DownloadsShown(downloadStates, unreachable, offline),
     ) {
     androidx.compose.animation.SharedTransitionLayout(Modifier.fillMaxSize().background(roles.base)) {
         val spotify = look.layout.motion == io.github.honeyslatt.music.core.model.Motion.SPOTIFY
@@ -300,6 +315,7 @@ private fun Page(tab: Tab, page: Route, c: LibraryContext, account: @Composable 
         Route.Albums -> Albums(c)
         Route.Artists -> Artists(c)
         Route.Songs -> Songs(c)
+        Route.DownloadedSongs -> Songs(c, downloadedOnly = true)
         is Route.Album -> AlbumPage(c, page.id)
         is Route.Playlist -> PlaylistPage(c, page.id, page.known)
         is Route.LibraryArtist -> LibraryArtistPage(c, page.artist)

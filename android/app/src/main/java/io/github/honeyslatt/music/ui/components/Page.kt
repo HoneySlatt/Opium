@@ -49,7 +49,13 @@ import io.github.honeyslatt.music.ui.theme.roles
 
 /** A button of the navigation bar's right side. */
 /** A button of a page's bar; it is told where it is, for a menu. */
-data class BarAction(val icon: ImageVector, val label: String, val onClick: (androidx.compose.ui.geometry.Rect) -> Unit)
+data class BarAction(
+    val icon: ImageVector,
+    val label: String,
+    /** Drawn in place of `icon`, at a size and in a colour: a download's progress. */
+    val glyph: (@androidx.compose.runtime.Composable (androidx.compose.ui.unit.Dp, androidx.compose.ui.graphics.Color) -> Unit)? = null,
+    val onClick: (androidx.compose.ui.geometry.Rect) -> Unit,
+)
 
 /** Spotify's Home has chips where the large title goes, the account
  *  among them: what to draw there, when a page is under it. */

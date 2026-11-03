@@ -36,6 +36,7 @@ import io.github.honeyslatt.music.core.model.Playlist
 import io.github.honeyslatt.music.ui.actions.LocalActions
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -331,12 +332,14 @@ fun TrackRow(track: Track, inPlaylist: Playlist? = null, onRemoved: () -> Unit =
     val actions = LocalActions.current
     val anchor = rememberAnchor()
     val more = rememberAnchor()
+    val off = LocalDownloads.current.unplayable(track)
     Row(
         Modifier
             .fillMaxWidth()
             .height(60.dp)
             .anchor(anchor)
-            .press(onLongClick = { actions?.trackMenu(track, anchor.rect, inPlaylist, onRemoved) }, onClick = onClick)
+            .alpha(if (off) FADED else 1f)
+            .press(onLongClick = { actions?.trackMenu(track, anchor.rect, inPlaylist, onRemoved) }, onClick = { if (off) actions?.notDownloaded(track) else onClick() })
             .padding(start = 20.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -362,11 +365,13 @@ fun TrackRow(track: Track, inPlaylist: Playlist? = null, onRemoved: () -> Unit =
                     if (track.explicit && !stacked) ExplicitBadge()
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    if (stacked) DownloadBadge(track)
                     if (track.explicit && stacked) ExplicitBadge()
                     if (track.id.provider != ProviderKind.APPLE_MUSIC) ServiceLogo(track.id.provider, 12.dp)
                     Line(track.artists.joinToString(", "), geist(13.5.sp).copy(color = roles.sub))
                 }
             }
+            if (!stacked) DownloadBadge(track)
             SavedMark(track)
             Box(
                 Modifier.size(44.dp).anchor(more).press(CircleShape) { actions?.trackMenu(track, more.rect, inPlaylist, onRemoved) },

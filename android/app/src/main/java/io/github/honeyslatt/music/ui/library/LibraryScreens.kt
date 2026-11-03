@@ -341,7 +341,11 @@ fun Artists(c: LibraryContext) {
 }
 
 @Composable
-fun Songs(c: LibraryContext) {
+fun Songs(c: LibraryContext, downloadedOnly: Boolean = false) {
+    // Only the songs downloaded: the last downloaded first.
+    var downloaded by rememberSaveable { mutableStateOf(downloadedOnly) }
+    val keptSongs by (androidx.compose.ui.platform.LocalContext.current.applicationContext as io.github.honeyslatt.music.MusicApp)
+        .downloads.kept.collectAsStateWithLifecycle()
     var source by io.github.honeyslatt.music.ui.components.rememberSource(c.core, "songs")
     // Folded at first, the source kept still applying; opened at will.
     var sources by rememberSaveable { mutableStateOf(false) }
@@ -354,7 +358,11 @@ fun Songs(c: LibraryContext) {
     val menus = LocalMenus.current
     // Newest first is a list of its own, in the order Apple keeps.
     LaunchedEffect(order) { if (order == SongSort.Added) c.library?.loadNewestSongs() }
-    val listing = if (order == SongSort.Added) c.lists.newestSongs else c.lists.songs
+    val listing = when {
+        downloaded -> io.github.honeyslatt.music.data.Listing(keptSongs.map { it.track }, done = true)
+        order == SongSort.Added -> c.lists.newestSongs
+        else -> c.lists.songs
+    }
     val all = listing.items
     // What another service has too is left out once, not at every letter typed.
     val some by produceState(all.distinctBy { it.id }, all, source) {
@@ -369,13 +377,13 @@ fun Songs(c: LibraryContext) {
             some.distinctBy { it.id }
         }
     }
-    val shown by produceState(some, some, query, order) {
+    val shown by produceState(some, some, query, order, downloaded) {
         value = withContext(Dispatchers.Default) {
-            some.filter { matches(query, it.title, it.artists.joinToString(", "), it.album) }.sortedBy(order)
+            some.filter { matches(query, it.title, it.artists.joinToString(", "), it.album) }.let { if (downloaded) it else it.sortedBy(order) }
         }
     }
     if (liked) {
-        LikedSongs(c, listing, shown, source, { source = it }, searching, { searching = !searching }, query, { query = it })
+        LikedSongs(c, listing, shown, source, { source = it }, searching, { searching = !searching }, query, { query = it }, downloaded)
         return
     }
     ListPage(
@@ -394,9 +402,16 @@ fun Songs(c: LibraryContext) {
         refresh = c.refresh { if (order == SongSort.Added) it.newestSongs else it.songs },
     ) {
         item { SearchReveal(searching, query, "Search Songs") { query = it } }
+        if (downloaded || keptSongs.isNotEmpty()) {
+            item {
+                Row(Modifier.padding(horizontal = 20.dp, vertical = 4.dp)) {
+                    io.github.honeyslatt.music.ui.components.Chip("Downloaded", null, downloaded) { downloaded = !downloaded }
+                }
+            }
+        }
         item { SourceChips(sources, source, c.services) { source = it } }
         item { PlayRow(c, shown) }
-        if (shown.isEmpty()) item { Empty(listing, "No songs here", "Nothing matches this source.") }
+        if (shown.isEmpty()) item { noSongs(listing, downloaded) }
         itemsIndexed(shown, key = { _, t -> t.id.provider.name + t.id.id }) { i, track -> TrackRow(track) { c.playback.play(shown, i) } }
         if (shown.isNotEmpty()) {
             item {
@@ -427,14 +442,18 @@ private fun LikedSongs(
     toggleSearch: () -> Unit,
     query: String,
     setQuery: (String) -> Unit,
+    downloaded: Boolean,
 ) {
     val menus = LocalMenus.current
     val profile by c.core.appleProfile.collectAsStateWithLifecycle()
+    val title = if (downloaded) "Downloaded Songs" else "Songs"
     io.github.honeyslatt.music.ui.detail.DetailPage(
         c.nav,
-        "Songs",
+        title,
         Color(0xFF5038A0),
-        listOf(
+        listOfNotNull(
+            // Stop or remove what is downloaded; the whole library isn't offered at a tap.
+            if (downloaded) io.github.honeyslatt.music.ui.detail.downloadAction(shown, title) else null,
             BarAction(Icons.Search, "Search Songs") { toggleSearch() },
         ),
     ) {
@@ -442,7 +461,7 @@ private fun LikedSongs(
             io.github.honeyslatt.music.ui.detail.DetailHeader(
                 artwork = null,
                 motion = null,
-                title = "Songs",
+                title = title,
                 byline = profile?.name,
                 onByline = null,
                 meta = {
@@ -480,10 +499,19 @@ private fun LikedSongs(
                 }
             }
         }
-        if (shown.isEmpty()) item { Empty(listing, "No songs here", "Nothing matches this source.") }
+        if (shown.isEmpty()) item { noSongs(listing, downloaded) }
         itemsIndexed(shown, key = { _, t -> t.id.provider.name + t.id.id }) { i, track -> TrackRow(track) { c.playback.play(shown, i) } }
     }
 }
+
+/** Songs with none to show: none downloaded yet, or none of this source. */
+@Composable
+private fun noSongs(listing: io.github.honeyslatt.music.data.Listing<Track>, downloaded: Boolean) =
+    if (downloaded) {
+        Empty(listing, "No downloads yet", "Download a song, an album or a playlist from its menu to play it offline.")
+    } else {
+        Empty(listing, "No songs here", "Nothing matches this source.")
+    }
 
 /**
  * Play and Shuffle under a page's header. In a theme with Spotify's banner,
@@ -545,6 +573,11 @@ private fun RowAction(a: BarAction) {
         Modifier.size(44.dp).anchor(anchor).press(CircleShape) { a.onClick(anchor.rect) },
         contentAlignment = Alignment.Center,
     ) {
+        val glyph = a.glyph
+        if (glyph != null) {
+            glyph(26.dp, roles.sub)
+            return@Box
+        }
         when (a.icon) {
             Icons.Check -> Box(Modifier.size(26.dp).background(roles.accent, CircleShape), contentAlignment = Alignment.Center) {
                 Glyph(Icons.Check, roles.onAccent, 16.dp)

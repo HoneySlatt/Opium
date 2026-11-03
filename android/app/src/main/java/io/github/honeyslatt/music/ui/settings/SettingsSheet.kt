@@ -199,6 +199,8 @@ private fun Root(core: Core, settings: Settings, go: (SettingsPage) -> Unit) {
         }
     }
 
+    Downloads()
+
     Label("Lyrics")
     Group {
         GroupRow(first = true, onClick = { go(SettingsPage.LyricsSites) }) {
@@ -289,6 +291,30 @@ private fun Root(core: Core, settings: Settings, go: (SettingsPage) -> Unit) {
         GroupRow(first = true) {
             Words("Music for Android", "GPL-3.0-or-later. The way to Apple Music’s web player comes from Kopuz (EUPL-1.2).")
             BasicText(BuildConfig.VERSION_NAME, style = geist(15.sp).copy(color = roles.sub))
+        }
+    }
+}
+
+/** The songs downloaded: how many, how they come, and Remove All. */
+@Composable
+private fun Downloads() {
+    val downloads = (androidx.compose.ui.platform.LocalContext.current.applicationContext as io.github.honeyslatt.music.MusicApp).downloads
+    val kept by downloads.kept.collectAsStateWithLifecycle()
+    val actions = LocalActions.current
+    Label("Downloads")
+    Group("Navidrome’s files come as they are, SoundCloud’s as they stream (or the uploader’s own file, as SoundCloud’s setting says), kept sealed on this phone. Apple Music’s songs can’t be downloaded here yet.") {
+        GroupRow(first = true) {
+            Words("On this phone")
+            BasicText(io.github.honeyslatt.music.ui.actions.songsCount(kept.size), style = geist(15.sp).copy(color = roles.sub))
+        }
+        if (kept.isNotEmpty()) {
+            GroupRow(first = false, onClick = {
+                actions?.sheet = SheetSpec.Confirm(
+                    "Remove All Downloads?",
+                    "The ${io.github.honeyslatt.music.ui.actions.songsCount(kept.size)} downloaded go from this phone. They stay in your library, to play online.",
+                    "Remove All",
+                ) { downloads.removeAll() }
+            }) { Words("Remove All Downloads", colour = roles.red) }
         }
     }
 }

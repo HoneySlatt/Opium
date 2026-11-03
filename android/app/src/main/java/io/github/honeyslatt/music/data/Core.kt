@@ -33,7 +33,8 @@ val SERVICES = ProviderKind.entries - ProviderKind.MUSIC
 class Core(context: Context) {
     val session = Session().apply { keepIn(context.filesDir.path) }
     private val prefs = context.getSharedPreferences("music", Context.MODE_PRIVATE)
-    private val vault = Vault(context)
+    /** The sign-ins, and the downloads' key. */
+    val vault = Vault(context)
 
     /** Sends SoundCloud's changes, as only a browser's are taken. */
     val soundCloudWeb = SoundCloudWeb(context.applicationContext)
@@ -147,14 +148,26 @@ class Core(context: Context) {
     /** What was opened from searches, for Recently Searched. */
     val searched: String = File(context.filesDir, "recently-searched.json").path
 
-    /** The library's lists as last read, by service: see [Library]. */
-    val kept = File(context.cacheDir, "library").apply { mkdirs() }
+    /**
+     * The library's lists as last read, by service: see [Library]. In the
+     * app's files, as the songs downloaded need them offline: a cache may be
+     * cleared. The lists from before, in the cache, are moved in.
+     */
+    val kept = File(context.filesDir, "library").apply {
+        val old = File(context.cacheDir, "library")
+        if (!exists() && old.exists()) old.renameTo(this)
+        mkdirs()
+    }
 
-    /** Forget the account: its sign-in goes from the phone, and its library as kept. */
+    /** Signed out of a service: its downloads go too. */
+    var signedOut: (ProviderKind) -> Unit = {}
+
+    /** Forget the account: its sign-in goes from the phone, its library as kept, and its downloads. */
     fun signOut(kind: ProviderKind) {
         session.disconnect(kind)
         vault.delete(kind.vaultName)
         kept.listFiles { f -> f.name.endsWith("-${kind.name}.json") }?.forEach { it.delete() }
+        signedOut(kind)
         connections.getValue(kind).value = Connection.Off
     }
 

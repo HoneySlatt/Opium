@@ -52,6 +52,7 @@ fun PlaylistPage(c: LibraryContext, id: ItemId, known: Playlist? = null) {
     // Music's own read again as they change, here or on another device.
     val changes by c.playback.devices.changes.collectAsStateWithLifecycle()
     val version = if (id.provider == ProviderKind.MUSIC) changes else 0
+    val downloads = (androidx.compose.ui.platform.LocalContext.current.applicationContext as io.github.honeyslatt.music.MusicApp).downloads
     // Every page of its songs, one after another.
     var complete by remember(id) { mutableStateOf(false) }
     val loaded by produceState<Loading<List<Track>>>(Loading.Pending, id, version) {
@@ -66,6 +67,14 @@ fun PlaylistPage(c: LibraryContext, id: ItemId, known: Playlist? = null) {
             } while (page != null)
             complete = true
             all.toList()
+        }
+        // Offline, a downloaded playlist's songs as kept.
+        if (value is Loading.Failed) {
+            val kept = downloads.keptPlaylist(id)
+            if (kept.isNotEmpty()) {
+                value = Loading.Ready(kept)
+                complete = true
+            }
         }
     }
     // Songs taken out here, gone at once.
@@ -93,6 +102,7 @@ fun PlaylistPage(c: LibraryContext, id: ItemId, known: Playlist? = null) {
                     null
                 },
             ).toTypedArray(),
+            *listOfNotNull(if (complete) downloadAction(every, name, id) else null).toTypedArray(),
             BarAction(Icons.More, "More") { rect -> playlist?.let { actions?.playlistMenu(it, rect, onDeleted = { c.nav.pop() }) } },
         ),
     ) {

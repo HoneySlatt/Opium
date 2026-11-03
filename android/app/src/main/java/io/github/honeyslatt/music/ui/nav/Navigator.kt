@@ -24,6 +24,8 @@ sealed interface Route {
     data object Albums : Route
     data object Artists : Route
     data object Songs : Route
+    /** Songs with only the downloaded shown, from Your Library's Downloaded. */
+    data object DownloadedSongs : Route
     data class Album(val id: ItemId) : Route
     /** A shelf of Home, New or Radio, whole. */
     data class Shelf(val shelf: io.github.honeyslatt.music.core.model.Shelf) : Route

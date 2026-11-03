@@ -11,6 +11,7 @@ import io.github.honeyslatt.music.core.model.AlbumExtras
 import io.github.honeyslatt.music.ui.actions.LocalActions
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -28,6 +29,7 @@ import io.github.honeyslatt.music.core.model.ProviderKind
 import io.github.honeyslatt.music.ui.Icons
 import io.github.honeyslatt.music.ui.components.BarAction
 import io.github.honeyslatt.music.ui.components.byline
+import io.github.honeyslatt.music.ui.components.page
 import io.github.honeyslatt.music.ui.library.Empty
 import io.github.honeyslatt.music.ui.library.LibraryContext
 import io.github.honeyslatt.music.ui.library.PlayShuffle
@@ -79,7 +81,15 @@ fun AlbumPage(c: LibraryContext, id: ItemId) {
         val copies = listOf(d.tracks) + twins.mapNotNull { runCatching { c.core.session.album(it).tracks }.getOrNull() }
         if (copies.size > 1) value = io.github.honeyslatt.music.core.wholeAlbum(copies)
     }
-    val tracks = whole ?: detail?.tracks.orEmpty()
+    // Offline, a downloaded album's page from its songs kept.
+    val downloads = (androidx.compose.ui.platform.LocalContext.current.applicationContext as io.github.honeyslatt.music.MusicApp).downloads
+    val keptSongs by downloads.kept.collectAsStateWithLifecycle()
+    val offline = if (loaded is Loading.Failed) {
+        keptSongs.map { it.track }.filter { it.albumId == id }.sortedWith(compareBy({ it.discNumber ?: 1u }, { it.trackNumber ?: 0u }))
+    } else {
+        emptyList()
+    }
+    val tracks = whole ?: detail?.tracks ?: offline
     // More by the artist, from the catalog.
     val more by produceState<List<Album>>(emptyList(), album?.artistId) {
         val artist = album?.artistId?.takeIf { it.provider == ProviderKind.APPLE_MUSIC } ?: return@produceState
@@ -109,15 +119,17 @@ fun AlbumPage(c: LibraryContext, id: ItemId) {
         } else {
             null
         },
+        downloadAction(tracks, album?.title ?: offline.firstOrNull()?.album.orEmpty()),
         BarAction(Icons.More, "More") { rect -> album?.let { actions?.albumMenu(it, rect, onDeleted = { c.nav.pop() }) } },
     )
-    DetailPage(c.nav, album?.title.orEmpty(), page, bar) {
+    val first = offline.firstOrNull()
+    DetailPage(c.nav, album?.title ?: first?.album.orEmpty(), page, bar) {
         item {
             DetailHeader(
-                artwork = album?.artwork,
+                artwork = album?.artwork ?: first?.artwork,
                 motion = album?.motion?.takeIf { c.animatedArtwork },
-                title = album?.title.orEmpty(),
-                byline = album?.artists?.joinToString(", "),
+                title = album?.title ?: first?.album.orEmpty(),
+                byline = album?.artists?.joinToString(", ") ?: first?.artists?.joinToString(", "),
                 onByline = album?.artistId?.let { artist -> { c.nav.push(Route.Artist(artist)) } },
                 meta = {
                     if (album != null) Meta(listOfNotNull(album.kind(), album.year?.toString()).joinToString(" · "))
@@ -170,5 +182,32 @@ private fun FullAlbum(onClick: () -> Unit) {
             "Show Full Album",
             geist(15.sp, androidx.compose.ui.text.font.FontWeight.SemiBold).copy(color = roles.tint),
         )
+    }
+}
+
+/**
+ * A page's download button: Download, Stop downloading while its songs
+ * come, Remove Download (asked first) once all are kept; none when none of
+ * its songs can be downloaded.
+ */
+@Composable
+fun downloadAction(tracks: List<Track>, title: String, playlist: ItemId? = null): BarAction? {
+    val state = io.github.honeyslatt.music.ui.components.LocalDownloads.current.page(tracks) ?: return null
+    val actions = LocalActions.current ?: return null
+    val downloads = (androidx.compose.ui.platform.LocalContext.current.applicationContext as io.github.honeyslatt.music.MusicApp).downloads
+    val label = when (state) {
+        io.github.honeyslatt.music.ui.components.PageDownload.Offer -> "Download"
+        is io.github.honeyslatt.music.ui.components.PageDownload.Coming -> "Stop Downloading"
+        io.github.honeyslatt.music.ui.components.PageDownload.Kept -> "Remove Download"
+    }
+    return BarAction(io.github.honeyslatt.music.ui.MoreIcons.ArrowDown, label, glyph = { size, idle -> io.github.honeyslatt.music.ui.components.DownloadGlyph(state, size, idle) }) {
+        when (state) {
+            io.github.honeyslatt.music.ui.components.PageDownload.Offer -> {
+                playlist?.let { downloads.keepPlaylist(it, tracks) }
+                actions.download(tracks)
+            }
+            is io.github.honeyslatt.music.ui.components.PageDownload.Coming -> actions.stopDownloading(tracks)
+            io.github.honeyslatt.music.ui.components.PageDownload.Kept -> actions.confirmRemoveDownload(tracks, title)
+        }
     }
 }

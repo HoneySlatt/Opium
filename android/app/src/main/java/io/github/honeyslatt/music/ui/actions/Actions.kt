@@ -24,6 +24,8 @@ import io.github.honeyslatt.music.ui.components.Hud
 import io.github.honeyslatt.music.ui.components.MenuHead
 import io.github.honeyslatt.music.ui.components.MenuItem
 import io.github.honeyslatt.music.ui.components.MenuSpec
+import io.github.honeyslatt.music.ui.components.label
+import io.github.honeyslatt.music.data.downloadable as downloadableHere
 import io.github.honeyslatt.music.ui.components.Menus
 import io.github.honeyslatt.music.ui.nav.Navigator
 import io.github.honeyslatt.music.ui.nav.Route
@@ -63,6 +65,7 @@ class Actions(
     private val session get() = core.session
     private val prefs = context.getSharedPreferences("music", Context.MODE_PRIVATE)
     private val settings = (context.applicationContext as io.github.honeyslatt.music.MusicApp).settings
+    private val downloads = (context.applicationContext as io.github.honeyslatt.music.MusicApp).downloads
 
     /** Called before a page opens, as Now Playing closes for it. */
     var beforeLeaving: () -> Unit = {}
@@ -219,6 +222,7 @@ class Actions(
                             else -> null
                         },
                         MenuItem("Add to a Playlist…", Icons.Listplus) { addToPlaylists(listOf(track)) },
+                        downloadItem(listOf(track), track.title),
                         if (track.id.provider != ProviderKind.NAVIDROME) {
                             MenuItem(if (favourite) "Remove from Favourites" else "Favourite", if (favourite) Icons.Starf else Icons.Star) {
                                 toggleFavourite(track)
@@ -278,6 +282,11 @@ class Actions(
                         MenuItem("Add to a Playlist…", Icons.Listplus) {
                             withAlbum(album) { sheet = SheetSpec.AddToPlaylists(it, songsCount(it.size), album.title, album.artwork) }
                         },
+                        if (downloadable(album.id.provider)) {
+                            MenuItem("Download", io.github.honeyslatt.music.ui.MoreIcons.ArrowDown) { withAlbum(album) { download(it) } }
+                        } else {
+                            null
+                        },
                         rated?.let { id ->
                             MenuItem(if (favourite) "Remove from Favourites" else "Favourite", if (favourite) Icons.Starf else Icons.Star) {
                                 toggleFavourite(FavouriteKind.ALBUM, id, was = favourite)
@@ -325,12 +334,20 @@ class Actions(
                 val toPlaylist = MenuItem("Add to a Playlist…", Icons.Listplus) {
                     withPlaylist(playlist) { sheet = SheetSpec.AddToPlaylists(it, songsCount(it.size), head.title, playlist.artwork) }
                 }
+                // Its songs downloaded, and the list kept to find them offline.
+                val download = if (playlist.id.provider == ProviderKind.APPLE_MUSIC) null else MenuItem("Download", io.github.honeyslatt.music.ui.MoreIcons.ArrowDown) {
+                    withPlaylist(playlist) {
+                        downloads.keepPlaylist(playlist.id, it)
+                        download(it)
+                    }
+                }
                 val favourite = !playlist.favourites && isFavourite(FavouriteKind.PLAYLIST, favouriteId, playlist.inFavourites)
                 if (playlist.favourites) listOf(play, queue, listOf(toPlaylist)) else listOf(
                     play,
                     queue,
                     listOfNotNull(
                         toPlaylist,
+                        download,
                         if (playlist.editable) MenuItem("Edit…", Icons.Pencil) { sheet = SheetSpec.PlaylistForm(playlist) } else null,
                         if (playlist.id.provider == ProviderKind.APPLE_MUSIC) {
                             MenuItem(if (favourite) "Remove from Favourites" else "Favourite", if (favourite) Icons.Starf else Icons.Star) {
@@ -432,6 +449,60 @@ class Actions(
             page = p.next
         } while (page != null)
         return all
+    }
+
+    // ---- Downloads ----
+
+    /** Songs of `provider` can be downloaded on the phone: not Apple Music's yet. */
+    private fun downloadable(provider: ProviderKind) = provider == ProviderKind.NAVIDROME || provider == ProviderKind.SOUND_CLOUD
+
+    /** A song's Download, or its Remove Download once kept or coming. */
+    private fun downloadItem(tracks: List<Track>, title: String): MenuItem? {
+        val track = tracks.singleOrNull()?.takeIf(::downloadableHere) ?: return null
+        return when (downloads.states.value[track.id]) {
+            null, is io.github.honeyslatt.music.core.DownloadState.Failed, io.github.honeyslatt.music.core.DownloadState.Gone ->
+                MenuItem("Download", io.github.honeyslatt.music.ui.MoreIcons.ArrowDown) { download(tracks) }
+            else -> MenuItem("Remove Download", Icons.Minuscircle, danger = true) { confirmRemoveDownload(tracks, title) }
+        }
+    }
+
+    /** A song tapped that can't play: its service out of reach, it not downloaded. */
+    fun notDownloaded(track: Track) {
+        hud.show("Not downloaded, and ${track.id.provider.label()} is out of reach", Icons.Alert)
+    }
+
+    /** Download what of `tracks` isn't yet. */
+    fun download(tracks: List<Track>) {
+        val states = downloads.states.value
+        val own = tracks.filter(::downloadableHere).filter {
+            val s = states[it.id]
+            s == null || s is io.github.honeyslatt.music.core.DownloadState.Failed
+        }
+        if (own.isEmpty()) return
+        downloads.add(own)
+        hud.show("Downloading ${songsCount(own.size)}", io.github.honeyslatt.music.ui.MoreIcons.ArrowDown)
+    }
+
+    /** What of `tracks` waits or comes, no longer. */
+    fun stopDownloading(tracks: List<Track>) {
+        val states = downloads.states.value
+        val ids = tracks.map { it.id }.filter {
+            states[it] is io.github.honeyslatt.music.core.DownloadState.Queued || states[it] is io.github.honeyslatt.music.core.DownloadState.Coming
+        }
+        downloads.remove(ids)
+        hud.show("Download stopped", Icons.X)
+    }
+
+    /** `tracks` off the phone, asked first. */
+    fun confirmRemoveDownload(tracks: List<Track>, title: String) {
+        sheet = SheetSpec.Confirm(
+            "Remove Download?",
+            "“$title” goes from this phone. It stays in your library, to play online.",
+            "Remove Download",
+        ) {
+            downloads.remove(tracks.flatMap { listOfNotNull(it.id, it.libraryId) }.distinct())
+            hud.show("Download removed", Icons.Trash)
+        }
     }
 
     // ---- Pages ----

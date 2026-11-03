@@ -492,7 +492,19 @@ class Playback(private val context: Context, private val core: Core, private val
         either({ Command.PlayList(tracks, start.toUInt()) }) { playHere(tracks, start) }
     }
 
-    private fun playHere(tracks: List<Track>, start: Int) {
+    /** A song whose service is out of reach plays only if downloaded. */
+    private fun reachable(track: Track): Boolean {
+        if (core.connection(track.id.provider).value !is io.github.honeyslatt.music.data.Connection.Failed) return true
+        val states = (context.applicationContext as io.github.honeyslatt.music.MusicApp).downloads.states.value
+        return listOfNotNull(track.id, track.libraryId).any { states[it] is io.github.honeyslatt.music.core.DownloadState.Kept }
+    }
+
+    private fun playHere(all: List<Track>, from: Int) {
+        // Offline, only what can play: from the song asked for, or the next that can.
+        val playable = all.indices.filter { reachable(all[it]) }
+        if (playable.isEmpty()) return
+        val tracks = playable.map { all[it] }
+        val start = playable.indexOfFirst { it >= from }.takeIf { it >= 0 } ?: 0
         failedInRow = 0
         station = null
         queue.replace(tracks, start.toUInt())
@@ -963,6 +975,8 @@ class Playback(private val context: Context, private val core: Core, private val
                     .build(),
             )
         if (track.id.id in stations) return liveSource(core.session.liveStation(track.id), item)
+        // Downloaded: from the phone, before any service is asked.
+        (context.applicationContext as io.github.honeyslatt.music.MusicApp).downloads.song(track)?.let { return keptSource(it, item) }
         return when (track.id.provider) {
             ProviderKind.APPLE_MUSIC -> {
                 // A catalog song Apple no longer offers here plays from the

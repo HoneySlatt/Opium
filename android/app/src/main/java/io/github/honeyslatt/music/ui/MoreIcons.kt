@@ -53,4 +53,10 @@ object MoreIcons {
         filled("pin", false, "M11 17h2v4.2a1 1 0 0 1-2 0z", "M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z")
     }
     val Expand: ImageVector by lazy { stroked("expand", "M15 3h6v6", "M9 21H3v-6", "m21 3-7 7", "m3 21 7-7") }
+    /** A download's arrow; heavier for the small badge it sits in. */
+    val ArrowDown: ImageVector by lazy { stroked("arrow-down", "M12 5v14", "m19 12-7 7-7-7") }
+    val ArrowDownHeavy: ImageVector by lazy { stroked("arrow-down-heavy", 3.2f, "M12 5v14", "m19 12-7 7-7-7") }
+    val CloudOff: ImageVector by lazy {
+        stroked("cloud-off", "m2 2 20 20", "M5.782 5.782A7 7 0 0 0 9 19h8.5a4.5 4.5 0 0 0 1.307-.193", "M21.532 16.5A4.5 4.5 0 0 0 17.5 10h-1.79A7.008 7.008 0 0 0 10 5.07")
+    }
 }

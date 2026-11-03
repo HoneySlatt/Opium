@@ -10,13 +10,16 @@ import androidx.compose.ui.graphics.vector.group
 import androidx.compose.ui.unit.dp
 
 /** A Lucide icon: 2 px round strokes on a 24 px grid, tinted where drawn. */
-internal fun stroked(name: String, vararg paths: String): ImageVector =
+internal fun stroked(name: String, vararg paths: String): ImageVector = stroked(name, 2f, *paths)
+
+/** The same, with strokes `width` px wide. */
+internal fun stroked(name: String, width: Float, vararg paths: String): ImageVector =
     ImageVector.Builder(name, 24.dp, 24.dp, 24f, 24f).apply {
         paths.forEach {
             addPath(
                 PathParser().parsePathString(it).toNodes(),
                 stroke = SolidColor(Color.Black),
-                strokeLineWidth = 2f,
+                strokeLineWidth = width,
                 strokeLineCap = StrokeCap.Round,
                 strokeLineJoin = StrokeJoin.Round,
             )

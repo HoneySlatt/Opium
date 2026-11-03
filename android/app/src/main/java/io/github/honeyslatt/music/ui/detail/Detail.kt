@@ -172,7 +172,17 @@ private fun Bar(nav: Navigator, title: String, solid: Boolean, actions: List<Bar
         Row(Modifier.align(Alignment.CenterEnd), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             actions.forEach { a ->
                 val anchor = rememberAnchor()
-                Box(Modifier.shadowIf(!solid).anchor(anchor)) { RoundButton(a.icon, { a.onClick(anchor.rect) }, fill) }
+                Box(Modifier.shadowIf(!solid).anchor(anchor)) {
+                    val glyph = a.glyph
+                    if (glyph == null) {
+                        RoundButton(a.icon, { a.onClick(anchor.rect) }, fill)
+                    } else {
+                        Box(
+                            Modifier.size(40.dp).press(CircleShape, shrink = 0.92f) { a.onClick(anchor.rect) }.background(fill, CircleShape),
+                            contentAlignment = Alignment.Center,
+                        ) { glyph(22.dp, roles.text) }
+                    }
+                }
             }
         }
     }

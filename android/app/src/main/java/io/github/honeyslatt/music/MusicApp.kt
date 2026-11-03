@@ -32,6 +32,10 @@ class MusicApp : Application(), coil3.SingletonImageLoader.Factory {
     lateinit var devices: io.github.honeyslatt.music.data.Devices
         private set
 
+    /** The songs downloaded to play offline. */
+    lateinit var downloads: io.github.honeyslatt.music.data.Downloads
+        private set
+
     @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     lateinit var playback: io.github.honeyslatt.music.playback.Playback
         private set
@@ -52,6 +56,8 @@ class MusicApp : Application(), coil3.SingletonImageLoader.Factory {
         settings = io.github.honeyslatt.music.data.Settings(this)
         themes = io.github.honeyslatt.music.data.Themes(this)
         library = Library(core, scope)
+        downloads = io.github.honeyslatt.music.data.Downloads(this, core, scope)
+        core.signedOut = downloads::forget
         devices = io.github.honeyslatt.music.data.Devices(this)
         devices.themesShared = { themes.shared(it) }
         settings.withDevices(devices)

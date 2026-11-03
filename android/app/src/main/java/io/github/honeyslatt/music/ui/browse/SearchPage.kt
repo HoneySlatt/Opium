@@ -97,7 +97,9 @@ private const val SONGS = 6
 @Composable
 fun SearchPage(c: LibraryContext) {
     var query by rememberSaveable { mutableStateOf("") }
-    var library by remember { mutableStateOf(c.core.setting("search-scope") == "library") }
+    // Offline, Your Library: the catalogue can't be searched.
+    val offline = io.github.honeyslatt.music.ui.components.LocalDownloads.current.offline
+    var library by remember(offline) { mutableStateOf(offline || c.core.setting("search-scope") == "library") }
     var source by io.github.honeyslatt.music.ui.components.rememberSource(c.core, "search")
     // Folded at first, the source kept still applying; opened at will.
     var sources by rememberSaveable { mutableStateOf(false) }

@@ -23,6 +23,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -38,6 +39,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.honeyslatt.music.core.albumsLeftOut
 import io.github.honeyslatt.music.core.artistsLeftOut
 import io.github.honeyslatt.music.core.model.Artwork
+import io.github.honeyslatt.music.data.downloadable
 import io.github.honeyslatt.music.ui.Icons
 import io.github.honeyslatt.music.ui.MoreIcons
 import io.github.honeyslatt.music.ui.actions.LocalActions
@@ -60,7 +62,7 @@ import kotlinx.coroutines.withContext
 val Loved = listOf(Color(0xFF450AF5), Color(0xFFC4EFD9))
 
 /** What Your Library's chips narrow it to. */
-private enum class Kind(val label: String) { Playlists("Playlists"), Albums("Albums"), Artists("Artists") }
+private enum class Kind(val label: String) { Playlists("Playlists"), Albums("Albums"), Artists("Artists"), Downloaded("Downloaded") }
 
 /**
  * Spotify's Your Library: the account and the title, search and New
@@ -90,10 +92,23 @@ fun YourLibrary(c: LibraryContext) {
             all.filterIndexed { i, _ -> i.toUInt() !in out }.distinctBy { it.id }
         }
     }
+    val downloads = (androidx.compose.ui.platform.LocalContext.current.applicationContext as io.github.honeyslatt.music.MusicApp).downloads
+    val keptSongs by downloads.kept.collectAsStateWithLifecycle()
+    val shownDownloads = io.github.honeyslatt.music.ui.components.LocalDownloads.current
+    // The albums and playlists downloaded, each with its songs, for Downloaded.
+    val keptAlbums = remember(keptSongs, albums) {
+        val byAlbum = keptSongs.groupBy { it.track.albumId }
+        albums.mapNotNull { a -> byAlbum[a.id]?.let { a to it.size } }
+    }
+    val keptPlaylists by produceState(emptyList<Pair<io.github.honeyslatt.music.core.model.Playlist, List<io.github.honeyslatt.music.core.model.Track>>>(), keptSongs, c.lists.playlists.items) {
+        value = c.lists.playlists.items.distinctBy { it.id }.mapNotNull { p ->
+            downloads.keptPlaylist(p.id).takeIf { songs -> songs.any { it.id in shownDownloads.states } }?.let { p to it }
+        }
+    }
     Box(Modifier.fillMaxSize().background(roles.base)) {
         val refresh = c.refresh {
             when (kind) {
-                Kind.Playlists -> it.playlists
+                Kind.Playlists, Kind.Downloaded -> it.playlists
                 Kind.Albums -> it.albums
                 Kind.Artists -> it.artists
             }
@@ -120,7 +135,7 @@ fun YourLibrary(c: LibraryContext) {
                 }
                 item {
                     Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Kind.entries.forEach { k ->
+                        Kind.entries.filter { it != Kind.Downloaded || keptSongs.isNotEmpty() || kind == it }.forEach { k ->
                             val on = k == kind
                             Box(
                                 Modifier.height(34.dp)
@@ -176,18 +191,53 @@ fun YourLibrary(c: LibraryContext) {
                     Kind.Artists -> items(artists.filter { matches(query, it.name) }, key = { it.id.provider.name + it.id.id }) { a ->
                         Entry(a.artwork, a.name, "Artist", round = true) { c.nav.push(Route.LibraryArtist(a)) }
                     }
+                    Kind.Downloaded -> {
+                        item {
+                            Entry(
+                                null,
+                                "Downloaded Songs",
+                                "${songs(keptSongs.size)} • on this phone",
+                                pinned = true,
+                                tile = {
+                                    Box(Modifier.size(64.dp).background(roles.surface2, RoundedCornerShape(4.dp)), contentAlignment = Alignment.Center) {
+                                        Glyph(MoreIcons.ArrowDown, roles.accent, 26.dp)
+                                    }
+                                },
+                            ) { c.nav.push(Route.DownloadedSongs) }
+                        }
+                        items(keptPlaylists.filter { matches(query, it.first.name) }, key = { "p" + it.first.id.provider.name + it.first.id.id }) { (p, tracks) ->
+                            Entry(p.artwork, p.name, "Playlist • ${downloadedLine(shownDownloads, tracks)}", onMenu = { actions?.playlistMenu(p, it) }) {
+                                c.nav.push(Route.Playlist(p.id))
+                            }
+                        }
+                        items(keptAlbums.filter { matches(query, it.first.title) }, key = { "a" + it.first.id.provider.name + it.first.id.id }) { (a, n) ->
+                            Entry(a.artwork, a.title, "Album • ${a.artists.joinToString(", ")} • ${songs(n)}") { c.nav.push(Route.Album(a.id)) }
+                        }
+                    }
                 }
                 val listing = when (kind) {
-                    Kind.Playlists -> c.lists.playlists
+                    Kind.Playlists, Kind.Downloaded -> c.lists.playlists
                     Kind.Albums -> c.lists.albums
                     Kind.Artists -> c.lists.artists
                 }
-                if (listing.items.isEmpty() && query.isBlank()) {
+                if (kind != Kind.Downloaded && listing.items.isEmpty() && query.isBlank()) {
                     item { Empty(listing, "Nothing here yet", "${kind.label} you add show here.") }
                 }
                 item { Spacer(Modifier.height(ChromeHeight + 120.dp)) }
             }
         }
+    }
+}
+
+/** How a playlist downloaded stands: coming, or how many of its songs are kept. */
+private fun downloadedLine(shown: io.github.honeyslatt.music.ui.components.DownloadsShown, tracks: List<io.github.honeyslatt.music.core.model.Track>): String {
+    val own = tracks.filter(::downloadable)
+    val kept = own.count(shown::kept)
+    val coming = own.any { shown.state(it).let { s -> s is io.github.honeyslatt.music.core.DownloadState.Queued || s is io.github.honeyslatt.music.core.DownloadState.Coming } }
+    return when {
+        coming -> "Downloading • $kept of ${own.size}"
+        kept == own.size -> "Downloaded • ${songs(kept)}"
+        else -> "$kept of ${songs(own.size)} downloaded"
     }
 }
 

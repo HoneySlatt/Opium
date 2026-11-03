@@ -12,6 +12,7 @@ import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -38,6 +39,9 @@ fun AlbumTrackRow(number: Int, track: Track, last: Boolean, onClick: () -> Unit 
     val actions = LocalActions.current
     val anchor = rememberAnchor()
     val more = rememberAnchor()
+    val off = io.github.honeyslatt.music.ui.components.LocalDownloads.current.unplayable(track)
+    val tap: () -> Unit = { if (off) actions?.notDownloaded(track) else onClick() }
+    val faded = Modifier.alpha(if (off) io.github.honeyslatt.music.ui.components.FADED else 1f)
     if (io.github.honeyslatt.music.ui.theme.look.layout.rows == io.github.honeyslatt.music.core.model.Rows.STACKED) {
         // Spotify's: no number nor hairline, the E and the artists under
         // the title, the menu's dots upright.
@@ -46,13 +50,15 @@ fun AlbumTrackRow(number: Int, track: Track, last: Boolean, onClick: () -> Unit 
                 .fillMaxWidth()
                 .heightIn(min = 60.dp)
                 .anchor(anchor)
-                .press(onLongClick = { actions?.trackMenu(track, anchor.rect) }, onClick = onClick)
+                .then(faded)
+                .press(onLongClick = { actions?.trackMenu(track, anchor.rect) }, onClick = tap)
                 .padding(start = 16.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             androidx.compose.foundation.layout.Column(Modifier.weight(1f)) {
                 Line(track.title, geist(16.sp).copy(color = if (now) roles.tint else roles.text))
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    io.github.honeyslatt.music.ui.components.DownloadBadge(track)
                     if (track.explicit) ExplicitBadge()
                     Line(track.artists.joinToString(", "), geist(13.5.sp).copy(color = roles.sub))
                 }
@@ -69,7 +75,8 @@ fun AlbumTrackRow(number: Int, track: Track, last: Boolean, onClick: () -> Unit 
             .fillMaxWidth()
             .heightIn(min = 52.dp)
             .anchor(anchor)
-            .press(onLongClick = { actions?.trackMenu(track, anchor.rect) }, onClick = onClick)
+            .then(faded)
+            .press(onLongClick = { actions?.trackMenu(track, anchor.rect) }, onClick = tap)
             .padding(start = 20.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -90,6 +97,7 @@ fun AlbumTrackRow(number: Int, track: Track, last: Boolean, onClick: () -> Unit 
                 Line(track.title, geist(16.sp).copy(color = if (now) roles.tint else roles.text), Modifier.weight(1f, fill = false))
                 if (track.explicit) ExplicitBadge()
             }
+            io.github.honeyslatt.music.ui.components.DownloadBadge(track)
             Box(Modifier.padding(end = 6.dp).size(44.dp).anchor(more).press { actions?.trackMenu(track, more.rect) }, contentAlignment = Alignment.Center) {
                 Glyph(Icons.More, roles.text, 20.dp)
             }
