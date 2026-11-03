@@ -271,10 +271,26 @@ impl NewPlaylist {
         let picked = self.picked.clone();
         let ctx = ctx.clone();
         std::thread::spawn(move || {
-            let Some(file) = rfd::FileDialog::new()
-                .set_title("Choose a Cover")
-                .add_filter("Pictures", &["jpg", "jpeg", "png"])
-                .pick_file()
+            // Through the desktop's portal: its own file window, whatever
+            // the desktop, and no library loaded for it.
+            use ashpd::desktop::file_chooser::{FileFilter, SelectedFiles};
+            let Ok(rt) = tokio::runtime::Builder::new_current_thread().enable_all().build() else {
+                return;
+            };
+            let chosen = rt.block_on(async {
+                SelectedFiles::open_file()
+                    .title("Choose a Cover")
+                    .accept_label("Choose")
+                    .modal(true)
+                    .multiple(false)
+                    .filter(FileFilter::new("Pictures").mimetype("image/jpeg").mimetype("image/png"))
+                    .send()
+                    .await?
+                    .response()
+            });
+            let Some(file) = chosen
+                .ok()
+                .and_then(|files| files.uris().first().and_then(|u| file_path(&u.to_string())))
             else {
                 return;
             };
@@ -285,6 +301,28 @@ impl NewPlaylist {
             ctx.request_repaint();
         });
     }
+}
+
+/// The file a `file://` address names, its escapes undone.
+fn file_path(uri: &str) -> Option<std::path::PathBuf> {
+    let escaped = uri.strip_prefix("file://")?.as_bytes();
+    let mut path = Vec::with_capacity(escaped.len());
+    let mut i = 0;
+    while i < escaped.len() {
+        let hex = |b: u8| (b as char).to_digit(16);
+        match (escaped[i], escaped.get(i + 1).copied().and_then(hex), escaped.get(i + 2).copied().and_then(hex)) {
+            (b'%', Some(high), Some(low)) => {
+                path.push((high * 16 + low) as u8);
+                i += 3;
+            }
+            (b, _, _) => {
+                path.push(b);
+                i += 1;
+            }
+        }
+    }
+    use std::os::unix::ffi::OsStringExt;
+    Some(std::ffi::OsString::from_vec(path).into())
 }
 
 /// Whether `provider`'s playlists take a cover from here: Music's own and Navidrome's.
