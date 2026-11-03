@@ -7,6 +7,7 @@
 //!   cargo run -p apple-music --example am -- fetch 1463409605 out.m4a
 //!   cargo run -p apple-music --example am -- play 1463409605 1463409610
 //!   cargo run -p apple-music --example am -- lyrics 1463409605
+//!   cargo run -p apple-music --example am -- subscribed
 //!   cargo run -p apple-music --example am -- radio
 //!   cargo run -p apple-music --example am -- links 617154366
 //!   cargo run -p apple-music --example am -- new
@@ -91,10 +92,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some("add-library") if args.len() == 3 => {
             add_library(&connect().await?, &args[1], &args[2]).await
         }
+        Some("subscribed") => {
+            println!("{:?}", connect().await?.subscribed().await?);
+            Ok(())
+        }
         Some("lyrics") if args.len() == 2 => lyrics(&connect().await?, &args[1]).await,
         _ => {
             eprintln!(
-                "usage: am signin | library | search <term> | search-library <term> | fetch <id> <out> | play <id>… | lyrics <id> | radio | new | links <id> | station <id> | add-library <kind> <id> | live <station> <out.aac> [seconds]"
+                "usage: am signin | library | search <term> | search-library <term> | fetch <id> <out> | play <id>… | subscribed | lyrics <id> | radio | new | links <id> | station <id> | add-library <kind> <id> | live <station> <out.aac> [seconds]"
             );
             Ok(())
         }

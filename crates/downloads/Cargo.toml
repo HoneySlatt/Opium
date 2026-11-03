@@ -1,0 +1,27 @@
+[package]
+name = "downloads"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+# The app's key kept in the desktop's keyring (the Secret Service).
+keyring = ["dep:oo7"]
+
+[dependencies]
+aes-gcm = "0.10.3"
+oo7 = { version = "0.6.0", optional = true }
+rand = "0.10.3"
+
+[dev-dependencies]
+apple-music = { path = "../apple-music" }
+music-core = { path = "../music-core" }
+navidrome = { path = "../navidrome" }
+serde_json = "1.0.154"
+symphonia = { version = "0.6.1", default-features = false, features = ["isomp4", "aac", "flac", "mp3", "wav", "aiff", "pcm", "ogg", "vorbis"] }
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros"] }
+widevine = { path = "../widevine" }
+
+[[example]]
+name = "spike"
+required-features = ["keyring"]

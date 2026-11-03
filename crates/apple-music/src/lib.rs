@@ -268,6 +268,14 @@ impl AppleMusic {
             }))
     }
 
+    /// Whether the account's subscription is active, as Apple says it:
+    /// what keeps downloaded songs playable. `None` when it doesn't say.
+    pub async fn subscribed(&self) -> Result<Option<bool>> {
+        let account: Option<serde_json::Value> =
+            self.fetch("/v1/me/account?meta=subscription").await?;
+        Ok(account.and_then(|a| a["meta"]["subscription"]["active"].as_bool()))
+    }
+
     pub fn storefront(&self) -> &str {
         &self.storefront
     }
