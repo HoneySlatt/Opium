@@ -568,6 +568,44 @@ pub fn last_sample_duration(data: &[u8]) -> Option<u32> {
     (last + 4 <= be).then(|| u32be(data, last))
 }
 
+/// What says how a fragment was encrypted (its IVs, the sample groups of
+/// its keys) and the keys' own boxes.
+const ENCRYPTION: [&[u8; 4]; 6] = [b"saiz", b"saio", b"senc", b"sbgp", b"sgpd", b"pssh"];
+
+fn clear_children(buf: &mut [u8], body_start: usize, body_end: usize) {
+    for (pos, bs, be) in find_all_children(buf, body_start, body_end) {
+        let kind = &buf[pos + 4..pos + 8];
+        if kind == b"traf" {
+            clear_children(buf, bs, be);
+        } else if ENCRYPTION.iter().any(|k| kind == *k) {
+            buf[pos + 4..pos + 8].copy_from_slice(b"free");
+        }
+    }
+}
+
+/// Once decrypted, the init's key boxes relabelled `free`, as are those of
+/// each fragment through [`clear_fragment`]: a player taking the track as
+/// plain AAC then finds nothing saying it is encrypted (ExoPlayer fails on
+/// a `saiz` without a key). Only the types change, so every offset holds.
+pub fn clear_init(buf: &mut [u8]) {
+    let mut pos = 0;
+    while let Some((bs, be, total)) = read_box(buf, pos) {
+        if box_type(buf, pos) == MOOV {
+            clear_children(buf, bs, be);
+            return;
+        }
+        pos += total;
+    }
+}
+
+/// The fragment whose `moof` starts at `moof`, its encryption boxes
+/// relabelled `free`: see [`clear_init`].
+pub fn clear_fragment(buf: &mut [u8], moof: usize) {
+    if let Some((bs, be, _)) = read_box(buf, moof).filter(|_| box_type(buf, moof) == MOOF) {
+        clear_children(buf, bs, be);
+    }
+}
+
 /// Relabel `enca`/`encv` as `mp4a` so the decoder reads the track as plain AAC.
 /// Only the 4-byte box type changes, so every offset is preserved.
 pub fn patch_init(buf: &mut [u8], layout: &Fmp4Layout) {
@@ -577,12 +615,14 @@ pub fn patch_init(buf: &mut [u8], layout: &Fmp4Layout) {
         }
     }
     one_sample_entry(buf, &layout.several_entries);
-    if !layout.several_entries.is_empty() {
-        let mut fragments: Vec<usize> = layout.samples.iter().map(|s| s.fragment).collect();
-        fragments.dedup();
-        for moof in fragments {
+    clear_init(buf);
+    let mut fragments: Vec<usize> = layout.samples.iter().map(|s| s.fragment).collect();
+    fragments.dedup();
+    for moof in fragments {
+        if !layout.several_entries.is_empty() {
             first_sample_entry(buf, moof);
         }
+        clear_fragment(buf, moof);
     }
 }
 
@@ -769,6 +809,38 @@ mod tests {
 
     fn concat(parts: &[Vec<u8>]) -> Vec<u8> {
         parts.iter().flatten().copied().collect()
+    }
+
+    /// Decrypted, nothing says it was encrypted: the key boxes of the init
+    /// and of each fragment are `free`, the rest as it was, every size kept.
+    #[test]
+    fn decrypted_boxes_say_nothing_of_encryption() {
+        let moov = boxed(b"moov", &concat(&[boxed(b"pssh", &[1; 12]), boxed(b"trak", &[])]));
+        let traf = boxed(
+            b"traf",
+            &concat(&[
+                boxed(b"tfhd", &[0; 8]),
+                boxed(b"saiz", &[0; 9]),
+                boxed(b"saio", &[0; 12]),
+                boxed(b"senc", &[0; 8]),
+                boxed(b"sbgp", &[0; 4]),
+                boxed(b"sgpd", &[0; 4]),
+                boxed(b"trun", &[0; 8]),
+            ]),
+        );
+        let moof = boxed(b"moof", &traf);
+        let mut data = concat(&[boxed(b"ftyp", b"isom"), moov, moof.clone(), boxed(b"mdat", &[7; 4])]);
+        let before = data.len();
+        let at = data.len() - moof.len() - 12;
+        clear_init(&mut data);
+        clear_fragment(&mut data, at);
+        assert_eq!(data.len(), before);
+        let kinds: Vec<&[u8]> = data.windows(4).filter(|w| [b"pssh", b"saiz", b"saio", b"senc", b"sbgp", b"sgpd"].iter().any(|k| w == *k)).collect();
+        assert!(kinds.is_empty(), "left: {kinds:?}");
+        for kind in [b"ftyp", b"trak", b"tfhd", b"trun", b"mdat"] {
+            assert!(data.windows(4).any(|w| w == kind));
+        }
+        assert_eq!(data.windows(4).filter(|w| w == b"free").count(), 6);
     }
 
     /// An init segment whose sole track is encrypted and has id 1, so a

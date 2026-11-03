@@ -220,6 +220,7 @@ impl Feed {
                             }
                         }
                         crate::fmp4::one_sample_entry(&mut state.data, &found.several_entries);
+                        crate::fmp4::clear_init(&mut state.data);
                         state.ready = found.end;
                         *init = Some(found);
                     }
@@ -231,13 +232,15 @@ impl Feed {
                 let before = state.samples.len();
                 state.ready = init.fragments(&state.data, state.ready, &mut state.samples);
                 let added = state.samples.len() - before;
-                if !init.several_entries.is_empty() {
-                    let mut fragments: Vec<usize> =
-                        state.samples[before..].iter().map(|s| s.fragment).collect();
-                    fragments.dedup();
-                    for moof in fragments {
+                let mut fragments: Vec<usize> =
+                    state.samples[before..].iter().map(|s| s.fragment).collect();
+                fragments.dedup();
+                for moof in fragments {
+                    if !init.several_entries.is_empty() {
                         crate::fmp4::first_sample_entry(&mut state.data, moof);
                     }
+                    // Its IVs read: what says it is encrypted goes.
+                    crate::fmp4::clear_fragment(&mut state.data, moof);
                 }
                 state.decrypted.extend(std::iter::repeat_n(false, added));
             }
