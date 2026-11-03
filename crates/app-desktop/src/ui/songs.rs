@@ -19,10 +19,8 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
     let theme = app.theme.clone();
     // Spotify's layout shows the songs as its Liked Songs playlist.
     let banner = theme.layout.header == crate::theme::Header::Banner;
-    // Spotify's Liked Songs: the last added first.
-    if banner {
-        app.want_newest_songs();
-    }
+    // The last added first, as Spotify's Liked Songs, until a column sorts.
+    app.want_newest_songs();
     let table_offset = if banner {
         super::detail::BANNER + super::detail::ACTIONS
     } else {
@@ -407,8 +405,8 @@ fn rebuild_order(app: &mut App) {
     let query = crate::app::fold(app.page_search.trim());
     // Spotify's look lists the last added first, whatever was sorted in another.
     let banner = app.theme.layout.header == crate::theme::Header::Banner;
-    let newest = banner.then_some(app.newest_version);
     let sort = if banner { None } else { view.sort };
+    let newest = sort.is_none().then_some(app.newest_version);
     let downloaded = view.downloaded;
     let songs: &[Track] = if downloaded {
         &app.downloaded

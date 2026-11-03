@@ -366,15 +366,7 @@ fn pinned(app: &App) -> Vec<Row> {
     } else {
         format!("{} songs · every service", app.songs.len())
     };
-    let mut rows = vec![
-        tile("Songs", songs, icons::NOTE, Page::Songs),
-        tile(
-            "Recently Added",
-            "Albums and playlists".into(),
-            icons::CLOCK,
-            Page::RecentlyAdded,
-        ),
-    ];
+    let mut rows = vec![tile("Songs", songs, icons::NOTE, Page::Songs)];
     if let Some(p) = app.playlists.iter().find(|p| p.favourites) {
         let count = p.track_count.map_or_else(
             || "Playlist".to_owned(),
@@ -427,10 +419,6 @@ fn row_ui(app: &App, ui: &mut Ui, theme: &Theme, row: &Row, collapsed: bool) -> 
                 Page::Songs => (
                     theme.tonal.tertiary_container,
                     theme.tonal.on_tertiary_container,
-                ),
-                Page::RecentlyAdded => (
-                    theme.tonal.secondary_container,
-                    theme.tonal.on_secondary_container,
                 ),
                 _ => (theme.accent, theme.on_accent()),
             };
