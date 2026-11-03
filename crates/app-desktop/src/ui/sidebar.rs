@@ -42,6 +42,7 @@ pub fn show(app: &mut App, ui: &mut Ui, collapsed: bool) {
             row(ui, Page::New, icons::GRID, "New");
             row(ui, Page::Radio, icons::RADIO, "Radio");
             section(ui, &theme, "Library", None, collapsed);
+            row(ui, Page::RecentlyAdded, icons::CLOCK, "Recently Added");
             row(ui, Page::Songs, icons::NOTE, "Songs");
             row(ui, Page::Albums, icons::DISC, "Albums");
             row(ui, Page::Artists, icons::MIC, "Artists");

@@ -19,8 +19,11 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
     let theme = app.theme.clone();
     // Spotify's layout shows the songs as its Liked Songs playlist.
     let banner = theme.layout.header == crate::theme::Header::Banner;
-    // The last added first, as Spotify's Liked Songs, until a column sorts.
-    app.want_newest_songs();
+    // Spotify's Liked Songs, and M3E's songs as it: the last added first.
+    let newest_only = banner || theme.expressive();
+    if newest_only {
+        app.want_newest_songs();
+    }
     let table_offset = if banner {
         super::detail::BANNER + super::detail::ACTIONS
     } else {
@@ -51,8 +54,9 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
 
             let columns = Columns::new(left, width, true);
             let table_top = content.top() + table_offset;
-            // Spotify's look keeps the last added first: its titles don't sort.
-            let sort = (!banner).then_some(app.songs_view.sort);
+            // Spotify's look and M3E keep the last added first: their titles
+            // don't sort.
+            let sort = (!newest_only).then_some(app.songs_view.sort);
             if let Some(key) = tracks::head(ui, &theme, &columns, table_top, left, width, sort) {
                 app.songs_view.sort = tracks::cycle(app.songs_view.sort, key);
                 app.songs_view.selected = None;
@@ -403,10 +407,12 @@ fn shown_tracks(app: &App) -> Vec<Track> {
 fn rebuild_order(app: &mut App) {
     let view = &mut app.songs_view;
     let query = crate::app::fold(app.page_search.trim());
-    // Spotify's look lists the last added first, whatever was sorted in another.
-    let banner = app.theme.layout.header == crate::theme::Header::Banner;
-    let sort = if banner { None } else { view.sort };
-    let newest = sort.is_none().then_some(app.newest_version);
+    // Spotify's look and M3E list the last added first, whatever was sorted
+    // in another.
+    let newest_only =
+        app.theme.layout.header == crate::theme::Header::Banner || app.theme.expressive();
+    let newest = newest_only.then_some(app.newest_version);
+    let sort = if newest_only { None } else { view.sort };
     let downloaded = view.downloaded;
     let songs: &[Track] = if downloaded {
         &app.downloaded

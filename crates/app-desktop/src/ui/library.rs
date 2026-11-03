@@ -336,6 +336,10 @@ fn pinned(app: &App, filter: Filter) -> Vec<Row> {
         page,
         menu: None,
     };
+    const PLAIN: [Color32; 2] = [
+        Color32::from_rgb(0x2a, 0x2a, 0x2a),
+        Color32::from_rgb(0x50, 0x50, 0x50),
+    ];
     match filter {
         Filter::Playlists => {
             // The library's songs are Spotify's Liked Songs; Apple's own
@@ -352,7 +356,14 @@ fn pinned(app: &App, filter: Filter) -> Vec<Row> {
                 Page::Songs,
             )]
         }
-        Filter::Albums | Filter::Artists => Vec::new(),
+        Filter::Albums => vec![tile(
+            "Recently Added",
+            "Library".into(),
+            icons::CLOCK,
+            PLAIN,
+            Page::RecentlyAdded,
+        )],
+        Filter::Artists => Vec::new(),
     }
 }
 

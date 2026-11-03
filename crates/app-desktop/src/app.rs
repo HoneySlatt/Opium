@@ -789,8 +789,7 @@ impl App {
             songs_done: false,
             // Apple returns the library in no useful order; the Music app sorts by title.
             songs_view: SongsView {
-                // The last added first.
-                sort: None,
+                sort: Some((SortKey::Title, true)),
                 source: settings
                     .songs_source
                     .filter(|p| !settings.services_off.contains(p)),
