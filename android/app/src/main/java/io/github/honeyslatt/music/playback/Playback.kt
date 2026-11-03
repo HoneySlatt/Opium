@@ -1023,7 +1023,11 @@ class Playback(private val context: Context, private val core: Core, private val
             ProviderKind.APPLE_MUSIC -> {
                 // A catalog song Apple no longer offers here plays from the
                 // library's copy, as Apple Music does.
-                val spatial = (context.applicationContext as io.github.honeyslatt.music.MusicApp).settings.spatialAudio
+                // Atmos for headphones, as Apple Music's Automatic: the phone's
+                // own speakers would play it as stereo anyway, at many times
+                // the battery a stereo song takes.
+                val spatial = (context.applicationContext as io.github.honeyslatt.music.MusicApp).settings.spatialAudio &&
+                    io.github.honeyslatt.music.ui.nowplaying.Outputs.current(context).kind != io.github.honeyslatt.music.ui.nowplaying.OutputKind.Speaker
                 val protected = try {
                     core.session.protected(track.id, spatial)
                 } catch (e: MusicException) {

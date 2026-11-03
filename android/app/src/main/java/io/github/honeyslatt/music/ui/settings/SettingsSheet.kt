@@ -460,7 +460,7 @@ private fun Service(core: Core, settings: Settings, kind: ProviderKind, onSignIn
             }
             if (kind == ProviderKind.APPLE_MUSIC) {
                 GroupRow(first = false) {
-                    Words("Dolby Atmos", "Songs mixed in Atmos play as Spatial Audio, for headphones.")
+                    Words("Dolby Atmos", "Songs mixed in Atmos play as Spatial Audio on headphones; on the phone’s speakers, in stereo.")
                     Switch(settings.spatialAudio) { settings.spatialAudio = it }
                 }
             }
