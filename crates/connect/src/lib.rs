@@ -152,6 +152,11 @@ pub enum Command {
     RemoveUpcoming {
         k: u32,
     },
+    /// Move the `from`-th song coming up to be the `to`-th.
+    MoveUpcoming {
+        from: u32,
+        to: u32,
+    },
     ClearUpcoming,
     PlayList {
         tracks: Vec<Track>,

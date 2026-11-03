@@ -4105,6 +4105,16 @@ impl App {
         }
     }
 
+    pub fn move_upcoming(&mut self, from: usize, to: usize) {
+        if self.ask_far(connect::Command::MoveUpcoming { from: from as u32, to: to as u32 }) {
+            return;
+        }
+        self.queue.move_upcoming(from, to);
+        if from == 0 || to == 0 {
+            self.prefetch_next();
+        }
+    }
+
     pub fn clear_upcoming(&mut self) {
         if self.ask_far(connect::Command::ClearUpcoming) {
             return;
@@ -5168,6 +5178,7 @@ impl App {
             Command::SetRepeat { repeat } => self.set_repeat(repeat),
             Command::Jump { k } => self.jump_to(k as usize),
             Command::RemoveUpcoming { k } => self.remove_upcoming(k as usize),
+            Command::MoveUpcoming { from, to } => self.move_upcoming(from as usize, to as usize),
             Command::ClearUpcoming => self.clear_upcoming(),
             Command::PlayList { tracks, start } => {
                 self.play_list(tracks, start as usize);

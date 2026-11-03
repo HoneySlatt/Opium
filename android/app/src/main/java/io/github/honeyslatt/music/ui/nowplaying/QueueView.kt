@@ -23,6 +23,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -207,7 +211,7 @@ private fun Toggle(icon: androidx.compose.ui.graphics.vector.ImageVector, label:
 }
 
 @Composable
-private fun QueueRow(track: Track, removable: Boolean, onPlay: () -> Unit, onRemove: () -> Unit) {
+private fun QueueRow(track: Track, removable: Boolean, onPlay: () -> Unit, grip: (@Composable () -> Unit)? = null, onRemove: () -> Unit) {
     val np = LocalNp.current
     val actions = LocalActions.current
     val anchor = rememberAnchor()
@@ -226,6 +230,7 @@ private fun QueueRow(track: Track, removable: Boolean, onPlay: () -> Unit, onRem
                 Glyph(Icons.Minuscircle, np.sub, 20.dp)
             }
         }
+        grip?.invoke()
     }
 }
 
@@ -248,6 +253,9 @@ fun ExpressiveQueueView(playback: Playback) {
     val actions = LocalActions.current
     val timer = rememberAnchor()
     val head = geist(18.sp, FontWeight.Bold).copy(color = roles.text)
+    var dragged by remember { mutableStateOf<Int?>(null) }
+    var offset by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    val rowPx = with(androidx.compose.ui.platform.LocalDensity.current) { 60.dp.toPx() }
     LazyColumn(Modifier.fillMaxSize()) {
         item {
             Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -291,7 +299,46 @@ fun ExpressiveQueueView(playback: Playback) {
             }
         }
         itemsIndexed(upcoming, key = { i, t -> "next$i" + t.id.id }) { i, track ->
-            QueueRow(track, removable = true, onPlay = { playback.jump(i) }) { playback.removeUpcoming(i) }
+            // Dragged by its grip, the row follows the finger and goes where it is let go.
+            val dragging = dragged == i
+            Box(
+                Modifier.zIndex(if (dragging) 1f else 0f).graphicsLayer {
+                    translationY = if (dragging) offset else 0f
+                    shadowElevation = if (dragging) 12f else 0f
+                },
+            ) {
+                QueueRow(
+                    track,
+                    removable = true,
+                    onPlay = { playback.jump(i) },
+                    grip = {
+                        Box(
+                            Modifier.size(40.dp).pointerInput(i, upcoming.size) {
+                                detectVerticalDragGestures(
+                                    onDragStart = {
+                                        dragged = i
+                                        offset = 0f
+                                    },
+                                    onDragEnd = {
+                                        val to = (i + kotlin.math.round(offset / rowPx).toInt()).coerceIn(0, upcoming.lastIndex)
+                                        if (to != i) playback.moveUpcoming(i, to)
+                                        dragged = null
+                                        offset = 0f
+                                    },
+                                    onDragCancel = {
+                                        dragged = null
+                                        offset = 0f
+                                    },
+                                ) { change, amount ->
+                                    change.consume()
+                                    offset += amount
+                                }
+                            },
+                            contentAlignment = Alignment.Center,
+                        ) { Glyph(Icons.Grip, roles.sub, 20.dp) }
+                    },
+                ) { playback.removeUpcoming(i) }
+            }
         }
         item {
             BasicText(

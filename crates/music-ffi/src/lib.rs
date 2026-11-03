@@ -1529,6 +1529,11 @@ impl PlayQueue {
         self.with(|q| q.clear_upcoming());
     }
 
+    /// Move the `from`-th upcoming song to be the `to`-th.
+    pub fn move_upcoming(&self, from: u32, to: u32) {
+        self.with(|q| q.move_upcoming(from as usize, to as usize));
+    }
+
     /// Make the `k`-th upcoming song current.
     pub fn jump(&self, k: u32) -> Option<Track> {
         self.with(|q| q.jump(k as usize).cloned())

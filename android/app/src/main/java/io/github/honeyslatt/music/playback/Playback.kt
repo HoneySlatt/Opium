@@ -233,6 +233,13 @@ class Playback(private val context: Context, private val core: Core, private val
         if (k == 0) lineUpNext()
     }
 
+    /** The `from`-th song coming up, moved to be the `to`-th. */
+    fun moveUpcoming(from: Int, to: Int) = either({ Command.MoveUpcoming(from.toUInt(), to.toUInt()) }) {
+        queue.moveUpcoming(from.toUInt(), to.toUInt())
+        changed()
+        if (from == 0 || to == 0) lineUpNext()
+    }
+
     fun clearUpcoming() = either({ Command.ClearUpcoming }) {
         queue.clearUpcoming()
         changed()
@@ -882,6 +889,7 @@ class Playback(private val context: Context, private val core: Core, private val
                 is Command.SetRepeat -> setRepeat(queueRepeat(command.repeat))
                 is Command.Jump -> jump(command.k.toInt())
                 is Command.RemoveUpcoming -> removeUpcoming(command.k.toInt())
+                is Command.MoveUpcoming -> moveUpcoming(command.from.toInt(), command.to.toInt())
                 Command.ClearUpcoming -> clearUpcoming()
                 is Command.PlayList -> playHere(command.tracks, command.start.toInt())
                 is Command.PlayNext -> playNext(command.tracks)

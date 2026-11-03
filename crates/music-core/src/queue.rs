@@ -211,6 +211,26 @@ impl Queue {
         }
     }
 
+    /// Move the `from`-th upcoming track to be the `to`-th. In order, it
+    /// moves among the tracks themselves, so turning shuffle on and off
+    /// again keeps it there; shuffled, in the play order only.
+    pub fn move_upcoming(&mut self, from: usize, to: usize) {
+        self.revision += 1;
+        let n = self.upcoming_len();
+        if from >= n || to >= n || from == to {
+            return;
+        }
+        let base = self.pos + 1;
+        let in_order = self.order.iter().enumerate().all(|(k, &i)| k == i);
+        if !self.shuffle && in_order {
+            let track = self.tracks.remove(base + from);
+            self.tracks.insert(base + to, track);
+        } else {
+            let i = self.order.remove(base + from);
+            self.order.insert(base + to, i);
+        }
+    }
+
     /// Take every upcoming track out, keeping what has played.
     pub fn clear_upcoming(&mut self) {
         self.revision += 1;
@@ -561,5 +581,27 @@ mod tests {
         assert!(q.current().is_none());
         q.add_next(track(7));
         assert_eq!(number(q.current()), Some(7));
+    }
+
+    #[test]
+    fn an_upcoming_song_moves_where_it_is_put_in_order_or_shuffled() {
+        let ids = |q: &Queue| q.upcoming().map(|t| t.id.id.clone()).collect::<Vec<_>>();
+        let mut q = Queue::default();
+        q.replace((0..5).map(track).collect(), 0);
+        q.move_upcoming(3, 0);
+        assert_eq!(ids(&q), ["4", "1", "2", "3"]);
+        // Shuffle on and off: still where it was put.
+        q.set_shuffle(true);
+        q.set_shuffle(false);
+        assert_eq!(ids(&q), ["4", "1", "2", "3"]);
+        q.set_shuffle(true);
+        let mut moved = ids(&q);
+        let first = moved.remove(0);
+        moved.insert(2, first);
+        q.move_upcoming(0, 2);
+        assert_eq!(ids(&q), moved);
+        // Out of range: nothing moves.
+        q.move_upcoming(9, 0);
+        assert_eq!(ids(&q), moved);
     }
 }
