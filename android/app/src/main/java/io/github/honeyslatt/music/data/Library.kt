@@ -169,7 +169,10 @@ class Library(private val core: Core, private val scope: CoroutineScope) {
         // Read whole within the hour (the app started again by the car, or
         // after Android ended it in the background): as kept, not read
         // again page by page; only what was added lately is asked.
-        val fresh = !again && System.currentTimeMillis() - core.libraryReadAt(provider) < FRESH_FOR
+        // On mobile data, read whole twice a day at most: what was added
+        // lately comes all the same; on Wi-Fi, after an hour.
+        val age = System.currentTimeMillis() - core.libraryReadAt(provider)
+        val fresh = !again && age < if (core.metered) FRESH_ON_DATA else FRESH_FOR
         if (!fresh) core.libraryRead(provider, System.currentTimeMillis())
         if (newestAsked) newest(provider, ask = !fresh)
         lists(provider, ask = !fresh)
@@ -436,3 +439,6 @@ class Library(private val core: Core, private val scope: CoroutineScope) {
 
 /** How long a library read whole is taken as it was kept, the app started again. */
 private const val FRESH_FOR = 60 * 60_000L
+
+/** The same on mobile data. */
+private const val FRESH_ON_DATA = 12 * 60 * 60_000L

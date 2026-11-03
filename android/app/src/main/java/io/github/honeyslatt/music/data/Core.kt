@@ -31,6 +31,10 @@ val SERVICES = ProviderKind.entries - ProviderKind.MUSIC
  * sign-ins (in the vault) and the settings.
  */
 class Core(context: Context) {
+    private val connectivity = context.getSystemService(android.net.ConnectivityManager::class.java)
+
+    /** On mobile data (or another network that counts what it carries) now. */
+    val metered: Boolean get() = connectivity.isActiveNetworkMetered
     val session = Session().apply { keepIn(context.filesDir.path) }
     private val prefs = context.getSharedPreferences("music", Context.MODE_PRIVATE)
     /** The sign-ins, and the downloads' key. */
