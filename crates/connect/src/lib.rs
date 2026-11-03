@@ -15,6 +15,7 @@
 //! Paired devices away from each other connect through iroh: see `away`.
 
 mod away;
+mod lend;
 mod pair;
 mod store;
 mod wire;
@@ -35,6 +36,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::timeout;
 
+pub use lend::{Borrowed, Lender, Lent};
 use store::Store;
 use synced::{Kept, Shared};
 
@@ -227,6 +229,9 @@ struct Hello {
     version: u32,
     device: Device,
     pair: bool,
+    /// To borrow a song (see `lend`), not to talk.
+    #[serde(default)]
+    borrow: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -333,6 +338,8 @@ struct Inner {
     /// One change at a time to whether it is on iroh.
     switching: tokio::sync::Mutex<()>,
     events: Box<dyn Fn(Event) + Send + Sync>,
+    /// What lends the paired devices songs, if this one does.
+    lender: Mutex<Option<Arc<dyn Lender>>>,
     serial: AtomicU64,
     rt: tokio::runtime::Handle,
 }
@@ -417,6 +424,7 @@ impl Node {
             want_away: Default::default(),
             switching: Default::default(),
             events,
+            lender: Mutex::default(),
             serial: AtomicU64::new(0),
             rt: rt.handle().clone(),
         });
@@ -604,6 +612,25 @@ impl Node {
         self.inner.rt.spawn(self.inner.clone().switch_away());
     }
 
+    /// The paired computers connected now, which may lend songs.
+    pub fn lenders(&self) -> Vec<String> {
+        lock(&self.inner.seen)
+            .iter()
+            .filter(|(_, s)| s.device.kind == DeviceKind::Computer && s.link.as_ref().is_some_and(Link::alive))
+            .map(|(id, _)| id.clone())
+            .collect()
+    }
+
+    /// Borrow `track` from `from`, a paired device lending songs: what it
+    /// is, and its bytes as they come.
+    pub async fn borrow(&self, from: &str, track: Track, original: bool) -> io::Result<(Lent, Borrowed)> {
+        self.inner
+            .rt
+            .spawn(self.inner.clone().borrow(from.to_owned(), track, original))
+            .await
+            .map_err(io::Error::other)?
+    }
+
     /// Unpair `id`: it is no longer listened to.
     pub fn forget(&self, id: &str) {
         lock(&self.inner.store).forget(id);
@@ -622,6 +649,11 @@ impl Node {
 pub struct Sharer(Arc<Inner>);
 
 impl Sharer {
+    /// Lend the paired devices songs through `lender`, as they ask.
+    pub fn lend(&self, lender: Arc<dyn Lender>) {
+        *lock(&self.0.lender) = Some(lender);
+    }
+
     pub fn share(&self, change: Shared) {
         if !change.is_empty() {
             self.0.broadcast(&Message::Shared(change), None);
@@ -714,7 +746,28 @@ impl Inner {
             version: VERSION,
             device: self.me.clone(),
             pair,
+            borrow: false,
         }
+    }
+
+    /// Borrow `track` from `id`, over a connection of its own.
+    async fn borrow(self: Arc<Self>, id: String, track: Track, original: bool) -> io::Result<(Lent, Borrowed)> {
+        let key = lock(&self.store)
+            .key(&id)
+            .ok_or_else(|| failed("not paired"))?;
+        let mut stream = self.connect(&id).await?;
+        let hello = Hello {
+            borrow: true,
+            ..self.hello(false)
+        };
+        wire::write_json(&mut stream, &hello).await?;
+        let hello: Hello = within(STEP, wire::read_json(&mut stream)).await?;
+        if hello.device.id != id {
+            return Err(failed("another device answered"));
+        }
+        let prologue = prologue(&self.me.id, &id);
+        let keys = within(STEP, wire::handshake(&mut stream, true, &key, &prologue)).await?;
+        lend::borrow(stream, keys, track, original).await
     }
 
     fn encode(message: &Message) -> Arc<[u8]> {
@@ -854,6 +907,10 @@ impl Inner {
         wire::write_json(&mut stream, &self.hello(false)).await?;
         let prologue = prologue(&hello.device.id, &self.me.id);
         let keys = within(STEP, wire::handshake(&mut stream, false, &key, &prologue)).await?;
+        if hello.borrow {
+            let lender = lock(&self.lender).clone();
+            return lend::lend(stream, keys, lender.as_deref()).await;
+        }
         lock(&self.store).update(&hello.device);
         self.talk(hello.device, stream, keys, false).await
     }
@@ -1513,6 +1570,58 @@ mod tests {
         assert_eq!(a_kept.history().len(), 2);
         assert_eq!(a_kept.history()[0].id.id, "2");
         drop((a, b));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    struct Lends(Vec<u8>);
+
+    #[async_trait::async_trait]
+    impl Lender for Lends {
+        async fn lend(&self, track: Track, _: bool) -> Result<(Lent, Box<dyn std::io::Read + Send>), String> {
+            if track.id.id == "refused" {
+                return Err("not this one".into());
+            }
+            let lent = Lent {
+                len: self.0.len() as u64,
+                extension: "m4a".into(),
+                priming: 2112,
+                protected: true,
+                kbps: Some(256),
+                spatial: false,
+            };
+            Ok((lent, Box::new(std::io::Cursor::new(self.0.clone()))))
+        }
+    }
+
+    /// A phone borrows a song from the computer it is paired with: whole,
+    /// in pieces, and told why when it is refused.
+    #[test]
+    fn a_song_is_borrowed_whole() {
+        let dir = std::env::temp_dir().join(format!("connect-lend-{}", std::process::id()));
+        let node = |name: &str, kind| {
+            let d = dir.join(name);
+            Node::launch(name.into(), kind, &d, Kept::open(&d, Vec::new), None, Box::new(|_| {}), false)
+        };
+        let (phone, computer) = (node("p", DeviceKind::Phone), node("c", DeviceKind::Computer));
+        let key = [5; 32];
+        lock(&phone.inner.store).pair(computer.me(), key);
+        lock(&computer.inner.store).pair(phone.me(), key);
+        let mut seen = Seen::new(computer.me());
+        seen.addrs = vec![SocketAddr::from(([127, 0, 0, 1], computer.port))];
+        lock(&phone.inner.seen).insert(computer.me().id, seen);
+        let song: Vec<u8> = (0..1_000_003u32).map(|i| (i * 7) as u8).collect();
+        computer.sharer().lend(Arc::new(Lends(song.clone())));
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let (lent, mut borrowed) = rt
+            .block_on(phone.borrow(&computer.me().id, track("1"), false))
+            .unwrap();
+        assert_eq!((lent.len, lent.priming), (song.len() as u64, 2112));
+        let mut got = Vec::new();
+        std::io::Read::read_to_end(&mut borrowed, &mut got).unwrap();
+        assert_eq!(got, song);
+        let refused = rt.block_on(phone.borrow(&computer.me().id, track("refused"), false));
+        assert_eq!(refused.err().unwrap().to_string(), "not this one");
+        drop((phone, computer));
         let _ = std::fs::remove_dir_all(dir);
     }
 

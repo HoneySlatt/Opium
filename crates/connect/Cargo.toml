@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+async-trait = "0.1.92"
 hex = "0.4.3"
 hmac = "0.13.0"
 iroh = { version = "1.4.1", default-features = false, features = ["tls-ring"] }

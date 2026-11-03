@@ -67,6 +67,41 @@ impl Listener for Told {
     }
 }
 
+/// Lends the paired phone what it can't download itself (Apple Music's and
+/// SoundCloud's encrypted songs), fetched as this computer downloads them,
+/// in the clear only on the paired connection to the phone, which keeps
+/// it sealed.
+struct Lends {
+    fetcher: Arc<Desktop>,
+    runtime: tokio::runtime::Handle,
+}
+
+#[async_trait::async_trait]
+impl connect::Lender for Lends {
+    async fn lend(
+        &self,
+        track: Track,
+        original: bool,
+    ) -> Result<(connect::Lent, Box<dyn std::io::Read + Send>), String> {
+        let services = lock(&self.fetcher.0).clone();
+        let fetched = self
+            .runtime
+            .spawn(fetch(services, track, original))
+            .await
+            .map_err(|e| e.to_string())??;
+        let song = fetched.song;
+        let lent = connect::Lent {
+            len: fetched.len,
+            extension: song.extension,
+            priming: song.priming,
+            protected: song.protected,
+            kbps: song.kbps,
+            spatial: song.spatial,
+        };
+        Ok((lent, fetched.reader))
+    }
+}
+
 #[derive(Clone)]
 pub(super) struct Downloads {
     queue: downloads::queue::Downloads,
@@ -95,6 +130,14 @@ impl Downloads {
             opening.opened(opened);
         });
         Self { queue, fetcher }
+    }
+
+    /// What lends the phone songs, with the services as they are.
+    pub fn lender(&self) -> Arc<dyn connect::Lender> {
+        Arc::new(Lends {
+            fetcher: self.fetcher.clone(),
+            runtime: tokio::runtime::Handle::current(),
+        })
     }
 
     pub fn services(&self, services: Services) {

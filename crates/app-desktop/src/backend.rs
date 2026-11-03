@@ -745,6 +745,7 @@ impl Backend {
         let again = requests.clone();
         let seen: Arc<dyn apple_music::SeenElsewhere> =
             Arc::new(SeenShared(own.kept.clone(), own.share.clone()));
+        let lends = own.share.clone();
         let (tx, replies) = mpsc::channel();
         own.replies = Some(Replies {
             tx: tx.clone(),
@@ -758,7 +759,7 @@ impl Backend {
                     .enable_all()
                     .build()
                     .expect("start the tokio runtime");
-                runtime.block_on(run(request_rx, again, replies_out, off, seen));
+                runtime.block_on(run(request_rx, again, replies_out, off, seen, lends));
             })
             .expect("spawn the backend thread");
         Self {
@@ -898,6 +899,7 @@ async fn run(
     replies: Replies,
     off: Vec<ProviderKind>,
     seen: Arc<dyn apple_music::SeenElsewhere>,
+    lends: connect::Sharer,
 ) {
     let on = |p| !off.contains(&p);
     // Apple Music and SoundCloud at once, before anything is asked of them.
@@ -945,6 +947,8 @@ async fn run(
     let mut loading = Loading::default();
     let mut warming: Option<tokio::task::JoinHandle<()>> = None;
     let downloads = downloading::Downloads::open(replies.clone());
+    // The paired phone borrows what it can't download itself.
+    lends.lend(downloads.lender());
     if let Some(am) = apple.clone() {
         confirm_subscription(am, downloads.clone());
     }
