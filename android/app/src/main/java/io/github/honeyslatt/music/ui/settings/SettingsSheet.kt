@@ -182,6 +182,23 @@ private fun Root(core: Core, settings: Settings, go: (SettingsPage) -> Unit) {
         }
     }
 
+    // Where Home, New and Radio come from, when there is a choice.
+    val connected = io.github.honeyslatt.music.data.SERVICES.filter { core.connection(it).collectAsStateWithLifecycle().value is Connection.Connected }
+    if (connected.size > 1) {
+        Label("Home, New and Radio")
+        val shown = settings.browseSource?.takeIf { it in connected }
+            ?: connected.firstOrNull { it == ProviderKind.APPLE_MUSIC } ?: connected.first()
+        Group("These pages show one service’s picks, stations and genres. Search and your library show every service.") {
+            connected.forEachIndexed { i, kind ->
+                GroupRow(first = i == 0, inset = 58.dp, onClick = { settings.browseSource = kind }) {
+                    ServiceLogo(kind, 30.dp)
+                    Words(kind.label())
+                    if (shown == kind) Glyph(Icons.Check, roles.tint, 18.dp)
+                }
+            }
+        }
+    }
+
     Label("Library")
     Group {
         GroupRow(first = true) {

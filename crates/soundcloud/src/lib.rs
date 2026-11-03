@@ -7,6 +7,7 @@
 
 mod client_id;
 mod convert;
+mod discover;
 mod resume;
 pub mod signin;
 mod stream;
@@ -16,8 +17,8 @@ use std::sync::{Mutex, RwLock};
 
 use async_trait::async_trait;
 use music_core::model::{
-    Album, Artist, ArtistDetail, Collection, Cursor, FavouriteKind, ItemId, Page, Playlist,
-    ProviderKind, SearchResults, SongLinks, Track,
+    Album, Artist, ArtistDetail, Collection, Cursor, FavouriteKind, Genre, ItemId, Page, Playlist,
+    ProviderKind, SearchResults, Shelf, SongLinks, Track,
 };
 use music_core::{Error, Provider, Result};
 use serde::de::DeserializeOwned;
@@ -543,8 +544,14 @@ impl SoundCloud {
                 &[("representation", "full")],
             )
             .await?;
-        let missing: Vec<u64> = playlist
-            .tracks
+        self.whole_tracks(&mut playlist.tracks).await?;
+        Ok(playlist)
+    }
+
+    /// `tracks` as SoundCloud has them whole: a list gives only the first
+    /// few so, the others by their ids; those it no longer has go.
+    async fn whole_tracks(&self, tracks: &mut Vec<types::Track>) -> Result<()> {
+        let missing: Vec<u64> = tracks
             .iter()
             .filter(|t| t.title.is_none())
             .map(|t| t.id)
@@ -559,7 +566,7 @@ impl SoundCloud {
             let tracks: Vec<types::Track> = self.get_with("/tracks", &[("ids", &ids)]).await?;
             found.extend(tracks.into_iter().map(|t| (t.id, t)));
         }
-        for track in &mut playlist.tracks {
+        for track in tracks.iter_mut() {
             if track.title.is_none()
                 && let Some(whole) = found.remove(&track.id)
             {
@@ -567,8 +574,8 @@ impl SoundCloud {
             }
         }
         // Those SoundCloud no longer has stay out.
-        playlist.tracks.retain(|t| t.title.is_some());
-        Ok(playlist)
+        tracks.retain(|t| t.title.is_some());
+        Ok(())
     }
 }
 
@@ -967,11 +974,39 @@ impl Provider for SoundCloud {
     }
 
     /// All of it at once: SoundCloud playlists are short (500 at most).
+    async fn home(&self) -> Result<Vec<Shelf>> {
+        self.discover_home().await
+    }
+
+    async fn new_music(&self) -> Result<Vec<Shelf>> {
+        self.discover_new().await
+    }
+
+    async fn radio(&self) -> Result<Vec<Shelf>> {
+        self.discover_radio().await
+    }
+
+    async fn genres(&self) -> Result<Vec<Genre>> {
+        self.discover_genres().await
+    }
+
+    async fn genre_charts(&self, genre: &str) -> Result<Vec<Shelf>> {
+        self.discover_genre(genre).await
+    }
+
     async fn playlist_tracks(
         &self,
         playlist: &ItemId,
         _cursor: Option<&Cursor>,
     ) -> Result<Page<Track>> {
+        // One of SoundCloud's own (a mix, a trending list).
+        if playlist.id.starts_with(discover::SYSTEM) {
+            let list = self.system(&playlist.id).await?;
+            return Ok(Page {
+                items: list.tracks.into_iter().map(convert::track).collect(),
+                next: None,
+            });
+        }
         let playlist = self.whole_playlist(playlist).await?;
         Ok(Page {
             items: playlist.tracks.into_iter().map(convert::track).collect(),

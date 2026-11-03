@@ -52,7 +52,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 class CarLibrary(private val app: MusicApp, private val scope: CoroutineScope) : MediaLibrarySession.Callback {
     private val session get() = app.core.session
     private val playback get() = app.playback
-    private val browse = Browse(app.core, scope)
+    private val browse = Browse(app.core, scope, app.settings)
 
     /** What the ids handed out stand for, the latest few thousand. */
     private sealed interface Node {

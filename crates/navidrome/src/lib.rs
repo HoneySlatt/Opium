@@ -14,8 +14,8 @@ use async_trait::async_trait;
 use md5::{Digest, Md5};
 use music_core::growing::{Growing, growing};
 use music_core::model::{
-    Album, Artist, ArtistDetail, Collection, Cursor, FavouriteKind, ItemId, Lyrics, Page, Playlist,
-    ProviderKind, SearchResults, SongLinks, Track,
+    Album, Artist, ArtistDetail, Collection, Cursor, FavouriteKind, Genre, ItemId, Lyrics, Page,
+    Playlist, ProviderKind, SearchResults, Shelf, SongLinks, Station, StationKind, Track,
 };
 use music_core::{Error, Provider, Result};
 use serde::{Deserialize, Serialize};
@@ -31,6 +31,43 @@ const PAGE: usize = 500;
 const SONGS_PER_CALL: usize = 100;
 /// A song's station, as the app names it: `similar:<song id>`.
 const STATION: &str = "similar:";
+/// The station of the whole library, at random: `similar:everything`.
+const EVERYTHING: &str = "everything";
+
+/// A shelf of `albums` titled `title`; none if there are none.
+fn shelf(title: &str, albums: Vec<Album>) -> Option<Shelf> {
+    (!albums.is_empty()).then(|| Shelf {
+        title: title.into(),
+        hero: false,
+        items: albums.into_iter().map(Collection::Album).collect(),
+        picks: Vec::new(),
+        songs: Vec::new(),
+    })
+}
+
+/// This year, by the clock.
+fn current_year() -> i64 {
+    let days = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs() / 86_400) as i64;
+    // Days to a civil year (Howard Hinnant's algorithm).
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    yoe + era * 400 + i64::from(mp >= 10)
+}
+
+#[cfg(test)]
+mod year {
+    #[test]
+    fn this_year_is_read_off_the_clock() {
+        // Run in 2026 or later.
+        assert!(super::current_year() >= 2026);
+    }
+}
 
 /// How the app signs in to a server: its address, the user, and a salted
 /// token in place of the password.
@@ -502,6 +539,23 @@ impl Navidrome {
         convert::album(&self.urls, album)
     }
 
+    /// `size` albums of the server's list of `kind` (recent, frequent…).
+    async fn albums(&self, kind: &str, size: usize) -> Result<Vec<Album>> {
+        let body = self
+            .call(
+                "getAlbumList2",
+                &[("type", kind.into()), ("size", size.to_string())],
+            )
+            .await?;
+        Ok(body
+            .album_list2
+            .unwrap_or_default()
+            .album
+            .into_iter()
+            .map(|a| self.album_of(a))
+            .collect())
+    }
+
     /// The offset a cursor names, or the start.
     fn offset(cursor: Option<&Cursor>) -> usize {
         cursor.and_then(|c| c.0.parse().ok()).unwrap_or(0)
@@ -789,6 +843,167 @@ impl Provider for Navidrome {
         })
     }
 
+    /// Home: what was played lately, most, starred, and some to find again.
+    async fn home(&self) -> Result<Vec<Shelf>> {
+        let (recent, frequent, starred, random) = tokio::join!(
+            self.albums("recent", 20),
+            self.albums("frequent", 20),
+            self.call("getStarred2", &[]),
+            self.albums("random", 20),
+        );
+        let starred = starred
+            .map(|b| b.starred2.unwrap_or_default().album)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|a| self.album_of(a))
+            .collect();
+        Ok([
+            ("Recently Played", recent.unwrap_or_default()),
+            ("Most Played", frequent.unwrap_or_default()),
+            ("Favourites", starred),
+            ("Rediscover", random.unwrap_or_default()),
+        ]
+        .into_iter()
+        .filter_map(|(title, albums)| shelf(title, albums))
+        .collect())
+    }
+
+    /// New: what joined the server lately, and this year's releases on it.
+    async fn new_music(&self) -> Result<Vec<Shelf>> {
+        let year = current_year();
+        let by_year = [
+            ("type", "byYear".to_owned()),
+            ("fromYear", year.to_string()),
+            ("toYear", (year - 1).to_string()),
+            ("size", "40".to_owned()),
+        ];
+        let (newest, this_year) = tokio::join!(
+            self.albums("newest", 40),
+            self.call("getAlbumList2", &by_year),
+        );
+        let newest = newest?;
+        // Those shown as added lately aren't shown again.
+        let this_year = this_year
+            .map(|b| b.album_list2.unwrap_or_default().album)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|a| self.album_of(a))
+            .filter(|a| !newest.iter().any(|n| n.id == a.id))
+            .collect();
+        Ok([("Recently Added", newest), ("Released Lately", this_year)]
+            .into_iter()
+            .filter_map(|(title, albums)| shelf(title, albums))
+            .collect())
+    }
+
+    /// Radio: the whole library shuffled, and a station from each song starred.
+    async fn radio(&self) -> Result<Vec<Shelf>> {
+        // Shown with an album of the library's, at random.
+        let cover = self
+            .albums("random", 1)
+            .await
+            .ok()
+            .and_then(|a| a.into_iter().next())
+            .and_then(|a| a.artwork);
+        let all = Station {
+            id: ItemId::new(ProviderKind::Navidrome, format!("{STATION}{EVERYTHING}")),
+            name: "Shuffle All".into(),
+            description: Some("Your whole library, at random".into()),
+            artwork: cover,
+            kind: StationKind::Tracks,
+        };
+        let starred = self
+            .call("getStarred2", &[])
+            .await
+            .map(|b| b.starred2.unwrap_or_default().song)
+            .unwrap_or_default();
+        let stations: Vec<Collection> = starred
+            .into_iter()
+            .take(20)
+            .map(|song| {
+                let track = self.track(song.clone());
+                Collection::Station(Station {
+                    id: ItemId::new(ProviderKind::Navidrome, format!("{STATION}{}", song.id)),
+                    name: track.title.clone(),
+                    description: Some(format!("Songs like it · {}", track.artists.join(", "))),
+                    artwork: track.artwork,
+                    kind: StationKind::Tracks,
+                })
+            })
+            .collect();
+        let mut shelves = vec![Shelf {
+            title: "Stations".into(),
+            hero: true,
+            items: vec![Collection::Station(all)],
+            picks: Vec::new(),
+            songs: Vec::new(),
+        }];
+        if !stations.is_empty() {
+            shelves.push(Shelf {
+                title: "From Your Favourites".into(),
+                hero: false,
+                items: stations,
+                picks: Vec::new(),
+                songs: Vec::new(),
+            });
+        }
+        Ok(shelves)
+    }
+
+    /// The genres the server's songs are tagged with, the largest first.
+    async fn genres(&self) -> Result<Vec<Genre>> {
+        let body = self.call("getGenres", &[]).await?;
+        let mut genres = body.genres.unwrap_or_default().genre;
+        genres.retain(|g| !g.value.trim().is_empty() && g.album_count > 0);
+        genres.sort_by(|a, b| b.album_count.cmp(&a.album_count));
+        Ok(genres
+            .into_iter()
+            .map(|g| Genre {
+                id: g.value.clone(),
+                name: g.value,
+            })
+            .collect())
+    }
+
+    /// A genre's albums and songs on the server.
+    async fn genre_charts(&self, genre: &str) -> Result<Vec<Shelf>> {
+        let by_genre = [
+            ("type", "byGenre".to_owned()),
+            ("genre", genre.to_owned()),
+            ("size", "50".to_owned()),
+        ];
+        let of_genre = [("genre", genre.to_owned()), ("count", "50".to_owned())];
+        let (albums, songs) = tokio::join!(
+            self.call("getAlbumList2", &by_genre),
+            self.call("getSongsByGenre", &of_genre),
+        );
+        let albums: Vec<Album> = albums?
+            .album_list2
+            .unwrap_or_default()
+            .album
+            .into_iter()
+            .map(|a| self.album_of(a))
+            .collect();
+        let songs: Vec<Track> = songs
+            .map(|b| b.songs_by_genre.unwrap_or_default().song)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|s| self.track(s))
+            .collect();
+        let mut shelves = Vec::new();
+        if !songs.is_empty() {
+            shelves.push(Shelf {
+                title: "Songs".into(),
+                hero: false,
+                items: Vec::new(),
+                picks: Vec::new(),
+                songs,
+            });
+        }
+        shelves.extend(shelf("Albums", albums));
+        Ok(shelves)
+    }
+
     /// Songs like the station's, as the server's agents know them, else at
     /// random; none twice.
     async fn station_tracks(&self, station: &ItemId, count: usize) -> Result<Vec<Track>> {
@@ -797,14 +1012,18 @@ impl Provider for Navidrome {
             .strip_prefix(STATION)
             .ok_or_else(|| Error::Protocol(format!("not a Navidrome station: {}", station.id)))?;
         let count = count.max(20).to_string();
-        let similar = self
-            .call(
+        // The whole library's station: at random only.
+        let similar = if seed == EVERYTHING {
+            Vec::new()
+        } else {
+            self.call(
                 "getSimilarSongs2",
                 &[("id", seed.to_owned()), ("count", count.clone())],
             )
             .await
             .map(|b| b.similar_songs2.unwrap_or_default().song)
-            .unwrap_or_default();
+            .unwrap_or_default()
+        };
         let mut songs = similar;
         {
             let seen = self.stations.lock().unwrap_or_else(|e| e.into_inner());

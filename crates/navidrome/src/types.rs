@@ -210,4 +210,19 @@ pub struct Body {
     pub random_songs: Option<Songs>,
     pub lyrics_list: Option<LyricsList>,
     pub song: Option<Song>,
+    pub genres: Option<Genres>,
+    pub songs_by_genre: Option<Songs>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct Genres {
+    pub genre: Vec<Genre>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct Genre {
+    pub value: String,
+    pub album_count: u32,
 }

@@ -72,27 +72,41 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
-/** Apple's Home, New and Radio pages: asked for once, and again after half an hour. */
-class Browse(private val core: Core, private val scope: CoroutineScope) {
+/**
+ * Home, New and Radio, as the service they come from shows them (see
+ * [source]): asked for once, again after half an hour or once it changes.
+ */
+class Browse(private val core: Core, private val scope: CoroutineScope, private val settings: io.github.honeyslatt.music.data.Settings) {
     enum class Page { Home, New, Radio }
 
     private val pages = Page.entries.associateWith { MutableStateFlow<Loading<List<Shelf>>>(Loading.Pending) }
-    private val asked = mutableMapOf<Page, Long>()
+    private val asked = mutableMapOf<Page, Pair<Long, io.github.honeyslatt.music.core.model.ProviderKind>>()
+
+    fun source() = browseSource(core, settings)
 
     fun shelves(page: Page): StateFlow<Loading<List<Shelf>>> {
+        val source = source() ?: return pages.getValue(page).also {
+            // None connected (yet): waiting while one connects, else nothing to show.
+            val connecting = io.github.honeyslatt.music.data.SERVICES.any { k -> core.connection(k).value is io.github.honeyslatt.music.data.Connection.Connecting }
+            if (!connecting) it.value = Loading.Ready(emptyList())
+        }
         val now = System.currentTimeMillis()
-        val stale = asked[page]?.let { now - it > 30 * 60_000 } ?: true
+        val last = asked[page]
+        val stale = last == null || last.second != source || now - last.first > 30 * 60_000
         if (stale || pages.getValue(page).value is Loading.Failed) {
-            asked[page] = now
+            // Another service: not the last one's shelves meanwhile.
+            if (last != null && last.second != source) pages.getValue(page).value = Loading.Pending
+            asked[page] = now to source
             scope.launch {
                 val got = load {
                     when (page) {
-                        Page.Home -> core.session.home()
-                        Page.New -> core.session.newMusic()
-                        Page.Radio -> core.session.radio()
+                        Page.Home -> core.session.home(source)
+                        Page.New -> core.session.newMusic(source)
+                        Page.Radio -> core.session.radio(source)
                     }
                 }
-                // A failure keeps what was there.
+                // Asked of another since: not shown. A failure keeps what was there.
+                if (asked[page]?.second != source) return@launch
                 if (got is Loading.Ready || pages.getValue(page).value !is Loading.Ready) pages.getValue(page).value = got
             }
         }
@@ -100,14 +114,26 @@ class Browse(private val core: Core, private val scope: CoroutineScope) {
     }
 }
 
+/** The services connected now that can fill Home, New, Radio and the genres. */
+fun browseSources(core: Core): List<io.github.honeyslatt.music.core.model.ProviderKind> =
+    io.github.honeyslatt.music.data.SERVICES.filter { core.connection(it).value is io.github.honeyslatt.music.data.Connection.Connected }
+
+/** Where they come from: the one chosen in Settings if connected, else Apple Music, else the first connected. */
+fun browseSource(core: Core, settings: io.github.honeyslatt.music.data.Settings): io.github.honeyslatt.music.core.model.ProviderKind? {
+    val connected = browseSources(core)
+    return settings.browseSource?.takeIf { it in connected }
+        ?: connected.firstOrNull { it == io.github.honeyslatt.music.core.model.ProviderKind.APPLE_MUSIC }
+        ?: connected.firstOrNull()
+}
+
 /** How a page shows its hero shelf. */
 private enum class Hero { Picks, Editorial, Stations }
 
 /** A genre's charts: its top songs, albums and playlists. */
 @Composable
-fun GenrePage(c: LibraryContext, genre: io.github.honeyslatt.music.core.model.Genre) {
-    val charts by androidx.compose.runtime.produceState<Loading<List<Shelf>>>(Loading.Pending, genre.id) {
-        value = load { c.core.session.genreCharts(genre.id) }
+fun GenrePage(c: LibraryContext, genre: io.github.honeyslatt.music.core.model.Genre, source: io.github.honeyslatt.music.core.model.ProviderKind) {
+    val charts by androidx.compose.runtime.produceState<Loading<List<Shelf>>>(Loading.Pending, genre.id, source) {
+        value = load { c.core.session.genreCharts(source, genre.id) }
     }
     ListPage(c.nav, genre.name) { shelves(c, charts, Hero.Editorial) }
 }
@@ -202,8 +228,13 @@ fun RadioPage(c: LibraryContext, browse: Browse, account: @Composable () -> Unit
         item { Spacer(Modifier.height(10.dp)) }
         shelves(c, shelves, Hero.Stations)
         item {
+            val from = browse.source()
             BasicText(
-                "Stations are Apple Music only. SoundCloud and Navidrome have no radio.",
+                when (from) {
+                    io.github.honeyslatt.music.core.model.ProviderKind.SOUND_CLOUD -> "Each station starts from a song you played lately on SoundCloud."
+                    io.github.honeyslatt.music.core.model.ProviderKind.NAVIDROME -> "Your server’s library at random, or songs like those you starred."
+                    else -> ""
+                },
                 Modifier.padding(start = 20.dp, end = 20.dp, top = 18.dp),
                 style = geist(13.5.sp).copy(color = roles.sub, lineHeight = 19.sp),
             )
@@ -214,7 +245,7 @@ fun RadioPage(c: LibraryContext, browse: Browse, account: @Composable () -> Unit
 private fun LazyListScope.shelves(c: LibraryContext, loading: Loading<List<Shelf>>, hero: Hero) {
     val shelves = (loading as? Loading.Ready)?.value
     if (shelves.isNullOrEmpty()) {
-        item { Empty(if (shelves == null) loading.listing() else Listing(done = true), "Nothing here yet", "Apple Music has nothing to show here.", io.github.honeyslatt.music.ui.components.Shapes.Shelves) }
+        item { Empty(if (shelves == null) loading.listing() else Listing(done = true), "Nothing here yet", "Connect a service in Settings to see its picks here.", io.github.honeyslatt.music.ui.components.Shapes.Shelves) }
         return
     }
     for (shelf in shelves) {

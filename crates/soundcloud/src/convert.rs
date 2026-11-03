@@ -17,7 +17,7 @@ pub(crate) fn id(id: u64) -> ItemId {
 
 /// SoundCloud serves a few fixed sizes (`-large` is 100 px): the largest
 /// square one, 500 px, will do everywhere.
-fn artwork(url: Option<&str>) -> Option<Artwork> {
+pub(crate) fn artwork(url: Option<&str>) -> Option<Artwork> {
     let url = url.filter(|u| !u.is_empty())?;
     Some(Artwork {
         url_template: url.replace("-large.", "-t500x500."),

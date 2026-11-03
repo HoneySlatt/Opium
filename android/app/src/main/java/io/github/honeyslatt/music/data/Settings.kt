@@ -23,6 +23,9 @@ class Settings(context: Context) {
     private val animatedState = flag("animated-artwork", true)
     private val originals = flag("soundcloud-originals", true)
     private val spatialState = flag("spatial-audio", true)
+    private val browseState = mutableStateOf(
+        prefs.getString("browse-source", null)?.let { runCatching { io.github.honeyslatt.music.core.model.ProviderKind.valueOf(it) }.getOrNull() },
+    )
     private val qualityState = mutableStateOf(
         runCatching { MotionQuality.valueOf(prefs.getString("animated-quality", null) ?: "") }.getOrDefault(MotionQuality.Automatic),
     )
@@ -101,6 +104,17 @@ class Settings(context: Context) {
     var animatedArtwork: Boolean
         get() = animatedState.value
         set(v) = save("animated-artwork", v).also { animatedState.value = v }
+
+    /**
+     * The service Home, New, Radio and the genres come from, when several are
+     * connected; none chosen: Apple Music's, else the first connected.
+     */
+    var browseSource: io.github.honeyslatt.music.core.model.ProviderKind?
+        get() = browseState.value
+        set(v) {
+            prefs.edit().putString("browse-source", v?.name).apply()
+            browseState.value = v
+        }
 
     var motionQuality: MotionQuality
         get() = qualityState.value

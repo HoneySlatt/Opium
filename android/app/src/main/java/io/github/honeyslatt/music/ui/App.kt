@@ -106,7 +106,7 @@ fun App(core: Core, library: Library, playback: io.github.honeyslatt.music.playb
     val hud = remember { Hud(scope) }
     val menus = remember { Menus() }
     val actions = remember { Actions(appContext, core, library, playback, nav, hud, menus, scope) }
-    val browse = remember { Browse(core, scope) }
+    val browse = remember { Browse(core, scope, settings) }
     LaunchedEffect(Unit) { playback.devices.notices.collect { hud.show(it) } }
     val downloads = (appContext as io.github.honeyslatt.music.MusicApp).downloads
     val downloadStates by downloads.states.collectAsStateWithLifecycle()
@@ -328,7 +328,7 @@ private fun Page(tab: Tab, page: Route, c: LibraryContext, account: @Composable 
         is Route.LibraryArtist -> LibraryArtistPage(c, page.artist)
         is Route.Artist -> ArtistPage(c, page.id)
         is Route.Shelf -> io.github.honeyslatt.music.ui.browse.ShelfPage(c, page.shelf)
-        is Route.Genre -> io.github.honeyslatt.music.ui.browse.GenrePage(c, page.genre)
+        is Route.Genre -> io.github.honeyslatt.music.ui.browse.GenrePage(c, page.genre, page.source)
     }
 }
 

@@ -498,8 +498,9 @@ private val TileColours = listOf(
  */
 @Composable
 private fun BrowseAll(c: LibraryContext, onSearch: () -> Unit) {
-    val genres by produceState<List<io.github.honeyslatt.music.core.model.Genre>>(emptyList()) {
-        value = runCatching { c.core.session.genres() }.getOrDefault(emptyList())
+    val source = browseSource(c.core, (androidx.compose.ui.platform.LocalContext.current.applicationContext as io.github.honeyslatt.music.MusicApp).settings)
+    val genres by produceState<List<io.github.honeyslatt.music.core.model.Genre>>(emptyList(), source) {
+        value = source?.let { runCatching { c.core.session.genres(it) }.getOrNull() }.orEmpty()
     }
     androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
         androidx.compose.foundation.lazy.grid.GridCells.Fixed(2),
@@ -541,7 +542,7 @@ private fun BrowseAll(c: LibraryContext, onSearch: () -> Unit) {
             val genre = genres[i]
             Box(
                 Modifier.fillMaxWidth().height(98.dp)
-                    .press(androidx.compose.foundation.shape.RoundedCornerShape(6.dp), shrink = 0.97f) { c.nav.push(io.github.honeyslatt.music.ui.nav.Route.Genre(genre)) }
+                    .press(androidx.compose.foundation.shape.RoundedCornerShape(6.dp), shrink = 0.97f) { source?.let { c.nav.push(io.github.honeyslatt.music.ui.nav.Route.Genre(genre, it)) } }
                     .background(TileColours[i % TileColours.size], androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
                     .padding(12.dp),
             ) {
@@ -957,8 +958,9 @@ private val GenreShapes = listOf(
 /** Browse by Genre: Apple Music's genres in two columns of tiles at radius 28, each with its shape in a corner, turning while pressed. */
 private fun androidx.compose.foundation.lazy.LazyListScope.genreTiles(c: LibraryContext) {
     item {
-        val genres by produceState<List<io.github.honeyslatt.music.core.model.Genre>>(emptyList()) {
-            value = runCatching { c.core.session.genres() }.getOrDefault(emptyList())
+        val source = browseSource(c.core, (androidx.compose.ui.platform.LocalContext.current.applicationContext as io.github.honeyslatt.music.MusicApp).settings)
+        val genres by produceState<List<io.github.honeyslatt.music.core.model.Genre>>(emptyList(), source) {
+            value = source?.let { runCatching { c.core.session.genres(it) }.getOrNull() }.orEmpty()
         }
         if (genres.isEmpty()) return@item
         Column(Modifier.padding(horizontal = 20.dp)) {
@@ -968,7 +970,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.genreTiles(c: Library
                     pair.forEachIndexed { k, genre ->
                         val i = row * 2 + k
                         GenreTile(genre.name, GenreColours[i % GenreColours.size], GenreShapes[i % GenreShapes.size], Modifier.weight(1f)) {
-                            c.nav.push(Route.Genre(genre))
+                            source?.let { c.nav.push(Route.Genre(genre, it)) }
                         }
                     }
                     if (pair.size == 1) Spacer(Modifier.weight(1f))

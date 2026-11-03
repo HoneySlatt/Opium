@@ -892,26 +892,27 @@ impl Session {
     }
 
     /// Apple Music's Home, New and Radio pages, shelf by shelf.
-    pub async fn home(self: Arc<Self>) -> Result<Vec<Shelf>, MusicError> {
-        off(async move { Ok(self.apple()?.home().await?) }).await
+    /// Home, as `source` recommends it (each service its own way).
+    pub async fn home(self: Arc<Self>, source: ProviderKind) -> Result<Vec<Shelf>, MusicError> {
+        off(async move { Ok(self.provider(source)?.home().await?) }).await
     }
 
-    pub async fn new_music(self: Arc<Self>) -> Result<Vec<Shelf>, MusicError> {
-        off(async move { Ok(self.apple()?.new_music().await?) }).await
+    pub async fn new_music(self: Arc<Self>, source: ProviderKind) -> Result<Vec<Shelf>, MusicError> {
+        off(async move { Ok(self.provider(source)?.new_music().await?) }).await
     }
 
-    /// Apple Music's genres, to browse from Search.
-    pub async fn genres(self: Arc<Self>) -> Result<Vec<music_core::model::Genre>, MusicError> {
-        off(async move { Ok(self.apple()?.genres().await?) }).await
+    /// `source`'s genres, to browse from Search.
+    pub async fn genres(self: Arc<Self>, source: ProviderKind) -> Result<Vec<music_core::model::Genre>, MusicError> {
+        off(async move { Ok(self.provider(source)?.genres().await?) }).await
     }
 
-    /// A genre's charts, as shelves.
-    pub async fn genre_charts(self: Arc<Self>, genre: String) -> Result<Vec<Shelf>, MusicError> {
-        off(async move { Ok(self.apple()?.genre_charts(&genre).await?) }).await
+    /// A genre of `source`'s, as shelves.
+    pub async fn genre_charts(self: Arc<Self>, source: ProviderKind, genre: String) -> Result<Vec<Shelf>, MusicError> {
+        off(async move { Ok(self.provider(source)?.genre_charts(&genre).await?) }).await
     }
 
-    pub async fn radio(self: Arc<Self>) -> Result<Vec<Shelf>, MusicError> {
-        off(async move { Ok(self.apple()?.radio().await?) }).await
+    pub async fn radio(self: Arc<Self>, source: ProviderKind) -> Result<Vec<Shelf>, MusicError> {
+        off(async move { Ok(self.provider(source)?.radio().await?) }).await
     }
 
     /// A song's synced lyrics: its service's, else the sites', in `sites`
