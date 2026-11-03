@@ -10,11 +10,38 @@ import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import io.github.honeyslatt.music.core.KeptAudio
 
-/** A song downloaded: played from its sealed file, unsealed by the core as the player reads. */
+/**
+ * A song downloaded: played from its sealed file, unsealed by the core as
+ * the player reads; the encoder's priming of an Apple song left out, as
+ * when it streams, so that songs follow without a gap.
+ */
 @UnstableApi
-fun keptSource(audio: KeptAudio, item: MediaItem.Builder): MediaSource =
-    ProgressiveMediaSource.Factory { KeptDataSource(audio) }
+fun keptSource(audio: KeptAudio, item: MediaItem.Builder): MediaSource {
+    val priming = audio.priming().toInt()
+    val extractors = androidx.media3.extractor.ExtractorsFactory {
+        androidx.media3.extractor.DefaultExtractorsFactory().createExtractors().map { if (priming > 0) Primed(it, priming) else it }.toTypedArray()
+    }
+    return ProgressiveMediaSource.Factory({ KeptDataSource(audio) }, extractors)
         .createMediaSource(item.setUri("music-kept://song.${audio.extension()}").build())
+}
+
+/** An extractor whose audio says the encoder's `priming`, which the file doesn't. */
+@UnstableApi
+private class Primed(private val inner: androidx.media3.extractor.Extractor, private val priming: Int) :
+    androidx.media3.extractor.Extractor by inner {
+    override fun init(output: androidx.media3.extractor.ExtractorOutput) {
+        inner.init(object : androidx.media3.extractor.ExtractorOutput by output {
+            override fun track(id: Int, type: Int): androidx.media3.extractor.TrackOutput {
+                val track = output.track(id, type)
+                return object : androidx.media3.extractor.TrackOutput by track {
+                    override fun format(format: androidx.media3.common.Format) {
+                        track.format(format.buildUpon().setEncoderDelay(priming).build())
+                    }
+                }
+            }
+        })
+    }
+}
 
 /** Reads the kept song a chunk at a time, as the core unseals it. */
 @UnstableApi

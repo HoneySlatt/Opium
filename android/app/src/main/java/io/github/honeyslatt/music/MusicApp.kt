@@ -59,6 +59,7 @@ class MusicApp : Application(), coil3.SingletonImageLoader.Factory {
         downloads = io.github.honeyslatt.music.data.Downloads(this, core, scope)
         core.signedOut = downloads::forget
         devices = io.github.honeyslatt.music.data.Devices(this)
+        downloads.borrowThrough(devices.node)
         devices.themesShared = { themes.shared(it) }
         settings.withDevices(devices)
         devices.lend(core.session)
@@ -108,7 +109,10 @@ class MusicApp : Application(), coil3.SingletonImageLoader.Factory {
             scope.launch {
                 core.connection(kind).map { (it is Connection.Connected) to (it == Connection.Off) }.distinctUntilChanged().collect {
                     when (core.connection(kind).value) {
-                        is Connection.Connected -> library.load(kind)
+                        is Connection.Connected -> {
+                            library.load(kind)
+                            downloads.confirm(kind)
+                        }
                         Connection.Off -> library.forget(kind)
                         else -> library.showKept(kind)
                     }

@@ -29,6 +29,9 @@ import kotlinx.coroutines.withContext
 class Downloads(private val context: Context, private val core: Core, private val scope: CoroutineScope) {
     private var store: io.github.honeyslatt.music.core.Downloads? = null
 
+    /** Music Connect, through which the computer lends what can't be downloaded here. */
+    private var lender: io.github.honeyslatt.music.core.Connect? = null
+
     /** Once the store is open (or couldn't be): a song played at launch waits for it. */
     private val opened = kotlinx.coroutines.CompletableDeferred<Unit>()
 
@@ -81,6 +84,7 @@ class Downloads(private val context: Context, private val core: Core, private va
                 _failed.value = e.message
                 null
             }
+            lender?.let { store?.borrowThrough(it) }
             opened.complete(Unit)
         }
     }
@@ -161,6 +165,29 @@ class Downloads(private val context: Context, private val core: Core, private va
         store?.forget(provider)
     }
 
+    /** Apple Music's and SoundCloud's encrypted songs come from the computer, through `connect`. */
+    fun borrowThrough(connect: io.github.honeyslatt.music.core.Connect) {
+        lender = connect
+        store?.borrowThrough(connect)
+    }
+
+    /**
+     * `kind` connected: its subscription confirmed (Apple's asked), so that
+     * the songs downloaded through it go on playing for 30 days more, or
+     * stop if it ended.
+     */
+    fun confirm(kind: ProviderKind) {
+        scope.launch {
+            opened.await()
+            val active = when (kind) {
+                ProviderKind.APPLE_MUSIC -> runCatching { core.session.appleSubscribed() }.getOrNull() ?: return@launch
+                ProviderKind.SOUND_CLOUD -> true
+                else -> return@launch
+            }
+            store?.subscription(kind, active)
+        }
+    }
+
     /** Whether songs are waiting or coming. */
     fun busy() = store?.busy() ?: false
 
@@ -169,6 +196,5 @@ class Downloads(private val context: Context, private val core: Core, private va
     }
 }
 
-/** Whether `track` can be downloaded on the phone: Apple Music's and SoundCloud's encrypted songs not yet. */
-fun downloadable(track: Track) =
-    track.id.provider == ProviderKind.NAVIDROME || track.id.provider == ProviderKind.SOUND_CLOUD
+/** Whether `track` can be downloaded: every service's songs, Music's playlists having none of their own. */
+fun downloadable(track: Track) = track.id.provider != ProviderKind.MUSIC

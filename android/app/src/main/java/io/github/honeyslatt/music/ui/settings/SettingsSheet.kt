@@ -302,7 +302,7 @@ private fun Downloads() {
     val kept by downloads.kept.collectAsStateWithLifecycle()
     val actions = LocalActions.current
     Label("Downloads")
-    Group("Navidrome’s files come as they are, SoundCloud’s as they stream (or the uploader’s own file, as SoundCloud’s setting says), kept sealed on this phone. Apple Music’s songs can’t be downloaded here yet.") {
+    Group("Kept sealed on this phone. Navidrome’s files come as they are, SoundCloud’s as they stream (or the uploader’s own file, as SoundCloud’s setting says). Apple Music’s songs, and SoundCloud’s encrypted ones, come through Music on your computer, in AAC 256 stereo; they play while your subscription was confirmed in the last 30 days, checked each time you’re online.") {
         GroupRow(first = true) {
             Words("On this phone")
             BasicText(io.github.honeyslatt.music.ui.actions.songsCount(kept.size), style = geist(15.sp).copy(color = roles.sub))

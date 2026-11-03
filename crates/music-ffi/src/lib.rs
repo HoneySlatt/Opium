@@ -821,6 +821,13 @@ impl Session {
         .await
     }
 
+    /// Whether the Apple Music subscription is active; none when Apple
+    /// doesn't say. The songs downloaded through it play while it was in
+    /// the last 30 days.
+    pub async fn apple_subscribed(self: Arc<Self>) -> Result<Option<bool>, MusicError> {
+        off(async move { Ok(self.apple()?.subscribed().await?) }).await
+    }
+
     /// A catalog album's other editions and its songs' music videos.
     pub async fn album_extras(self: Arc<Self>, id: ItemId) -> Result<AlbumExtras, MusicError> {
         off(async move { Ok(self.apple()?.album_extras(&id).await?) }).await

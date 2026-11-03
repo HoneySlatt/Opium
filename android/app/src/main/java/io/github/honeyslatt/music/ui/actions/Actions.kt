@@ -335,14 +335,14 @@ class Actions(
                     withPlaylist(playlist) { sheet = SheetSpec.AddToPlaylists(it, songsCount(it.size), head.title, playlist.artwork) }
                 }
                 // Its songs downloaded, and the list kept to find them offline.
-                val download = if (playlist.id.provider == ProviderKind.APPLE_MUSIC) null else MenuItem("Download", io.github.honeyslatt.music.ui.MoreIcons.ArrowDown) {
+                val download = MenuItem("Download", io.github.honeyslatt.music.ui.MoreIcons.ArrowDown) {
                     withPlaylist(playlist) {
                         downloads.keepPlaylist(playlist.id, it)
                         download(it)
                     }
                 }
                 val favourite = !playlist.favourites && isFavourite(FavouriteKind.PLAYLIST, favouriteId, playlist.inFavourites)
-                if (playlist.favourites) listOf(play, queue, listOf(toPlaylist)) else listOf(
+                if (playlist.favourites) listOf(play, queue, listOf(toPlaylist, download)) else listOf(
                     play,
                     queue,
                     listOfNotNull(
@@ -453,8 +453,8 @@ class Actions(
 
     // ---- Downloads ----
 
-    /** Songs of `provider` can be downloaded on the phone: not Apple Music's yet. */
-    private fun downloadable(provider: ProviderKind) = provider == ProviderKind.NAVIDROME || provider == ProviderKind.SOUND_CLOUD
+    /** Songs of `provider` can be downloaded: Music's playlists have none of their own. */
+    private fun downloadable(provider: ProviderKind) = provider != ProviderKind.MUSIC
 
     /** A song's Download, or its Remove Download once kept or coming. */
     private fun downloadItem(tracks: List<Track>, title: String): MenuItem? {

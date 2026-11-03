@@ -1,8 +1,9 @@
 //! Songs downloaded to play offline on the phone, as on the desktop (the
 //! `downloads` crate's queue and store): kept sealed in the app's files with
 //! a key the Keystore guards, played from there before any service is asked.
-//! The phone has no CDM of its own: an Apple Music or SoundCloud song that
-//! is encrypted isn't downloaded here yet.
+//! The phone's Widevine is given no licence it may keep, so an Apple Music
+//! or SoundCloud song that is encrypted is borrowed from the paired
+//! computer (see `connect::lend`), which downloads it as it would its own.
 
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
@@ -13,7 +14,7 @@ use downloads::sealed;
 use downloads::store::{Song, Standing, Store};
 use music_core::model::{ItemId, ProviderKind, Track};
 
-use crate::{MusicError, Session};
+use crate::{Connect, MusicError, Session};
 
 /// How a song stands as a download, for its badge.
 #[derive(Debug, Clone, PartialEq, uniffi::Enum)]
@@ -96,13 +97,44 @@ impl Listener for Told {
 }
 
 /// Fetches through the session's services, as they are when a song's turn
-/// comes.
-struct Phone(Arc<Session>);
+/// comes; what they can't give the phone, through the computer.
+struct Phone {
+    session: Arc<Session>,
+    connect: Mutex<Option<Arc<Connect>>>,
+}
+
+impl Phone {
+    /// `track` from the paired computer connected now.
+    async fn borrow(&self, track: Track, original: bool) -> Result<Fetched, String> {
+        let connect = self.connect.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let node = connect.as_ref().map(|c| &c.0);
+        let Some(from) = node.and_then(|n| n.lenders().into_iter().next()) else {
+            return Err("Comes through your computer: open Music on it".into());
+        };
+        let (lent, borrowed) = node
+            .expect("a lender is the node's")
+            .borrow(&from, track.clone(), original)
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(Fetched {
+            len: lent.len,
+            song: Song {
+                track,
+                extension: lent.extension,
+                priming: lent.priming,
+                protected: lent.protected,
+                kbps: lent.kbps,
+                spatial: lent.spatial,
+            },
+            reader: Box::new(borrowed),
+        })
+    }
+}
 
 #[async_trait::async_trait]
 impl Fetcher for Phone {
     async fn fetch(&self, track: Track, original: bool) -> Result<Fetched, String> {
-        let services = self.0.services();
+        let services = self.session.services();
         let id = &track.id;
         match id.provider {
             ProviderKind::Navidrome => {
@@ -123,11 +155,13 @@ impl Fetcher for Phone {
             }
             ProviderKind::SoundCloud => {
                 let sc = services.soundcloud.ok_or("SoundCloud isn't connected")?;
-                // Without a CDM, an encrypted track can't come: it says so.
-                let audio = sc
-                    .audio(id, original, None)
-                    .await
-                    .map_err(|e| e.to_string())?;
+                // Without a CDM, an encrypted track can't come from here:
+                // the computer brings it.
+                let audio = match sc.audio(id, original, None).await {
+                    Ok(audio) => audio,
+                    Err(music_core::Error::Playback(m)) if m.contains("encrypted") => return self.borrow(track, original).await,
+                    Err(e) => return Err(e.to_string()),
+                };
                 Ok(Fetched {
                     len: audio.len,
                     song: Song {
@@ -141,9 +175,7 @@ impl Fetcher for Phone {
                     reader: Box::new(audio.reader),
                 })
             }
-            ProviderKind::AppleMusic => {
-                Err("Apple Music songs can't be downloaded on the phone yet".into())
-            }
+            ProviderKind::AppleMusic => self.borrow(track, original).await,
             ProviderKind::Music => Err("Music has no songs of its own".into()),
         }
     }
@@ -151,7 +183,7 @@ impl Fetcher for Phone {
 
 /// The downloads on this phone.
 #[derive(uniffi::Object)]
-pub struct Downloads(queue::Downloads);
+pub struct Downloads(queue::Downloads, Arc<Phone>);
 
 #[uniffi::export(async_runtime = "tokio")]
 impl Downloads {
@@ -175,9 +207,19 @@ impl Downloads {
             .map_err(|e| MusicError::Failed {
                 reason: format!("Couldn't open the downloads: {e}"),
             })?;
-        let queue = queue::Downloads::new(Arc::new(Phone(session)), Arc::new(Told(listener)));
+        let phone = Arc::new(Phone {
+            session,
+            connect: Mutex::default(),
+        });
+        let queue = queue::Downloads::new(phone.clone(), Arc::new(Told(listener)));
         queue.opened(Ok(store));
-        Ok(Arc::new(Self(queue)))
+        Ok(Arc::new(Self(queue, phone)))
+    }
+
+    /// Borrow from the paired computer, through `connect`, what can't be
+    /// downloaded here.
+    pub fn borrow_through(&self, connect: Arc<Connect>) {
+        *self.1.connect.lock().unwrap_or_else(|e| e.into_inner()) = Some(connect);
     }
 
     /// Download `tracks`, after those waiting; `original`: a SoundCloud

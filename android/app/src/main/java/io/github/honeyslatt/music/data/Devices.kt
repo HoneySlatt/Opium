@@ -78,7 +78,8 @@ class Devices(context: Context) {
     /** The themes a device shares, all of them. */
     var themesShared: ((List<io.github.honeyslatt.music.core.connect.SharedTheme>) -> Unit)? = null
 
-    private val node = Connect(
+    /** This phone as Music Connect: also what borrows songs from the computer. */
+    val node = Connect(
         android.provider.Settings.Global.getString(context.contentResolver, android.provider.Settings.Global.DEVICE_NAME)
             ?.takeIf { it.isNotBlank() } ?: Build.MODEL,
         context.filesDir.path,
