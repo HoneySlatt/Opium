@@ -10,14 +10,15 @@ keyring = ["dep:oo7"]
 
 [dependencies]
 aes-gcm = "0.10.3"
+music-core = { path = "../music-core" }
 oo7 = { version = "0.6.0", optional = true }
 rand = "0.10.3"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
 
 [dev-dependencies]
 apple-music = { path = "../apple-music" }
-music-core = { path = "../music-core" }
 navidrome = { path = "../navidrome" }
-serde_json = "1.0.154"
 symphonia = { version = "0.6.1", default-features = false, features = ["isomp4", "aac", "flac", "mp3", "wav", "aiff", "pcm", "ogg", "vorbis"] }
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros"] }
 widevine = { path = "../widevine" }

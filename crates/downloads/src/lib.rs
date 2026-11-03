@@ -4,3 +4,4 @@
 #[cfg(feature = "keyring")]
 pub mod keyring;
 pub mod sealed;
+pub mod store;
