@@ -81,8 +81,9 @@ impl Radii {
 
     /// The shape filled with `color` in `rect`.
     pub fn fill(&self, ui: &Ui, rect: Rect, turn: f32, color: Color32) {
+        let feather = 1.0 / ui.pixels_per_point();
         ui.painter()
-            .add(Drawn::mesh(self.mesh(rect, turn, color, None)));
+            .add(Drawn::mesh(self.mesh(rect, turn, color, None, feather)));
     }
 
     /// The image at `url` cut to the shape in `rect`, itself turned by
@@ -99,19 +100,29 @@ impl Radii {
             .try_load_texture(url, egui::TextureOptions::LINEAR, size)
         {
             Ok(egui::load::TexturePoll::Ready { texture }) => {
-                let mesh = self.mesh(rect, turn, Color32::WHITE, Some((texture.id, spin)));
+                let feather = 1.0 / ui.pixels_per_point();
+                let mesh = self.mesh(
+                    rect,
+                    turn,
+                    Color32::WHITE,
+                    Some((texture.id, spin)),
+                    feather,
+                );
                 ui.painter().add(Drawn::mesh(mesh));
             }
             _ => self.fill(ui, rect, turn, fallback),
         }
     }
 
+    /// The shape's mesh, its edge fading out over `feather` points (a
+    /// physical pixel) as egui's own shapes do, so that it isn't jagged.
     fn mesh(
         &self,
         rect: Rect,
         turn: f32,
         color: Color32,
         texture: Option<(egui::TextureId, f32)>,
+        feather: f32,
     ) -> Mesh {
         let mut mesh = texture.map_or_else(Mesh::default, |(id, _)| Mesh::with_texture(id));
         // A cover stays still while the shape turns over it, unless it spins.
@@ -126,20 +137,44 @@ impl Radii {
             }
             None => egui::epaint::WHITE_UV,
         };
+        let c = rect.center();
         mesh.vertices.push(Vertex {
-            pos: rect.center(),
-            uv: uv(rect.center()),
+            pos: c,
+            uv: uv(c),
             color,
         });
-        for pos in self.points(rect, turn) {
-            mesh.vertices.push(Vertex {
-                pos,
-                uv: uv(pos),
-                color,
-            });
+        let points: Vec<Pos2> = self.points(rect, turn).collect();
+        let n = points.len();
+        // Each point's way out of the shape: across its neighbours' chord.
+        let outward = |i: usize| {
+            let along = points[(i + 1) % n] - points[(i + n - 1) % n];
+            let normal = egui::vec2(along.y, -along.x).normalized();
+            if normal.dot(points[i] - c) < 0.0 {
+                -normal
+            } else {
+                normal
+            }
+        };
+        // The edge, half a feather inside, in the colour; half outside,
+        // clear.
+        for (i, &p) in points.iter().enumerate() {
+            let out = outward(i) * feather / 2.0;
+            for (pos, color) in [(p - out, color), (p + out, Color32::TRANSPARENT)] {
+                mesh.vertices.push(Vertex {
+                    pos,
+                    uv: uv(pos),
+                    color,
+                });
+            }
         }
-        for i in 0..POINTS as u32 {
-            mesh.add_triangle(0, 1 + i, 1 + (i + 1) % POINTS as u32);
+        let n = n as u32;
+        for i in 0..n {
+            let j = (i + 1) % n;
+            let (inner, outer) = (1 + 2 * i, 2 + 2 * i);
+            let (next_inner, next_outer) = (1 + 2 * j, 2 + 2 * j);
+            mesh.add_triangle(0, inner, next_inner);
+            mesh.add_triangle(inner, outer, next_outer);
+            mesh.add_triangle(inner, next_outer, next_inner);
         }
         mesh
     }

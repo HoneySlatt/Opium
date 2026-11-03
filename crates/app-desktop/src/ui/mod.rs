@@ -718,18 +718,26 @@ fn round_off(ui: &Ui, rect: Rect, color: Color32, r: f32) {
         (rect.left_bottom(), vec2(1.0, -1.0)),
         (rect.right_bottom(), vec2(-1.0, -1.0)),
     ];
+    // The arc's edge fades over a physical pixel, as egui's own corners do.
+    let feather = 1.0 / ui.pixels_per_point();
     for (corner, inward) in corners {
         let center = corner + inward * r;
         let mut mesh = Mesh::default();
         mesh.colored_vertex(corner, color);
-        let steps = 8;
+        let steps = 16;
         for i in 0..=steps {
             let a = i as f32 / steps as f32 * std::f32::consts::FRAC_PI_2;
             // From the corner's one side round to the other.
-            let point = center - vec2(inward.x * a.cos(), inward.y * a.sin()) * r;
-            mesh.colored_vertex(point, color);
+            let way = -vec2(inward.x * a.cos(), inward.y * a.sin());
+            let point = center + way * r;
+            // Towards the corner in the colour, towards the page clear.
+            mesh.colored_vertex(point + way * feather / 2.0, color);
+            mesh.colored_vertex(point - way * feather / 2.0, Color32::TRANSPARENT);
             if i > 0 {
-                mesh.add_triangle(0, i, i + 1);
+                let (solid, clear) = (1 + 2 * i, 2 + 2 * i);
+                mesh.add_triangle(0, solid - 2, solid);
+                mesh.add_triangle(solid - 2, clear - 2, clear);
+                mesh.add_triangle(solid - 2, clear, solid);
             }
         }
         painter.add(mesh);
