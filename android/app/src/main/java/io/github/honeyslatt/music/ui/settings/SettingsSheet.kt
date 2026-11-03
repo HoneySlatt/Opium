@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -333,8 +334,17 @@ private fun Theme() {
         androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
     ) { uri -> if (uri != null) problem = themes.import(uri) }
     Label("Theme")
+    // M3E's: the built-in themes as previews side by side, those imported listed under them.
+    val m3e = io.github.honeyslatt.music.ui.theme.look.layout.motion == io.github.honeyslatt.music.core.model.Motion.EXPRESSIVE
+    if (m3e) {
+        Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            all.filter { it.builtIn }.forEach { entry ->
+                ThemePreview(entry.name, entry.file?.colors, chosen == entry.id, Modifier.weight(1f)) { themes.choose(entry.id) }
+            }
+        }
+    }
     Group(problem ?: "A theme is a TOML file, the same as the desktop’s: those in its themes folder come here by themselves once paired.") {
-        all.forEachIndexed { i, entry ->
+        all.filter { !m3e || !it.builtIn }.forEachIndexed { i, entry ->
             val file = entry.file
             GroupRow(first = i == 0, onClick = if (file != null) ({ themes.choose(entry.id) }) else null) {
                 // Its colours, as on the desktop's cards.
@@ -367,6 +377,36 @@ private fun Theme() {
         }
         GroupRow(first = false, onClick = { problem = null; pick.launch(arrayOf("*/*")) }) {
             Words("Import a theme…", colour = roles.tint)
+        }
+    }
+}
+
+/**
+ * A theme in miniature: its page, a bar, two lines of words, its accent as
+ * Play and its navigation; outlined in primary when it is the one in use.
+ */
+@Composable
+private fun ThemePreview(name: String, p: io.github.honeyslatt.music.core.model.Palette?, on: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    fun c(v: UInt?) = v?.let { Color(0xFF000000.toInt() or it.toInt()) } ?: Color.Gray
+    val shape = RoundedCornerShape(16.dp)
+    Column(modifier.press(shape, shrink = 0.96f, onClick = onClick), horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            Modifier.fillMaxWidth().height(132.dp)
+                .then(if (on) Modifier.border(3.dp, roles.primary, shape) else Modifier.border(1.dp, roles.line, shape))
+                .padding(if (on) 5.dp else 3.dp)
+                .background(c(p?.base), RoundedCornerShape(12.dp)),
+        ) {
+            Column(Modifier.fillMaxSize().padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Box(Modifier.fillMaxWidth().height(12.dp).background(c(p?.surface0), CircleShape))
+                Box(Modifier.fillMaxWidth(0.8f).height(7.dp).background(c(p?.text).copy(alpha = 0.85f), CircleShape))
+                Box(Modifier.fillMaxWidth(0.55f).height(7.dp).background(c(p?.subtext0).copy(alpha = 0.7f), CircleShape))
+                Box(Modifier.size(26.dp).background(c(p?.accent), RoundedCornerShape(8.dp)))
+            }
+            Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(16.dp).background(c(p?.mantle), RoundedCornerShape(bottomStart = 12.dp, bottomEnd = 12.dp)))
+        }
+        Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            if (on) Glyph(Icons.Check, roles.primary, 16.dp)
+            BasicText(name, style = geist(14.sp, if (on) FontWeight.SemiBold else FontWeight.Medium).copy(color = if (on) roles.primary else roles.text))
         }
     }
 }

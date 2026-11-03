@@ -177,16 +177,25 @@ private fun Status(title: String, reason: String, ok: Boolean = false) {
 @Composable
 private fun Link(icon: @Composable () -> Unit, title: String, detail: String, first: Boolean = false) {
     val line = roles.line
+    // M3E's: each link a segment of its own, its icon on a 40 dp tonal tile.
+    val m3e = io.github.honeyslatt.music.ui.theme.look.layout.motion == io.github.honeyslatt.music.core.model.Motion.EXPRESSIVE
+    val cell = sheetCell
     Row(
         Modifier
             .fillMaxWidth()
-            .heightIn(min = 52.dp)
+            .heightIn(min = if (m3e) 64.dp else 52.dp)
+            .then(if (m3e) Modifier.background(cell, RoundedCornerShape(4.dp)) else Modifier)
             // The hairline between links starts after the icon.
-            .drawBehind { if (!first) drawLine(line, Offset(58.dp.toPx(), 0f), Offset(size.width, 0f), 1.dp.toPx()) }
+            .drawBehind { if (!first && !m3e) drawLine(line, Offset(58.dp.toPx(), 0f), Offset(size.width, 0f), 1.dp.toPx()) }
             .padding(horizontal = 16.dp, vertical = 10.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(if (m3e) 14.dp else 12.dp),
+        verticalAlignment = if (m3e) Alignment.CenterVertically else Alignment.Top,
     ) {
-        Box(Modifier.padding(top = 2.dp).size(30.dp).background(roles.surface2, RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) { icon() }
+        if (m3e) {
+            Box(Modifier.size(40.dp).background(roles.secondaryContainer, RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) { icon() }
+        } else {
+            Box(Modifier.padding(top = 2.dp).size(30.dp).background(roles.surface2, RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) { icon() }
+        }
         Column(Modifier.weight(1f)) {
             BasicText(title, style = geist(16.sp, FontWeight.Medium).copy(color = roles.text))
             BasicText(detail, Modifier.padding(top = 1.dp), style = geist(13.sp).copy(color = roles.sub, lineHeight = 17.5.sp))
