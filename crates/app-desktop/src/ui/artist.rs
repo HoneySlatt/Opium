@@ -40,6 +40,162 @@ fn expressive_art(top: Rect, pad: f32) -> Rect {
     Rect::from_min_size(pos2(top.left() + pad, top.top() + 48.0), vec2(248.0, 248.0))
 }
 
+/// M3E's header for an artist with a video or a wide picture: a card at
+/// radius 28 across the page, as Apple Music and Spotify show them, how tall
+/// for a page `width` wide.
+fn expressive_wide_height(width: f32) -> f32 {
+    (width * 0.38).clamp(300.0, 560.0)
+}
+
+/// The whole of M3E's wide header: 16 px, the card, the buttons' row.
+fn expressive_wide_hero_height(width: f32, pad: f32) -> f32 {
+    16.0 + expressive_wide_height(width - 2.0 * pad) + 28.0 + 72.0 + 28.0
+}
+
+/// Whether M3E shows the artist across a card: they have a video (shown
+/// once animated covers are on) or a wide picture.
+fn wide_artist(app: &App, artist: &ArtistDetail) -> bool {
+    artist.banner.is_some() || (artist.motion.is_some() && app.animated_artwork())
+}
+
+/// The card: their video, else their wide picture, else their photo,
+/// darkening at its foot under the chip and their name; the buttons under it.
+#[allow(clippy::too_many_arguments)]
+fn expressive_wide(
+    app: &mut App,
+    ui: &mut Ui,
+    theme: &Theme,
+    artist: &ArtistDetail,
+    top: Rect,
+    pad: f32,
+    here: bool,
+    favourite: bool,
+) -> Option<HeroButton> {
+    let width = top.width() - 2.0 * pad;
+    let card = Rect::from_min_size(
+        pos2(top.left() + pad, top.top() + 16.0),
+        vec2(width, expressive_wide_height(width)),
+    );
+    let pixels = card.width() * ui.ctx().pixels_per_point();
+    // Scrolled out of sight, the video isn't played: unseen, it stops.
+    let motion = artist
+        .motion
+        .as_deref()
+        .filter(|_| ui.is_rect_visible(card))
+        .and_then(|master| app.motion_frame("artist-hero", master, pixels, ui.ctx()));
+    let (texture, photo) = match motion {
+        Some(t) => (Some(t), false),
+        None => {
+            let (url, photo) = match &artist.banner {
+                Some(url) => (Some(url.clone()), false),
+                None => (artist.artist.artwork.as_ref().map(|a| a.url(1600)), true),
+            };
+            let texture = url.and_then(|url| {
+                crate::covers::seen(ui.ctx(), &url);
+                match egui::Image::new(url).load_for_size(ui.ctx(), card.size()) {
+                    Ok(egui::load::TexturePoll::Ready { texture }) => Some(texture),
+                    _ => None,
+                }
+            });
+            (texture, photo)
+        }
+    };
+    let radius = 28.0;
+    match texture {
+        Some(texture) => {
+            let scale = (card.width() / texture.size.x).max(card.height() / texture.size.y);
+            let seen = card.size() / (texture.size * scale);
+            let u = (1.0 - seen.x) / 2.0;
+            // A photo a little above its middle, where faces are.
+            let v = (1.0 - seen.y) * if photo { 0.3 } else { 0.25 };
+            ui.painter().add(
+                egui::epaint::RectShape::filled(card, radius, Color32::WHITE)
+                    .with_texture(texture.id, Rect::from_min_size(pos2(u, v), seen)),
+            );
+        }
+        None => {
+            ui.painter().rect_filled(card, radius, theme.surface0);
+        }
+    }
+    // The shade at its foot, round at the card's corners.
+    let foot = Rect::from_min_max(pos2(card.left(), card.bottom() - 220.0), card.max);
+    let mut outline = vec![foot.left_top(), foot.right_top()];
+    for (c, from) in [
+        (pos2(foot.right() - radius, foot.bottom() - radius), 0.0_f32),
+        (pos2(foot.left() + radius, foot.bottom() - radius), 90.0),
+    ] {
+        for k in 0..=8 {
+            let a = (from + k as f32 * 90.0 / 8.0).to_radians();
+            outline.push(c + vec2(a.cos(), a.sin()) * radius);
+        }
+    }
+    let mut mesh = Mesh::default();
+    for p in &outline {
+        let t = ((p.y - foot.top()) / foot.height()).clamp(0.0, 1.0);
+        mesh.colored_vertex(*p, Color32::from_black_alpha((170.0 * t * t) as u8));
+    }
+    for k in 1..outline.len() as u32 - 1 {
+        mesh.add_triangle(0, k, k + 1);
+    }
+    ui.painter().add(mesh);
+
+    // The chip, then the name in display type, white over the shade.
+    let x = card.left() + 28.0;
+    let room = (card.width() - 56.0).max(0.0);
+    let largest = (ui.ctx().content_rect().width() * 0.052).clamp(40.0, 72.0);
+    let name_font = [largest, 56.0, 48.0, 40.0, 32.0]
+        .into_iter()
+        .filter(|s| *s <= largest)
+        .map(|s| font(s, Weight::Bold))
+        .find(|f| {
+            text(
+                ui,
+                &artist.artist.name,
+                f.clone(),
+                Color32::WHITE,
+                f32::INFINITY,
+            )
+            .size()
+            .x <= room
+        })
+        .unwrap_or(font(32.0, Weight::Bold));
+    let name = text(ui, &artist.artist.name, name_font, Color32::WHITE, room);
+    let h = name.size().y;
+    let y = card.bottom() - 28.0 - h / 2.0;
+    paint_text(ui, name, x, y, egui::Align::Min, Color32::WHITE);
+    let g = text(
+        ui,
+        "Artist",
+        font(12.5, Weight::SemiBold),
+        Color32::WHITE,
+        200.0,
+    );
+    let chip = Rect::from_min_size(
+        pos2(x, y - h / 2.0 - 12.0 - 28.0),
+        vec2(12.0 + 22.0 + g.size().x + 12.0, 28.0),
+    );
+    ui.painter()
+        .rect_filled(chip, 14.0, Color32::from_black_alpha(110));
+    paint_icon(
+        ui,
+        icons::service(artist.artist.id.provider),
+        pos2(chip.left() + 12.0 + 7.0, chip.center().y),
+        14.0,
+        Color32::WHITE,
+    );
+    paint_text(
+        ui,
+        g,
+        chip.left() + 12.0 + 22.0,
+        chip.center().y,
+        egui::Align::Min,
+        Color32::WHITE,
+    );
+
+    let mid = card.bottom() + 28.0 + 36.0;
+    expressive_buttons(ui, theme, artist, card.left(), mid, here, favourite)
+}
+
 /// M3E's header for an artist: their picture in the Sunny shape over its
 /// colours, an eyebrow chip, the name in display type; the Play button,
 /// Shuffle and the heart under them.
@@ -53,7 +209,6 @@ fn expressive_hero(
     colors: Option<[Color32; 3]>,
     here: bool,
     favourite: bool,
-    motion: Option<egui::load::SizedTexture>,
 ) -> Option<HeroButton> {
     use super::shapes::Shape;
     if let Some(colors) = colors {
@@ -66,11 +221,9 @@ fn expressive_hero(
     }
     let art = expressive_art(top, pad);
     let sunny = Shape::Sunny.radii();
-    // Their video where Apple has one, the middle of it, else their photo.
-    match (motion, artist.artist.artwork.as_ref().map(|a| a.url(500))) {
-        (Some(frame), _) => sunny.frame(ui, frame, art),
-        (None, Some(url)) => sunny.image(ui, &url, art, 0.0, 0.0, theme.surface0),
-        (None, None) => {
+    match artist.artist.artwork.as_ref().map(|a| a.url(500)) {
+        Some(url) => sunny.image(ui, &url, art, 0.0, 0.0, theme.surface0),
+        None => {
             sunny.fill(ui, art, 0.0, theme.surface0);
             paint_icon(ui, icons::MIC, art.center(), 80.0, theme.muted());
         }
@@ -132,8 +285,22 @@ fn expressive_hero(
     );
 
     let mid = art.bottom() + 28.0 + 4.0 + 36.0;
+    expressive_buttons(ui, theme, artist, top.left() + pad, mid, here, favourite)
+}
+
+/// M3E's buttons under an artist's header, from `x`, their middle at `mid`:
+/// the shaped Play, Shuffle, the heart.
+fn expressive_buttons(
+    ui: &mut Ui,
+    theme: &Theme,
+    artist: &ArtistDetail,
+    x: f32,
+    mid: f32,
+    here: bool,
+    favourite: bool,
+) -> Option<HeroButton> {
     let mut clicked = None;
-    let play = Rect::from_min_size(pos2(top.left() + pad, mid - 36.0), vec2(72.0, 72.0));
+    let play = Rect::from_min_size(pos2(x, mid - 36.0), vec2(72.0, 72.0));
     let can_play = !artist.top_songs.is_empty();
     if super::fab::fab(ui, theme, play, "artist-play", here, false, can_play).clicked() {
         clicked = Some(HeroButton::Play);
@@ -192,7 +359,12 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
     let width = ui.available_width() - 2.0 * pad;
     let expressive = theme.layout.header == crate::theme::Header::Expressive;
     let hero = if expressive {
-        EXPRESSIVE_HERO
+        match &artist {
+            Some(a) if wide_artist(app, a) => {
+                expressive_wide_hero_height(ui.available_width(), pad)
+            }
+            _ => EXPRESSIVE_HERO,
+        }
     } else {
         hero_height(ui.available_width())
     };
@@ -250,19 +422,11 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
                 if expressive {
                     let favourite = app.is_favourite(FavouriteKind::Artist, &artist.artist.id);
                     let now = ui.input(|i| i.time);
-                    // Scrolled out of sight, the video isn't played.
-                    let art = expressive_art(top, pad);
-                    let pixels = art.width() * ui.ctx().pixels_per_point();
-                    let motion = artist
-                        .motion
-                        .as_deref()
-                        .filter(|_| ui.is_rect_visible(art))
-                        .and_then(|master| {
-                            app.motion_frame("artist-hero", master, pixels, ui.ctx())
-                        });
-                    let clicked = expressive_hero(
-                        ui, &theme, artist, top, pad, colors, here, favourite, motion,
-                    );
+                    let clicked = if wide_artist(app, artist) {
+                        expressive_wide(app, ui, &theme, artist, top, pad, here, favourite)
+                    } else {
+                        expressive_hero(ui, &theme, artist, top, pad, colors, here, favourite)
+                    };
                     match clicked {
                         Some(HeroButton::Play) if here => app.toggle_play(),
                         Some(HeroButton::Play) => {
