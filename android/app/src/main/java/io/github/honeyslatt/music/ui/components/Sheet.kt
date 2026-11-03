@@ -55,11 +55,22 @@ import io.github.honeyslatt.music.ui.chrome.Standard
 import io.github.honeyslatt.music.ui.theme.geist
 import io.github.honeyslatt.music.ui.theme.roles
 
-/** A sheet's background: the grouped colour, a shade lifted in the dark. */
-val sheetColour @Composable get() = if (roles.dark) Color(0xFF1C1C1C) else roles.grouped
+/** A sheet's background: the grouped colour, a shade lifted in the dark; M3E's surface-container-low. */
+val sheetColour @Composable get() = when {
+    expressiveSheets -> io.github.honeyslatt.music.ui.m3e.containerLow
+    roles.dark -> Color(0xFF1C1C1C)
+    else -> roles.grouped
+}
 
-/** A group's background inside a sheet. */
-val sheetCell @Composable get() = if (roles.dark) Color(0xFF262626) else roles.cell
+/** A group's background inside a sheet; M3E's surface-container-high. */
+val sheetCell @Composable get() = when {
+    expressiveSheets -> roles.surface
+    roles.dark -> Color(0xFF262626)
+    else -> roles.cell
+}
+
+private val expressiveSheets @Composable get() =
+    io.github.honeyslatt.music.ui.theme.look.layout.motion == io.github.honeyslatt.music.core.model.Motion.EXPRESSIVE
 
 /**
  * A sheet rising from the bottom with 26 dp corners over a scrim, as tall as
@@ -78,7 +89,11 @@ fun Sheet(
     BackHandler(open, onClose)
     Box(Modifier.fillMaxSize()) {
         AnimatedVisibility(open, enter = fadeIn(tween(300)), exit = fadeOut(tween(300))) {
-            val scrim = if (roles.dark) Color.Black.copy(alpha = 0.5f) else Color(0x47161616)
+            val scrim = when {
+                expressiveSheets -> Color.Black.copy(alpha = 0.4f)
+                roles.dark -> Color.Black.copy(alpha = 0.5f)
+                else -> Color(0x47161616)
+            }
             Box(
                 Modifier
                     .fillMaxSize()
@@ -93,7 +108,8 @@ fun Sheet(
             exit = slideOutVertically(tween(380, easing = Standard)) { it },
         ) {
             BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBars), contentAlignment = Alignment.BottomCenter) {
-                val shape = RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp)
+                val m3e = expressiveSheets
+                val shape = RoundedCornerShape(topStart = if (m3e) 28.dp else 26.dp, topEnd = if (m3e) 28.dp else 26.dp)
                 var drag by remember { mutableFloatStateOf(0f) }
                 val shown by animateFloatAsState(drag, label = "sheet")
                 val limit = with(LocalDensity.current) { 90.dp.toPx() }
@@ -114,10 +130,16 @@ fun Sheet(
                         .fillMaxWidth()
                         .heightIn(max = maxHeight - 46.dp)
                         .background(sheetColour, shape)
-                        .then(if (roles.dark) Modifier.border(1.dp, roles.line, shape) else Modifier)
+                        .then(if (roles.dark && !m3e) Modifier.border(1.dp, roles.line, shape) else Modifier)
                         // The sheet keeps its touches from the scrim.
                         .clickable(remember { MutableInteractionSource() }, indication = null) {},
                 ) {
+                    // M3E's handle.
+                    if (m3e) {
+                        Box(Modifier.fillMaxWidth().padding(top = 12.dp), contentAlignment = Alignment.Center) {
+                            Box(Modifier.size(32.dp, 4.dp).background(roles.sub.copy(alpha = 0.5f), RoundedCornerShape(2.dp)))
+                        }
+                    }
                     // No title: a sheet of its own words, as a confirmation.
                     if (title != null) {
                         Box(Modifier.fillMaxWidth().height(60.dp).padding(start = 14.dp, end = 14.dp, top = 8.dp)) {

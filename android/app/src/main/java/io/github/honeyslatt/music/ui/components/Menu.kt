@@ -96,6 +96,10 @@ fun Modifier.anchor(anchor: Anchor) = onGloballyPositioned { anchor.coordinates 
 fun MenuHost(menus: Menus) {
     val spec = menus.open ?: return
     BackHandler(onBack = menus::close)
+    if (io.github.honeyslatt.music.ui.theme.look.layout.motion == io.github.honeyslatt.music.core.model.Motion.EXPRESSIVE) {
+        io.github.honeyslatt.music.ui.m3e.ExpressiveMenu(spec, menus)
+        return
+    }
     val pop = remember(spec) { Animatable(0f) }
     LaunchedEffect(spec) { pop.animateTo(1f, tween(200, easing = io.github.honeyslatt.music.ui.chrome.Standard)) }
     Box(
