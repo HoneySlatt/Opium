@@ -381,10 +381,7 @@ pub struct Node {
     inner: Arc<Inner>,
     port: u16,
     rt: Option<tokio::runtime::Runtime>,
-    /// Found on the network and looking for the others; none while it
-    /// needn't (see [`Node::discover`]), or off the network.
-    mdns: Mutex<Option<mdns_sd::ServiceDaemon>>,
-    on_network: bool,
+    mdns: Option<mdns_sd::ServiceDaemon>,
 }
 
 impl Node {
@@ -472,31 +469,7 @@ impl Node {
             inner,
             port,
             rt: Some(rt),
-            mdns: Mutex::new(mdns),
-            on_network,
-        }
-    }
-
-    /// Found on the network and looking for the others, or not: a phone in
-    /// the background, not hearing the network's announcements anyway,
-    /// stops waking for them. Its connections stay.
-    pub fn discover(&self, on: bool) {
-        if !self.on_network {
-            return;
-        }
-        let mut mdns = lock(&self.mdns);
-        match (on, mdns.is_some()) {
-            (true, false) => {
-                *mdns = discover(&self.inner, self.port)
-                    .map_err(|e| eprintln!("music connect: can't look for devices: {e}"))
-                    .ok();
-            }
-            (false, true) => {
-                if let Some(daemon) = mdns.take() {
-                    let _ = daemon.shutdown();
-                }
-            }
-            _ => {}
+            mdns,
         }
     }
 
@@ -702,7 +675,7 @@ impl Sharer {
 
 impl Drop for Node {
     fn drop(&mut self) {
-        if let Some(mdns) = lock(&self.mdns).take() {
+        if let Some(mdns) = self.mdns.take() {
             let _ = mdns.shutdown();
         }
         if let Some(rt) = self.rt.take() {
