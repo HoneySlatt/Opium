@@ -89,9 +89,21 @@ fun DetailPage(
         return
     }
     val byPlay = !actionsInBar && io.github.honeyslatt.music.ui.theme.look.layout.header == io.github.honeyslatt.music.core.model.Header.EXPRESSIVE
-    androidx.compose.runtime.CompositionLocalProvider(LocalBannerActions provides if (byPlay) actions else emptyList()) {
+    // Stock's, as Apple Music's: the download button goes by Play, the rest stays in the bar.
+    val stock = !actionsInBar && !byPlay
+    val inRow = when {
+        byPlay -> actions
+        stock -> actions.filter { it.glyph != null }
+        else -> emptyList()
+    }
+    val inBar = when {
+        byPlay -> emptyList()
+        stock -> actions.filter { it.glyph == null }
+        else -> actions
+    }
+    androidx.compose.runtime.CompositionLocalProvider(LocalBannerActions provides inRow) {
     if (io.github.honeyslatt.music.ui.theme.look.expressive) {
-        ExpressivePage(nav, title, page, if (byPlay) emptyList() else actions, content)
+        ExpressivePage(nav, title, page, inBar, content)
         return@CompositionLocalProvider
     }
     Tinted(page) {
@@ -103,7 +115,7 @@ fun DetailPage(
                 content()
                 item { Spacer(Modifier.height(ChromeHeight + 58.dp + 34.dp)) }
             }
-            Bar(nav, title, solid, if (byPlay) emptyList() else actions)
+            Bar(nav, title, solid, inBar)
         }
     }
     }

@@ -528,7 +528,7 @@ fun PlayRow(c: LibraryContext, tracks: List<Track>, lead: @Composable () -> Unit
         return
     }
     if (io.github.honeyslatt.music.ui.theme.look.layout.header != io.github.honeyslatt.music.core.model.Header.BANNER) {
-        PlayShuffle(tracks.isNotEmpty(), { c.playback.play(tracks, 0) }, { c.playback.shuffle(tracks) })
+        StockPlayRow(tracks, io.github.honeyslatt.music.ui.detail.LocalBannerActions.current.firstOrNull { it.glyph != null }, { c.playback.play(tracks, 0) }) { c.playback.shuffle(tracks) }
         return
     }
     val playback = c.playback
@@ -589,6 +589,43 @@ private fun RowAction(a: BarAction) {
             Icons.Plus -> Glyph(Icons.Pluscircle, roles.sub, 28.dp)
             Icons.Starf -> Glyph(Icons.Starf, roles.accent, 26.dp)
             else -> Glyph(a.icon, roles.sub, 26.dp)
+        }
+    }
+}
+
+/**
+ * Apple Music's actions under a header: Shuffle in a round button, Play as
+ * a wide white pill, the download button round on the other side (none
+ * where nothing can be downloaded, as Songs).
+ */
+@Composable
+private fun StockPlayRow(tracks: List<Track>, download: BarAction?, onPlay: () -> Unit, onShuffle: () -> Unit) {
+    val enabled = tracks.isNotEmpty()
+    val round = roles.text.copy(alpha = 0.12f)
+    Row(
+        Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterHorizontally),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier.size(50.dp).press(CircleShape, shrink = 0.92f) { if (enabled) onShuffle() }.background(round, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) { Glyph(Icons.Shuffle, roles.text, 22.dp) }
+        Row(
+            Modifier.width(168.dp).height(50.dp).press(CircleShape, shrink = 0.96f) { if (enabled) onPlay() }.background(Color.White, CircleShape),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Glyph(Icons.Play, Color.Black, 20.dp)
+            Spacer(Modifier.width(8.dp))
+            BasicText("Play", style = geist(18.sp, FontWeight.SemiBold).copy(color = Color.Black))
+        }
+        if (download != null) {
+            val anchor = io.github.honeyslatt.music.ui.components.rememberAnchor()
+            Box(
+                Modifier.size(50.dp).anchor(anchor).press(CircleShape, shrink = 0.92f) { download.onClick(anchor.rect) }.background(round, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) { download.glyph?.invoke(22.dp, roles.text) }
         }
     }
 }

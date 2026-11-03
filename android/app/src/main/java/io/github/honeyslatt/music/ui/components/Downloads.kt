@@ -117,6 +117,18 @@ private fun Ring(size: Dp, width: Dp, track: Color, filled: Color?, part: Float)
  */
 @Composable
 fun DownloadGlyph(state: PageDownload, size: Dp = 26.dp, idle: Color = roles.text) {
+    // Apple Music's: a bare arrow, a ring filling with a stop square, a check once kept.
+    if (io.github.honeyslatt.music.ui.theme.look.layout.header == io.github.honeyslatt.music.core.model.Header.COVER) {
+        when (state) {
+            PageDownload.Offer -> Glyph(MoreIcons.ArrowDown, idle, size)
+            is PageDownload.Coming -> Box(Modifier.size(size), contentAlignment = Alignment.Center) {
+                Ring(size, 2.dp, idle.copy(alpha = 0.3f), idle, state.part)
+                Box(Modifier.size(size * 0.3f).background(idle, RoundedCornerShape(2.dp)))
+            }
+            PageDownload.Kept -> Glyph(io.github.honeyslatt.music.ui.Icons.Check, idle, size)
+        }
+        return
+    }
     when (state) {
         PageDownload.Offer -> Box(Modifier.size(size), contentAlignment = Alignment.Center) {
             Ring(size, 2.dp, idle, null, 0f)
