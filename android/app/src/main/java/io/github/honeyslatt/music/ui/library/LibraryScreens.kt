@@ -507,7 +507,7 @@ private fun LikedSongs(
 /** Songs with none to show: none downloaded yet, or none of this source. */
 @Composable
 private fun noSongs(listing: io.github.honeyslatt.music.data.Listing<Track>, downloaded: Boolean) =
-    if (downloaded) {
+    if (downloaded && listing.items.isEmpty()) {
         Empty(listing, "No downloads yet", "Download a song, an album or a playlist from its menu to play it offline.")
     } else {
         Empty(listing, "No songs here", "Nothing matches this source.")
