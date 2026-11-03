@@ -161,7 +161,10 @@ class Devices(context: Context) {
     private fun watch() {
         val missing = _peers.value.any { it.paired && !it.connected }
         val lately = SystemClock.elapsedRealtime() < lookingUntil
-        if (onScreen || (playing && missing && lately)) multicast.acquire() else multicast.release()
+        val looking = onScreen || (playing && missing && lately)
+        if (looking) multicast.acquire() else multicast.release()
+        // Deaf to the announcements, the phone stops making and awaiting them too.
+        node.discover(looking)
     }
 
     private fun take(event: Event) {

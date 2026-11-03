@@ -56,6 +56,10 @@ class Downloads(private val context: Context, private val core: Core, private va
 
     private val listener = object : DownloadListener {
         override fun state(id: ItemId, state: DownloadState) {
+            // A song coming shows 5 % at a time, not each quarter second:
+            // every row on screen reads these.
+            val before = _states.value[id]
+            if (state is DownloadState.Coming && before is DownloadState.Coming && state.part < 1f && state.part - before.part < 0.05f) return
             _states.update { if (state is DownloadState.Gone) it - id else it + (id to state) }
             if (state is DownloadState.Gone) _kept.update { kept -> kept.filter { it.track.id != id } }
             if (state is DownloadState.Queued || state is DownloadState.Coming) DownloadService.keepUp(context)

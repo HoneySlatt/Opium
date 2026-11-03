@@ -1438,6 +1438,11 @@ impl Connect {
         self.0.set_away(on);
     }
 
+    /// Found on the network and looking for the others, or not.
+    pub fn discover(&self, on: bool) {
+        self.0.discover(on);
+    }
+
     pub fn me(&self) -> connect::Device {
         self.0.me()
     }
