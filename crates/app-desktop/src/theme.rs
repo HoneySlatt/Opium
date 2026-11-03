@@ -112,33 +112,28 @@ pub struct Tonal {
 }
 
 impl Tonal {
-    /// From an accent, in OKLCH: primary light and calm, the secondary a
-    /// grey of its hue, the tertiary 60° round.
+    /// From an accent, as the core derives them (the phone's alike).
     pub fn from_accent(accent: Color32) -> Tonal {
-        let (c, h) = crate::color::chroma_hue(accent);
-        let oklch = crate::color::oklch;
+        let [r, g, b, _] = accent.to_srgba_unmultiplied();
+        Tonal::of_core(music_core::theme::Tonal::from_accent(
+            u32::from(r) << 16 | u32::from(g) << 8 | u32::from(b),
+        ))
+    }
+
+    fn of_core(t: music_core::theme::Tonal) -> Tonal {
         Tonal {
-            primary: oklch(0.82, c.min(0.12), h),
-            on_primary: oklch(0.25, c.min(0.12), h),
-            secondary_container: oklch(0.36, 0.06, h),
-            on_secondary_container: oklch(0.92, 0.04, h),
-            tertiary_container: oklch(0.38, 0.07, h + 60.0),
-            on_tertiary_container: oklch(0.92, 0.04, h + 60.0),
+            primary: rgb(t.primary),
+            on_primary: rgb(t.on_primary),
+            secondary_container: rgb(t.secondary_container),
+            on_secondary_container: rgb(t.on_secondary_container),
+            tertiary_container: rgb(t.tertiary_container),
+            on_tertiary_container: rgb(t.on_tertiary_container),
         }
     }
 
     /// A theme file's, what it leaves out derived from its accent.
     fn of(p: &music_core::theme::Palette) -> Tonal {
-        let d = Tonal::from_accent(rgb(p.accent));
-        let or = |v: Option<u32>, f: Color32| v.map_or(f, rgb);
-        Tonal {
-            primary: or(p.primary, d.primary),
-            on_primary: or(p.on_primary, d.on_primary),
-            secondary_container: or(p.secondary_container, d.secondary_container),
-            on_secondary_container: or(p.on_secondary_container, d.on_secondary_container),
-            tertiary_container: or(p.tertiary_container, d.tertiary_container),
-            on_tertiary_container: or(p.on_tertiary_container, d.on_tertiary_container),
-        }
+        Tonal::of_core(p.tonal())
     }
 }
 

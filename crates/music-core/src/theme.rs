@@ -68,7 +68,54 @@ pub struct Palette {
     pub on_tertiary_container: Option<u32>,
 }
 
+/// Material 3's tonal roles, which M3E draws with, as `0xrrggbb`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct Tonal {
+    pub primary: u32,
+    pub on_primary: u32,
+    pub secondary_container: u32,
+    pub on_secondary_container: u32,
+    pub tertiary_container: u32,
+    pub on_tertiary_container: u32,
+}
+
+impl Tonal {
+    /// From an accent, in OKLCH: primary light and calm, the secondary a
+    /// grey of its hue, the tertiary 60° round.
+    pub fn from_accent(accent: u32) -> Tonal {
+        let rgb = |v: u32| [(v >> 16) as u8, (v >> 8) as u8, v as u8];
+        let (c, h) = crate::color::chroma_hue(rgb(accent));
+        let oklch = |l, c, h| {
+            let [r, g, b] = crate::color::oklch(l, c, h);
+            u32::from(r) << 16 | u32::from(g) << 8 | u32::from(b)
+        };
+        Tonal {
+            primary: oklch(0.82, c.min(0.12), h),
+            on_primary: oklch(0.25, c.min(0.12), h),
+            secondary_container: oklch(0.36, 0.06, h),
+            on_secondary_container: oklch(0.92, 0.04, h),
+            tertiary_container: oklch(0.38, 0.07, h + 60.0),
+            on_tertiary_container: oklch(0.92, 0.04, h + 60.0),
+        }
+    }
+}
+
 impl Palette {
+    /// The tonal roles as the theme gives them, what it leaves out derived
+    /// from its accent.
+    pub fn tonal(&self) -> Tonal {
+        let d = Tonal::from_accent(self.accent);
+        Tonal {
+            primary: self.primary.unwrap_or(d.primary),
+            on_primary: self.on_primary.unwrap_or(d.on_primary),
+            secondary_container: self.secondary_container.unwrap_or(d.secondary_container),
+            on_secondary_container: self.on_secondary_container.unwrap_or(d.on_secondary_container),
+            tertiary_container: self.tertiary_container.unwrap_or(d.tertiary_container),
+            on_tertiary_container: self.on_tertiary_container.unwrap_or(d.on_tertiary_container),
+        }
+    }
+
     /// Carbonfox's black and neutral greys, Apple Music's pink.
     pub const STOCK: Palette = Palette {
         light: false,
@@ -483,6 +530,9 @@ choice!(
         /// Home (New and Radio as its chips), Search and Your Library, as
         /// Spotify.
         Three,
+        /// Home, New, Radio and Library, as M3E's navigation bar; search is
+        /// the bar over the root pages.
+        Four,
     }
 );
 choice!(
@@ -493,6 +543,9 @@ choice!(
         /// A card in the cover's colour with the position along its foot,
         /// as Spotify's.
         Card,
+        /// M3E's floating toolbar: the turning cover in a wavy ring that is
+        /// the position, the shaped Play.
+        Toolbar,
     }
 );
 choice!(
@@ -504,6 +557,9 @@ choice!(
         /// and its saved mark, the position, the controls, the device and
         /// quality, then the lyrics in a card.
         Spotify,
+        /// M3E's: Playing, Lyrics and Queue tabs, the wavy position, the
+        /// shaped Play in a button group, cards under it.
+        Expressive,
     }
 );
 choice!(
@@ -513,6 +569,9 @@ choice!(
         Field,
         /// A white field over tiles of the catalogue's genres, as Spotify.
         Tiles,
+        /// M3E's search bar over the root pages, opening the search view:
+        /// recent searches as chips, genres in shapes.
+        Bar,
     }
 );
 choice!(

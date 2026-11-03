@@ -20,6 +20,13 @@ lyrics = "panel"
 glow = "tonal"
 now_playing = "expressive"
 
+[layout.mobile]
+tabs = "four"
+mini_player = "toolbar"
+now_playing = "expressive"
+search = "bar"
+library = "list"
+
 [colors]
 base = "#141316"
 mantle = "#201f22"

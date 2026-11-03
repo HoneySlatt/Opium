@@ -1782,6 +1782,13 @@ pub fn built_in_themes() -> Vec<BuiltInTheme> {
         .collect()
 }
 
+/// A theme's tonal roles (M3E's), what it leaves out derived from its
+/// accent as the desktop derives them.
+#[uniffi::export]
+pub fn tonal(palette: music_core::theme::Palette) -> music_core::theme::Tonal {
+    palette.tonal()
+}
+
 /// A theme file imported or sent from the desktop, read; what is wrong with
 /// it if it can't be.
 #[uniffi::export]

@@ -58,3 +58,31 @@ impl Oklab {
         self.a.hypot(self.b)
     }
 }
+
+/// A colour in OKLCH (`hue` in degrees), its chroma lowered until it fits
+/// in sRGB.
+pub fn oklch(l: f32, c: f32, hue: f32) -> [u8; 3] {
+    let (sin, cos) = hue.to_radians().sin_cos();
+    let mut chroma = c;
+    loop {
+        let o = Oklab {
+            l,
+            a: chroma * cos,
+            b: chroma * sin,
+        };
+        let rgb = o.to_rgb();
+        let back = Oklab::from_rgb(rgb);
+        let fits = (back.l - l).abs() < 0.01
+            && ((back.a - o.a).powi(2) + (back.b - o.b).powi(2)).sqrt() < 0.01;
+        if fits || chroma < 0.005 {
+            return rgb;
+        }
+        chroma -= 0.005;
+    }
+}
+
+/// A colour's chroma and hue (degrees), in OKLCH.
+pub fn chroma_hue(rgb: [u8; 3]) -> (f32, f32) {
+    let o = Oklab::from_rgb(rgb);
+    (o.a.hypot(o.b), o.b.atan2(o.a).to_degrees())
+}

@@ -33,6 +33,13 @@ data class Roles(
     val red: Color,
     val green: Color,
     val yellow: Color,
+    /** Material's tonal roles, which M3E draws with. */
+    val primary: Color,
+    val onPrimary: Color,
+    val secondaryContainer: Color,
+    val onSecondaryContainer: Color,
+    val tertiaryContainer: Color,
+    val onTertiaryContainer: Color,
 ) {
     /** Hairlines: the text at 9 %. */
     val line get() = text.copy(alpha = 0.09f)
@@ -51,6 +58,7 @@ fun rolesOf(p: Palette): Roles {
     fun c(v: UInt) = Color(0xFF000000.toInt() or v.toInt())
     val base = c(p.base)
     val sub = c(p.subtext0)
+    val tonal = io.github.honeyslatt.music.core.tonal(p)
     return Roles(
         dark = !p.light,
         base = base,
@@ -69,6 +77,12 @@ fun rolesOf(p: Palette): Roles {
         red = c(p.red),
         green = c(p.green),
         yellow = c(p.yellow),
+        primary = c(tonal.primary),
+        onPrimary = c(tonal.onPrimary),
+        secondaryContainer = c(tonal.secondaryContainer),
+        onSecondaryContainer = c(tonal.onSecondaryContainer),
+        tertiaryContainer = c(tonal.tertiaryContainer),
+        onTertiaryContainer = c(tonal.onTertiaryContainer),
     )
 }
 
@@ -100,6 +114,13 @@ val DarkRoles = Roles(
     red = Color(0xFFFF453A),
     green = Color(0xFF4ADE80),
     yellow = Color(0xFFFBBF24),
+    // As the core derives them of the pink.
+    primary = Color(0xFFFFA6A4),
+    onPrimary = Color(0xFF490007),
+    secondaryContainer = Color(0xFF59302F),
+    onSecondaryContainer = Color(0xFFFFDBD9),
+    tertiaryContainer = Color(0xFF553E0E),
+    onTertiaryContainer = Color(0xFFF2E2C7),
 )
 
 /** Settings → Appearance. */
