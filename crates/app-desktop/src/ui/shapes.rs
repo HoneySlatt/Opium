@@ -101,17 +101,35 @@ impl Radii {
         {
             Ok(egui::load::TexturePoll::Ready { texture }) => {
                 let feather = 1.0 / ui.pixels_per_point();
+                let whole = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
                 let mesh = self.mesh(
                     rect,
                     turn,
                     Color32::WHITE,
-                    Some((texture.id, spin)),
+                    Some((texture.id, spin, whole)),
                     feather,
                 );
                 ui.painter().add(Drawn::mesh(mesh));
             }
             _ => self.fill(ui, rect, turn, fallback),
         }
+    }
+
+    /// A video's frame cut to the shape in `rect`: the middle of it, as
+    /// much as fills the shape.
+    pub fn frame(&self, ui: &Ui, texture: egui::load::SizedTexture, rect: Rect) {
+        let scale = (rect.width() / texture.size.x).max(rect.height() / texture.size.y);
+        let seen = rect.size() / (texture.size * scale);
+        let uv = Rect::from_center_size(pos2(0.5, 0.5), seen);
+        let feather = 1.0 / ui.pixels_per_point();
+        let mesh = self.mesh(
+            rect,
+            0.0,
+            Color32::WHITE,
+            Some((texture.id, 0.0, uv)),
+            feather,
+        );
+        ui.painter().add(Drawn::mesh(mesh));
     }
 
     /// The shape's mesh, its edge fading out over `feather` points (a
@@ -121,19 +139,24 @@ impl Radii {
         rect: Rect,
         turn: f32,
         color: Color32,
-        texture: Option<(egui::TextureId, f32)>,
+        texture: Option<(egui::TextureId, f32, Rect)>,
         feather: f32,
     ) -> Mesh {
-        let mut mesh = texture.map_or_else(Mesh::default, |(id, _)| Mesh::with_texture(id));
+        let mut mesh = texture.map_or_else(Mesh::default, |(id, ..)| Mesh::with_texture(id));
         // A cover stays still while the shape turns over it, unless it spins.
+        // Within `part` of the texture.
         let uv = |p: Pos2| match texture {
-            Some((_, spin)) => {
+            Some((_, spin, part)) => {
                 let (sin, cos) = (-spin).sin_cos();
                 let (x, y) = (
                     (p.x - rect.center().x) / rect.width(),
                     (p.y - rect.center().y) / rect.height(),
                 );
-                pos2(0.5 + x * cos - y * sin, 0.5 + x * sin + y * cos)
+                let (u, v) = (0.5 + x * cos - y * sin, 0.5 + x * sin + y * cos);
+                pos2(
+                    part.min.x + u * part.width(),
+                    part.min.y + v * part.height(),
+                )
             }
             None => egui::epaint::WHITE_UV,
         };

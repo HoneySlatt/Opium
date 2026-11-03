@@ -35,6 +35,11 @@ fn hero_height(width: f32) -> f32 {
 /// M3E's header: 48 px, the picture, 28 px, the buttons' row.
 const EXPRESSIVE_HERO: f32 = 48.0 + 248.0 + 28.0 + 100.0;
 
+/// Where M3E's hero has the artist's picture.
+fn expressive_art(top: Rect, pad: f32) -> Rect {
+    Rect::from_min_size(pos2(top.left() + pad, top.top() + 48.0), vec2(248.0, 248.0))
+}
+
 /// M3E's header for an artist: their picture in the Sunny shape over its
 /// colours, an eyebrow chip, the name in display type; the Play button,
 /// Shuffle and the heart under them.
@@ -48,6 +53,7 @@ fn expressive_hero(
     colors: Option<[Color32; 3]>,
     here: bool,
     favourite: bool,
+    motion: Option<egui::load::SizedTexture>,
 ) -> Option<HeroButton> {
     use super::shapes::Shape;
     if let Some(colors) = colors {
@@ -58,11 +64,13 @@ fn expressive_hero(
             colors,
         );
     }
-    let art = Rect::from_min_size(pos2(top.left() + pad, top.top() + 48.0), vec2(248.0, 248.0));
+    let art = expressive_art(top, pad);
     let sunny = Shape::Sunny.radii();
-    match artist.artist.artwork.as_ref().map(|a| a.url(500)) {
-        Some(url) => sunny.image(ui, &url, art, 0.0, 0.0, theme.surface0),
-        None => {
+    // Their video where Apple has one, the middle of it, else their photo.
+    match (motion, artist.artist.artwork.as_ref().map(|a| a.url(500))) {
+        (Some(frame), _) => sunny.frame(ui, frame, art),
+        (None, Some(url)) => sunny.image(ui, &url, art, 0.0, 0.0, theme.surface0),
+        (None, None) => {
             sunny.fill(ui, art, 0.0, theme.surface0);
             paint_icon(ui, icons::MIC, art.center(), 80.0, theme.muted());
         }
@@ -242,8 +250,19 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
                 if expressive {
                     let favourite = app.is_favourite(FavouriteKind::Artist, &artist.artist.id);
                     let now = ui.input(|i| i.time);
-                    let clicked =
-                        expressive_hero(ui, &theme, artist, top, pad, colors, here, favourite);
+                    // Scrolled out of sight, the video isn't played.
+                    let art = expressive_art(top, pad);
+                    let pixels = art.width() * ui.ctx().pixels_per_point();
+                    let motion = artist
+                        .motion
+                        .as_deref()
+                        .filter(|_| ui.is_rect_visible(art))
+                        .and_then(|master| {
+                            app.motion_frame("artist-hero", master, pixels, ui.ctx())
+                        });
+                    let clicked = expressive_hero(
+                        ui, &theme, artist, top, pad, colors, here, favourite, motion,
+                    );
                     match clicked {
                         Some(HeroButton::Play) if here => app.toggle_play(),
                         Some(HeroButton::Play) => {
