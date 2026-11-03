@@ -256,6 +256,8 @@ fun App(core: Core, library: Library, playback: io.github.honeyslatt.music.playb
             SwipeDown(npOpen, { npOpen = false }, { npDrag = it }) {
                 if (look.mobile.nowPlaying == io.github.honeyslatt.music.core.model.MobileNowPlaying.SPOTIFY) {
                     io.github.honeyslatt.music.ui.nowplaying.SpotifyNowPlaying(playback, npActions)
+                } else if (look.mobile.nowPlaying == io.github.honeyslatt.music.core.model.MobileNowPlaying.EXPRESSIVE) {
+                    io.github.honeyslatt.music.ui.m3e.ExpressiveNowPlaying(playback, npActions)
                 } else {
                     NowPlaying(playback, npActions)
                 }

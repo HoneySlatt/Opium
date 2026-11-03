@@ -276,7 +276,7 @@ internal fun Backdrop(t: Track, motion: String, flat: Boolean) {
  * still and nothing is drawn again.
  */
 @Composable
-private fun Wash(track: Track, playing: Boolean) {
+internal fun Wash(track: Track, playing: Boolean) {
     val light = !roles.dark
     val base = roles.base
     val url = track.artwork?.at(120)
