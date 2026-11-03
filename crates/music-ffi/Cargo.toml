@@ -19,6 +19,7 @@ async-trait = "0.1.92"
 async-compat = { version = "0.2.6", features = ["multi-thread"] }
 apple-music = { path = "../apple-music" }
 connect = { path = "../connect", features = ["ffi"] }
+downloads = { path = "../downloads" }
 synced = { path = "../synced" }
 music-core = { path = "../music-core", features = ["ffi"] }
 services = { path = "../services" }

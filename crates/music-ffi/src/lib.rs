@@ -14,6 +14,8 @@ use services::Services;
 
 uniffi::setup_scaffolding!();
 
+mod downloading;
+
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum MusicError {
     #[error("not signed in")]
