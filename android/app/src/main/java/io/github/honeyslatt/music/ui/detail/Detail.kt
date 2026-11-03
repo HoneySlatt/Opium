@@ -1,5 +1,6 @@
 package io.github.honeyslatt.music.ui.detail
 
+import io.github.honeyslatt.music.ui.theme.expressive
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -152,8 +153,17 @@ private fun BannerPage(nav: Navigator, title: String, page: Color, actions: List
 @Composable
 private fun Bar(nav: Navigator, title: String, solid: Boolean, actions: List<BarAction>, solidFill: Color = roles.base) {
     val fade by animateFloatAsState(if (solid) 1f else 0f, label = "bar")
-    // Over the cover, the buttons sit on capsules; on the solid bar, on fills.
-    val fill = if (solid) roles.surface else roles.capsule
+    // Over the cover, the buttons sit on capsules; on the solid bar, on
+    // fills. M3E's are on 55 % surface over the cover's wash, and its bar
+    // fills with surface-container.
+    val expressive = io.github.honeyslatt.music.ui.theme.look.expressive
+    val fill = when {
+        expressive -> roles.surface.copy(alpha = 0.55f)
+        solid -> roles.surface
+        else -> roles.capsule
+    }
+    @Suppress("NAME_SHADOWING")
+    val solidFill = if (expressive) roles.cell else solidFill
     Box(
         Modifier
             .fillMaxWidth()

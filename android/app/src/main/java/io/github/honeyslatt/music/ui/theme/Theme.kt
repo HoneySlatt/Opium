@@ -152,3 +152,6 @@ fun MusicTheme(appearance: Appearance, theme: ThemeFile, content: @Composable ()
         content = content,
     )
 }
+
+/** M3E's look, in the parts no choice of its own names: the expressive motion goes with it, as on the desktop. */
+val Look.expressive get() = layout.motion == io.github.honeyslatt.music.core.model.Motion.EXPRESSIVE

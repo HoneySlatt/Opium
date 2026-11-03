@@ -46,6 +46,7 @@ import io.github.honeyslatt.music.ui.chrome.ChromeHeight
 import io.github.honeyslatt.music.ui.nav.Navigator
 import io.github.honeyslatt.music.ui.theme.geist
 import io.github.honeyslatt.music.ui.theme.roles
+import io.github.honeyslatt.music.ui.theme.expressive
 
 /** A button of the navigation bar's right side. */
 /** A button of a page's bar; it is told where it is, for a menu. */
@@ -86,18 +87,26 @@ fun ListPage(
     val titleAt = if (nav.canPop) 2 else 1
     val scrolled by remember(titleAt) { derivedStateOf { state.firstVisibleItemIndex > titleAt } }
     val chips = LocalTitleChips.current
+    val bar = searchBar(nav)
     Box(Modifier.fillMaxSize().background(roles.base)) {
+        if (bar) TonalGlow { state.firstVisibleItemIndex == 0 }
         PullRefresh(refresh, if (nav.canPop) 52.dp else 0.dp) {
             LazyColumn(Modifier.fillMaxSize(), state = state) {
                 item { Spacer(Modifier.windowInsetsTopHeight(WindowInsets.statusBars)) }
                 // A pushed page's title sits under the bar and its back button.
                 if (nav.canPop) item { Spacer(Modifier.height(52.dp)) }
+                if (bar) item { Spacer(Modifier.height(64.dp)) }
                 if (chips != null) item { chips() } else if (largeTitle) item { LargeTitle(title, fold = fold) }
                 content()
                 item { Spacer(Modifier.height(Under)) }
             }
         }
-        NavBar(nav, title, scrolled, actions, if (chips != null) null else account)
+        if (bar) {
+            val searched by remember { derivedStateOf { state.firstVisibleItemIndex > 0 || state.firstVisibleItemScrollOffset > 8 } }
+            io.github.honeyslatt.music.ui.chrome.M3ESearchBar(searched, { nav.select(io.github.honeyslatt.music.ui.nav.Tab.Search) }, account)
+        } else {
+            NavBar(nav, title, scrolled, actions, if (chips != null) null else account)
+        }
     }
 }
 
@@ -117,7 +126,9 @@ fun GridPage(
     ScrollsToTop(nav) { state.animateScrollToItem(0) }
     val titleAt = if (nav.canPop) 2 else 1
     val scrolled by remember(titleAt) { derivedStateOf { state.firstVisibleItemIndex > titleAt } }
+    val bar = searchBar(nav)
     Box(Modifier.fillMaxSize().background(roles.base)) {
+        if (bar) TonalGlow { state.firstVisibleItemIndex == 0 }
         PullRefresh(refresh, if (nav.canPop) 52.dp else 0.dp) {
             LazyVerticalGrid(
                 GridCells.Fixed(2),
@@ -128,13 +139,37 @@ fun GridPage(
             ) {
                 full { Spacer(Modifier.windowInsetsTopHeight(WindowInsets.statusBars)) }
                 if (nav.canPop) full { Spacer(Modifier.height(52.dp)) }
+                if (bar) full { Spacer(Modifier.height(64.dp)) }
                 full { LargeTitle(title, fold = fold) }
                 content()
                 full { Spacer(Modifier.height(Under)) }
             }
         }
-        NavBar(nav, title, scrolled, actions, account)
+        if (bar) {
+            val searched by remember { derivedStateOf { state.firstVisibleItemIndex > 0 || state.firstVisibleItemScrollOffset > 8 } }
+            io.github.honeyslatt.music.ui.chrome.M3ESearchBar(searched, { nav.select(io.github.honeyslatt.music.ui.nav.Tab.Search) }, account)
+        } else {
+            NavBar(nav, title, scrolled, actions, account)
+        }
     }
+}
+
+/** M3E's root pages have the search bar on top, not the bar of buttons (Search itself has its field). */
+@Composable
+private fun searchBar(nav: Navigator) =
+    io.github.honeyslatt.music.ui.theme.look.mobile.search == io.github.honeyslatt.music.core.model.SearchView.BAR &&
+        !nav.canPop && nav.tab != io.github.honeyslatt.music.ui.nav.Tab.Search
+
+/** M3E's tonal glow lighting a root page's top, gone once it scrolls. */
+@Composable
+private fun TonalGlow(atTop: () -> Boolean) {
+    val shown by animateFloatAsState(if (atTop()) 1f else 0f, label = "glow")
+    val glow = roles.accent
+    Box(
+        Modifier.fillMaxWidth().height(340.dp).alpha(shown).background(
+            androidx.compose.ui.graphics.Brush.verticalGradient(listOf(glow.copy(alpha = 0.22f), glow.copy(alpha = 0.06f), androidx.compose.ui.graphics.Color.Transparent)),
+        ),
+    )
 }
 
 /** A grid item across both columns, out of the grid's side padding. */
@@ -202,17 +237,21 @@ fun NavBar(
     account: (@Composable () -> Unit)? = null,
 ) {
     val fade by animateFloatAsState(if (solid) 1f else 0f, label = "bar")
+    // M3E's fills with surface-container, its buttons on 55 % surface over the page.
+    val expressive = io.github.honeyslatt.music.ui.theme.look.expressive
+    val fill = if (expressive) roles.cell else roles.base
     Box(
         Modifier
             .fillMaxWidth()
-            .background(roles.base.copy(alpha = fade))
+            .background(fill.copy(alpha = fade))
             .then(if (solid) Modifier.underline(roles.line) else Modifier)
             .windowInsetsPadding(WindowInsets.statusBars)
             .height(52.dp)
             .padding(horizontal = 12.dp),
     ) {
+        val buttons = if (expressive) roles.surface.copy(alpha = 0.55f) else roles.surface
         if (nav.canPop) {
-            Box(Modifier.align(Alignment.CenterStart)) { RoundButton(Icons.Left, { nav.pop() }) }
+            Box(Modifier.align(Alignment.CenterStart)) { RoundButton(Icons.Left, { nav.pop() }, buttons) }
         }
         Box(Modifier.align(Alignment.Center).padding(horizontal = 58.dp).alpha(fade)) {
             Line(title, geist(16.sp, FontWeight.SemiBold).copy(color = roles.text))
@@ -220,7 +259,7 @@ fun NavBar(
         Row(Modifier.align(Alignment.CenterEnd), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             actions.forEach { a ->
                 val anchor = rememberAnchor()
-                Box(Modifier.anchor(anchor)) { RoundButton(a.icon, { a.onClick(anchor.rect) }) }
+                Box(Modifier.anchor(anchor)) { RoundButton(a.icon, { a.onClick(anchor.rect) }, buttons) }
             }
             account?.invoke()
         }

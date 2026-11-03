@@ -1,5 +1,6 @@
 package io.github.honeyslatt.music.ui.components
 
+import io.github.honeyslatt.music.ui.theme.expressive
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
@@ -62,7 +63,9 @@ fun LargeTitle(text: String, modifier: Modifier = Modifier, inset: androidx.comp
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Line(text, geist(32.sp, FontWeight.Bold, -0.02f).copy(color = roles.text))
+            // M3E's page titles are 36 sp.
+            val size = if (io.github.honeyslatt.music.ui.theme.look.expressive) 36.sp else 32.sp
+            Line(text, geist(size, FontWeight.Bold, -0.02f).copy(color = roles.text))
             if (fold != null) FoldMark(fold.open, 24.dp)
         }
     }

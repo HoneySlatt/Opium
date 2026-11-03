@@ -232,6 +232,8 @@ fun App(core: Core, library: Library, playback: io.github.honeyslatt.music.playb
             }
             if (look.mobile.tabs == io.github.honeyslatt.music.core.model.Tabs.THREE) {
                 io.github.honeyslatt.music.ui.chrome.SpotifyBottom(nav, mini, playback, { devicesOpen = true }, Modifier.align(Alignment.BottomCenter))
+            } else if (look.mobile.tabs == io.github.honeyslatt.music.core.model.Tabs.FOUR) {
+                io.github.honeyslatt.music.ui.chrome.M3EBottom(nav, mini, playback, Modifier.align(Alignment.BottomCenter))
             } else {
                 BottomChrome(nav, mini, Modifier.align(Alignment.BottomCenter))
             }
