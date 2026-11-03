@@ -28,6 +28,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.draw.alpha
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
@@ -287,6 +291,10 @@ private fun kindLabel(kind: StationKind) = when (kind) {
 /** The page's large shelf: Top Picks on Home, the editors' cards on New. */
 @Composable
 private fun HeroRow(c: LibraryContext, shelf: Shelf, hero: Hero) {
+    if (hero == Hero.Picks && io.github.honeyslatt.music.ui.theme.look.layout.motion == io.github.honeyslatt.music.core.model.Motion.EXPRESSIVE) {
+        Carousel(c, shelf)
+        return
+    }
     val actions = LocalActions.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val state = rememberLazyListState()
@@ -441,6 +449,103 @@ fun ShelfPage(c: LibraryContext, shelf: Shelf) {
                     is Collection.Station -> null
                 },
             ) { open(c, item, scope) { actions?.hud?.show("Couldn't tune in", io.github.honeyslatt.music.ui.Icons.Alert) } }
+        }
+    }
+}
+
+/**
+ * M3E's multi-browse carousel: 232 dp high, the item in front large with
+ * its kicker, title, two lines and a 48 dp Play, the next two medium
+ * (88 dp) and small (40 dp), at radius 28. A swipe, or a tap on a smaller
+ * one, brings it forward, the widths following on the slow spring.
+ */
+@androidx.annotation.OptIn(UnstableApi::class)
+@Composable
+private fun Carousel(c: LibraryContext, shelf: Shelf) {
+    val actions = LocalActions.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var front by androidx.compose.runtime.saveable.rememberSaveable(shelf.title) { androidx.compose.runtime.mutableIntStateOf(0) }
+    val items = shelf.items
+    val gap = 8.dp
+    val drag = androidx.compose.runtime.remember { floatArrayOf(0f) }
+    BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+        val large = maxWidth - 88.dp - 40.dp - gap * 2
+        androidx.compose.foundation.layout.Row(
+            Modifier.fillMaxWidth().height(232.dp).pointerInput(items.size) {
+                detectHorizontalDragGestures(
+                    onDragStart = { drag[0] = 0f },
+                    onDragEnd = {
+                        val far = 48.dp.toPx()
+                        if (drag[0] < -far) front = (front + 1).coerceAtMost(items.lastIndex)
+                        if (drag[0] > far) front = (front - 1).coerceAtLeast(0)
+                    },
+                ) { change, amount ->
+                    drag[0] += amount
+                    change.consume()
+                }
+            },
+        ) {
+            items.forEachIndexed { i, item ->
+                val target = when (i - front) {
+                    0 -> large
+                    1 -> 88.dp
+                    2 -> 40.dp
+                    else -> 0.dp
+                }
+                val width by androidx.compose.animation.core.animateDpAsState(target, io.github.honeyslatt.music.ui.m3e.Springs.slow(), label = "carousel")
+                if (width > 0.5.dp) {
+                    val spacing = if (i == front) 0.dp else gap
+                    Box(Modifier.padding(start = spacing).width(width).fillMaxHeight()) {
+                        val tap = { open(c, item, scope) { actions?.hud?.show("Couldn't tune in", io.github.honeyslatt.music.ui.Icons.Alert) } }
+                        CarouselItem(item, shelf.picks.getOrNull(i), i == front, onPlay = { play(c, item, scope) }) {
+                            if (i == front) tap() else front = i
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** An item of the carousel: its picture at radius 28; in front, its words and Play over a shade at its foot. */
+@Composable
+private fun CarouselItem(item: Collection, pick: Pick?, large: Boolean, onPlay: () -> Unit, onClick: () -> Unit) {
+    val (artwork, title, subtitle) = item.texts()
+    val shape = RoundedCornerShape(28.dp)
+    Box(Modifier.fillMaxSize().clip(shape).press(shape, shrink = 0.98f, onClick = onClick).background(roles.surface)) {
+        AsyncImage(artwork?.at(600), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        val shown by androidx.compose.animation.core.animateFloatAsState(if (large) 1f else 0f, io.github.honeyslatt.music.ui.m3e.Springs.effects(), label = "carousel-text")
+        if (shown > 0.01f) {
+            Box(Modifier.fillMaxSize().alpha(shown).background(androidx.compose.ui.graphics.Brush.verticalGradient(0.35f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.78f))))
+            androidx.compose.foundation.layout.Row(
+                Modifier.align(Alignment.BottomStart).fillMaxWidth().alpha(shown).padding(16.dp),
+                verticalAlignment = Alignment.Bottom,
+            ) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    val kicker = pick?.badge?.takeIf { it.isNotBlank() } ?: (item as? Collection.Playlist)?.v1?.curator
+                    kicker?.let { BasicText(it.uppercase(), style = geist(11.sp, FontWeight.SemiBold, 0.05f).copy(color = Color.White.copy(alpha = 0.8f)), maxLines = 1) }
+                    Line(title, geist(20.sp, FontWeight.Bold).copy(color = Color.White))
+                    (pick?.blurb ?: subtitle)?.let {
+                        BasicText(it, style = geist(13.sp).copy(color = Color.White.copy(alpha = 0.85f)), maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                    }
+                }
+                androidx.compose.foundation.layout.Spacer(Modifier.width(12.dp))
+                io.github.honeyslatt.music.ui.chrome.ShapedPlay(false, false, 48.dp, onPlay)
+            }
+        }
+    }
+}
+
+/** Play what a card is: an album's or a playlist's songs, a station. */
+@androidx.annotation.OptIn(UnstableApi::class)
+private fun play(c: LibraryContext, item: Collection, scope: CoroutineScope) {
+    scope.launch {
+        runCatching {
+            when (item) {
+                is Collection.Album -> c.core.session.album(item.v1.id).tracks.takeIf { it.isNotEmpty() }?.let { c.playback.play(it, 0) }
+                is Collection.Playlist -> c.core.session.playlistTracks(item.v1.id, null).items.takeIf { it.isNotEmpty() }?.let { c.playback.play(it, 0) }
+                is Collection.Station -> c.playback.playStation(item.v1)
+            }
         }
     }
 }
