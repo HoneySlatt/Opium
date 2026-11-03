@@ -1772,7 +1772,6 @@ pub struct BuiltInTheme {
 pub fn built_in_themes() -> Vec<BuiltInTheme> {
     music_core::theme::BUILT_IN
         .iter()
-        .filter(|(id, _)| *id != "m3e")
         .filter_map(|(id, _)| {
             Some(BuiltInTheme {
                 id: id.to_string(),
