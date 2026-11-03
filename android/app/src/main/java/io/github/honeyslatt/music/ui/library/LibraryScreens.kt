@@ -523,6 +523,10 @@ private fun noSongs(listing: io.github.honeyslatt.music.data.Listing<Track>, dow
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
 fun PlayRow(c: LibraryContext, tracks: List<Track>, lead: @Composable () -> Unit = {}) {
+    if (io.github.honeyslatt.music.ui.theme.look.layout.header == io.github.honeyslatt.music.core.model.Header.EXPRESSIVE) {
+        io.github.honeyslatt.music.ui.m3e.ExpressivePlayRow(c, tracks, io.github.honeyslatt.music.ui.detail.LocalBannerActions.current, lead)
+        return
+    }
     if (io.github.honeyslatt.music.ui.theme.look.layout.header != io.github.honeyslatt.music.core.model.Header.BANNER) {
         PlayShuffle(tracks.isNotEmpty(), { c.playback.play(tracks, 0) }, { c.playback.shuffle(tracks) })
         return

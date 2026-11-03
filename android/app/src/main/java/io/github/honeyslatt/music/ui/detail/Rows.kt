@@ -1,5 +1,7 @@
 package io.github.honeyslatt.music.ui.detail
 
+import io.github.honeyslatt.music.ui.theme.expressive
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -44,19 +46,32 @@ fun AlbumTrackRow(number: Int, track: Track, last: Boolean, onClick: () -> Unit 
     val faded = Modifier.alpha(if (off) io.github.honeyslatt.music.ui.components.FADED else 1f)
     if (io.github.honeyslatt.music.ui.theme.look.layout.rows == io.github.honeyslatt.music.core.model.Rows.STACKED) {
         // Spotify's: no number nor hairline, the E and the artists under
-        // the title, the menu's dots upright.
+        // the title, the menu's dots upright. M3E's: numbered, 64 dp, the
+        // playing one a pill in secondary-container.
+        val expressive = io.github.honeyslatt.music.ui.theme.look.expressive
+        val pill = if (expressive && now) Modifier.padding(horizontal = 8.dp).background(roles.secondaryContainer, androidx.compose.foundation.shape.CircleShape) else Modifier
         Row(
             Modifier
                 .fillMaxWidth()
-                .heightIn(min = 60.dp)
+                .heightIn(min = if (expressive) 64.dp else 60.dp)
                 .anchor(anchor)
                 .then(faded)
+                .then(pill)
                 .press(onLongClick = { actions?.trackMenu(track, anchor.rect) }, onClick = tap)
-                .padding(start = 16.dp, end = 4.dp),
+                .padding(start = if (expressive && now) 8.dp else 16.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            if (expressive) {
+                Box(Modifier.width(32.dp), contentAlignment = Alignment.CenterStart) {
+                    if (now) {
+                        Bars(roles.onSecondaryContainer, mark.playing)
+                    } else {
+                        BasicText(number.toString(), style = geist(15.sp).copy(color = roles.sub))
+                    }
+                }
+            }
             androidx.compose.foundation.layout.Column(Modifier.weight(1f)) {
-                Line(track.title, geist(16.sp).copy(color = if (now) roles.tint else roles.text))
+                Line(track.title, geist(16.sp).copy(color = if (now) (if (expressive) roles.onSecondaryContainer else roles.tint) else roles.text))
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                     io.github.honeyslatt.music.ui.components.DownloadBadge(track)
                     if (track.explicit) ExplicitBadge()

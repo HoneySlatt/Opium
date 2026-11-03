@@ -59,4 +59,8 @@ object MoreIcons {
     val CloudOff: ImageVector by lazy {
         stroked("cloud-off", "m2 2 20 20", "M5.782 5.782A7 7 0 0 0 9 19h8.5a4.5 4.5 0 0 0 1.307-.193", "M21.532 16.5A4.5 4.5 0 0 0 17.5 10h-1.79A7.008 7.008 0 0 0 10 5.07")
     }
+    /** The heart's outline, M3E's favourite unset. */
+    val Heart: ImageVector by lazy {
+        stroked("heart", "M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z")
+    }
 }

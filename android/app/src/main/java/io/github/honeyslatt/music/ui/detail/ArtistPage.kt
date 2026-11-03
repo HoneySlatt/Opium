@@ -1,5 +1,6 @@
 package io.github.honeyslatt.music.ui.detail
 
+import io.github.honeyslatt.music.ui.components.label
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -88,13 +89,28 @@ fun ArtistPage(c: LibraryContext, id: ItemId) {
         SpotifyArtistPage(c, loaded, motion, page, favourite)
         return
     }
+    val expressive = io.github.honeyslatt.music.ui.theme.look.layout.header == io.github.honeyslatt.music.core.model.Header.EXPRESSIVE
     DetailPage(
         c.nav,
         artist?.name.orEmpty(),
         page,
         listOf(BarAction(Icons.More, "More") { rect -> d?.takeIf { it.topSongs.isNotEmpty() }?.let { actions?.artistMenu(it, rect) } }),
+        actionsInBar = true,
     ) {
-        item {
+        if (expressive) {
+            item {
+                io.github.honeyslatt.music.ui.m3e.ExpressiveArtistHero(
+                    artist,
+                    motion,
+                    wide = d?.banner?.let { Artwork(it.replace("2400x1350", "{size}x{size}"), null) },
+                    eyebrow = "Artist · ${artist?.id?.provider?.label().orEmpty()}",
+                    favourite = favourite.takeIf { artist?.id?.provider == ProviderKind.APPLE_MUSIC },
+                    onFavourite = { artist?.let { actions?.toggleFavourite(it) } },
+                    onShuffle = { d?.topSongs?.takeIf { it.isNotEmpty() }?.let { c.playback.shuffle(it) } },
+                    onPlay = { d?.topSongs?.takeIf { it.isNotEmpty() }?.let { c.playback.play(it, 0) } },
+                )
+            }
+        } else item {
             Hero(
                 artist,
                 motion,

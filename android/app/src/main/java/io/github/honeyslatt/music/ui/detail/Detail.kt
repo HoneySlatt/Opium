@@ -80,11 +80,19 @@ fun DetailPage(
     title: String,
     page: Color,
     actions: List<BarAction> = emptyList(),
+    /** M3E's pages put their actions by Play, but an artist's keeps them in the bar. */
+    actionsInBar: Boolean = false,
     content: LazyListScope.() -> Unit,
 ) {
     if (io.github.honeyslatt.music.ui.theme.look.layout.header == io.github.honeyslatt.music.core.model.Header.BANNER) {
         BannerPage(nav, title, page, actions, content)
         return
+    }
+    val byPlay = !actionsInBar && io.github.honeyslatt.music.ui.theme.look.layout.header == io.github.honeyslatt.music.core.model.Header.EXPRESSIVE
+    androidx.compose.runtime.CompositionLocalProvider(LocalBannerActions provides if (byPlay) actions else emptyList()) {
+    if (io.github.honeyslatt.music.ui.theme.look.expressive) {
+        ExpressivePage(nav, title, page, if (byPlay) emptyList() else actions, content)
+        return@CompositionLocalProvider
     }
     Tinted(page) {
         val state = rememberLazyListState()
@@ -95,8 +103,37 @@ fun DetailPage(
                 content()
                 item { Spacer(Modifier.height(ChromeHeight + 58.dp + 34.dp)) }
             }
-            Bar(nav, title, solid, actions)
+            Bar(nav, title, solid, if (byPlay) emptyList() else actions)
         }
+    }
+    }
+}
+
+/**
+ * M3E's page: the cover's colour washing the top and fading into the
+ * surface by 600 dp, scrolling with it; the theme's own surfaces stay, as
+ * on the desktop.
+ */
+@Composable
+private fun ExpressivePage(nav: Navigator, title: String, page: Color, actions: List<BarAction>, content: LazyListScope.() -> Unit) {
+    val state = rememberLazyListState()
+    val solid by remember { derivedStateOf { state.firstVisibleItemIndex > 0 } }
+    io.github.honeyslatt.music.ui.components.Folding(nav) { state.firstVisibleItemIndex to state.firstVisibleItemScrollOffset }
+    val base = roles.base
+    val gone = with(androidx.compose.ui.platform.LocalDensity.current) { 4000.dp.toPx() }
+    Box(Modifier.fillMaxSize().background(base)) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(600.dp)
+                .graphicsLayer { translationY = if (state.firstVisibleItemIndex == 0) -state.firstVisibleItemScrollOffset.toFloat() else -gone }
+                .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(androidx.compose.ui.graphics.lerp(page, base, 0.35f), base))),
+        )
+        LazyColumn(Modifier.fillMaxSize(), state = state) {
+            content()
+            item { Spacer(Modifier.height(ChromeHeight + 58.dp + 34.dp)) }
+        }
+        Bar(nav, title, solid, actions)
     }
 }
 
@@ -218,6 +255,10 @@ fun DetailHeader(
 ) {
     if (LocalBanner.current != null) {
         BannerHeader(artwork, motion, title, byline, onByline, meta, art)
+        return
+    }
+    if (motion == null && io.github.honeyslatt.music.ui.theme.look.layout.header == io.github.honeyslatt.music.core.model.Header.EXPRESSIVE) {
+        io.github.honeyslatt.music.ui.m3e.ExpressiveHeader(artwork, title, byline, onByline, meta, art)
         return
     }
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
