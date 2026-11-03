@@ -55,6 +55,7 @@ import io.github.honeyslatt.music.ui.components.rememberAnchor
 import io.github.honeyslatt.music.ui.nav.Route
 import io.github.honeyslatt.music.ui.theme.geist
 import io.github.honeyslatt.music.ui.theme.roles
+import io.github.honeyslatt.music.ui.theme.expressive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -113,10 +114,24 @@ fun YourLibrary(c: LibraryContext) {
                 Kind.Artists -> it.artists
             }
         }
+        val expressive = io.github.honeyslatt.music.ui.theme.look.expressive
+        val listState = androidx.compose.foundation.lazy.rememberLazyListState()
         io.github.honeyslatt.music.ui.components.PullRefresh(refresh, 0.dp) {
-            LazyColumn(Modifier.fillMaxSize()) {
+            LazyColumn(Modifier.fillMaxSize(), state = listState) {
                 item { Spacer(Modifier.windowInsetsTopHeight(WindowInsets.statusBars)) }
-                item {
+                // M3E's: the search bar over it, its title at 36 sp with a tonal +.
+                if (expressive) {
+                    item { Spacer(Modifier.height(64.dp)) }
+                    item {
+                        Row(
+                            Modifier.fillMaxWidth().padding(start = 20.dp, end = 16.dp, top = 8.dp, bottom = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            BasicText("Library", Modifier.weight(1f), style = geist(36.sp, FontWeight.Bold, -0.02f).copy(color = roles.text))
+                            io.github.honeyslatt.music.ui.m3e.Tonal(Icons.Plus, 48.dp) { actions?.sheet = SheetSpec.PlaylistForm(null) }
+                        }
+                    }
+                } else item {
                     Row(
                         Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 10.dp, bottom = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -140,11 +155,22 @@ fun YourLibrary(c: LibraryContext) {
                             Box(
                                 Modifier.height(34.dp)
                                     .press(RoundedCornerShape(17.dp)) { kind = k }
-                                    .background(if (on) roles.accent else roles.surface2, RoundedCornerShape(17.dp))
+                                    .background(
+                                        when {
+                                            expressive && on -> roles.secondaryContainer
+                                            on -> roles.accent
+                                            else -> roles.surface2
+                                        },
+                                        RoundedCornerShape(if (expressive) 8.dp else 17.dp),
+                                    )
                                     .padding(horizontal = 14.dp),
                                 contentAlignment = Alignment.Center,
                             ) {
-                                BasicText(k.label, style = geist(14.sp).copy(color = if (on) roles.onAccent else roles.text))
+                                BasicText(
+                                    k.label,
+                                    style = geist(14.sp, if (expressive) FontWeight.Medium else FontWeight.Normal)
+                                        .copy(color = if (on) (if (expressive) roles.onSecondaryContainer else roles.onAccent) else roles.text),
+                                )
                             }
                         }
                     }
@@ -161,8 +187,15 @@ fun YourLibrary(c: LibraryContext) {
                                     if (c.lists.songs.items.isEmpty() && !c.lists.songs.done) "Playlist" else "Playlist • ${songs(c.lists.songs.items.size)}",
                                     pinned = true,
                                     tile = {
-                                        Box(Modifier.size(64.dp).background(Brush.linearGradient(Loved), RoundedCornerShape(4.dp)), contentAlignment = Alignment.Center) {
-                                            Glyph(MoreIcons.HeartFill, Color.White, 26.dp)
+                                        // M3E's: a tertiary tile, the note on it.
+                                        if (expressive) {
+                                            Box(Modifier.size(56.dp).background(roles.tertiaryContainer, RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
+                                                Glyph(Icons.Note, roles.onTertiaryContainer, 26.dp)
+                                            }
+                                        } else {
+                                            Box(Modifier.size(64.dp).background(Brush.linearGradient(Loved), RoundedCornerShape(4.dp)), contentAlignment = Alignment.Center) {
+                                                Glyph(MoreIcons.HeartFill, Color.White, 26.dp)
+                                            }
                                         }
                                     },
                                 ) { c.nav.push(Route.Songs) }
@@ -226,6 +259,10 @@ fun YourLibrary(c: LibraryContext) {
                 item { Spacer(Modifier.height(ChromeHeight + 120.dp)) }
             }
         }
+        if (expressive) {
+            val searched by androidx.compose.runtime.remember { androidx.compose.runtime.derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 8 } }
+            io.github.honeyslatt.music.ui.chrome.M3ESearchBar(searched, { c.nav.select(io.github.honeyslatt.music.ui.nav.Tab.Search) }, c.account)
+        }
     }
 }
 
@@ -263,11 +300,18 @@ private fun Entry(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        if (tile != null) tile() else Cover(artwork, 64.dp, if (round) CircleShape else RoundedCornerShape(4.dp), Modifier.size(64.dp))
+        val expressive = io.github.honeyslatt.music.ui.theme.look.expressive
+        when {
+            tile != null -> tile()
+            // M3E's: 56 dp at radius 12, artists in the Sunny shape.
+            expressive && round -> Cover(artwork, 56.dp, io.github.honeyslatt.music.ui.m3e.RadialShape(io.github.honeyslatt.music.ui.m3e.M3Shape.Sunny.radii), Modifier.size(56.dp))
+            expressive -> Cover(artwork, 56.dp, RoundedCornerShape(12.dp), Modifier.size(56.dp))
+            else -> Cover(artwork, 64.dp, if (round) CircleShape else RoundedCornerShape(4.dp), Modifier.size(64.dp))
+        }
         Column(Modifier.weight(1f)) {
             BasicText(title, style = geist(16.sp).copy(color = roles.text), maxLines = 1, overflow = TextOverflow.Ellipsis)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                if (pinned) Glyph(MoreIcons.Pin, roles.accent, 14.dp)
+                if (pinned) Glyph(MoreIcons.Pin, if (expressive) roles.primary else roles.accent, 14.dp)
                 BasicText(subtitle, style = geist(14.sp).copy(color = roles.sub), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }

@@ -168,9 +168,27 @@ fun SearchPage(c: LibraryContext) {
         }
         return
     }
+    // M3E's: the bar opened into a view of its own, back to the tab it was
+    // opened from, the field focused at once.
+    val bar = io.github.honeyslatt.music.ui.theme.look.mobile.search == io.github.honeyslatt.music.core.model.SearchView.BAR
+    androidx.activity.compose.BackHandler(enabled = bar && !c.nav.canPop) { c.nav.select(c.nav.barTab) }
     // The title folds the source chips.
-    ListPage(c.nav, "Search", fold = sourcesFold(c.services, sources) { sources = !sources }) {
-        item { SearchReveal(true, query, if (library) "Your Library" else "Artists, Songs, Lyrics and More", focusOnOpen = tiles) { query = it } }
+    ListPage(c.nav, "Search", largeTitle = !bar, fold = sourcesFold(c.services, sources) { sources = !sources }) {
+        if (bar) {
+            item {
+                androidx.compose.foundation.layout.Row(
+                    Modifier.padding(start = 12.dp, top = 4.dp),
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                ) {
+                    io.github.honeyslatt.music.ui.components.RoundButton(io.github.honeyslatt.music.ui.Icons.Left, { c.nav.select(c.nav.barTab) }, roles.surface)
+                    androidx.compose.foundation.layout.Box(Modifier.weight(1f)) {
+                        SearchReveal(true, query, if (library) "Search your library" else "Search Music", focusOnOpen = true) { query = it }
+                    }
+                }
+            }
+        } else {
+            item { SearchReveal(true, query, if (library) "Your Library" else "Artists, Songs, Lyrics and More", focusOnOpen = tiles) { query = it } }
+        }
         item {
             // The catalogue searched, as the source chosen says, or the
             // only service there is: a server's songs are only in the library.
