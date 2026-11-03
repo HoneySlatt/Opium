@@ -58,6 +58,7 @@ import io.github.honeyslatt.music.ui.components.anchor
 import io.github.honeyslatt.music.ui.components.press
 import io.github.honeyslatt.music.ui.components.rememberAnchor
 import io.github.honeyslatt.music.ui.detail.badge
+import io.github.honeyslatt.music.ui.nowplaying.Backdrop
 import io.github.honeyslatt.music.ui.nowplaying.DevicesSheet
 import io.github.honeyslatt.music.ui.nowplaying.LocalNp
 import io.github.honeyslatt.music.ui.nowplaying.Lyrics
@@ -77,7 +78,8 @@ import io.github.honeyslatt.music.ui.theme.roles
  * connected tabs Playing · Lyrics · Queue and More. Playing: the cover at
  * radius 48 (smaller and rounder paused), the title, the tonal heart, the
  * large wavy position, the times about the quality, the button group about
- * the 88 dp shaped Play, the output.
+ * the 88 dp shaped Play, the output. An album with an animated cover: it
+ * fills the screen behind instead, as on Stock.
  */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
@@ -89,19 +91,29 @@ fun ExpressiveNowPlaying(playback: Playback, actions: NpActions) {
     var mode by remember { mutableStateOf(NpMode.Artwork) }
     var signalOpen by remember { mutableStateOf(false) }
     var devicesOpen by remember { mutableStateOf(false) }
-    val np = NpColours(roles.text, roles.sub, roles.text.copy(alpha = 0.28f), roles.text.copy(alpha = 0.1f))
+    val motion by produceState<String?>(null, t.albumId) {
+        // Another album: not the last one's video meanwhile.
+        value = null
+        value = actions.motion(t)
+    }
+    val m = motion
+    // Over the moving cover, as Stock's, the text is white in both appearances.
+    val over = if (m != null) roles.copy(base = Color.Black, text = Color.White, sub = Color.White.copy(alpha = 0.7f)) else roles
+    val np = NpColours(over.text, over.sub, over.text.copy(alpha = 0.28f), over.text.copy(alpha = 0.1f))
     CompositionLocalProvider(LocalNp provides np) {
         Box(Modifier.fillMaxSize().background(roles.base)) {
-            Wash(t, playing)
-            Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 24.dp, vertical = 8.dp)) {
-                Top(t, mode, actions) { mode = it }
-                when (mode) {
-                    NpMode.Artwork -> Playing(playback, t, playing, loading, actions, { signalOpen = true }, { devicesOpen = true })
-                    NpMode.Lyrics -> {
-                        Box(Modifier.weight(1f).fillMaxWidth()) { Lyrics(playback, t, false) {} }
-                        Docked(playback, t, playing, loading)
+            if (m != null) Backdrop(t, m, flat = mode != NpMode.Artwork) else Wash(t, playing)
+            CompositionLocalProvider(io.github.honeyslatt.music.ui.theme.LocalRoles provides over) {
+                Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 24.dp, vertical = 8.dp)) {
+                    Top(t, mode, actions) { mode = it }
+                    when (mode) {
+                        NpMode.Artwork -> Playing(playback, t, playing, loading, actions, moving = m != null, { signalOpen = true }, { devicesOpen = true })
+                        NpMode.Lyrics -> {
+                            Box(Modifier.weight(1f).fillMaxWidth()) { Lyrics(playback, t, false) {} }
+                            Docked(playback, t, playing, loading)
+                        }
+                        NpMode.Queue -> Box(Modifier.weight(1f).fillMaxWidth().padding(top = 12.dp)) { io.github.honeyslatt.music.ui.nowplaying.ExpressiveQueueView(playback) }
                     }
-                    NpMode.Queue -> Box(Modifier.weight(1f).fillMaxWidth().padding(top = 12.dp)) { io.github.honeyslatt.music.ui.nowplaying.ExpressiveQueueView(playback) }
                 }
             }
             Sheet(signalOpen, "Signal Path", onClose = { signalOpen = false }) { SignalPath(playback, t) }
@@ -153,11 +165,13 @@ private fun androidx.compose.foundation.layout.ColumnScope.Playing(
     playing: Boolean,
     loading: Boolean,
     actions: NpActions,
+    moving: Boolean,
     onSignal: () -> Unit,
     onDevices: () -> Unit,
 ) {
     val menu = LocalActions.current
-    BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+    // The cover moves behind everything instead.
+    if (moving) Spacer(Modifier.weight(1f)) else BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
         val side = minOf(maxWidth, maxHeight)
         val scale by animateFloatAsState(if (playing) 1f else 0.88f, Springs.slow(), label = "np-cover")
         val corner by animateDpAsState(if (playing) 48.dp else 64.dp, Springs.slow(), label = "np-corner")
