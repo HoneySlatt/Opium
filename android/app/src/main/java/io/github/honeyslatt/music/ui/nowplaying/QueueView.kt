@@ -228,3 +228,107 @@ private fun QueueRow(track: Track, removable: Boolean, onPlay: () -> Unit, onRem
         }
     }
 }
+
+/**
+ * M3E's queue: Shuffle, Repeat and the timer as toggle buttons, round when
+ * off and on-surface at radius 16 when on; the song playing on a
+ * secondary-container card; Playing Next with Clear, the gapless note;
+ * then History.
+ */
+@androidx.annotation.OptIn(UnstableApi::class)
+@Composable
+fun ExpressiveQueueView(playback: Playback) {
+    val now by playback.now.collectAsStateWithLifecycle()
+    val playing by playback.playing.collectAsStateWithLifecycle()
+    val upcoming by playback.upcoming.collectAsStateWithLifecycle()
+    val history by playback.history.collectAsStateWithLifecycle()
+    val shuffle by playback.shuffleOn.collectAsStateWithLifecycle()
+    val repeat by playback.repeat.collectAsStateWithLifecycle()
+    val sleep by playback.sleep.collectAsStateWithLifecycle()
+    val actions = LocalActions.current
+    val timer = rememberAnchor()
+    val head = geist(18.sp, FontWeight.Bold).copy(color = roles.text)
+    LazyColumn(Modifier.fillMaxSize()) {
+        item {
+            Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ExpressiveToggle(Icons.Shuffle, "Shuffle", shuffle, Modifier.weight(1f)) { playback.setShuffle(!shuffle) }
+                ExpressiveToggle(
+                    if (repeat == QueueRepeat.ONE) Icons.Repeat1 else Icons.Repeat,
+                    if (repeat == QueueRepeat.ONE) "One" else "Repeat",
+                    repeat != QueueRepeat.OFF,
+                    Modifier.weight(1f),
+                ) { playback.cycleRepeat() }
+                ExpressiveToggle(Icons.Clock, "Timer", sleep != null, Modifier.weight(1f).anchor(timer)) { actions?.sleepMenu(timer.rect) }
+            }
+        }
+        now?.let { t ->
+            item {
+                Row(
+                    Modifier.fillMaxWidth().background(roles.secondaryContainer, RoundedCornerShape(20.dp)).padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Cover(t.artwork, 56.dp, RoundedCornerShape(12.dp), Modifier.size(56.dp))
+                        Box(Modifier.size(56.dp).background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.4f), RoundedCornerShape(12.dp)))
+                        io.github.honeyslatt.music.ui.components.Bars(androidx.compose.ui.graphics.Color.White, playing, width = 18.dp)
+                    }
+                    Column(Modifier.weight(1f)) {
+                        Line(t.title, geist(16.sp, FontWeight.SemiBold).copy(color = roles.onSecondaryContainer))
+                        Line(t.artists.joinToString(", "), geist(14.sp).copy(color = roles.onSecondaryContainer.copy(alpha = 0.75f)))
+                    }
+                }
+            }
+        }
+        item {
+            Row(Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                BasicText("Playing Next", Modifier.weight(1f), style = head)
+                if (upcoming.isNotEmpty()) {
+                    Box(Modifier.press(RoundedCornerShape(16.dp)) { playback.clearUpcoming() }.padding(horizontal = 12.dp, vertical = 6.dp)) {
+                        BasicText("Clear", style = geist(14.sp, FontWeight.SemiBold).copy(color = roles.primary))
+                    }
+                }
+            }
+        }
+        itemsIndexed(upcoming, key = { i, t -> "next$i" + t.id.id }) { i, track ->
+            QueueRow(track, removable = true, onPlay = { playback.jump(i) }) { playback.removeUpcoming(i) }
+        }
+        item {
+            BasicText(
+                if (upcoming.isNotEmpty()) "The next song joins without a gap." else "The queue ends here.",
+                Modifier.padding(top = 10.dp),
+                style = geist(13.sp).copy(color = roles.sub),
+            )
+        }
+        if (history.isNotEmpty()) {
+            item {
+                Row(Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    BasicText("History", Modifier.weight(1f), style = head)
+                    Box(Modifier.press(RoundedCornerShape(16.dp)) { playback.clearHistory() }.padding(horizontal = 12.dp, vertical = 6.dp)) {
+                        BasicText("Clear", style = geist(14.sp, FontWeight.SemiBold).copy(color = roles.primary))
+                    }
+                }
+            }
+            itemsIndexed(history, key = { i, t -> "past$i" + t.id.id }) { _, track ->
+                QueueRow(track, removable = false, onPlay = { playback.play(listOf(track), 0) }) {}
+            }
+        }
+        item { androidx.compose.foundation.layout.Spacer(Modifier.height(24.dp)) }
+    }
+}
+
+/** An M3E toggle button: round and tonal when off, on-surface at radius 16 when on. */
+@Composable
+private fun ExpressiveToggle(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, on: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    val corner by androidx.compose.animation.core.animateDpAsState(if (on) 16.dp else 28.dp, io.github.honeyslatt.music.ui.m3e.Springs.fast(), label = "toggle")
+    val shape = RoundedCornerShape(corner)
+    val fg = if (on) roles.base else roles.text
+    Row(
+        modifier.height(48.dp).press(shape, shrink = 0.96f, onClick = onClick).background(if (on) roles.text else roles.text.copy(alpha = 0.1f), shape),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Glyph(icon, fg, 18.dp)
+        BasicText(label, Modifier.padding(start = 8.dp), style = geist(14.sp, FontWeight.SemiBold).copy(color = fg))
+    }
+}

@@ -101,7 +101,7 @@ fun ExpressiveNowPlaying(playback: Playback, actions: NpActions) {
                         Box(Modifier.weight(1f).fillMaxWidth()) { Lyrics(playback, t, false) {} }
                         Docked(playback, t, playing, loading)
                     }
-                    NpMode.Queue -> Box(Modifier.weight(1f).fillMaxWidth().padding(top = 12.dp)) { QueueView(playback) }
+                    NpMode.Queue -> Box(Modifier.weight(1f).fillMaxWidth().padding(top = 12.dp)) { io.github.honeyslatt.music.ui.nowplaying.ExpressiveQueueView(playback) }
                 }
             }
             Sheet(signalOpen, "Signal Path", onClose = { signalOpen = false }) { SignalPath(playback, t) }

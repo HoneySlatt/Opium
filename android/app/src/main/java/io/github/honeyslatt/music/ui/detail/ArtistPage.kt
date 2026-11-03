@@ -536,6 +536,36 @@ fun LibraryArtistPage(c: LibraryContext, artist: Artist) {
         }
         return
     }
+    if (io.github.honeyslatt.music.ui.theme.look.layout.header == io.github.honeyslatt.music.core.model.Header.EXPRESSIVE) {
+        // M3E's: the artist page's header, from the library; their songs,
+        // read album after album, to play.
+        val songs by produceState(emptyList<Track>(), all) {
+            var read = emptyList<Track>()
+            for (album in all) {
+                read = read + runCatching { c.core.session.album(album.id).tracks }.getOrDefault(emptyList())
+                value = read
+            }
+        }
+        DetailPage(c.nav, artist.name, rememberPageColour(artist.artwork), actionsInBar = true) {
+            item {
+                io.github.honeyslatt.music.ui.m3e.ExpressiveArtistHero(
+                    artist,
+                    motion = null,
+                    wide = null,
+                    eyebrow = "Artist · Your Library",
+                    favourite = null,
+                    onFavourite = {},
+                    onShuffle = { if (songs.isNotEmpty()) c.playback.shuffle(songs) },
+                    onPlay = { if (songs.isNotEmpty()) c.playback.play(songs, 0) },
+                    onName = if (artist.id.provider == ProviderKind.APPLE_MUSIC) ({ c.nav.push(Route.Artist(artist.id)) }) else null,
+                )
+            }
+            if (all.isEmpty()) item { Empty(albums.listing(), "No albums", "Nothing of theirs in the library yet.") }
+            shelf("Albums", long.map { ShelfCover(it.artwork, bare(it.title), releaseLine(it), it.explicit) { c.nav.push(Route.Album(it.id)) } })
+            shelf("Singles & EPs", short.map { ShelfCover(it.artwork, bare(it.title), releaseLine(it), it.explicit) { c.nav.push(Route.Album(it.id)) } })
+        }
+        return
+    }
     io.github.honeyslatt.music.ui.components.ListPage(c.nav, artist.name, largeTitle = false) {
         item {
             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {

@@ -180,6 +180,8 @@ fun ExpressiveArtistHero(
     onFavourite: () -> Unit,
     onShuffle: () -> Unit,
     onPlay: () -> Unit,
+    /** The name as a link with a chevron: a library artist's to their profile. */
+    onName: (() -> Unit)? = null,
 ) {
     Column(Modifier.fillMaxWidth()) {
         Spacer(Modifier.windowInsetsTopHeight(WindowInsets.statusBars))
@@ -213,11 +215,18 @@ fun ExpressiveArtistHero(
                 ) { Cover(artist?.artwork, 232.dp, androidx.compose.ui.graphics.RectangleShape, Modifier.fillMaxSize()) }
                 Spacer(Modifier.height(18.dp))
                 Eyebrow { BasicText(eyebrow, style = geist(13.sp, FontWeight.Medium).copy(color = roles.sub)) }
-                BasicText(
-                    name,
-                    Modifier.padding(top = 10.dp, start = 24.dp, end = 24.dp),
-                    style = geist(36.sp, FontWeight.Bold, -0.035f).copy(color = roles.text, textAlign = TextAlign.Center, lineHeight = 40.sp),
-                )
+                Row(
+                    Modifier.padding(top = 10.dp, start = 24.dp, end = 24.dp)
+                        .then(if (onName != null) Modifier.press(RoundedCornerShape(12.dp), onClick = onName) else Modifier),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    BasicText(
+                        name,
+                        Modifier.weight(1f, fill = false),
+                        style = geist(36.sp, FontWeight.Bold, -0.035f).copy(color = roles.text, textAlign = TextAlign.Center, lineHeight = 40.sp),
+                    )
+                    if (onName != null) Glyph(Icons.Right, roles.sub, 28.dp)
+                }
             }
         }
         Row(
