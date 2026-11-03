@@ -65,6 +65,8 @@ pub enum Request {
     /// Sign in to SoundCloud in the browser, then connect and load its library.
     SignInSoundCloud,
     ReconnectSoundCloud,
+    /// Connect to the Navidrome server again, after it was out of reach.
+    ReconnectNavidrome,
     /// Sign out of a service: its sign-in, its browser profile and what was
     /// kept of its library go from the disk.
     SignOut(ProviderKind),
@@ -932,6 +934,8 @@ async fn run(
     let mut turned_off: std::collections::HashSet<ProviderKind> = off.iter().copied().collect();
     // Signed out of meanwhile, until signed in again.
     let mut signed_out = std::collections::HashSet::new();
+    // Out of reach, their libraries shown as kept: once, not at each try.
+    let mut kept_shown = std::collections::HashSet::new();
     let cdm = widevine::locate()
         .ok_or_else(|| "no Widevine module found: install Brave, Chrome or Firefox".to_owned())
         .and_then(|path| widevine::Cdm::open(&path).map_err(|e| e.to_string()));
@@ -970,6 +974,7 @@ async fn run(
                     Arrived::Apple(am, load) => {
                         apple = am;
                         if let Some(am) = apple.clone() {
+                            kept_shown.remove(&provider);
                             confirm_subscription(am, downloads.clone(), replies.clone());
                         }
                         if let Some(am) = apple.clone().filter(|_| load && library_wanted) {
@@ -980,6 +985,7 @@ async fn run(
                         sc = c;
                         // Signed in still: its songs play on.
                         if sc.is_some() {
+                            kept_shown.remove(&provider);
                             downloads.subscription(ProviderKind::SoundCloud, true, &replies);
                         }
                         if let Some(sc) = sc.clone().filter(|_| load && recent_wanted) {
@@ -995,7 +1001,9 @@ async fn run(
                     Arrived::Navidrome(server, load) => {
                         nd = server;
                         sign_covers_with(&nd);
-                        if nd.is_none() && library_wanted && signed_in(provider) {
+                        if nd.is_some() {
+                            kept_shown.remove(&provider);
+                        } else if library_wanted && signed_in(provider) && kept_shown.insert(provider) {
                             show_kept(provider, replies.clone());
                         }
                         if let Some(nd) = nd.clone().filter(|_| load && library_wanted) {
@@ -1171,6 +1179,14 @@ async fn run(
                 });
                 continue;
             }
+            Request::ReconnectNavidrome => {
+                let arrived_tx = arrived_tx.clone();
+                tokio::spawn(async move {
+                    let _ = arrived_tx
+                        .send(Arrived::Navidrome(connect_navidrome(&replies).await, true));
+                });
+                continue;
+            }
             Request::SignInNavidrome {
                 url,
                 user,
@@ -1234,6 +1250,7 @@ async fn run(
                         && !turned_off.contains(&provider)
                         && !signed_out.contains(&provider)
                         && signed_in(provider)
+                        && kept_shown.insert(provider)
                     {
                         show_kept(provider, replies.clone());
                     }
@@ -1469,6 +1486,7 @@ async fn run(
             | Request::SignOut(_)
             | Request::SignInSoundCloud
             | Request::ReconnectSoundCloud
+            | Request::ReconnectNavidrome
             | Request::SignInNavidrome { .. }
             | Request::SetService { .. }
             | Request::SiteLyrics { .. }

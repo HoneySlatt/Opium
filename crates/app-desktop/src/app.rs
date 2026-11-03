@@ -406,6 +406,30 @@ pub type OrderKey = (
     bool,
 );
 
+/// A service out of reach is tried again: ten seconds after, then twice as
+/// long each time, a minute apart at most. When, and the wait.
+fn retry_after(last: Option<(f64, f64)>, now: f64) -> (f64, f64) {
+    let wait = last.map_or(10.0, |(_, wait)| (wait * 2.0).min(60.0));
+    (now + wait, wait)
+}
+
+/// Whether `retry` is due now; then it waits for the try's answer, which
+/// sets the next one.
+fn retry_due(retry: &mut Option<(f64, f64)>, now: f64, ctx: &egui::Context) -> bool {
+    let Some((at, wait)) = *retry else {
+        return false;
+    };
+    if now >= at {
+        *retry = Some((f64::INFINITY, wait));
+        return true;
+    }
+    // A try on its way (`at` infinite) wakes nothing.
+    if at.is_finite() {
+        ctx.request_repaint_after(Duration::from_secs_f64(at - now));
+    }
+    false
+}
+
 /// A station of songs asks for more when fewer than this many are left.
 const STATION_REFILL: usize = 5;
 
@@ -661,6 +685,9 @@ pub struct App {
     /// Apple Music out of reach (offline at start, say): when to try again,
     /// and how long the wait was.
     apple_retry: Option<(f64, f64)>,
+    /// The same for SoundCloud and the Navidrome server, out of reach.
+    soundcloud_retry: Option<(f64, f64)>,
+    navidrome_retry: Option<(f64, f64)>,
     /// The track handed to the player to play at once, until it starts: an
     /// error before then means it can't play at all.
     playing: Option<Token>,
@@ -855,6 +882,8 @@ impl App {
             covers_forgotten: 0.0,
             drawn_at: 0.0,
             apple_retry: None,
+            soundcloud_retry: None,
+            navidrome_retry: None,
             playing_from: None,
             now: None,
             status: Status::default(),
@@ -4254,6 +4283,10 @@ impl App {
                 Reply::SoundCloud(_) if !self.service_on(ProviderKind::SoundCloud) => {}
                 Reply::Navidrome(_) if !self.service_on(ProviderKind::Navidrome) => {}
                 Reply::SoundCloud(result) => {
+                    self.soundcloud_retry = match &result {
+                        Err(_) => Some(retry_after(self.soundcloud_retry, now)),
+                        Ok(_) => None,
+                    };
                     self.soundcloud = match result {
                         Ok(Some(name)) => SoundCloudState::Connected(name),
                         Ok(None) => SoundCloudState::NotSignedIn,
@@ -4261,6 +4294,10 @@ impl App {
                     };
                 }
                 Reply::Navidrome(result) => {
+                    self.navidrome_retry = match &result {
+                        Err(_) => Some(retry_after(self.navidrome_retry, now)),
+                        Ok(_) => None,
+                    };
                     self.navidrome = match result {
                         Ok(Some(name)) => SoundCloudState::Connected(name),
                         Ok(None) => SoundCloudState::NotSignedIn,
@@ -4294,10 +4331,7 @@ impl App {
                     if self.apple_retry.is_none() {
                         self.notify(e.clone(), now);
                     }
-                    let wait = self
-                        .apple_retry
-                        .map_or(10.0, |(_, wait)| (wait * 2.0).min(60.0));
-                    self.apple_retry = Some((now + wait, wait));
+                    self.apple_retry = Some(retry_after(self.apple_retry, now));
                     self.connection = Connection::Failed(e);
                 }
                 Reply::Failed(e) => self.notify(e, now),
@@ -5443,17 +5477,22 @@ impl eframe::App for App {
                 ctx.request_repaint_after(Duration::from_secs_f64(SEARCH_PAUSE));
             }
         }
-        if let Some((at, wait)) = self.apple_retry
-            && matches!(self.connection, Connection::Failed(_))
+        if matches!(self.connection, Connection::Failed(_))
+            && retry_due(&mut self.apple_retry, now, ctx)
         {
-            if now >= at {
-                // Its next failure sets the next try.
-                self.apple_retry = Some((f64::INFINITY, wait));
-                self.backend.send(Request::Reconnect);
-            } else if at.is_finite() {
-                // A try on its way (`at` infinite) wakes nothing.
-                ctx.request_repaint_after(Duration::from_secs_f64(at - now));
-            }
+            self.backend.send(Request::Reconnect);
+        }
+        if matches!(self.soundcloud, SoundCloudState::Failed(_))
+            && self.service_on(ProviderKind::SoundCloud)
+            && retry_due(&mut self.soundcloud_retry, now, ctx)
+        {
+            self.backend.send(Request::ReconnectSoundCloud);
+        }
+        if matches!(self.navidrome, SoundCloudState::Failed(_))
+            && self.service_on(ProviderKind::Navidrome)
+            && retry_due(&mut self.navidrome_retry, now, ctx)
+        {
+            self.backend.send(Request::ReconnectNavidrome);
         }
         if let Some(at) = self.recent_due {
             if now >= at {
