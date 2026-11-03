@@ -347,6 +347,17 @@ class Playback(private val context: Context, private val core: Core, private val
 
     init {
         Http.warm()
+        // A song not encrypted decoded by the phone's audio chip where it
+        // can (its speakers, Bluetooth), the processor left to sleep; one
+        // that goes on into the next without a gap, or as before.
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+            .setAudioOffloadPreferences(
+                androidx.media3.common.TrackSelectionParameters.AudioOffloadPreferences.Builder()
+                    .setAudioOffloadMode(androidx.media3.common.TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_ENABLED)
+                    .setIsGaplessSupportRequired(true)
+                    .build(),
+            )
+            .build()
         player.addListener(object : Player.Listener {
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {

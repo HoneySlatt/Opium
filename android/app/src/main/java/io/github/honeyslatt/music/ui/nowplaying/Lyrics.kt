@@ -306,12 +306,17 @@ private fun shares(words: List<String>, line: LyricLine, next: LyricLine?, posit
 @Composable
 private fun Dots(on: Boolean) {
     val np = LocalNp.current
-    val breath by rememberInfiniteTransition(label = "dots").animateFloat(
-        0.4f,
-        1f,
-        infiniteRepeatable(tween(800), RepeatMode.Reverse),
-        label = "breath",
-    )
+    // Only the gap being played breathes: the others, still, draw nothing more.
+    val breath = if (on) {
+        rememberInfiniteTransition(label = "dots").animateFloat(
+            0.4f,
+            1f,
+            infiniteRepeatable(tween(800), RepeatMode.Reverse),
+            label = "breath",
+        ).value
+    } else {
+        1f
+    }
     Row(Modifier.padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         repeat(3) { i ->
             Box(
