@@ -243,6 +243,12 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
 
 /// The New Playlist window: a name, then Cancel and Create; Enter creates.
 pub fn show_new(app: &mut App, ctx: &egui::Context) {
+    // A picture picked meanwhile, made a cover.
+    if let Some(new) = &mut app.new_playlist
+        && let Some(jpeg) = new.picked.lock().unwrap_or_else(|e| e.into_inner()).take()
+    {
+        new.cover = crate::app::CoverChoice::Chosen(jpeg.into());
+    }
     let Some(new) = &app.new_playlist else {
         return;
     };
@@ -314,6 +320,52 @@ pub fn show_new(app: &mut App, ctx: &egui::Context) {
                     egui::Align::Min,
                     theme.subtext0,
                 );
+            }
+
+            // Its cover, for Music's own and Navidrome's: a picture picked,
+            // the one it has, or none yet.
+            let provider = app
+                .new_playlist
+                .as_ref()
+                .map(|n| n.editing.as_ref().map_or(n.service, |id| id.provider));
+            if let Some(new) = app.new_playlist.as_ref()
+                && provider.is_some_and(crate::app::coverable)
+            {
+                let (row, _) = ui.allocate_exact_size(vec2(width, 128.0), Sense::hover());
+                let art = Rect::from_min_size(row.min + vec2(24.0, 0.0), vec2(112.0, 112.0));
+                let custom = match &new.cover {
+                    crate::app::CoverChoice::Chosen(jpeg) => {
+                        ui.painter().rect_filled(art, 10.0, theme.surface0);
+                        egui::Image::from_bytes(format!("bytes://new-cover-{}.jpg", jpeg.len()), egui::load::Bytes::Shared(jpeg.clone()))
+                            .corner_radius(10)
+                            .paint_at(ui, art);
+                        true
+                    }
+                    crate::app::CoverChoice::Removed => {
+                        ui.painter().rect_filled(art, 10.0, theme.surface0);
+                        false
+                    }
+                    crate::app::CoverChoice::Unchanged => {
+                        artwork(ui, new.artwork.clone(), art, 10.0, &theme);
+                        new.editing.is_some()
+                            && (provider == Some(music_core::model::ProviderKind::Navidrome)
+                                || new.artwork.as_deref().is_some_and(|a| a.starts_with("file://")))
+                    }
+                };
+                let x = art.right() + 16.0;
+                let choose = Rect::from_min_size(pos2(x, art.center().y - 38.0), vec2(150.0, 34.0));
+                let label = if custom { "Change Cover…" } else { "Choose Cover…" };
+                if pill(ui, &theme, choose, label, false, true) {
+                    new.pick_cover(ui.ctx());
+                }
+                if custom {
+                    let remove = Rect::from_min_size(pos2(x, art.center().y + 4.0), vec2(150.0, 34.0));
+                    if pill(ui, &theme, remove, "Remove Cover", false, true)
+                        && let Some(new) = &mut app.new_playlist
+                    {
+                        new.cover = crate::app::CoverChoice::Removed;
+                    }
+                }
             }
 
             // The name.
@@ -525,6 +577,94 @@ pub fn show_delete(app: &mut App, ctx: &egui::Context) {
         app.delete_collection(ctx.input(|i| i.time));
     } else if cancel || response.should_close() {
         app.deleting = None;
+    }
+}
+
+/// Navidrome's own API wants the password: given once, it opens a session
+/// the app keeps (never the password), renewed while the app is used.
+pub fn show_navidrome_password(app: &mut App, ctx: &egui::Context) {
+    let Some((_, _, refused)) = &app.navidrome_password else {
+        return;
+    };
+    let refused = *refused;
+    let theme = app.theme.clone();
+    let frame = Frame::new()
+        .fill(theme.mantle)
+        .stroke(Stroke::new(1.0, theme.line()))
+        .corner_radius(16)
+        .inner_margin(0);
+    let backdrop = if theme.light {
+        Color32::from_black_alpha(72)
+    } else {
+        Color32::from_black_alpha(140)
+    };
+    let width = 400.0;
+    let (mut go, mut cancel) = (false, false);
+    let response = egui::Modal::new(Id::unique("navidrome-password"))
+        .frame(frame)
+        .backdrop_color(backdrop)
+        .show(ctx, |ui| {
+            ui.set_width(width);
+            ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
+            let (head, _) = ui.allocate_exact_size(vec2(width, 96.0), Sense::hover());
+            let g = text(ui, "Navidrome’s Password", font(18.0, Weight::Bold), theme.text, width - 48.0);
+            paint_text(ui, g, head.left() + 24.0, head.center().y - 11.0, egui::Align::Min, theme.text);
+            let said = if refused {
+                "That password isn’t the one Navidrome knows."
+            } else {
+                "Changing a cover needs a session on your server. The password opens it and isn’t kept."
+            };
+            let colour = if refused { theme.red } else { theme.subtext0 };
+            let g = text(ui, said, font(13.0, Weight::Regular), colour, width - 48.0);
+            paint_text(ui, g, head.left() + 24.0, head.center().y + 13.0, egui::Align::Min, colour);
+
+            let (row, _) = ui.allocate_exact_size(vec2(width, 40.0), Sense::hover());
+            let field = Rect::from_min_max(pos2(row.left() + 24.0, row.top()), pos2(row.right() - 24.0, row.bottom()));
+            ui.painter().rect(field, 9.0, theme.text_a(0.04), Stroke::new(1.0, theme.accent), egui::StrokeKind::Inside);
+            let body = font(14.0, Weight::Regular);
+            let line = text(ui, "S", body.clone(), theme.text, 100.0).size().y;
+            let edit = Rect::from_min_max(
+                pos2(field.left() + 14.0, field.center().y - line / 2.0),
+                pos2(field.right() - 14.0, field.center().y + line / 2.0),
+            );
+            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(edit));
+            if let Some((_, password, _)) = &mut app.navidrome_password {
+                let typed = child.add(
+                    egui::TextEdit::singleline(password)
+                        .password(true)
+                        .hint_text(egui::RichText::new("Password").color(theme.muted()))
+                        .font(body)
+                        .frame(Frame::NONE)
+                        .margin(egui::Margin::ZERO)
+                        .desired_width(edit.width()),
+                );
+                if ui.ctx().memory(|m| m.focused()).is_none() {
+                    typed.request_focus();
+                }
+                go = typed.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+            }
+            ui.add_space(16.0);
+            let (foot, _) = ui.allocate_exact_size(vec2(width, 72.0), Sense::hover());
+            ui.painter().hline(foot.x_range(), foot.top(), Stroke::new(1.0, theme.line()));
+            let y = foot.center().y;
+            let cancel_rect = Rect::from_center_size(pos2(foot.center().x - 70.0, y), vec2(124.0, 40.0));
+            let go_rect = Rect::from_center_size(pos2(foot.center().x + 70.0, y), vec2(124.0, 40.0));
+            if pill(ui, &theme, cancel_rect, "Cancel", false, true) {
+                cancel = true;
+            }
+            if pill(ui, &theme, go_rect, "Continue", true, true) {
+                go = true;
+            }
+        });
+    if go {
+        if let Some((_, password, _)) = &mut app.navidrome_password
+            && !password.is_empty()
+        {
+            let typed = std::mem::take(password);
+            app.send_navidrome_password(typed);
+        }
+    } else if cancel || response.should_close() {
+        app.navidrome_password = None;
     }
 }
 

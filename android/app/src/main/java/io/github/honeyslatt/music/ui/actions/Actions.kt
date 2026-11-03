@@ -43,6 +43,9 @@ sealed interface SheetSpec {
     data class PlaylistForm(val editing: Playlist?, val tracks: List<Track> = emptyList()) : SheetSpec
 
     data class Confirm(val title: String, val text: String, val label: String, val action: () -> Unit) : SheetSpec
+
+    /** Navidrome asks for the password again, for `then` (a cover changed). */
+    data class NavidromePassword(val then: () -> Unit) : SheetSpec
 }
 
 val LocalActions = staticCompositionLocalOf<Actions?> { null }
@@ -806,12 +809,13 @@ class Actions(
         }
     }
 
-    fun createPlaylist(name: String, description: String, tracks: List<Track>, provider: ProviderKind) {
+    fun createPlaylist(name: String, description: String, tracks: List<Track>, provider: ProviderKind, cover: ByteArray? = null) {
         sheet = null
         joinLibrary(tracks)
         scope.launch {
             try {
                 val made = session.createPlaylist(provider, name, description, tracks)
+                if (cover != null && coverable(provider)) setPlaylistCover(made.id, cover)
                 library.recentChanged(provider)
                 library.playlistMade(made)
                 contents[made.id] = tracks.map { it.id }.toSet()
@@ -832,6 +836,46 @@ class Actions(
             "Couldn't save the playlist",
             undo = { library.playlistEdited(playlist.id, playlist.name, playlist.description.orEmpty()) },
         ) { session.editPlaylist(playlist.id, name, description) }
+    }
+
+    /** Whether `provider`'s playlists can take a cover from here: Music's own and Navidrome's. */
+    fun coverable(provider: ProviderKind) = provider == ProviderKind.MUSIC || provider == ProviderKind.NAVIDROME
+
+    /**
+     * `playlist`'s cover `jpeg` (made by [io.github.honeyslatt.music.data.CoverImage]),
+     * or none for the one it had; Navidrome may want the password first.
+     */
+    fun setPlaylistCover(playlist: io.github.honeyslatt.music.core.model.ItemId, jpeg: ByteArray?) {
+        scope.launch {
+            try {
+                session.setPlaylistCover(playlist, jpeg)
+                if (playlist.provider == ProviderKind.NAVIDROME) core.keepNavidrome()
+                library.playlistsChanged(playlist.provider)
+                coverChanges.value++
+            } catch (e: MusicException.PasswordNeeded) {
+                sheet = SheetSpec.NavidromePassword { setPlaylistCover(playlist, jpeg) }
+            } catch (e: MusicException) {
+                hud.show(e.message?.let { "Couldn't change the cover: $it" } ?: "Couldn't change the cover", Icons.Alert)
+            }
+        }
+    }
+
+    /** Counts the covers changed: a page showing one reads it again. */
+    val coverChanges = kotlinx.coroutines.flow.MutableStateFlow(0)
+
+    /** The password for Navidrome's session, then what wanted it; false: refused. */
+    suspend fun navidromePassword(password: String, then: () -> Unit): Boolean {
+        val opened = try {
+            core.openNavidromeSession(password)
+        } catch (e: MusicException) {
+            hud.show("Couldn't reach Navidrome", Icons.Alert)
+            return true
+        }
+        if (opened) {
+            sheet = null
+            then()
+        }
+        return opened
     }
 
     fun confirmDelete(playlist: Playlist, onDeleted: () -> Unit = {}) {

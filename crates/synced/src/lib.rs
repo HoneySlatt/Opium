@@ -236,6 +236,9 @@ pub struct Kept {
     save: mpsc::Sender<Option<mpsc::Sender<()>>>,
     /// The playlists read from disk, after the rest.
     loaded: Arc<Loaded>,
+    /// Where the playlists' chosen covers are kept as files, for the apps
+    /// to show as they show any other.
+    covers: std::path::PathBuf,
 }
 
 /// Whether something done in the background is.
@@ -441,6 +444,14 @@ impl State {
         })
     }
 
+    fn cover_playlist(&mut self, id: &str, cover: Option<String>, now: u64) -> (Shared, bool) {
+        let at = self.stamp(now);
+        self.apply(Shared {
+            playlists: Playlists::cover(id, cover, at),
+            ..Shared::default()
+        })
+    }
+
     fn delete_playlist(&mut self, id: &str, now: u64) -> (Shared, bool) {
         let at = self.stamp(now);
         self.apply(Shared {
@@ -565,6 +576,7 @@ impl Kept {
             state,
             save,
             loaded,
+            covers: dir.join("covers"),
         }
     }
 
@@ -579,11 +591,47 @@ impl Kept {
     }
 
     pub fn playlists(&self) -> Vec<Playlist> {
-        self.with_playlists().shared.playlists.all()
+        let all = self.with_playlists().shared.playlists.all();
+        all.into_iter().map(|p| self.with_cover(p)).collect()
     }
 
     pub fn playlist(&self, id: &str) -> Option<Playlist> {
-        self.with_playlists().shared.playlists.get(id)
+        let playlist = self.with_playlists().shared.playlists.get(id)?;
+        Some(self.with_cover(playlist))
+    }
+
+    /// `playlist` with its chosen cover kept as a file, written the first
+    /// time it is asked for (the one before it gone).
+    fn with_cover(&self, mut playlist: Playlist) -> Playlist {
+        let Some(data) = playlist.cover_data.take() else {
+            return playlist;
+        };
+        let name = format!("{}-{:016x}.jpg", playlist.id, digest(&data));
+        let path = self.covers.join(&name);
+        if !path.exists() {
+            use base64::Engine;
+            let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(&data) else {
+                return playlist;
+            };
+            if let Ok(old) = std::fs::read_dir(&self.covers) {
+                let mine = format!("{}-", playlist.id);
+                for file in old.flatten() {
+                    if file.file_name().to_string_lossy().starts_with(&mine) {
+                        let _ = std::fs::remove_file(file.path());
+                    }
+                }
+            }
+            let _ = std::fs::create_dir_all(&self.covers);
+            let partial = path.with_extension("part");
+            if std::fs::write(&partial, bytes)
+                .and_then(|()| std::fs::rename(&partial, &path))
+                .is_err()
+            {
+                return playlist;
+            }
+        }
+        playlist.cover = Some(format!("file://{}", path.display()));
+        playlist
     }
 
     /// Where the music last stopped, and on which device: its id in the
@@ -794,6 +842,15 @@ impl Kept {
             self.loaded.wait();
             self.change(|s| s.edit_playlist(id, name, description, now()))
         }
+    }
+
+    /// Playlist `id`'s cover `jpeg`, the same on every device; none: its
+    /// first song's again.
+    pub fn cover_playlist(&self, id: &str, jpeg: Option<&[u8]>) -> Shared {
+        use base64::Engine;
+        let cover = jpeg.map(|j| base64::engine::general_purpose::STANDARD.encode(j));
+        self.loaded.wait();
+        self.change(|s| s.cover_playlist(id, cover, now()))
     }
 
     pub fn delete_playlist(&self, id: &str) -> Shared {

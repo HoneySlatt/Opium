@@ -202,8 +202,26 @@ class Core(context: Context) {
         if (got is Connection.Connected) {
             vault.write(kind.vaultName, credentials)
             prefs.edit().putBoolean("enabled-${kind.name}", true).apply()
+            // A session on its own API too, for the changes that need one
+            // (a playlist's cover); kept with the rest, never the password.
+            runCatching { openNavidromeSession(password) }
         }
         return got
+    }
+
+    /**
+     * A session on the Navidrome server's own API, for `password`, kept with
+     * the sign-in: whether the server gave it (a wrong password: no).
+     */
+    suspend fun openNavidromeSession(password: String): Boolean {
+        val opened = session.navidromeOpenSession(password)
+        if (opened) keepNavidrome()
+        return opened
+    }
+
+    /** The Navidrome sign-in as it stands, its session renewed, kept in place of the last. */
+    fun keepNavidrome() {
+        session.navidromeKept()?.let { vault.write(ProviderKind.NAVIDROME.vaultName, it) }
     }
 
     private fun keepSoundCloud(oauth: String, refresh: String?) {
@@ -226,7 +244,7 @@ class Core(context: Context) {
         return attempt(kind) {
             when (kind) {
                 ProviderKind.APPLE_MUSIC -> session.connectApple(kept)
-                ProviderKind.NAVIDROME -> session.connectNavidrome(kept)
+                ProviderKind.NAVIDROME -> session.connectNavidrome(kept).also { keepNavidrome() }
                 ProviderKind.SOUND_CLOUD -> {
                     val json = JSONObject(kept)
                     session.connectSoundcloud(json.getString("oauth"), json.optString("refresh").takeIf { !json.isNull("refresh") && it.isNotEmpty() }, keeper, soundCloudWeb)

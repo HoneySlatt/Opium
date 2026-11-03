@@ -30,6 +30,10 @@ struct List {
     deleted: Option<Stamp>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     songs: BTreeMap<String, Entry>,
+    /// The cover chosen for it, a JPEG in base64; none given back to the
+    /// first song's. The latest wins.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cover: Option<Latest<Option<String>>>,
 }
 
 /// A song in a playlist, or what changed about it.
@@ -51,6 +55,11 @@ pub struct Playlist {
     pub name: String,
     pub description: String,
     pub songs: Vec<PlaylistSong>,
+    /// Where its chosen cover is kept on this device (see `Kept`), as a
+    /// `file://` address; none: its first song's.
+    pub cover: Option<String>,
+    /// That cover, a JPEG in base64.
+    pub(crate) cover_data: Option<String>,
 }
 
 /// A song in a playlist, with the entry that says which of its songs it is.
@@ -69,7 +78,14 @@ impl Playlist {
             description: Some(self.description.clone()).filter(|d| !d.is_empty()),
             curator: Some("Music".to_owned()),
             favourites: false,
-            artwork: self.songs.iter().find_map(|s| s.track.artwork.clone()),
+            artwork: self
+                .cover
+                .as_ref()
+                .map(|url| music_core::model::Artwork {
+                    url_template: url.clone(),
+                    background: None,
+                })
+                .or_else(|| self.songs.iter().find_map(|s| s.track.artwork.clone())),
             track_count: Some(self.songs.len() as u32),
             catalog_id: None,
             in_favourites: None,
@@ -122,10 +138,12 @@ impl List {
             self.name = None;
             self.description = None;
             self.songs.clear();
+            self.cover = None;
             return;
         }
         latest(&mut self.name, other.name);
         latest(&mut self.description, other.description);
+        latest(&mut self.cover, other.cover);
         for (id, entry) in other.songs {
             self.songs.entry(id).or_default().merge(entry);
         }
@@ -173,6 +191,8 @@ impl Playlists {
                     track: track.clone(),
                 })
                 .collect(),
+            cover: None,
+            cover_data: list.cover.as_ref().and_then(|c| c.value.clone()),
         })
     }
 
@@ -190,6 +210,7 @@ impl Playlists {
                     .map(|n| &n.at)
                     .into_iter()
                     .chain(l.description.as_ref().map(|d| &d.at))
+                    .chain(l.cover.as_ref().map(|c| &c.at))
                     .chain(&l.deleted)
                     .chain(songs)
             })
@@ -260,6 +281,7 @@ impl Playlists {
                 }),
                 deleted: None,
                 songs: Self::added(None, tracks, entries, at),
+                cover: None,
             },
         )
     }
@@ -277,6 +299,17 @@ impl Playlists {
                     at,
                     value: description,
                 }),
+                ..List::default()
+            },
+        )
+    }
+
+    /// `id`'s cover `cover`, a JPEG in base64; none: its first song's.
+    pub(crate) fn cover(id: &str, cover: Option<String>, at: Stamp) -> Self {
+        Self::change(
+            id,
+            List {
+                cover: Some(Latest { at, value: cover }),
                 ..List::default()
             },
         )

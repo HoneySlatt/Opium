@@ -183,10 +183,7 @@ class Library(private val core: Core, private val scope: CoroutineScope) {
         val session = core.session
         // Apple's lists come whole, many pages asked for at once.
         val apple = provider == ProviderKind.APPLE_MUSIC
-        list(
-            provider, ask, "playlists", ::keepPlaylists, ::keptPlaylists, { it.id.provider }, null,
-            { session.libraryPlaylists(provider, it).let { p -> p.items to p.next } },
-        ) { f -> _lists.update { it.copy(playlists = f(it.playlists)) } }
+        playlists(provider, ask)
         list(
             provider, ask, "albums", ::keepAlbums, ::keptAlbums, { it.id.provider },
             if (apple) session::appleLibraryAlbums else null,
@@ -225,6 +222,16 @@ class Library(private val core: Core, private val scope: CoroutineScope) {
             recentShown += provider
             _lists.update { l -> l.copy(recentlyAdded = l.recentlyAdded.copy(items = l.recentlyAdded.items.with(provider, old) { it.provider() })) }
         }
+    }
+
+    private fun playlists(provider: ProviderKind, ask: Boolean) = list(
+        provider, ask, "playlists", ::keepPlaylists, ::keptPlaylists, { it.id.provider }, null,
+        { core.session.libraryPlaylists(provider, it).let { p -> p.items to p.next } },
+    ) { f -> _lists.update { it.copy(playlists = f(it.playlists)) } }
+
+    /** `provider`'s playlists read again, one changed there (a new cover): Music's own as kept. */
+    fun playlistsChanged(provider: ProviderKind) {
+        if (provider == ProviderKind.MUSIC) own() else if (provider in providers) playlists(provider, ask = true)
     }
 
     private fun recentlyAdded(provider: ProviderKind) {

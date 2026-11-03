@@ -251,6 +251,17 @@ impl BytesLoader for CoverLoader {
     }
 
     fn load(&self, ctx: &egui::Context, uri: &str) -> BytesLoadResult {
+        // A cover kept here (a playlist's chosen one): read as it is.
+        if let Some(path) = uri.strip_prefix("file://") {
+            return match std::fs::read(path) {
+                Ok(bytes) => Ok(BytesPoll::Ready {
+                    size: None,
+                    mime: sniff(&bytes),
+                    bytes: Bytes::Shared(bytes.into()),
+                }),
+                Err(e) => Err(LoadError::Loading(format!("{uri}: {e}"))),
+            };
+        }
         // A server's covers (often plain http at home) are signed here as
         // they are fetched: egui's own loader would ask without the sign-in.
         let server = uri.contains(SERVER_COVER);

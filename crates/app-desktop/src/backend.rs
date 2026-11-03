@@ -122,6 +122,15 @@ pub enum Request {
         description: String,
     },
     DeletePlaylist(ItemId),
+    /// A playlist's cover `jpeg` (square, see `music_core::cover`), or the
+    /// one it had: Music's own and a Navidrome server's take one.
+    SetPlaylistCover {
+        id: ItemId,
+        jpeg: Option<Vec<u8>>,
+    },
+    /// The password for a session on the Navidrome server's own API (a
+    /// cover change wants one): never kept, the session is.
+    NavidromeSession(String),
     /// Take a song out of a playlist, by its row's id there.
     RemoveFromPlaylist {
         playlist: ItemId,
@@ -209,6 +218,15 @@ pub enum Request {
     Search(SearchScope, Option<ProviderKind>, String),
 }
 
+/// Why a cover wasn't changed.
+#[derive(Debug, Clone)]
+pub enum CoverRefused {
+    /// Navidrome wants the password again (see `Request::NavidromeSession`);
+    /// the cover, to give again once it has it.
+    Password(Option<Vec<u8>>),
+    Failed(String),
+}
+
 pub enum Reply {
     /// Every song kept to play offline.
     Downloads(Vec<KeptSong>),
@@ -242,6 +260,12 @@ pub enum Reply {
     },
     /// A playlist was made, or why not.
     PlaylistCreated(Result<Playlist, String>),
+    CoverChanged {
+        id: ItemId,
+        result: Result<(), CoverRefused>,
+    },
+    /// Whether Navidrome opened a session for the password given.
+    NavidromeSession(Result<bool, String>),
     PlaylistEdited {
         id: ItemId,
         name: String,
@@ -506,6 +530,12 @@ impl Own {
                 });
                 None
             }
+            Request::SetPlaylistCover { id, jpeg } if music(&id) => {
+                self.share(self.kept.cover_playlist(&id.id, jpeg.as_deref()));
+                self.reply(Reply::CoverChanged { id: id.clone(), result: Ok(()) });
+                self.tell(&[id]);
+                None
+            }
             Request::DeletePlaylist(id) if music(&id) => {
                 self.share(self.kept.delete_playlist(&id.id));
                 self.reply(Reply::PlaylistDeleted { id, result: Ok(()) });
@@ -650,6 +680,8 @@ async fn connect_navidrome(replies: &Replies) -> Option<Arc<Navidrome>> {
     };
     match Navidrome::connect(credentials).await {
         Ok(nd) => {
+            // Its session renewed as it connected: kept so.
+            let _ = keep_navidrome(&nd.credentials());
             replies.send(Reply::Navidrome(Ok(Some(nd.user().to_owned()))));
             Some(Arc::new(nd))
         }
@@ -1198,7 +1230,6 @@ async fn run(
             } => {
                 signed_out.remove(&ProviderKind::Navidrome);
                 let result = navidrome::Credentials::new(&url, &user, &password);
-                drop(password);
                 let credentials = match result {
                     Ok(c) => c,
                     Err(e) => {
@@ -1206,9 +1237,16 @@ async fn run(
                         continue;
                     }
                 };
-                match Navidrome::connect(credentials.clone()).await {
+                let connected = Navidrome::connect(credentials.clone()).await;
+                // A session on its own API too, for a cover changed; the
+                // password goes no further.
+                if let Ok(server) = &connected {
+                    let _ = server.open_session(&password).await;
+                }
+                drop(password);
+                match connected {
                     Ok(server) => {
-                        let kept = keep_navidrome(&credentials);
+                        let kept = keep_navidrome(&server.credentials());
                         replies.send(Reply::SignedInNavidrome(kept));
                         replies.send(Reply::Navidrome(Ok(Some(server.user().to_owned()))));
                         let server = Arc::new(server);
@@ -1429,6 +1467,49 @@ async fn run(
                 });
                 continue;
             }
+            Request::SetPlaylistCover { id, jpeg } => {
+                let refused = |reason: &str| CoverRefused::Failed(reason.to_owned());
+                match (id.provider, nd.clone()) {
+                    (ProviderKind::Navidrome, Some(server)) => {
+                        tokio::spawn(async move {
+                            let again = jpeg.clone();
+                            let result = match server.set_playlist_cover(&id.id, jpeg).await {
+                                Ok(true) => {
+                                    let _ = keep_navidrome(&server.credentials());
+                                    Ok(())
+                                }
+                                Ok(false) => Err(CoverRefused::Password(again)),
+                                Err(e) => Err(CoverRefused::Failed(e.to_string())),
+                            };
+                            replies.send(Reply::CoverChanged { id, result });
+                        });
+                    }
+                    (ProviderKind::Navidrome, None) => replies.send(Reply::CoverChanged {
+                        id,
+                        result: Err(refused("Navidrome isn't connected")),
+                    }),
+                    _ => replies.send(Reply::CoverChanged {
+                        id,
+                        result: Err(refused("This service's playlists keep their own covers")),
+                    }),
+                }
+                continue;
+            }
+            Request::NavidromeSession(password) => {
+                let Some(server) = nd.clone() else {
+                    replies.send(Reply::NavidromeSession(Err("Navidrome isn't connected".into())));
+                    continue;
+                };
+                tokio::spawn(async move {
+                    let result = server.open_session(&password).await.map_err(|e| e.to_string());
+                    drop(password);
+                    if result == Ok(true) {
+                        let _ = keep_navidrome(&server.credentials());
+                    }
+                    replies.send(Reply::NavidromeSession(result));
+                });
+                continue;
+            }
             Request::Search(scope, source, query) => {
                 let services = Services {
                     apple: apple.clone(),
@@ -1479,6 +1560,8 @@ async fn run(
             | Request::EditPlaylist { .. }
             | Request::RemoveFromPlaylist { .. }
             | Request::DeletePlaylist(_)
+            | Request::SetPlaylistCover { .. }
+            | Request::NavidromeSession(_)
             | Request::AddToPlaylists { .. }
             | Request::Favourite { .. }
             | Request::SuggestLess { .. }

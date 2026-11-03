@@ -405,6 +405,42 @@ fn devices_meeting_send_each_other_only_what_differs() {
     assert_eq!(history(&a), ["Song 5"]);
 }
 
+#[test]
+fn a_playlist_s_cover_is_the_last_chosen_on_any_device() {
+    let (mut a, mut b) = (device("a"), device("b"));
+    a.create_playlist("p", "Mix".into(), String::new(), vec![track(1)], 1000);
+    meet(&mut a, &mut b);
+    a.cover_playlist("p", Some("AAA".into()), 2000);
+    b.cover_playlist("p", Some("BBB".into()), 3000);
+    meet(&mut a, &mut b);
+    assert_eq!(a.shared.playlists.get("p").unwrap().cover_data.as_deref(), Some("BBB"));
+    // Taken off: the first song's again, on both.
+    a.cover_playlist("p", None, 4000);
+    meet(&mut a, &mut b);
+    assert_eq!(b.shared.playlists.get("p").unwrap().cover_data, None);
+}
+
+#[test]
+fn a_chosen_cover_shows_from_a_file_of_its_own() {
+    let dir = std::env::temp_dir().join(format!("synced-cover-{}", new_id()));
+    let kept = Kept::open(&dir, Vec::new);
+    let (id, _) = kept.create_playlist("Mix".into(), String::new(), vec![track(1)]);
+    assert_eq!(kept.playlist(&id).unwrap().cover, None);
+    kept.cover_playlist(&id, Some(b"jpeg one"));
+    let first = kept.playlist(&id).unwrap().cover.unwrap();
+    let path = first.strip_prefix("file://").unwrap();
+    assert_eq!(std::fs::read(path).unwrap(), b"jpeg one");
+    assert_eq!(kept.playlist(&id).unwrap().model().artwork.unwrap().url_template, first);
+    // Another one: the first file goes.
+    kept.cover_playlist(&id, Some(b"jpeg two"));
+    let second = kept.playlist(&id).unwrap().cover.unwrap();
+    assert_ne!(first, second);
+    assert!(!std::path::Path::new(path).exists());
+    kept.cover_playlist(&id, None);
+    assert_eq!(kept.playlist(&id).unwrap().cover, None);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 fn session(songs: &[u32], at: u32, position_ms: u64) -> Handoff {
     Handoff {
         tracks: songs.iter().copied().map(track).collect(),

@@ -95,6 +95,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         });
         playlist_dialog::show(app, ui.ctx());
         playlist_dialog::show_new(app, ui.ctx());
+        playlist_dialog::show_navidrome_password(app, ui.ctx());
         playlist_dialog::show_delete(app, ui.ctx());
         detail::notes_window(app, ui.ctx());
         pairing::show(app, ui.ctx());
@@ -317,6 +318,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
 
     playlist_dialog::show(app, ui.ctx());
     playlist_dialog::show_new(app, ui.ctx());
+    playlist_dialog::show_navidrome_password(app, ui.ctx());
     playlist_dialog::show_delete(app, ui.ctx());
     detail::notes_window(app, ui.ctx());
     pairing::show(app, ui.ctx());

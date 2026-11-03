@@ -23,6 +23,10 @@ pub enum MusicError {
     // Not `message`: Kotlin's exceptions have one of their own.
     #[error("{reason}")]
     Failed { reason: String },
+    /// Navidrome wants the password again for this change (its own API's
+    /// session ended, or there was none): see `navidrome_open_session`.
+    #[error("Navidrome needs your password")]
+    PasswordNeeded,
 }
 
 /// Run `work` on the runtime's threads (several: see `async-compat` in the
@@ -721,6 +725,53 @@ impl Session {
                 .await?)
         })
         .await
+    }
+
+    /// `playlist`'s cover `jpeg` (square, as the app made it), or none for
+    /// the one it had: Music's own, on every device; a Navidrome server's.
+    pub async fn set_playlist_cover(
+        self: Arc<Self>,
+        playlist: ItemId,
+        jpeg: Option<Vec<u8>>,
+    ) -> Result<(), MusicError> {
+        off(async move {
+            match playlist.provider {
+                ProviderKind::Music => {
+                    let own = self.connect()?;
+                    own.changed(own.1.cover_playlist(&playlist.id, jpeg.as_deref()));
+                    Ok(())
+                }
+                ProviderKind::Navidrome => {
+                    let server = self.services().navidrome.ok_or(MusicError::NotSignedIn)?;
+                    if server.set_playlist_cover(&playlist.id, jpeg).await? {
+                        Ok(())
+                    } else {
+                        Err(MusicError::PasswordNeeded)
+                    }
+                }
+                _ => Err(MusicError::Failed {
+                    reason: "This service's playlists keep their own covers".into(),
+                }),
+            }
+        })
+        .await
+    }
+
+    /// A session on the Navidrome server's own API, for `password`, kept
+    /// with the sign-in (see `navidrome_kept`): whether it was given.
+    pub async fn navidrome_open_session(self: Arc<Self>, password: String) -> Result<bool, MusicError> {
+        off(async move {
+            let server = self.services().navidrome.ok_or(MusicError::NotSignedIn)?;
+            Ok(server.open_session(&password).await?)
+        })
+        .await
+    }
+
+    /// The Navidrome sign-in as it stands now, its session renewed, as
+    /// JSON: to keep in place of the last.
+    pub fn navidrome_kept(&self) -> Option<String> {
+        let server = self.services().navidrome?;
+        serde_json::to_string(&server.credentials()).ok()
     }
 
     pub async fn delete_playlist(self: Arc<Self>, playlist: ItemId) -> Result<(), MusicError> {
@@ -1436,11 +1487,6 @@ impl Connect {
     /// Reachable away from home, and reaching the devices away, or not.
     pub fn set_away(&self, on: bool) {
         self.0.set_away(on);
-    }
-
-    /// Found on the network and looking for the others, or not.
-    pub fn discover(&self, on: bool) {
-        self.0.discover(on);
     }
 
     pub fn me(&self) -> connect::Device {

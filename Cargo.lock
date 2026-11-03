@@ -304,6 +304,7 @@ dependencies = [
  "navidrome",
  "player",
  "reqwest",
+ "rfd",
  "serde",
  "serde_json",
  "services",
@@ -1848,7 +1849,7 @@ dependencies = [
  "objc2-foundation 0.3.2",
  "parking_lot",
  "percent-encoding",
- "pollster",
+ "pollster 1.0.1",
  "profiling",
  "raw-window-handle",
  "send_wrapper",
@@ -3763,6 +3764,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6877bb514081ee2a7ff5ef9de3281f14a4dd4bceac4c09388074a6b5df8a139a"
 
 [[package]]
+name = "mime_guess"
+version = "2.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f7c44f8e672c00fe5308fa235f821cb4198414e1c77935c1ab6948d3fd78550e"
+dependencies = [
+ "mime",
+ "unicase",
+]
+
+[[package]]
 name = "mime_guess2"
 version = "2.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5275,6 +5286,12 @@ dependencies = [
 
 [[package]]
 name = "pollster"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2f3a9f18d041e6d0e102a0a46750538147e5e8992d3b4873aaafee2520b00ce3"
+
+[[package]]
+name = "pollster"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bc6355899e1c9462875b6757c79f3caa011a1fdae12bbb1a2e72dd1f234f8336"
@@ -5722,6 +5739,7 @@ dependencies = [
  "hyper-util",
  "js-sys",
  "log",
+ "mime_guess",
  "percent-encoding",
  "pin-project-lite",
  "quinn",
@@ -5757,6 +5775,33 @@ dependencies = [
  "svgtypes",
  "tiny-skia",
  "usvg",
+]
+
+[[package]]
+name = "rfd"
+version = "0.17.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "20dafead71c16a34e1ff357ddefc8afc11e7d51d6d2b9fbd07eaa48e3e540220"
+dependencies = [
+ "block2 0.6.2",
+ "dispatch2",
+ "js-sys",
+ "libc",
+ "log",
+ "objc2 0.6.5",
+ "objc2-app-kit 0.3.2",
+ "objc2-core-foundation",
+ "objc2-foundation 0.3.2",
+ "percent-encoding",
+ "pollster 0.4.0",
+ "raw-window-handle",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "wayland-backend",
+ "wayland-client",
+ "wayland-protocols",
+ "web-sys",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6762,6 +6807,7 @@ dependencies = [
 name = "synced"
 version = "0.1.0"
 dependencies = [
+ "base64 0.23.1",
  "music-core",
  "rand 0.10.3",
  "serde",

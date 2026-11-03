@@ -1,4 +1,5 @@
 pub mod color;
+pub mod cover;
 pub mod dedupe;
 pub mod growing;
 pub mod model;

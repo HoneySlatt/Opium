@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.Composable
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -24,6 +25,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import io.github.honeyslatt.music.ui.components.press
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -57,6 +61,7 @@ fun ActionSheets(actions: Actions) {
     when (val s = shown) {
         is SheetSpec.AddToPlaylists -> AddToPlaylists(actions, s, open = spec === s, close)
         is SheetSpec.PlaylistForm -> PlaylistForm(actions, s, open = spec === s, close)
+        is SheetSpec.NavidromePassword -> NavidromePassword(actions, s, open = spec === s, close)
         is SheetSpec.Confirm -> Confirm(s, open = spec === s, close)
         null -> {}
     }
@@ -185,7 +190,17 @@ private fun Field(value: String, placeholder: String, modifier: Modifier = Modif
     )
 }
 
-/** New Playlist, or Edit Playlist with Delete. Apple takes no cover from an app, so there is no cover to pick. */
+/** What becomes of a playlist's cover as the form is saved. */
+private sealed interface CoverChoice {
+    data object Unchanged : CoverChoice
+    data object Removed : CoverChoice
+    class Chosen(val jpeg: ByteArray, val shown: androidx.compose.ui.graphics.ImageBitmap) : CoverChoice
+}
+
+/**
+ * New Playlist, or Edit Playlist with Delete. Music's own and Navidrome's
+ * take a cover picked among the photos; Apple and SoundCloud's keep theirs.
+ */
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
 private fun PlaylistForm(actions: Actions, spec: SheetSpec.PlaylistForm, open: Boolean, close: () -> Unit) {
@@ -195,6 +210,18 @@ private fun PlaylistForm(actions: Actions, spec: SheetSpec.PlaylistForm, open: B
     // Where a new one goes, asked when there is more than one choice.
     val services = remember(spec) { if (editing == null) actions.newPlaylistServices(spec.tracks) else emptyList() }
     var service by remember(spec) { mutableStateOf(io.github.honeyslatt.music.core.model.ProviderKind.MUSIC) }
+    var cover by remember(spec) { mutableStateOf<CoverChoice>(CoverChoice.Unchanged) }
+    val provider = editing?.id?.provider ?: service
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val pick = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        scope.launch {
+            val jpeg = io.github.honeyslatt.music.data.CoverImage.square(context, uri) ?: return@launch
+            val shown = android.graphics.BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size)?.asImageBitmap() ?: return@launch
+            cover = CoverChoice.Chosen(jpeg, shown)
+        }
+    }
     val ready = name.isNotBlank()
     Sheet(
         open,
@@ -203,14 +230,55 @@ private fun PlaylistForm(actions: Actions, spec: SheetSpec.PlaylistForm, open: B
         left = { SheetButton("Cancel", onClick = close) },
         right = {
             SheetButton(if (editing != null) "Save" else "Create", primary = true, enabled = ready) {
+                val chosen = cover
                 if (editing != null) {
                     actions.editPlaylist(editing, name.trim(), description.trim())
+                    when (chosen) {
+                        is CoverChoice.Chosen -> actions.setPlaylistCover(editing.id, chosen.jpeg)
+                        CoverChoice.Removed -> actions.setPlaylistCover(editing.id, null)
+                        CoverChoice.Unchanged -> {}
+                    }
                 } else {
-                    actions.createPlaylist(name.trim(), description.trim(), spec.tracks, service)
+                    actions.createPlaylist(name.trim(), description.trim(), spec.tracks, service, (chosen as? CoverChoice.Chosen)?.jpeg)
                 }
             }
         },
     ) {
+        if (actions.coverable(provider)) {
+            val choose = { pick.launch(androidx.activity.result.PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly)) }
+            // Its own cover: one chosen here, Music's kept as a file, or (Navidrome's) any.
+            val custom = when (val c = cover) {
+                is CoverChoice.Chosen -> true
+                CoverChoice.Removed -> false
+                CoverChoice.Unchanged -> editing != null &&
+                    (provider == io.github.honeyslatt.music.core.model.ProviderKind.NAVIDROME || editing.artwork?.urlTemplate?.startsWith("file://") == true)
+            }
+            Column(Modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                val shape = RoundedCornerShape(14.dp)
+                Box(
+                    Modifier.size(168.dp).clip(shape).background(roles.surface, shape).press(shape, onClick = choose),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    when (val c = cover) {
+                        is CoverChoice.Chosen -> androidx.compose.foundation.Image(c.shown, null, Modifier.size(168.dp), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+                        else -> {
+                            val shown = editing?.artwork.takeIf { c != CoverChoice.Removed }
+                            if (shown != null) Cover(shown, 168.dp, shape, Modifier.size(168.dp)) else Glyph(Icons.Image, roles.muted, 44.dp)
+                        }
+                    }
+                }
+                Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(22.dp)) {
+                    Box(Modifier.press(RoundedCornerShape(8.dp), onClick = choose).padding(6.dp)) {
+                        BasicText(if (custom) "Change Cover" else "Choose Cover", style = geist(15.sp, FontWeight.Medium).copy(color = roles.accent))
+                    }
+                    if (custom) {
+                        Box(Modifier.press(RoundedCornerShape(8.dp)) { cover = CoverChoice.Removed }.padding(6.dp)) {
+                            BasicText("Remove", style = geist(15.sp, FontWeight.Medium).copy(color = roles.red))
+                        }
+                    }
+                }
+            }
+        }
         Group {
             GroupRow(first = true) { Field(name, "Playlist Name", Modifier.weight(1f)) { name = it.take(100) } }
             GroupRow(first = false) { Field(description, "Description (Optional)", Modifier.weight(1f).padding(vertical = 4.dp), single = false) { description = it } }
@@ -233,6 +301,51 @@ private fun PlaylistForm(actions: Actions, spec: SheetSpec.PlaylistForm, open: B
                 GroupRow(first = true, onClick = { actions.confirmDelete(editing) }) {
                     BasicText("Delete Playlist", style = geist(16.sp).copy(color = roles.red))
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Navidrome's own API wants the password: given once, it opens a session
+ * the app keeps (never the password), renewed while the app is used.
+ */
+@Composable
+private fun NavidromePassword(actions: Actions, spec: SheetSpec.NavidromePassword, open: Boolean, close: () -> Unit) {
+    var password by remember(spec) { mutableStateOf("") }
+    var refused by remember(spec) { mutableStateOf(false) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    Sheet(
+        open,
+        "Navidrome",
+        close,
+        left = { SheetButton("Cancel", onClick = close) },
+        right = {
+            SheetButton("Continue", primary = true, enabled = password.isNotEmpty()) {
+                val typed = password
+                password = ""
+                scope.launch { refused = !actions.navidromePassword(typed, spec.then) }
+            }
+        },
+    ) {
+        Group(footer = if (refused) "That password isn’t the one Navidrome knows." else "Changing a cover needs a session on your server. The password opens it and isn’t kept.") {
+            GroupRow(first = true) {
+                BasicTextField(
+                    password,
+                    { password = it },
+                    Modifier.weight(1f),
+                    textStyle = geist(16.sp).copy(color = roles.text),
+                    singleLine = true,
+                    cursorBrush = SolidColor(roles.accent),
+                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Password),
+                    decorationBox = { inner ->
+                        Box {
+                            if (password.isEmpty()) BasicText("Password", style = geist(16.sp).copy(color = roles.muted))
+                            inner()
+                        }
+                    },
+                )
             }
         }
     }

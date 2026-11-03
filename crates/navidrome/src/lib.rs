@@ -41,6 +41,10 @@ pub struct Credentials {
     pub user: String,
     pub salt: String,
     pub token: String,
+    /// A session on the server's own API, which some changes need (a
+    /// playlist's cover): given for the password, renewed as it is used.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<String>,
 }
 
 /// The token and salt sign in as the password does: never printed.
@@ -73,6 +77,7 @@ impl Credentials {
             user: user.trim().to_owned(),
             salt,
             token,
+            session: None,
         })
     }
 
@@ -204,7 +209,16 @@ pub struct Navidrome {
     urls: Urls,
     /// What each station has played, so that it goes on without repeating.
     stations: Mutex<HashMap<String, HashSet<String>>>,
+    /// The session on the server's own API, as last renewed.
+    session: Mutex<Option<String>>,
 }
+
+fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// The header the server's own API takes its session in, and renews it in.
+const SESSION_HEADER: &str = "x-nd-authorization";
 
 impl Navidrome {
     /// Sign in to the server; a wrong password or user is `NotSignedIn`.
@@ -220,14 +234,137 @@ impl Navidrome {
             base: credentials.url.clone(),
             auth: credentials.query(),
         };
+        let session = Mutex::new(credentials.session.clone());
         let nd = Self {
             http,
             credentials,
             urls,
             stations: Mutex::default(),
+            session,
         };
         nd.call("ping", &[]).await?;
+        // Used, the session is renewed: kept alive while the app is.
+        if lock(&nd.session).is_some() {
+            let _ = nd
+                .native(reqwest::Method::GET, "/api/keepalive/keepalive", None)
+                .await;
+        }
         Ok(nd)
+    }
+
+    /// The sign-in as it stands now, its session renewed: what to keep.
+    pub fn credentials(&self) -> Credentials {
+        Credentials {
+            session: lock(&self.session).clone(),
+            ..self.credentials.clone()
+        }
+    }
+
+    /// A session on the server's own API, for `password`: whether it was
+    /// given (a wrong password isn't).
+    pub async fn open_session(&self, password: &str) -> Result<bool> {
+        let resp = self
+            .http
+            .post(format!("{}/auth/login", self.credentials.url))
+            .json(&serde_json::json!({ "username": self.credentials.user, "password": password }))
+            .send()
+            .await
+            .map_err(|e| Error::Network(format!("Navidrome sign-in: {}", e.without_url())))?;
+        if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
+            return Ok(false);
+        }
+        if !resp.status().is_success() {
+            return Err(Error::Protocol(format!(
+                "Navidrome sign-in: HTTP {}",
+                resp.status()
+            )));
+        }
+        let body: serde_json::Value = resp
+            .json()
+            .await
+            .map_err(|e| Error::Protocol(format!("Navidrome sign-in: {}", e.without_url())))?;
+        let token = body["token"]
+            .as_str()
+            .ok_or_else(|| Error::Protocol("Navidrome sign-in: no session".into()))?;
+        *lock(&self.session) = Some(token.to_owned());
+        Ok(true)
+    }
+
+    /// Playlist `id`'s cover `image` (JPEG, PNG…), or the one the server
+    /// makes again. False: the server wants the password again (see
+    /// [`Navidrome::open_session`]). Navidrome 0.61 and later.
+    pub async fn set_playlist_cover(&self, id: &str, image: Option<Vec<u8>>) -> Result<bool> {
+        let path = format!("/api/playlist/{}/image", encode(id));
+        let (method, form) = match image {
+            Some(bytes) => {
+                let part = reqwest::multipart::Part::bytes(bytes)
+                    .file_name("cover.jpg")
+                    .mime_str("image/jpeg")
+                    .map_err(|e| Error::Protocol(e.to_string()))?;
+                (
+                    reqwest::Method::POST,
+                    Some(reqwest::multipart::Form::new().part("image", part)),
+                )
+            }
+            None => (reqwest::Method::DELETE, None),
+        };
+        match self.native(method, &path, form).await? {
+            None => Ok(false),
+            Some(status) if status.is_success() => Ok(true),
+            Some(status)
+                if status == reqwest::StatusCode::NOT_FOUND
+                    || status == reqwest::StatusCode::METHOD_NOT_ALLOWED =>
+            {
+                Err(Error::Protocol(
+                    "this server can't change covers: Navidrome 0.61 or later can".into(),
+                ))
+            }
+            Some(status) if status == reqwest::StatusCode::FORBIDDEN => Err(Error::Protocol(
+                "this server lets only its admins change covers".into(),
+            )),
+            Some(status) => Err(Error::Protocol(format!("Navidrome cover: HTTP {status}"))),
+        }
+    }
+
+    /// A request to the server's own API with the session, renewed from
+    /// the answer: its status, or none if there is no session or it ended.
+    async fn native(
+        &self,
+        method: reqwest::Method,
+        path: &str,
+        form: Option<reqwest::multipart::Form>,
+    ) -> Result<Option<reqwest::StatusCode>> {
+        let Some(session) = lock(&self.session).clone() else {
+            return Ok(None);
+        };
+        let mut request = self
+            .http
+            .request(method, format!("{}{path}", self.credentials.url))
+            .header(SESSION_HEADER, format!("Bearer {session}"));
+        if let Some(form) = form {
+            request = request.multipart(form);
+        }
+        let resp = request
+            .send()
+            .await
+            .map_err(|e| Error::Network(format!("Navidrome: {}", e.without_url())))?;
+        if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
+            *lock(&self.session) = None;
+            return Ok(None);
+        }
+        if let Some(renewed) = resp
+            .headers()
+            .get(SESSION_HEADER)
+            .and_then(|h| h.to_str().ok())
+        {
+            let renewed = renewed
+                .trim_start_matches("Bearer ")
+                .trim_start_matches("bearer ");
+            if !renewed.is_empty() {
+                *lock(&self.session) = Some(renewed.to_owned());
+            }
+        }
+        Ok(Some(resp.status()))
     }
 
     pub fn user(&self) -> &str {

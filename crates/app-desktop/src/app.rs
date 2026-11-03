@@ -245,6 +245,51 @@ pub struct NewPlaylist {
     pub service: ProviderKind,
     /// The playlist being edited, when the window edits one instead.
     pub editing: Option<ItemId>,
+    /// Its cover now, to show while it is the one: an address.
+    pub artwork: Option<String>,
+    /// What becomes of the cover as the window is saved.
+    pub cover: CoverChoice,
+    /// A picture picked in the file window, made a cover, once it is
+    /// (picked off the UI's thread).
+    pub picked: Arc<std::sync::Mutex<Option<Vec<u8>>>>,
+}
+
+/// What becomes of a playlist's cover as the window is saved.
+#[derive(Clone, Default)]
+pub enum CoverChoice {
+    #[default]
+    Unchanged,
+    Removed,
+    /// A square JPEG (see `music_core::cover`).
+    Chosen(Arc<[u8]>),
+}
+
+impl NewPlaylist {
+    /// Pick a picture in the desktop's file window, made a cover, for the
+    /// window to show once it is.
+    pub fn pick_cover(&self, ctx: &egui::Context) {
+        let picked = self.picked.clone();
+        let ctx = ctx.clone();
+        std::thread::spawn(move || {
+            let Some(file) = rfd::FileDialog::new()
+                .set_title("Choose a Cover")
+                .add_filter("Pictures", &["jpg", "jpeg", "png"])
+                .pick_file()
+            else {
+                return;
+            };
+            let Some(cover) = std::fs::read(file).ok().and_then(|b| music_core::cover::square(&b)) else {
+                return;
+            };
+            *picked.lock().unwrap_or_else(|e| e.into_inner()) = Some(cover);
+            ctx.request_repaint();
+        });
+    }
+}
+
+/// Whether `provider`'s playlists take a cover from here: Music's own and Navidrome's.
+pub fn coverable(provider: ProviderKind) -> bool {
+    matches!(provider, ProviderKind::Music | ProviderKind::Navidrome)
 }
 
 /// The Add to Playlists window: the songs, the playlists ticked, the search.
@@ -552,6 +597,11 @@ pub struct App {
     open_created: bool,
     /// The Add to Playlists window, when open.
     pub playlist_dialog: Option<PlaylistDialog>,
+    /// The cover chosen for the playlist being made, given once it is.
+    cover_for_created: Option<Vec<u8>>,
+    /// Navidrome asks for the password again: what wanted it, the password
+    /// typed, and whether the last one was refused.
+    pub navidrome_password: Option<(Request, String, bool)>,
     /// The songs in Apple's playlist of favourites.
     favourite_songs: std::collections::HashSet<ItemId>,
     /// SoundCloud songs unliked, until SoundCloud takes it.
@@ -816,6 +866,8 @@ impl App {
             deleting: None,
             open_created: false,
             playlist_dialog: None,
+            cover_for_created: None,
+            navidrome_password: None,
             favourites_known: HashMap::new(),
             downloads: HashMap::new(),
             downloading_titles: HashMap::new(),
@@ -1867,6 +1919,9 @@ impl App {
             tracks,
             service: ProviderKind::Music,
             editing: None,
+            artwork: None,
+            cover: CoverChoice::Unchanged,
+            picked: Arc::default(),
         });
     }
 
@@ -2028,6 +2083,9 @@ impl App {
                     tracks: Vec::new(),
                     service: p.id.provider,
                     editing: Some(p.id.clone()),
+                    artwork: p.artwork.as_ref().map(|a| a.url(600)),
+                    cover: CoverChoice::Unchanged,
+                    picked: Arc::default(),
                 });
             }
             (_, CollectionChoice::Favourite) => {
@@ -2174,7 +2232,15 @@ impl App {
         if name.is_empty() {
             return;
         }
+        let jpeg = match &new.cover {
+            CoverChoice::Unchanged => None,
+            CoverChoice::Removed => Some(None),
+            CoverChoice::Chosen(jpeg) => Some(Some(jpeg.to_vec())),
+        };
         if let Some(id) = new.editing {
+            if let Some(jpeg) = jpeg {
+                self.backend.send(Request::SetPlaylistCover { id: id.clone(), jpeg });
+            }
             let changed = self.playlist(&id).is_some_and(|p| {
                 p.name != name || p.description.as_deref().unwrap_or_default() != description
             });
@@ -2188,6 +2254,8 @@ impl App {
             return;
         }
         self.open_created = new.tracks.is_empty();
+        // Given once it exists.
+        self.cover_for_created = jpeg.flatten().filter(|_| coverable(new.service));
         if self.playlist_songs_to_library() {
             for track in &new.tracks {
                 if !self.track_in_library(track) {
@@ -2214,6 +2282,11 @@ impl App {
             description,
             tracks: new.tracks.into_iter().map(|t| t.id).collect(),
         });
+    }
+
+    /// The password Navidrome asked for, sent to open its session; never kept.
+    pub fn send_navidrome_password(&mut self, password: String) {
+        self.backend.send(Request::NavidromeSession(password));
     }
 
     /// Add the window's songs to the playlists ticked in it, and close it.
@@ -4622,12 +4695,45 @@ impl App {
                                 .use_playlists(std::slice::from_ref(&playlist.id.id)),
                         );
                         let id = playlist.id.clone();
+                        if let Some(jpeg) = self.cover_for_created.take() {
+                            self.backend.send(Request::SetPlaylistCover { id: id.clone(), jpeg: Some(jpeg) });
+                        }
                         self.playlists.push(playlist);
                         if std::mem::take(&mut self.open_created) {
                             self.go(Page::Playlist(id));
                         }
                     }
                     Err(e) => self.notify(e, now),
+                },
+                Reply::CoverChanged { id, result } => match result {
+                    Ok(()) => {
+                        // Music's own come told again; a server's are read again.
+                        if id.provider == ProviderKind::Navidrome {
+                            self.backend.send(Request::Playlists);
+                        }
+                    }
+                    Err(crate::backend::CoverRefused::Password(jpeg)) => {
+                        self.navidrome_password = Some((Request::SetPlaylistCover { id, jpeg }, String::new(), false));
+                    }
+                    Err(crate::backend::CoverRefused::Failed(e)) => {
+                        self.notify(format!("Couldn't change the cover: {e}"), now);
+                    }
+                },
+                Reply::NavidromeSession(result) => match result {
+                    Ok(true) => {
+                        if let Some((retry, _, _)) = self.navidrome_password.take() {
+                            self.backend.send(retry);
+                        }
+                    }
+                    Ok(false) => {
+                        if let Some((_, _, refused)) = &mut self.navidrome_password {
+                            *refused = true;
+                        }
+                    }
+                    Err(e) => {
+                        self.navidrome_password = None;
+                        self.notify(format!("Couldn't reach Navidrome: {e}"), now);
+                    }
                 },
                 Reply::PlaylistEdited {
                     id,
