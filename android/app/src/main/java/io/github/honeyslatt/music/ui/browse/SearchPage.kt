@@ -47,6 +47,12 @@ import io.github.honeyslatt.music.ui.components.underline
 import io.github.honeyslatt.music.ui.components.label
 import io.github.honeyslatt.music.ui.components.sort
 import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -170,25 +176,31 @@ fun SearchPage(c: LibraryContext) {
     }
     // M3E's: the bar opened into a view of its own, back to the tab it was
     // opened from, the field focused at once.
-    val bar = io.github.honeyslatt.music.ui.theme.look.mobile.search == io.github.honeyslatt.music.core.model.SearchView.BAR
-    androidx.activity.compose.BackHandler(enabled = bar && !c.nav.canPop) { c.nav.select(c.nav.barTab) }
-    // The title folds the source chips.
-    ListPage(c.nav, "Search", largeTitle = !bar, fold = sourcesFold(c.services, sources) { sources = !sources }) {
-        if (bar) {
-            item {
-                androidx.compose.foundation.layout.Row(
-                    Modifier.padding(start = 12.dp, top = 4.dp),
-                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                ) {
-                    io.github.honeyslatt.music.ui.components.RoundButton(io.github.honeyslatt.music.ui.Icons.Left, { c.nav.select(c.nav.barTab) }, roles.surface)
-                    androidx.compose.foundation.layout.Box(Modifier.weight(1f)) {
-                        SearchReveal(true, query, if (library) "Search your library" else "Search Music", focusOnOpen = true) { query = it }
-                    }
-                }
-            }
-        } else {
-            item { SearchReveal(true, query, if (library) "Your Library" else "Artists, Songs, Lyrics and More", focusOnOpen = tiles) { query = it } }
+    if (io.github.honeyslatt.music.ui.theme.look.mobile.search == io.github.honeyslatt.music.core.model.SearchView.BAR) {
+        androidx.activity.compose.BackHandler(enabled = !c.nav.canPop) { c.nav.select(c.nav.barTab) }
+        val scope: (Boolean) -> Unit = {
+            library = it
+            c.core.setSetting("search-scope", if (it) "library" else "catalog")
         }
+        ExpressiveSearch(c, query, { query = it }, library, scope) {
+            val r = results
+            when {
+                r == null -> {
+                    recentSearches(c, recent, keep) {
+                        recent = emptyList()
+                        keepSearched(c.core.searched, recent)
+                    }
+                    genreTiles(c)
+                }
+                r !is Loading.Ready -> item { Empty(r.listing(), "", "") }
+                else -> results(c, r.value, library, source, words, { name -> Fold(name in unfolded) { unfolded = if (name in unfolded) unfolded - name else unfolded + name } }) { keep(it, library) }
+            }
+        }
+        return
+    }
+    // The title folds the source chips.
+    ListPage(c.nav, "Search", fold = sourcesFold(c.services, sources) { sources = !sources }) {
+        item { SearchReveal(true, query, if (library) "Your Library" else "Artists, Songs, Lyrics and More", focusOnOpen = tiles) { query = it } }
         item {
             // The catalogue searched, as the source chosen says, or the
             // only service there is: a server's songs are only in the library.
@@ -828,5 +840,172 @@ private fun Segmented(labels: List<String>, selected: Int, onSelect: (Int) -> Un
                 BasicText(label, style = geist(14.sp, FontWeight.Medium).copy(color = if (on) roles.text else roles.sub))
             }
         }
+    }
+}
+
+/**
+ * M3E's search view: the field across the top on surface-container-high,
+ * rounded at its foot, back and clear in it; the scope as two connected
+ * buttons; then `content` under it.
+ */
+@Composable
+private fun ExpressiveSearch(
+    c: LibraryContext,
+    query: String,
+    onQuery: (String) -> Unit,
+    library: Boolean,
+    onScope: (Boolean) -> Unit,
+    content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit,
+) {
+    val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+    androidx.compose.runtime.LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    // Scrolled through, the keyboard steps aside.
+    val list = androidx.compose.foundation.lazy.rememberLazyListState()
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    androidx.compose.runtime.LaunchedEffect(list.isScrollInProgress) { if (list.isScrollInProgress) keyboard?.hide() }
+    androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().background(roles.base)) {
+        androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxSize(), state = list) {
+            item { Spacer(Modifier.windowInsetsTopHeight(androidx.compose.foundation.layout.WindowInsets.statusBars)) }
+            item { Spacer(Modifier.height(76.dp)) }
+            item {
+                val catalogue = if (c.services.singleOrNull() == ProviderKind.SOUND_CLOUD) "SoundCloud" else "Apple Music"
+                Connected(listOf(catalogue, "Your Library"), if (library) 1 else 0) { onScope(it == 1) }
+            }
+            content()
+            item { Spacer(Modifier.height(io.github.honeyslatt.music.ui.chrome.ChromeHeight + 120.dp)) }
+        }
+        val shape = RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp)
+        Row(
+            Modifier.fillMaxWidth().background(roles.surface, shape)
+                .windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.statusBars)
+                .height(76.dp)
+                .padding(start = 12.dp, end = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+        ) {
+            androidx.compose.foundation.layout.Box(
+                Modifier.size(48.dp).press(androidx.compose.foundation.shape.CircleShape) { c.nav.select(c.nav.barTab) },
+                contentAlignment = Alignment.Center,
+            ) { Glyph(io.github.honeyslatt.music.ui.MoreIcons.ArrowLeft, roles.text, 24.dp) }
+            val style = geist(17.sp).copy(color = roles.text)
+            androidx.compose.foundation.text.BasicTextField(
+                query,
+                onQuery,
+                Modifier.weight(1f).focusRequester(focus),
+                textStyle = style,
+                singleLine = true,
+                cursorBrush = androidx.compose.ui.graphics.SolidColor(roles.primary),
+                decorationBox = { inner ->
+                    androidx.compose.foundation.layout.Box {
+                        if (query.isEmpty()) BasicText(if (library) "Search your library" else "Search Music", style = style.copy(color = roles.sub))
+                        inner()
+                    }
+                },
+            )
+            if (query.isNotEmpty()) {
+                androidx.compose.foundation.layout.Box(
+                    Modifier.size(48.dp).press(androidx.compose.foundation.shape.CircleShape) { onQuery("") },
+                    contentAlignment = Alignment.Center,
+                ) { Glyph(io.github.honeyslatt.music.ui.Icons.X, roles.sub, 22.dp) }
+            }
+        }
+    }
+}
+
+/** M3E's connected buttons: the choice in primary-container, the other outlined, their inner corners small. */
+@Composable
+private fun Connected(labels: List<String>, selected: Int, onSelect: (Int) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 6.dp),
+        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(2.dp),
+    ) {
+        labels.forEachIndexed { i, label ->
+            val on = i == selected
+            val outer = 24.dp
+            val inner = 8.dp
+            val shape = RoundedCornerShape(
+                topStart = if (i == 0) outer else inner,
+                bottomStart = if (i == 0) outer else inner,
+                topEnd = if (i == labels.lastIndex) outer else inner,
+                bottomEnd = if (i == labels.lastIndex) outer else inner,
+            )
+            androidx.compose.foundation.layout.Box(
+                Modifier.weight(1f).height(48.dp)
+                    .press(shape, shrink = 0.97f) { onSelect(i) }
+                    .then(if (on) Modifier.background(roles.accent, shape) else Modifier.border(2.dp, roles.primary.copy(alpha = 0.6f), shape)),
+                contentAlignment = Alignment.Center,
+            ) {
+                BasicText(label, style = geist(15.sp, FontWeight.SemiBold).copy(color = if (on) roles.onAccent else roles.text))
+            }
+        }
+    }
+}
+
+/** M3E's genres' colours, each a container and a lighter shape over it. */
+private val GenreColours = listOf(
+    0xFF7C4DFF to 0xFFD5BAFF, 0xFF782C46 to 0xFFFFB1C8, 0xFF4E4065 to 0xFFD8C6F2,
+    0xFF1F4A38 to 0xFF62C79B, 0xFF2A3A6B to 0xFF8FA3E8, 0xFF154A50 to 0xFF5BB8C0,
+    0xFF5A3A1A to 0xFFE0A86A, 0xFF3A3A3E to 0xFFB9B7BE,
+).map { (a, b) -> androidx.compose.ui.graphics.Color(a) to androidx.compose.ui.graphics.Color(b) }
+
+private val GenreShapes = listOf(
+    io.github.honeyslatt.music.ui.m3e.M3Shape.Cookie9, io.github.honeyslatt.music.ui.m3e.M3Shape.Cookie6,
+    io.github.honeyslatt.music.ui.m3e.M3Shape.Clover4, io.github.honeyslatt.music.ui.m3e.M3Shape.Burst,
+    io.github.honeyslatt.music.ui.m3e.M3Shape.Pentagon, io.github.honeyslatt.music.ui.m3e.M3Shape.Sunny,
+)
+
+/** Browse by Genre: Apple Music's genres in two columns of tiles at radius 28, each with its shape in a corner, turning while pressed. */
+private fun androidx.compose.foundation.lazy.LazyListScope.genreTiles(c: LibraryContext) {
+    item {
+        val genres by produceState<List<io.github.honeyslatt.music.core.model.Genre>>(emptyList()) {
+            value = runCatching { c.core.session.genres() }.getOrDefault(emptyList())
+        }
+        if (genres.isEmpty()) return@item
+        Column(Modifier.padding(horizontal = 20.dp)) {
+            BasicText("Browse by Genre", Modifier.padding(top = 28.dp, bottom = 14.dp), style = geist(22.sp, FontWeight.Bold).copy(color = roles.text))
+            genres.chunked(2).forEachIndexed { row, pair ->
+                Row(Modifier.padding(bottom = 12.dp), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)) {
+                    pair.forEachIndexed { k, genre ->
+                        val i = row * 2 + k
+                        GenreTile(genre.name, GenreColours[i % GenreColours.size], GenreShapes[i % GenreShapes.size], Modifier.weight(1f)) {
+                            c.nav.push(Route.Genre(genre))
+                        }
+                    }
+                    if (pair.size == 1) Spacer(Modifier.weight(1f))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GenreTile(
+    name: String,
+    colours: Pair<androidx.compose.ui.graphics.Color, androidx.compose.ui.graphics.Color>,
+    shape: io.github.honeyslatt.music.ui.m3e.M3Shape,
+    modifier: Modifier,
+    onClick: () -> Unit,
+) {
+    val touches = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val pressed by touches.collectIsPressedAsState()
+    val corner by androidx.compose.animation.core.animateDpAsState(if (pressed) 48.dp else 28.dp, io.github.honeyslatt.music.ui.m3e.Springs.fast(), label = "tile")
+    val turn = io.github.honeyslatt.music.ui.chrome.rememberTurn(pressed, 4_000)
+    val tile = RoundedCornerShape(corner)
+    androidx.compose.foundation.layout.Box(
+        modifier.height(104.dp).clip(tile).background(colours.first)
+            .clickable(touches, indication = null, onClick = onClick),
+    ) {
+        androidx.compose.foundation.layout.Box(
+            Modifier.align(Alignment.BottomEnd).offset(x = 18.dp, y = 22.dp).size(80.dp)
+                .graphicsLayer { rotationZ = turn() }
+                .clip(io.github.honeyslatt.music.ui.m3e.RadialShape(shape.radii))
+                .background(colours.second),
+        )
+        BasicText(
+            name,
+            Modifier.align(Alignment.CenterStart).padding(start = 20.dp, end = 36.dp),
+            style = geist(17.sp, FontWeight.Bold).copy(color = androidx.compose.ui.graphics.Color.White),
+            maxLines = 2,
+        )
     }
 }
