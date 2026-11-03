@@ -99,7 +99,9 @@ fun SettingsSheet(open: Boolean, core: Core, settings: Settings, onSignIn: (Prov
 
 @Composable
 private fun Label(text: String) {
-    BasicText(text, Modifier.padding(start = 16.dp, bottom = 7.dp), style = geist(13.sp, FontWeight.Medium).copy(color = roles.sub))
+    // M3E's section labels are in primary.
+    val m3e = io.github.honeyslatt.music.ui.theme.look.layout.motion == io.github.honeyslatt.music.core.model.Motion.EXPRESSIVE
+    BasicText(text, Modifier.padding(start = 16.dp, bottom = 7.dp), style = geist(13.sp, if (m3e) FontWeight.SemiBold else FontWeight.Medium).copy(color = if (m3e) roles.primary else roles.sub))
 }
 
 /** A row's words: its name, and a line under it. */

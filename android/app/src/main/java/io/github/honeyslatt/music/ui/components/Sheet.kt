@@ -8,6 +8,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.clickable
@@ -181,7 +182,17 @@ fun Sheet(
 @Composable
 fun Group(footer: String? = null, content: @Composable ColumnScope.() -> Unit) {
     Column(Modifier.padding(bottom = 26.dp)) {
-        Column(Modifier.fillMaxWidth().background(sheetCell, RoundedCornerShape(16.dp)), content = content)
+        if (expressiveSheets) {
+            // M3E's segmented list: each row its own segment, 2 dp apart,
+            // 20 dp outside and 4 dp between.
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)),
+                verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(2.dp),
+                content = content,
+            )
+        } else {
+            Column(Modifier.fillMaxWidth().background(sheetCell, RoundedCornerShape(16.dp)), content = content)
+        }
         footer?.let {
             BasicText(
                 it,
@@ -213,11 +224,14 @@ fun SheetButton(label: String, primary: Boolean = false, enabled: Boolean = true
 @Composable
 fun GroupRow(first: Boolean, inset: androidx.compose.ui.unit.Dp = 16.dp, onClick: (() -> Unit)? = null, content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit) {
     val line = roles.line
+    val m3e = expressiveSheets
+    val cell = sheetCell
     androidx.compose.foundation.layout.Row(
         Modifier
             .fillMaxWidth()
-            .heightIn(min = 52.dp)
-            .drawBehind { if (!first) drawLine(line, androidx.compose.ui.geometry.Offset(inset.toPx(), 0f), androidx.compose.ui.geometry.Offset(size.width, 0f), 1.dp.toPx()) }
+            .heightIn(min = if (m3e) 56.dp else 52.dp)
+            .then(if (m3e) Modifier.background(cell, RoundedCornerShape(4.dp)) else Modifier)
+            .drawBehind { if (!first && !m3e) drawLine(line, androidx.compose.ui.geometry.Offset(inset.toPx(), 0f), androidx.compose.ui.geometry.Offset(size.width, 0f), 1.dp.toPx()) }
             .then(if (onClick != null) Modifier.press(onClick = onClick) else Modifier)
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
