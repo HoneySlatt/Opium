@@ -6,3 +6,5 @@
 /android/app/build/
 /android/build/
 /android/local.properties
+# The window drawn by GPUI builds in its own workspace.
+/desktop-gpui/target
