@@ -129,6 +129,11 @@ impl Sink {
         self.state.played.load(Ordering::Relaxed)
     }
 
+    /// What the graph and the device still hold, in frames.
+    fn held(&self) -> u64 {
+        self.state.latency.load(Ordering::Relaxed)
+    }
+
     /// The frames heard so far: those played, less what the graph and the
     /// device still hold.
     fn heard(&self) -> u64 {
@@ -185,6 +190,9 @@ pub(crate) struct Engine {
     recovering: Option<Recovering>,
     /// Samples pushed into the ring since the output was opened.
     written: u64,
+    /// The silence put after the last sample of a track, so the device
+    /// clocks out what it still holds before the stream closes.
+    tail_pushed: bool,
     /// A seek waits for the output to drop what it held.
     flushing: bool,
     /// Decoded samples that didn't fit in the ring yet.
@@ -213,6 +221,7 @@ impl Engine {
             switch: None,
             recovering: None,
             written: 0,
+            tail_pushed: false,
             flushing: false,
             pending: Vec::new(),
             pending_at: 0,
@@ -405,6 +414,7 @@ impl Engine {
         self.pending.clear();
         self.pending_at = 0;
         self.written = 0;
+        self.tail_pushed = false;
 
         let format = item.decoder.info.clone();
         let base_time = if at.is_zero() {
@@ -548,6 +558,7 @@ impl Engine {
         self.flushing = false;
         let played = sink.played();
         self.written = played * sink.channels;
+        self.tail_pushed = false;
         front.start_frame = played;
     }
 
@@ -606,6 +617,22 @@ impl Engine {
             played * sink.channels >= self.written && self.pending_at >= self.pending.len();
         let last_done = self.segments.len() == 1 && self.segments[0].decoded_all;
         if !(drained && last_done) {
+            return;
+        }
+        // The ring is empty, but the device still holds what was handed to
+        // it: closing the stream now would throw away the last tens of
+        // milliseconds of the track. Silence as long as that is pushed
+        // after it, and the stream closes once the device has asked for
+        // the silence too — by which time the music itself has been heard.
+        let held = sink.held();
+        let channels = sink.channels;
+        if !self.tail_pushed && held > 0 {
+            let silence = vec![0.0; (held * channels) as usize];
+            if let Some(sink) = &mut self.sink {
+                let pushed = push(&mut sink.producer, &silence);
+                self.written += pushed as u64;
+            }
+            self.tail_pushed = true;
             return;
         }
         if let Some(item) = self.switch.take() {
