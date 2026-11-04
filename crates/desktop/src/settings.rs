@@ -54,7 +54,7 @@ pub struct Settings {
     /// Repeat as last left; off unless set.
     pub repeat: Option<Repeat>,
     /// Where Search looked last: Apple Music unless set.
-    pub search_scope: Option<crate::app::SearchScope>,
+    pub search_scope: Option<crate::SearchScope>,
     /// Covers move where Apple made them move (on unless turned off).
     pub animated_artwork: Option<bool>,
     /// How sharp the moving covers are; Automatic unless set.
@@ -83,7 +83,7 @@ pub struct Settings {
     pub sidebar_collapsed: Option<bool>,
     /// The column beside the page, as last left: closed, or what it showed.
     pub side_closed: Option<bool>,
-    pub side: Option<crate::app::Side>,
+    pub side: Option<crate::Side>,
     /// The relay the devices meet through away from home, as
     /// `https://relay.example.org`; n0's unless set.
     pub relay: Option<String>,
@@ -199,7 +199,7 @@ pub const SCALE_UNIT: f32 = 1.1;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::SearchScope;
+    use crate::SearchScope;
 
     #[test]
     fn a_setting_that_doesnt_read_loses_only_itself() {

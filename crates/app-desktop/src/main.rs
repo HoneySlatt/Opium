@@ -2,20 +2,18 @@
 //! desktop player.
 
 mod app;
-mod backend;
-mod cache;
 mod color;
 mod covers;
-mod devices;
 mod fonts;
 mod icons;
-mod mpris;
 mod palette;
 mod screenshot;
-mod settings;
-mod soundcloud_browser;
 mod theme;
 mod ui;
+
+// What the window doesn't draw itself: the library shared with whatever
+// else draws it.
+use desktop::{backend, devices, mpris, settings};
 
 fn main() -> eframe::Result {
     // Files opened while Music runs go to it, rather than to a second one;

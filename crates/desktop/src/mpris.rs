@@ -119,7 +119,7 @@ pub fn files_from_args() -> Vec<std::path::PathBuf> {
     std::env::args_os()
         .skip(1)
         .filter_map(|arg| match arg.to_str() {
-            Some(uri) if uri.starts_with("file://") => crate::app::file_path(uri),
+            Some(uri) if uri.starts_with("file://") => crate::file_path(uri),
             _ => std::path::absolute(arg).ok(),
         })
         .collect()
@@ -233,9 +233,9 @@ fn file_uri(path: &std::path::Path) -> String {
 
 impl Mpris {
     /// Take the name `org.mpris.MediaPlayer2.music` on a thread of its own;
-    /// `ctx` is woken when an action comes. Without a session bus nothing
+    /// `wake` is called when an action comes. Without a session bus nothing
     /// happens, and the app plays on.
-    pub fn start(ctx: egui::Context) -> Self {
+    pub fn start(wake: crate::Wake) -> Self {
         let shared = Arc::new(Mutex::new(Shared {
             state: State::default(),
             at: Instant::now(),
@@ -245,7 +245,7 @@ impl Mpris {
         let imp = Imp {
             shared: shared.clone(),
             actions: actions_tx,
-            ctx,
+            wake,
         };
         let _ = std::thread::Builder::new()
             .name("mpris".into())
@@ -411,13 +411,13 @@ fn private_cover(track: &Track) -> Option<String> {
 struct Imp {
     shared: Arc<Mutex<Shared>>,
     actions: Sender<Action>,
-    ctx: egui::Context,
+    wake: crate::Wake,
 }
 
 impl Imp {
     fn act(&self, action: Action) {
         let _ = self.actions.send(action);
-        self.ctx.request_repaint();
+        (self.wake)();
     }
 
     fn state<R>(&self, f: impl FnOnce(&State) -> R) -> R {
@@ -549,7 +549,7 @@ impl PlayerInterface for Imp {
     }
 
     async fn open_uri(&self, uri: String) -> fdo::Result<()> {
-        let path = crate::app::file_path(&uri)
+        let path = crate::file_path(&uri)
             .ok_or_else(|| fdo::Error::NotSupported("only files are opened".into()))?;
         self.act(Action::Open(path));
         Ok(())

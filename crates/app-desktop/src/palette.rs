@@ -9,9 +9,9 @@ fn color([r, g, b]: [u8; 3]) -> Color32 {
     Color32::from_rgb(r, g, b)
 }
 
-/// The palette of an encoded image (JPEG, PNG…).
-pub fn from_image(bytes: &[u8]) -> Option<Palette> {
-    music_core::palette::from_image(bytes).map(|p| p.map(color))
+/// A palette as the shared workings give it, in egui's colours.
+pub fn colors(palette: desktop::palette::Palette) -> Palette {
+    palette.map(color)
 }
 
 /// Pull a colour into the theme's band (see `music_core::palette::fit`).

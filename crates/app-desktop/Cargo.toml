@@ -9,6 +9,7 @@ name = "music"
 path = "src/main.rs"
 
 [dependencies]
+desktop = { path = "../desktop" }
 music-core = { path = "../music-core" }
 apple-music = { path = "../apple-music" }
 soundcloud = { path = "../soundcloud" }

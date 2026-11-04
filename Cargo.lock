@@ -292,6 +292,7 @@ dependencies = [
  "browser-signin",
  "bytemuck",
  "connect",
+ "desktop",
  "downloads",
  "eframe",
  "egui",
@@ -1671,6 +1672,36 @@ dependencies = [
  "rustc_version",
  "syn 2.0.119",
  "unicode-xid",
+]
+
+[[package]]
+name = "desktop"
+version = "0.1.0"
+dependencies = [
+ "apple-music",
+ "async-trait",
+ "browser-signin",
+ "connect",
+ "downloads",
+ "ehttp",
+ "local",
+ "lyrics",
+ "motion",
+ "mpris-server",
+ "music-core",
+ "navidrome",
+ "player",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "services",
+ "soundcloud",
+ "synced",
+ "tokio",
+ "toml",
+ "widevine",
+ "wreq",
+ "wreq-util",
 ]
 
 [[package]]

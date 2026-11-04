@@ -18,7 +18,7 @@ use services::Services;
 use soundcloud::SoundCloud;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
-use crate::app::SearchScope;
+use crate::SearchScope;
 use crate::cache;
 
 mod downloading;
@@ -889,19 +889,19 @@ async fn sign_in_soundcloud() -> Result<(), String> {
 #[derive(Clone)]
 struct Replies {
     tx: mpsc::Sender<Reply>,
-    ctx: egui::Context,
+    wake: crate::Wake,
 }
 
 impl Replies {
     fn send(&self, reply: Reply) {
         let _ = self.tx.send(reply);
-        self.ctx.request_repaint();
+        (self.wake)();
     }
 }
 
 impl Backend {
     /// Start, connecting to every service but those `off`.
-    pub fn start(ctx: egui::Context, off: Vec<ProviderKind>, mut own: Own) -> Self {
+    pub fn start(wake: crate::Wake, off: Vec<ProviderKind>, mut own: Own) -> Self {
         // What the app keeps, sign-ins and browser profiles among it, for the
         // user's eyes only, folders made before included.
         for dir in [
@@ -923,9 +923,9 @@ impl Backend {
         let (tx, replies) = mpsc::channel();
         own.replies = Some(Replies {
             tx: tx.clone(),
-            ctx: ctx.clone(),
+            wake: wake.clone(),
         });
-        let replies_out = Replies { tx, ctx };
+        let replies_out = Replies { tx, wake };
         std::thread::Builder::new()
             .name("backend".into())
             .spawn(move || {

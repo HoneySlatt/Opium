@@ -1,0 +1,34 @@
+[package]
+name = "desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "The desktop app's own workings, apart from how it draws: the services and the player behind the window, the settings, the kept lists and covers, the media controls and the other devices"
+
+[dependencies]
+music-core = { path = "../music-core" }
+apple-music = { path = "../apple-music" }
+soundcloud = { path = "../soundcloud" }
+browser-signin = { path = "../browser-signin" }
+async-trait = "0.1.92"
+# SoundCloud's bot guard turns away changes from any client but a browser:
+# these are sent as Chrome sends them.
+wreq = "0.16.3"
+wreq-util = "0.2.0"
+local = { path = "../local" }
+navidrome = { path = "../navidrome" }
+lyrics = { path = "../lyrics" }
+services = { path = "../services" }
+player = { path = "../player" }
+widevine = { path = "../widevine" }
+motion = { path = "../motion" }
+ehttp = "0.7.2"
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "sync"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+toml = "1.1.8"
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "http2"] }
+mpris-server = "0.11"
+connect = { version = "0.1.0", path = "../connect" }
+synced = { path = "../synced" }
+downloads = { path = "../downloads", features = ["keyring"] }

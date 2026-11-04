@@ -115,26 +115,7 @@ pub enum Loaded<T> {
     Failed(String),
 }
 
-/// Where Search looks: everything on Apple Music, or the user's library.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize,
-)]
-#[serde(rename_all = "lowercase")]
-pub enum SearchScope {
-    #[default]
-    AppleMusic,
-    Library,
-}
-
-/// What the column beside the page shows, in a theme that has one.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Side {
-    NowPlaying,
-    Queue,
-    History,
-    Lyrics,
-}
+pub use desktop::{SearchScope, Side};
 
 /// The queue drawer's tabs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -345,26 +326,12 @@ fn pick_cover(picked: Arc<std::sync::Mutex<Option<Vec<u8>>>>, ctx: &egui::Contex
     });
 }
 
-/// The file a `file://` address names, its escapes undone.
-pub(crate) fn file_path(uri: &str) -> Option<std::path::PathBuf> {
-    let escaped = uri.strip_prefix("file://")?.as_bytes();
-    let mut path = Vec::with_capacity(escaped.len());
-    let mut i = 0;
-    while i < escaped.len() {
-        let hex = |b: u8| (b as char).to_digit(16);
-        match (escaped[i], escaped.get(i + 1).copied().and_then(hex), escaped.get(i + 2).copied().and_then(hex)) {
-            (b'%', Some(high), Some(low)) => {
-                path.push((high * 16 + low) as u8);
-                i += 3;
-            }
-            (b, _, _) => {
-                path.push(b);
-                i += 1;
-            }
-        }
-    }
-    use std::os::unix::ffi::OsStringExt;
-    Some(std::ffi::OsString::from_vec(path).into())
+pub(crate) use desktop::file_path;
+
+/// What the shared workings call to have the window drawn again.
+fn wake(ctx: &egui::Context) -> desktop::Wake {
+    let ctx = ctx.clone();
+    std::sync::Arc::new(move || ctx.request_repaint())
 }
 
 /// Whether `provider`'s playlists take a cover from here: Music's own and Navidrome's.
@@ -886,12 +853,12 @@ impl App {
             history
         });
         let devices = crate::devices::Devices::start(
-            cc.egui_ctx.clone(),
+            wake(&cc.egui_ctx),
             kept.clone(),
             settings.relay.clone(),
         );
         let own = crate::backend::Own::new(kept.clone(), devices.node.sharer());
-        let backend = Backend::start(cc.egui_ctx.clone(), settings.services_off.clone(), own);
+        let backend = Backend::start(wake(&cc.egui_ctx), settings.services_off.clone(), own);
         backend.send(Request::SetLocalFolders(settings.local_folders.clone()));
         backend.send(Request::Library);
         // Started on files (the file manager's Open With): they play.
@@ -903,7 +870,7 @@ impl App {
             theme,
             backend,
             player: Player::new(),
-            mpris: crate::mpris::Mpris::start(cc.egui_ctx.clone()),
+            mpris: crate::mpris::Mpris::start(wake(&cc.egui_ctx)),
             devices,
             remote: None,
             obeying: false,
@@ -5452,7 +5419,7 @@ impl App {
                     Err(e) => self.notify(format!("Couldn't get its link: {e}"), now),
                 },
                 Reply::Palette { url, palette } => {
-                    let state = palette.map_or(PaletteState::Failed, PaletteState::Ready);
+                    let state = palette.map_or(PaletteState::Failed, |p| PaletteState::Ready(crate::palette::colors(p)));
                     self.palettes.insert(url, state);
                 }
                 Reply::Lyrics { id, result } => match result {
