@@ -24,6 +24,9 @@ object CoverColours {
     /** The small copies kept on disk, as the services allow: known again at the next launch without the network. */
     var cache: java.io.File? = null
 
+    /** The covers of the phone's own files are read through Android, not downloaded. */
+    var resolver: android.content.ContentResolver? = null
+
     private val http by lazy {
         OkHttpClient.Builder().apply { cache?.let { cache(okhttp3.Cache(java.io.File(it, "cover-colours"), 16L * 1024 * 1024)) } }.build()
     }
@@ -31,8 +34,16 @@ object CoverColours {
     private val washes = ConcurrentHashMap<Pair<String, Boolean>, List<Int>>()
 
     private fun bytes(url: String): ByteArray? = runCatching {
+        if (url.startsWith(io.github.honeyslatt.music.data.LocalFiles.COVER)) return@runCatching inFile(url)
         http.newCall(Request.Builder().url(io.github.honeyslatt.music.data.Covers.sign(url)).build()).execute().use { it.body?.bytes() }
     }.getOrNull()
+
+    /** The cover in a file of the phone's own, as a small copy to work the colours out of. */
+    private fun inFile(url: String): ByteArray? {
+        val file = android.net.Uri.parse(url.removePrefix(io.github.honeyslatt.music.data.LocalFiles.COVER))
+        val cover = resolver?.loadThumbnail(file, android.util.Size(240, 240), null) ?: return null
+        return java.io.ByteArrayOutputStream().also { cover.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, it) }.toByteArray()
+    }
 
     private fun colour(rgb: Int) = Color(0xFF000000.toInt() or rgb)
 

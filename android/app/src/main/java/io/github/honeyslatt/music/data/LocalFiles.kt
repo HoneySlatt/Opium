@@ -81,15 +81,17 @@ class LocalFiles(private val context: Context, private val core: Core, private v
                 _found.value = emptyList()
                 return@launch handOver(emptyList())
             }
-            val (files, found) = withContext(Dispatchers.IO) { query() }
+            // The index out of reach (MediaProvider gone): what was read stays.
+            val (files, found) = withContext(Dispatchers.IO) { runCatching { query() } }.getOrNull() ?: return@launch
             _found.value = found
             handOver(files)
         }
     }
 
-    private fun handOver(files: List<LocalFile>) {
+    private suspend fun handOver(files: List<LocalFile>) {
         val was = core.connection(ProviderKind.LOCAL).value
-        core.session.setLocalFiles(files)
+        // Every record over to the core: too much to marshal on the screen's thread.
+        withContext(Dispatchers.IO) { core.session.setLocalFiles(files) }
         if (files.isEmpty()) {
             core.filesRead(Connection.Off)
             return
@@ -203,14 +205,21 @@ class LocalFiles(private val context: Context, private val core: Core, private v
         }.getOrNull()
     }
 
-    /** Android's leave to change the files of `tracks`, asked of the user: their window. */
-    fun writeRequest(tracks: List<io.github.honeyslatt.music.core.model.Track>): android.content.IntentSender =
-        MediaStore.createWriteRequest(context.contentResolver, tracks.map { Uri.parse(it.id.id) }).intentSender
+    /**
+     * Android's leave to change the files of `tracks`, asked of the user:
+     * their window; none for a file the index hasn't, which it wouldn't be
+     * asked for.
+     */
+    fun writeRequest(tracks: List<io.github.honeyslatt.music.core.model.Track>): android.content.IntentSender? {
+        if (tracks.any { !inIndex(it.id.id) }) return null
+        return MediaStore.createWriteRequest(context.contentResolver, tracks.map { Uri.parse(it.id.id) }).intentSender
+    }
 
     /** Write `edit` into the files of `tracks`, leave given; why some couldn't be, if any. */
     suspend fun write(tracks: List<io.github.honeyslatt.music.core.model.Track>, edit: io.github.honeyslatt.music.core.FileTagEdit): String? = withContext(Dispatchers.IO) {
         val failed = tracks.mapNotNull { track ->
             runCatching {
+                if (!inIndex(track.id.id)) error("the file isn't in Android's music index")
                 val fd = context.contentResolver.openFileDescriptor(Uri.parse(track.id.id), "rw") ?: error("the file couldn't be opened")
                 io.github.honeyslatt.music.core.writeFileTags(fd.detachFd(), edit)
             }.exceptionOrNull()?.let { "${track.title}: ${it.message}" }
@@ -259,6 +268,13 @@ class LocalFiles(private val context: Context, private val core: Core, private v
 
         /** A file's cover, as the covers fetch it: this, then its address. */
         const val COVER = "music-cover:"
+
+        /**
+         * Whether `id` names a file of Android's media index. A file opened
+         * from another app comes by another provider's address, which the
+         * index doesn't know and won't give leave to change.
+         */
+        fun inIndex(id: String) = id.startsWith("content://${MediaStore.AUTHORITY}/")
     }
 
     /** A file's own cover, as Android makes it: none if it has none. */

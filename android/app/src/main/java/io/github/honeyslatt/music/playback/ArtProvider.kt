@@ -59,13 +59,26 @@ class ArtProvider : ContentProvider() {
             val part = File(dir, "$key.${"%08x".format(random.nextInt())}.part")
             // Out of reach: said as the one failure a provider may give.
             try {
-                Http.client.newCall(Request.Builder().url(io.github.honeyslatt.music.data.Covers.sign(url)).build()).execute().use { response ->
-                    if (!response.isSuccessful) throw FileNotFoundException("HTTP ${response.code}")
-                    part.outputStream().use { out -> (response.body ?: throw FileNotFoundException()).byteStream().copyTo(out) }
+                if (url.startsWith(io.github.honeyslatt.music.data.LocalFiles.COVER)) {
+                    // A file of the phone's own: its cover is Android's to read, not the web's.
+                    val cover = Uri.parse(url.removePrefix(io.github.honeyslatt.music.data.LocalFiles.COVER))
+                    val bitmap = context!!.contentResolver.loadThumbnail(cover, android.util.Size(600, 600), null)
+                    part.outputStream().use { out -> bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, out) }
+                } else {
+                    Http.client.newCall(Request.Builder().url(io.github.honeyslatt.music.data.Covers.sign(url)).build()).execute().use { response ->
+                        if (!response.isSuccessful) throw FileNotFoundException("HTTP ${response.code}")
+                        part.outputStream().use { out -> (response.body ?: throw FileNotFoundException()).byteStream().copyTo(out) }
+                    }
                 }
             } catch (e: java.io.IOException) {
                 part.delete()
                 throw e as? FileNotFoundException ?: FileNotFoundException(e.message)
+            } catch (e: RuntimeException) {
+                // Not an address to download from, or a cover Android won't
+                // give: nothing to serve, rather than a failure thrown at
+                // whoever asked (the lock screen, the car).
+                part.delete()
+                throw FileNotFoundException(e.message)
             }
             part.renameTo(file)
         }

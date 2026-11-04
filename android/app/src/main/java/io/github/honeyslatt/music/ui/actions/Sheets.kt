@@ -281,7 +281,19 @@ private fun Info(actions: Actions, spec: SheetSpec.Info, open: Boolean, close: (
                 } else {
                     saving = true
                     error = null
-                    allow.launch(androidx.activity.result.IntentSenderRequest.Builder(local.writeRequest(spec.tracks)).build())
+                    // A file Android's index hasn't (opened from another app,
+                    // or another device's): nobody to ask leave of.
+                    val request = local.writeRequest(spec.tracks)
+                    if (request == null) {
+                        saving = false
+                        error = if (several) {
+                            "These files aren't in Android's music index: their tags can't be changed here."
+                        } else {
+                            "This file isn't in Android's music index: its tags can't be changed here."
+                        }
+                    } else {
+                        allow.launch(androidx.activity.result.IntentSenderRequest.Builder(request).build())
+                    }
                 }
             }
         },

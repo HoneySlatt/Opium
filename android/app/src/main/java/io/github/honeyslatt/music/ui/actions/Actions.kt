@@ -18,6 +18,7 @@ import io.github.honeyslatt.music.core.model.ProviderKind
 import io.github.honeyslatt.music.core.model.Track
 import io.github.honeyslatt.music.data.Core
 import io.github.honeyslatt.music.data.Library
+import io.github.honeyslatt.music.data.LocalFiles
 import io.github.honeyslatt.music.playback.Playback
 import io.github.honeyslatt.music.ui.Icons
 import io.github.honeyslatt.music.ui.components.Hud
@@ -209,7 +210,7 @@ class Actions(
         val head = MenuHead(track.artwork, track.title, track.artists.joinToString(", "))
         // The phone's own file: no library, favourite nor station of a service, its tags to change.
         if (track.id.provider == ProviderKind.LOCAL) {
-            val here = track.id.id.startsWith("content://")
+            val here = LocalFiles.inIndex(track.id.id)
             menus.show(
                 MenuSpec(anchor, head) {
                     listOf(

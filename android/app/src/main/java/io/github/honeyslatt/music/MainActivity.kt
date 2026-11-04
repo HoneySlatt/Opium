@@ -99,6 +99,11 @@ class MainActivity : ComponentActivity() {
     /** A music file opened from another app (Files, a chat): it plays. */
     private fun playOpened(intent: android.content.Intent?) {
         val uri = intent?.data?.takeIf { intent.action == android.content.Intent.ACTION_VIEW } ?: return
+        // Played once: the intent is the activity's for as long as it lives,
+        // and Android hands it back when the screen is made anew.
+        intent.action = android.content.Intent.ACTION_MAIN
+        intent.data = null
+        setIntent(intent)
         val app = application as MusicApp
         app.scope.launch {
             val track = app.localFiles.opened(uri)
@@ -113,7 +118,9 @@ class MainActivity : ComponentActivity() {
             notifications.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
         val app = application as MusicApp
-        playOpened(intent)
+        // Only as the app opens: made anew after Android ended it, the file
+        // opened then mustn't take the queue that was kept.
+        if (savedInstanceState == null) playOpened(intent)
         setContent {
             val appearance by app.core.appearance.collectAsStateWithLifecycle()
             val themes by app.themes.all.collectAsStateWithLifecycle()

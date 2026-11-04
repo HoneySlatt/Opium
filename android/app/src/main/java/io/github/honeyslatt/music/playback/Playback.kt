@@ -739,7 +739,10 @@ class Playback(private val context: Context, private val core: Core, private val
 
     /** The Wi-Fi held at full power only while a stream plays. */
     private fun wakeFor(mediaId: String?) {
-        player.setWakeMode(if (mediaId != null && mediaId in kept) C.WAKE_MODE_LOCAL else C.WAKE_MODE_NETWORK)
+        // A file of the phone's own needs the network no more than a
+        // downloaded song does, and is never one of `kept`.
+        val here = mediaId != null && (mediaId in kept || mediaId.startsWith("${ProviderKind.LOCAL}:content://"))
+        player.setWakeMode(if (here) C.WAKE_MODE_LOCAL else C.WAKE_MODE_NETWORK)
     }
 
     private fun startCurrent() {
@@ -1025,9 +1028,13 @@ class Playback(private val context: Context, private val core: Core, private val
         if (track.id.id in stations) return liveSource(core.session.liveStation(track.id), item)
         // Another device's file (in a playlist of Music's): a copy the phone has plays.
         if (track.id.provider == ProviderKind.LOCAL && !track.id.id.startsWith("content://")) {
-            val songs = (context.applicationContext as io.github.honeyslatt.music.MusicApp).library.lists.value.songs.items
-                .filter { !(it.id.provider == ProviderKind.LOCAL && !it.id.id.startsWith("content://")) }
-            val copy = io.github.honeyslatt.music.core.copyOf(track, songs) ?: error("this song's file is on another device")
+            val all = (context.applicationContext as io.github.honeyslatt.music.MusicApp).library.lists.value.songs.items
+            // The whole library goes to the core to be looked through: not on
+            // the screen's thread, as everywhere else it is.
+            val copy = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                val songs = all.filter { !(it.id.provider == ProviderKind.LOCAL && !it.id.id.startsWith("content://")) }
+                io.github.honeyslatt.music.core.copyOf(track, songs)
+            } ?: error("this song's file is on another device")
             return playable(copy, generation)
         }
         // Downloaded: from the phone, before any service is asked.

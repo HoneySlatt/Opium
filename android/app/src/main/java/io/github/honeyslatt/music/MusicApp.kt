@@ -8,6 +8,7 @@ import io.github.honeyslatt.music.data.Library
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.collectIndexed
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -58,6 +59,7 @@ class MusicApp : Application(), coil3.SingletonImageLoader.Factory {
         super.onCreate()
         Tls.init(this)
         io.github.honeyslatt.music.ui.detail.CoverColours.cache = cacheDir
+        io.github.honeyslatt.music.ui.detail.CoverColours.resolver = contentResolver
         core = Core(this)
         io.github.honeyslatt.music.data.Covers.sign = { core.session.signedCover(it) }
         settings = io.github.honeyslatt.music.data.Settings(this)
@@ -116,13 +118,18 @@ class MusicApp : Application(), coil3.SingletonImageLoader.Factory {
         localFiles.start()
         io.github.honeyslatt.music.data.SOURCES.forEach { kind ->
             scope.launch {
-                core.connection(kind).map { (it is Connection.Connected) to (it == Connection.Off) }.distinctUntilChanged().collect {
+                core.connection(kind).map { (it is Connection.Connected) to (it == Connection.Off) }.distinctUntilChanged().collectIndexed { seen, _ ->
                     when (core.connection(kind).value) {
                         is Connection.Connected -> {
                             library.load(kind)
                             downloads.confirm(kind)
                         }
-                        Connection.Off -> library.forget(kind)
+                        // Off before anything was tried is only the state the
+                        // app starts in, not a service signed out of: what was
+                        // read of a service stays read. The phone's own files
+                        // are read whole all the same: it costs nothing, and
+                        // they may have changed while the app was away.
+                        Connection.Off -> if (seen > 0 || kind == ProviderKind.LOCAL) library.forget(kind)
                         else -> library.showKept(kind)
                     }
                 }
