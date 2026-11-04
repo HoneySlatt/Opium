@@ -351,27 +351,22 @@ pub fn loved_tile(window: &Window, size: f32) -> Div {
         ))
 }
 
-/// `h` points of `top` at the top to `bottom` at the bottom, each byte
-/// straight between them as egui's mesh blends them: in bands, each a
-/// gradient of its own, GPUI's being made in another space.
-pub fn vertical_gradient(w: Option<f32>, h: f32, top: Rgba, bottom: Rgba) -> Div {
+/// Its parent filled with `top` at the top to `bottom` at the bottom, each
+/// byte straight between them as egui's mesh blends them: in bands, each a
+/// gradient of its own, GPUI's being made in another space. The bands share
+/// the parent's height between them as laid out, not each a length of its
+/// own: rounded to the pixel one by one, at a fractional scale they fell
+/// short of the bottom and left a line of the page under them.
+pub fn vertical_gradient(top: Rgba, bottom: Rgba) -> Div {
     const BANDS: usize = 8;
-    let mut column = div().flex_none().flex().flex_col().h(z(h));
-    column = match w {
-        Some(w) => column.w(z(w)),
-        None => column.w_full(),
-    };
+    let column = div().size_full().flex().flex_col();
     column.children((0..BANDS).map(|i| {
         let (t0, t1) = (i as f32 / BANDS as f32, (i + 1) as f32 / BANDS as f32);
-        div()
-            .flex_none()
-            .w_full()
-            .h(z(h / BANDS as f32))
-            .bg(linear_gradient(
-                180.0,
-                linear_color_stop(lerp(top, bottom, t0), 0.0),
-                linear_color_stop(lerp(top, bottom, t1), 1.0),
-            ))
+        div().flex_1().w_full().bg(linear_gradient(
+            180.0,
+            linear_color_stop(lerp(top, bottom, t0), 0.0),
+            linear_color_stop(lerp(top, bottom, t1), 1.0),
+        ))
     }))
 }
 

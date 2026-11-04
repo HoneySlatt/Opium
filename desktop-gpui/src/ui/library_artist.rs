@@ -312,7 +312,7 @@ fn release_line(album: &Album) -> String {
 /// into the page.
 fn banner_fade(theme: &Theme, color: Rgba, width: f32, hero: f32) -> Div {
     let shade = mix(mix(BLACK, color, 0.4), theme.base, 0.8);
-    place(0.0, hero, width, 260.0).child(vertical_gradient(Some(width), 260.0, shade, theme.base))
+    place(0.0, hero, width, 260.0).child(vertical_gradient(shade, theme.base))
 }
 
 /// Their photo filling the top `width` by `hero` points, a little above
@@ -350,19 +350,21 @@ fn picture(
             );
         }
     }
-    out.child(vertical_gradient(
-        Some(width),
-        hero * 0.4,
-        black_alpha(60),
-        black_alpha(0),
-    ))
+    // The lower part down to the picture's foot, not a length of its own:
+    // rounded apart, the two left the photo's last row bare at a fractional
+    // scale.
+    out.child(
+        place(0.0, 0.0, width, hero * 0.4)
+            .child(vertical_gradient(black_alpha(60), black_alpha(0))),
+    )
     .child(
-        place(0.0, hero * 0.4, width, hero * 0.6).child(vertical_gradient(
-            Some(width),
-            hero * 0.6,
-            black_alpha(0),
-            black_alpha(140),
-        )),
+        div()
+            .absolute()
+            .left_0()
+            .right_0()
+            .top(z(hero * 0.4))
+            .bottom_0()
+            .child(vertical_gradient(black_alpha(0), black_alpha(140))),
     )
 }
 

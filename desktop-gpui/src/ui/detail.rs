@@ -418,15 +418,9 @@ fn banner_header(
         .w(z(width))
         .h(z(BANNER + ACTIONS));
     // The band, rounded at the card's top as egui's corners painted over it.
-    out = out.child(place(0.0, 0.0, width, BANNER).child(vertical_gradient(
-        Some(width),
-        BANNER,
-        color,
-        shade(color, 0.5),
-    )));
+    out = out
+        .child(place(0.0, 0.0, width, BANNER).child(vertical_gradient(color, shade(color, 0.5))));
     out = out.child(place(0.0, BANNER, width, 232.0).child(vertical_gradient(
-        Some(width),
-        232.0,
         mix(shade(color, 0.4), theme.base, 0.8),
         theme.base,
     )));
