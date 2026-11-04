@@ -1,8 +1,10 @@
 //! The window's state, as the egui window's `app.rs` keeps it, the part
 //! drawn so far: the library's songs and playlists as the backend sends
-//! them, the Songs page's order and sort; the player, the queue and the
-//! last session, the media controls; and the glue to the backend. Its names
-//! and shapes are egui's `App`'s, for the screens still to come to slot in.
+//! them, the Songs page's order and sort, the albums and playlists opened
+//! and their covers' colours; the pages gone to, back and forth; the
+//! player, the queue and the last session, the media controls; and the
+//! glue to the backend. Its names and shapes are egui's `App`'s, for the
+//! screens still to come to slot in.
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -11,17 +13,18 @@ use std::time::{Duration, Instant};
 
 use desktop::backend::{Backend, Downloading, Own, Playable, Reply, Request};
 use gpui::{Context, FocusHandle, IntoElement, Render, ScrollHandle, Window};
-use music_core::model::{FavouriteKind, ItemId, Playlist, ProviderKind, Track};
+use music_core::model::{Album, FavouriteKind, ItemId, Playlist, ProviderKind, Track};
 use music_core::{Queue, Repeat};
 use player::{Event, Player, Status, Token};
 
 pub use desktop::Side;
 pub use music_core::text::fold;
 
+use crate::palette::Palette;
 use crate::theme::Theme;
-use crate::ui::tracks::Badge;
+use crate::ui::tracks::{Badge, PageDownload};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[allow(dead_code)]
 pub enum Page {
     Home,
@@ -113,6 +116,30 @@ pub type OrderKey = (
     bool,
 );
 
+/// Something fetched on demand.
+pub enum Loaded<T> {
+    Loading,
+    Ready(T),
+    Failed(String),
+}
+
+/// An album and its tracks, as its page shows them.
+pub type AlbumPage = (Album, Arc<Vec<Track>>);
+
+/// A playlist's tracks, filled page by page.
+#[derive(Default)]
+pub struct PlaylistTracks {
+    pub tracks: Arc<Vec<Track>>,
+    pub done: bool,
+    pub error: Option<String>,
+}
+
+enum PaletteState {
+    Pending,
+    Ready(Palette),
+    Failed,
+}
+
 /// A station's songs are topped up when fewer than this are left to come.
 const STATION_REFILL: usize = 5;
 
@@ -197,8 +224,11 @@ pub struct Music {
     /// What is known to be a favourite or not, read from the service. It
     /// wins over `favourite_songs`.
     favourites_known: HashMap<ItemId, bool>,
-    /// Apple's playlist of favourites' songs, as they come.
-    favourites_tracks: Option<(ItemId, Vec<ItemId>)>,
+    pub albums: HashMap<ItemId, Loaded<AlbumPage>>,
+    pub playlist_tracks: HashMap<ItemId, PlaylistTracks>,
+    palettes: HashMap<String, PaletteState>,
+    /// The selected row on an album or playlist page.
+    pub detail_selected: Option<usize>,
     /// Songs downloaded or downloading, by their id: how each stands.
     downloads: HashMap<ItemId, Downloading>,
     /// The songs kept to play offline, the last downloaded first.
@@ -269,6 +299,9 @@ pub struct Music {
     /// Each chip's list keeps its own place, as egui's scroll areas by id.
     pub library_scroll: [ScrollHandle; 3],
     pub songs_scroll: ScrollHandle,
+    /// Each album and playlist keeps its own place, as egui's scroll areas
+    /// salted by the page.
+    page_scroll: HashMap<Page, ScrollHandle>,
     // What GPUI asks for besides.
     /// Takes the keys: the window's own, as egui's input is.
     pub focus: FocusHandle,
@@ -370,7 +403,10 @@ impl Music {
             library_songs: HashSet::new(),
             favourite_songs: HashSet::new(),
             favourites_known: HashMap::new(),
-            favourites_tracks: None,
+            albums: HashMap::new(),
+            playlist_tracks: HashMap::new(),
+            palettes: HashMap::new(),
+            detail_selected: None,
             downloads: HashMap::new(),
             downloaded: Arc::default(),
             newest: HashMap::new(),
@@ -412,6 +448,7 @@ impl Music {
             library_hovered: false,
             library_scroll: Default::default(),
             songs_scroll: ScrollHandle::new(),
+            page_scroll: HashMap::new(),
             focus: cx.focus_handle(),
             ticking: false,
             dragging: None,
@@ -584,9 +621,14 @@ impl Music {
         }
     }
 
+    /// The id favourites know an album by: its catalog one.
+    pub fn album_favourite_id(album: &Album) -> ItemId {
+        album.catalog_id.clone().unwrap_or_else(|| album.id.clone())
+    }
+
     /// The id favourites know a playlist by: a catalog one (`pl.…`). The
     /// user's own playlists have one too; Apple's Favourite Songs has none.
-    fn playlist_favourite_id(playlist: &Playlist) -> Option<ItemId> {
+    pub fn playlist_favourite_id(playlist: &Playlist) -> Option<ItemId> {
         playlist.catalog_id.clone().or_else(|| {
             playlist
                 .id
@@ -604,6 +646,63 @@ impl Music {
             .map(|p| p.id.clone())
     }
 
+    /// One of the library's playlists (those found elsewhere come with the
+    /// pages that find them).
+    pub fn playlist(&self, id: &ItemId) -> Option<&Playlist> {
+        self.playlists.iter().find(|p| &p.id == id)
+    }
+
+    /// Whether an album or a playlist is in the library, if known: a library
+    /// one is. (A catalog one, as Apple says, is asked with the covers that
+    /// show it, still to come.)
+    fn collection_in_library(&self, kind: FavouriteKind, id: &ItemId) -> Option<bool> {
+        // A SoundCloud playlist is in the library once liked or made; its
+        // albums aren't kept there yet.
+        if id.provider == ProviderKind::SoundCloud {
+            return Some(
+                kind != FavouriteKind::Album && self.playlists.iter().any(|p| p.id == *id),
+            );
+        }
+        let library = match kind {
+            FavouriteKind::Album => id.id.starts_with("l."),
+            _ => id.id.starts_with("p."),
+        };
+        library.then_some(true)
+    }
+
+    /// Whether Add to Library is offered for a playlist.
+    pub fn can_add_playlist(&self, id: &ItemId) -> bool {
+        self.collection_in_library(FavouriteKind::Playlist, id) == Some(false)
+    }
+
+    /// Whether Add to Library is offered for an album.
+    pub fn can_add_album(&self, id: &ItemId) -> bool {
+        self.collection_in_library(FavouriteKind::Album, id) == Some(false)
+    }
+
+    /// The album's tracks once it has come. (Made whole from its copies on
+    /// the library's other services once the library's albums are read,
+    /// with their pages.)
+    pub fn album_tracks(&self, id: &ItemId) -> Option<Arc<Vec<Track>>> {
+        match self.albums.get(id) {
+            Some(Loaded::Ready((_, tracks))) => Some(tracks.clone()),
+            _ => None,
+        }
+    }
+
+    /// The cover colours for `url`, fetched on first ask.
+    pub fn palette(&mut self, url: &str) -> Option<Palette> {
+        match self.palettes.get(url) {
+            Some(PaletteState::Ready(palette)) => Some(*palette),
+            Some(_) => None,
+            None => {
+                self.palettes.insert(url.to_owned(), PaletteState::Pending);
+                self.backend.send(Request::Palette(url.to_owned()));
+                None
+            }
+        }
+    }
+
     fn apple_playlists_arrived(&mut self) {
         for playlist in &self.playlists {
             if playlist.id.provider != ProviderKind::AppleMusic {
@@ -618,13 +717,19 @@ impl Music {
         }
         // Which songs are favourites: those in Apple's playlist of them.
         if let Some(id) = self.favourites()
-            && self
-                .favourites_tracks
-                .as_ref()
-                .is_none_or(|(asked, _)| *asked != id)
+            && !self.playlist_tracks.contains_key(&id)
         {
-            self.favourites_tracks = Some((id.clone(), Vec::new()));
+            self.playlist_tracks
+                .insert(id.clone(), PlaylistTracks::default());
             self.backend.send(Request::Playlist(id));
+        }
+        // Favourite Songs was opened before the library said which
+        // playlist it is.
+        if self.page == Page::Favourites
+            && let Some(id) = self.favourites()
+        {
+            self.page = Page::Playlist(id);
+            self.arrived();
         }
     }
 
@@ -689,6 +794,59 @@ impl Music {
 
     pub fn can_go_forward(&self) -> bool {
         !self.forward.is_empty()
+    }
+
+    pub fn go_back(&mut self) {
+        if let Some(page) = self.back.pop() {
+            self.forward.push(std::mem::replace(&mut self.page, page));
+            self.arrived();
+        }
+    }
+
+    pub fn go_forward(&mut self) {
+        if let Some(page) = self.forward.pop() {
+            self.back.push(std::mem::replace(&mut self.page, page));
+            self.arrived();
+        }
+    }
+
+    /// Where an album's or a playlist's page is scrolled to: its own, kept
+    /// as long as the window, as egui keeps its scroll areas'.
+    pub fn page_scroll(&mut self, page: &Page) -> ScrollHandle {
+        self.page_scroll.entry(page.clone()).or_default().clone()
+    }
+
+    /// A page's download button for its `tracks`, if any can be.
+    pub fn page_download(&self, tracks: &[Track]) -> Option<PageDownload> {
+        let (mut total, mut kept, mut came, mut coming) = (0usize, 0usize, 0.0f32, false);
+        for t in tracks.iter().filter(|t| self.downloadable(&t.id)) {
+            total += 1;
+            match self.downloads.get(&t.id) {
+                Some(Downloading::Kept(_)) => {
+                    kept += 1;
+                    came += 1.0;
+                }
+                Some(Downloading::Coming(p)) => {
+                    coming = true;
+                    came += p;
+                }
+                Some(Downloading::Queued) => coming = true,
+                _ => {}
+            }
+        }
+        Some(match () {
+            _ if total == 0 => return None,
+            _ if coming => PageDownload::Coming(came / total as f32),
+            _ if kept == total => PageDownload::Kept,
+            _ => PageDownload::Offer,
+        })
+    }
+
+    /// Whether `id` can be downloaded: a service's song, not a station, nor
+    /// a file here already.
+    pub fn downloadable(&self, id: &ItemId) -> bool {
+        !matches!(id.provider, ProviderKind::Music | ProviderKind::Local)
+            && !id.id.starts_with("ra.")
     }
 
     /// The track being fetched to play now, until it starts.
@@ -862,6 +1020,92 @@ impl Music {
     pub fn open_files(&mut self, paths: Vec<PathBuf>) {
         if !paths.is_empty() {
             self.backend.send(Request::OpenFiles(paths));
+        }
+    }
+
+    // ---- Navigation ----
+
+    pub fn go(&mut self, page: Page) {
+        // A page shows under Now Playing and the lyrics: they make way.
+        self.now_playing = false;
+        self.lyrics_page = false;
+        if page != self.page {
+            self.back.push(std::mem::replace(&mut self.page, page));
+            self.forward.clear();
+            self.arrived();
+        }
+    }
+
+    /// Fetch what the page shows, unless it already has been. (The pages
+    /// still to come ask for theirs as they come.)
+    fn arrived(&mut self) {
+        self.detail_selected = None;
+        self.page_search.clear();
+        // Favourite Songs is Apple's playlist of them, once the library says which.
+        if self.page == Page::Favourites
+            && let Some(id) = self.favourites()
+        {
+            self.page = Page::Playlist(id);
+        }
+        match &self.page {
+            // Not asked yet, or failed (offline, a service not connected
+            // yet): asked again on arriving.
+            Page::Album(id)
+                if !matches!(
+                    self.albums.get(id),
+                    Some(Loaded::Loading | Loaded::Ready(_))
+                ) =>
+            {
+                self.albums.insert(id.clone(), Loaded::Loading);
+                self.backend.send(Request::Album(id.clone()));
+            }
+            // A catalog playlist says whether it is a favourite when asked.
+            Page::Playlist(id)
+                if id.id.starts_with("pl.") && !self.favourites_known.contains_key(id) =>
+            {
+                if self
+                    .playlist_tracks
+                    .get(id)
+                    .is_none_or(|p| p.error.is_some())
+                {
+                    self.playlist_tracks
+                        .insert(id.clone(), PlaylistTracks::default());
+                    self.backend.send(Request::Playlist(id.clone()));
+                }
+                self.backend.send(Request::Favourite {
+                    kind: FavouriteKind::Playlist,
+                    id: id.clone(),
+                });
+            }
+            Page::Playlist(id)
+                if self
+                    .playlist_tracks
+                    .get(id)
+                    .is_none_or(|p| p.error.is_some()) =>
+            {
+                self.playlist_tracks
+                    .insert(id.clone(), PlaylistTracks::default());
+                self.backend.send(Request::Playlist(id.clone()));
+            }
+            _ => {}
+        }
+    }
+
+    /// Open the page the queue was played from, else the album of the song
+    /// playing.
+    pub fn go_to_playing(&mut self) {
+        let Some(track) = &self.now else {
+            return;
+        };
+        let page = self
+            .playing_from
+            .clone()
+            .or_else(|| track.album_id.clone().map(Page::Album));
+        if let Some(page) = page {
+            self.now_playing = false;
+            if page != self.page {
+                self.go(page);
+            }
         }
     }
 
@@ -1581,6 +1825,20 @@ impl Music {
                         self.apple_playlists_arrived();
                     }
                 }
+                Reply::Album { id, result } => {
+                    let loaded = match result.map(|b| *b) {
+                        Ok((album, tracks)) => {
+                            if let Some(on) = album.in_favourites {
+                                self.favourites_known
+                                    .entry(Self::album_favourite_id(&album))
+                                    .or_insert(on);
+                            }
+                            Loaded::Ready((album, Arc::new(tracks)))
+                        }
+                        Err(e) => Loaded::Failed(e),
+                    };
+                    self.albums.insert(id, loaded);
+                }
                 Reply::PlaylistTracks {
                     id,
                     result,
@@ -1589,31 +1847,48 @@ impl Music {
                 } => {
                     // The favourites fill in page by page: Apple's playlist of
                     // them can run to thousands of songs.
-                    let favourites = self.favourites().as_ref() == Some(&id);
+                    if self.favourites().as_ref() == Some(&id)
+                        && let Ok(tracks) = &result
+                    {
+                        self.favourite_songs
+                            .extend(tracks.iter().map(|t| t.id.clone()));
+                    }
+                    // Songs read from the library's playlists are in the library.
                     if let Ok(tracks) = &result {
-                        if favourites {
-                            self.favourite_songs
-                                .extend(tracks.iter().map(|t| t.id.clone()));
-                        }
-                        // Songs read from the library's playlists are in the library.
                         self.library_songs
                             .extend(tracks.iter().filter(|t| t.in_library).map(|t| t.id.clone()));
                     }
-                    if let (true, Some((asked, kept))) = (favourites, &mut self.favourites_tracks)
-                        && *asked == id
-                    {
-                        match &result {
-                            Ok(tracks) if whole => {
-                                *kept = tracks.iter().map(|t| t.id.clone()).collect();
-                            }
-                            Ok(tracks) => kept.extend(tracks.iter().map(|t| t.id.clone())),
-                            Err(_) => {}
+                    let favourites = self.favourites().as_ref() == Some(&id);
+                    let entry = self.playlist_tracks.entry(id).or_default();
+                    match result {
+                        // As kept from last time, or fresh after it.
+                        Ok(tracks) if whole => {
+                            entry.tracks = Arc::new(tracks);
+                            entry.error = None;
                         }
-                        // The favourites whole: those no longer in it lose their mark.
-                        if done && result.is_ok() {
-                            self.favourite_songs = kept.iter().cloned().collect();
-                        }
+                        Ok(tracks) => Arc::make_mut(&mut entry.tracks).extend(tracks),
+                        Err(e) => entry.error = Some(e),
                     }
+                    entry.done = done;
+                    // The favourites whole: those no longer in it lose their mark.
+                    if favourites && done && entry.error.is_none() {
+                        self.favourite_songs = entry.tracks.iter().map(|t| t.id.clone()).collect();
+                    }
+                }
+                // Whether a playlist is a favourite, asked on opening it
+                // (changing it comes with the favourites' buttons).
+                Reply::Favourite {
+                    id,
+                    set: None,
+                    result: Ok(Some(on)),
+                } => {
+                    self.favourites_known.entry(id).or_insert(on);
+                }
+                Reply::Palette { url, palette } => {
+                    let state = palette.map_or(PaletteState::Failed, |p| {
+                        PaletteState::Ready(crate::palette::colors(p))
+                    });
+                    self.palettes.insert(url, state);
                 }
                 Reply::Failed(e) => self.notify(e),
                 Reply::Opened(tracks) => {

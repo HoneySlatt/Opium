@@ -8,6 +8,7 @@ mod color;
 mod covers;
 mod fonts;
 mod icons;
+mod palette;
 mod theme;
 mod ui;
 

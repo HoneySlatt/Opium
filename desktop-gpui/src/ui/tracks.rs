@@ -5,9 +5,9 @@
 use gpui::prelude::FluentBuilder;
 use gpui::{
     App, ClickEvent, Context, Div, InteractiveElement, IntoElement, ParentElement, Rgba,
-    StatefulInteractiveElement, Styled, Window, div,
+    ScrollHandle, StatefulInteractiveElement, Styled, Window, div,
 };
-use music_core::model::Track;
+use music_core::model::{ItemId, Track};
 
 use crate::app::{Music, SortKey};
 use crate::color::alpha;
@@ -62,6 +62,31 @@ impl Columns {
             album,
             duration: take(52.0),
             thumbs: true,
+        }
+    }
+
+    /// An album's tracks, as Cider lists them: number, title, length; the
+    /// artist only when it changes from track to track.
+    pub fn album(left: f32, width: f32, with_artist: bool) -> Self {
+        let gap = 14.0;
+        let fixed = 36.0 + 52.0 + 36.0 + gap * if with_artist { 3.0 } else { 2.0 } + 20.0;
+        let fr = ((width - fixed) / if with_artist { 6.0 } else { 4.0 }).max(0.0);
+        let mut x = left + 10.0;
+        let mut take = |w: f32| {
+            let range = (x, x + w);
+            x += w + gap;
+            range
+        };
+        let number = take(36.0);
+        let title = take((4.0 * fr).max(200.0));
+        let artist = with_artist.then(|| take((2.0 * fr).max(120.0)));
+        Self {
+            number,
+            title,
+            artist,
+            album: None,
+            duration: take(52.0),
+            thumbs: false,
         }
     }
 
@@ -157,6 +182,15 @@ pub fn cycle(current: Option<(SortKey, bool)>, key: SortKey) -> Option<(SortKey,
     }
 }
 
+/// What a row was asked to do, as egui's: the page shown, whose list it
+/// is, does it (see [`super::row_action`]).
+#[derive(Clone)]
+pub enum RowAction {
+    Select,
+    Play,
+    OpenAlbum(ItemId),
+}
+
 /// How a row shows.
 pub struct RowState {
     /// What the number column shows: the position or the track number.
@@ -185,6 +219,76 @@ pub enum Badge {
     /// Kept, but its subscription wasn't confirmed in time.
     Expired,
     Failed,
+}
+
+/// What a page's download button shows of its songs.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PageDownload {
+    /// Not all kept: a click downloads the rest.
+    Offer,
+    /// On their way, this much of it: a click calls them off.
+    Coming(f32),
+    /// All kept: a click removes them.
+    Kept,
+}
+
+/// A page's download button, an arrow in a ring `size` wide, centred in its
+/// box, as Spotify's: filled in the accent once all is kept, the ring
+/// filling as it comes. Its clicks come with the downloads' buttons.
+pub fn download_button(theme: &Theme, size: f32, state: PageDownload) -> gpui::Stateful<Div> {
+    let c = size / 2.0;
+    let r = size * 0.3;
+    let glyph = size * 0.36;
+    let ring = |color: Rgba| {
+        place(c - r, c - r, 2.0 * r, 2.0 * r)
+            .rounded_full()
+            .border(z(1.8))
+            .border_color(color)
+    };
+    let (ink, text) = (theme.subtext0, theme.text);
+    let out = div()
+        .id("page-download")
+        .group("page-download")
+        .relative()
+        .size(z(size))
+        .cursor_pointer();
+    let arrow = |color: Rgba, lit: bool| {
+        place(c - glyph / 2.0, c - glyph / 2.0, glyph, glyph).child(
+            gpui::svg()
+                .data(icons::ARROW_DOWN.bytes())
+                .size(z(glyph))
+                .text_color(color)
+                .when(lit, |s| {
+                    s.group_hover("page-download", move |s| s.text_color(text))
+                }),
+        )
+    };
+    match state {
+        PageDownload::Offer => out
+            .child(ring(ink).group_hover("page-download", move |s| s.border_color(text)))
+            .child(arrow(ink, true)),
+        // The ring's arc as it fills is egui's polyline: here the ring in
+        // the accent once half has come, as the rows' marks.
+        PageDownload::Coming(p) => out
+            .child(ring(if p >= 0.5 {
+                theme.accent
+            } else {
+                alpha(ink, 0.35)
+            }))
+            .child(
+                place(
+                    c - glyph * 0.225,
+                    c - glyph * 0.225,
+                    glyph * 0.45,
+                    glyph * 0.45,
+                )
+                .rounded(z(1.0))
+                .bg(theme.accent),
+            ),
+        PageDownload::Kept => out
+            .child(disc(c, c, r + 0.9, theme.accent))
+            .child(arrow(theme.on_accent(), false)),
+    }
 }
 
 /// A download's mark, centred on `x`, `y`: an arrow in a disc once kept, a
@@ -250,12 +354,13 @@ pub fn row(
         .when(!state.selected, |d| d.hover(move |s| s.bg(hover)))
         // A click chooses it, a double click plays the page from it.
         .on_click(cx.listener(move |this, e: &ClickEvent, window, cx| {
-            this.songs_view.selected = Some(position);
             if e.click_count() == 2 {
-                this.play_list(super::songs::shown_tracks(this), position);
+                super::row_action(this, position, RowAction::Play);
                 this.acted(window, cx);
+            } else {
+                super::row_action(this, position, RowAction::Select);
+                cx.notify();
             }
-            cx.notify();
         }));
 
     // Number, or a play button on hover, or bars for the playing track.
@@ -271,8 +376,7 @@ pub fn row(
             .child(icon_at(icons::PLAY_FILL, 14.0, 14.0, 13.0, text))
             .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
                 cx.stop_propagation();
-                this.songs_view.selected = Some(position);
-                this.play_list(super::songs::shown_tracks(this), position);
+                super::row_action(this, position, RowAction::Play);
                 this.acted(window, cx);
             })),
     );
@@ -338,6 +442,7 @@ pub fn row(
             ax += 12.0 + 5.0;
         }
         out = out.child(link(
+            cx,
             ("artist", position),
             theme,
             ax,
@@ -346,6 +451,7 @@ pub fn row(
             artists,
             (t1 - ax).max(0.0),
             artist_link,
+            None,
         ));
         if state.favourite {
             out = out.child(favourite_mark(theme, columns.duration.0 - 14.0, y));
@@ -378,6 +484,7 @@ pub fn row(
     // The artist and the album, each a link to its page.
     if let Some((a0, a1)) = columns.artist {
         out = out.child(link(
+            cx,
             ("artist", position),
             theme,
             a0,
@@ -386,10 +493,12 @@ pub fn row(
             track.artists.join(", "),
             a1 - a0,
             artist_link,
+            None,
         ));
     }
     if let Some((c0, c1)) = columns.album {
         out = out.child(link(
+            cx,
             ("album", position),
             theme,
             c0,
@@ -398,6 +507,10 @@ pub fn row(
             track.album.clone().unwrap_or_default(),
             c1 - c0,
             track.album_id.is_some(),
+            track
+                .album_id
+                .clone()
+                .map(|album| (position, RowAction::OpenAlbum(album))),
         ));
     }
 
@@ -426,10 +539,12 @@ pub fn row(
 }
 
 /// Text that leads to a page: in the text's colour and underlined under
-/// the pointer, when it does. Its clicks go nowhere in this slice, but stop
-/// at it, as egui's links take theirs.
+/// the pointer, when it does. Its click does `open` on the page shown;
+/// the artists' go nowhere yet (their pages are still to come), but their
+/// clicks stop at them, as egui's links take theirs.
 #[allow(clippy::too_many_arguments)]
 fn link(
+    cx: &mut Context<Music>,
     id: (&'static str, usize),
     theme: &Theme,
     x: f32,
@@ -438,6 +553,7 @@ fn link(
     s: String,
     max: f32,
     leads: bool,
+    open: Option<(usize, RowAction)>,
 ) -> impl IntoElement + use<> {
     let words = label_cut(s, size, Weight::Regular, theme.subtext0, max);
     if !leads {
@@ -468,7 +584,16 @@ fn link(
                     .bg(text)
                     .group_hover(group, |s| s.visible()),
             )
-            .on_click(|_, _, cx: &mut App| cx.stop_propagation()),
+            .map(|link| match open {
+                Some((position, action)) => {
+                    link.on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                        cx.stop_propagation();
+                        super::row_action(this, position, action.clone());
+                        cx.notify();
+                    }))
+                }
+                None => link.on_click(|_, _, cx: &mut App| cx.stop_propagation()),
+            }),
     )
     .into_any_element()
 }
@@ -521,6 +646,37 @@ pub fn skeleton(theme: &Theme, top: f32, left: f32, width: f32, rows: usize) -> 
         );
     }
     out
+}
+
+/// Arrow keys move the selection, Enter plays it, as egui's `keyboard`:
+/// whether `key` was one of them, and the row to play.
+pub fn keyboard(rows: usize, selected: &mut Option<usize>, key: &str) -> (bool, Option<usize>) {
+    if rows == 0 {
+        return (false, None);
+    }
+    match key {
+        "down" => *selected = Some(selected.map_or(0, |s| (s + 1).min(rows - 1))),
+        "up" => *selected = Some(selected.map_or(0, |s| s.saturating_sub(1))),
+        "enter" => return (true, *selected),
+        _ => return (false, None),
+    }
+    (true, None)
+}
+
+/// Bring row `row` of a list whose rows start `rows_top` points down its
+/// page into view, scrolling no more than that, as egui's `scroll_to_rect`.
+pub fn scroll_to_row(scroll: &ScrollHandle, rows_top: f32, row: usize) {
+    let top = rows_top + row as f32 * ROW;
+    let height = f32::from(scroll.bounds().size.height) / super::zoom();
+    let offset = -f32::from(scroll.offset().y) / super::zoom();
+    let to = if top < offset {
+        top
+    } else if top + ROW > offset + height {
+        top + ROW - height
+    } else {
+        return;
+    };
+    scroll.set_offset(gpui::point(gpui::px(0.0), -z(to.max(0.0))));
 }
 
 /// The rows of `count` that a viewport `from`..`to` shows (in points, the

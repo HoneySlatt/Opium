@@ -10,17 +10,16 @@ use gpui::{
 };
 use music_core::model::{FavouriteKind, ProviderKind, Track};
 
-use crate::app::{Connection, Music};
-use crate::color::{BLACK, WHITE, mix};
+use crate::app::{Connection, Music, Page};
+use crate::color::mix;
 use crate::fonts::Weight;
 use crate::icons;
 use crate::theme::{Header, Motion, Theme};
 
 use super::detail::{self, ACTIONS, BANNER, SONGS_BAND};
-use super::tracks::{self, Columns, RowState};
+use super::tracks::{self, Columns, RowAction, RowState};
 use super::{
-    Align, TOP_BAR, disc, hline, icon_at, icon_button, label, label_cut, place, text_at,
-    text_width, z,
+    Align, TOP_BAR, hline, icon_at, icon_button, label, label_cut, place, text_at, text_width, z,
 };
 
 const TABLE_TOP: f32 = 179.0;
@@ -145,7 +144,7 @@ pub fn show(
         let bar = super::BANNER_BAR;
         let shown = ((offset - (BANNER - 2.0 * bar)) / 48.0).clamp(0.0, 1.0);
         if shown > 0.0 {
-            let mut layer = banner_bar(
+            let mut layer = super::banner_bar(
                 cx,
                 &theme,
                 width,
@@ -171,63 +170,6 @@ pub fn show(
         }
     }
     page
-}
-
-/// Spotify's bar over a page scrolled past its banner, `shown` of the way
-/// in: the page's colour, a round Play and the title, over the page.
-fn banner_bar(
-    cx: &mut Context<Music>,
-    theme: &Theme,
-    width: f32,
-    color: gpui::Rgba,
-    title: &str,
-    shown: f32,
-    playing: bool,
-) -> Div {
-    let bar = super::BANNER_BAR;
-    let lit = mix(theme.accent, WHITE, 0.85);
-    let (px, py) = (40.0 + 24.0, bar / 2.0);
-    div()
-        .absolute()
-        .left_0()
-        .top_0()
-        .size_full()
-        .opacity(shown)
-        .child(
-            // The bar takes the pointer over it, not the rows under it.
-            place(0.0, 0.0, width, bar)
-                .id("banner-bar")
-                .block_mouse_except_scroll()
-                .bg(mix(BLACK, color, 0.6)),
-        )
-        .child(
-            disc(px, py, 24.0, theme.accent)
-                .id("banner-bar-play")
-                .cursor_pointer()
-                .hover(move |s| s.bg(lit))
-                .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
-                    this.play_page(shown_tracks(this));
-                    this.acted(window, cx);
-                }))
-                .child(icon_at(
-                    if playing {
-                        icons::PAUSE_FILL
-                    } else {
-                        icons::PLAY_FILL
-                    },
-                    24.0,
-                    24.0,
-                    20.0,
-                    theme.on_accent(),
-                )),
-        )
-        .child(text_at(
-            px + 24.0 + 12.0,
-            py,
-            24.0,
-            Align::Min,
-            label_cut(title.to_owned(), 24.0, Weight::Bold, WHITE, width - 200.0),
-        ))
 }
 
 /// Spotify's banner over the songs, then on the right of its buttons the
@@ -370,46 +312,30 @@ pub fn shown_tracks(app: &Music) -> Vec<Track> {
         .collect()
 }
 
+/// What a row of the page asked for, as egui's page does it.
+pub fn row_action(app: &mut Music, position: usize, action: RowAction) {
+    match action {
+        RowAction::Select => app.songs_view.selected = Some(position),
+        RowAction::Play => {
+            app.songs_view.selected = Some(position);
+            app.play_list(shown_tracks(app), position);
+        }
+        RowAction::OpenAlbum(id) => app.go(Page::Album(id)),
+    }
+}
+
 /// Arrow keys move the selection, Enter plays it, as egui's
 /// `tracks::keyboard`: whether `key` was one of them.
 pub fn keyboard(app: &mut Music, key: &str) -> bool {
     let rows = app.songs_view.order.len();
-    if rows == 0 {
-        return false;
+    let (taken, play) = tracks::keyboard(rows, &mut app.songs_view.selected, key);
+    if let Some(position) = play {
+        app.play_list(shown_tracks(app), position);
+    } else if let Some(row) = app.songs_view.selected.filter(|_| taken) {
+        let rows_top = table_offset(&app.theme) + tracks::HEAD_SPACE;
+        tracks::scroll_to_row(&app.songs_scroll, rows_top, row);
     }
-    let selected = app.songs_view.selected;
-    app.songs_view.selected = match key {
-        "down" => Some(selected.map_or(0, |s| (s + 1).min(rows - 1))),
-        "up" => Some(selected.map_or(0, |s| s.saturating_sub(1))),
-        "enter" => {
-            if let Some(position) = selected {
-                app.play_list(shown_tracks(app), position);
-            }
-            return true;
-        }
-        _ => return false,
-    };
-    if let Some(row) = app.songs_view.selected {
-        scroll_to_row(app, row);
-    }
-    true
-}
-
-/// Bring the row the arrow keys moved to into view, scrolling no more than
-/// that, as egui's `scroll_to_rect`.
-fn scroll_to_row(app: &Music, row: usize) {
-    let top = table_offset(&app.theme) + tracks::HEAD_SPACE + row as f32 * tracks::ROW;
-    let height = f32::from(app.songs_scroll.bounds().size.height) / super::zoom();
-    let offset = -f32::from(app.songs_scroll.offset().y) / super::zoom();
-    let to = if top < offset {
-        top
-    } else if top + tracks::ROW > offset + height {
-        top + tracks::ROW - height
-    } else {
-        return;
-    };
-    app.songs_scroll
-        .set_offset(gpui::point(gpui::px(0.0), -z(to.max(0.0))));
+    taken
 }
 
 fn empty(app: &Music, theme: &Theme, top: f32, left: f32, width: f32) -> Div {

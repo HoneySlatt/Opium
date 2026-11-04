@@ -2,7 +2,10 @@
 //! `ui/window_bar.rs`: back and forward on the left, Home and Search in the
 //! middle, the account on the right.
 
-use gpui::{Context, Div, InteractiveElement, ParentElement, Styled, Window, div};
+use gpui::{
+    ClickEvent, Context, Div, InteractiveElement, ParentElement, StatefulInteractiveElement,
+    Styled, Window, div,
+};
 
 use crate::app::{Music, Page};
 use crate::fonts::{Weight, line_height};
@@ -18,31 +21,42 @@ pub fn show(app: &Music, window: &mut Window, cx: &mut Context<Music>, width: f3
     let y = HEIGHT / 2.0;
     let mut out = place(0.0, 0.0, width, HEIGHT).bg(theme.crust);
 
-    // Back and forward, 4 points apart. Going back and forth between pages
-    // comes with the other pages.
+    // Back and forward, 4 points apart.
     out = out.child(
         place(16.0, y - 16.0, 80.0, 32.0)
             .flex()
             .items_center()
             .gap(z(4.0))
-            .child(icon_button(
-                "window-back",
-                &theme,
-                icons::LEFT,
-                32.0,
-                20.0,
-                theme.subtext0,
-                app.can_go_back(),
-            ))
-            .child(icon_button(
-                "window-forward",
-                &theme,
-                icons::RIGHT,
-                32.0,
-                20.0,
-                theme.subtext0,
-                app.can_go_forward(),
-            )),
+            .child(
+                icon_button(
+                    "window-back",
+                    &theme,
+                    icons::LEFT,
+                    32.0,
+                    20.0,
+                    theme.subtext0,
+                    app.can_go_back(),
+                )
+                .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                    this.go_back();
+                    cx.notify();
+                })),
+            )
+            .child(
+                icon_button(
+                    "window-forward",
+                    &theme,
+                    icons::RIGHT,
+                    32.0,
+                    20.0,
+                    theme.subtext0,
+                    app.can_go_forward(),
+                )
+                .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                    this.go_forward();
+                    cx.notify();
+                })),
+            ),
     );
 
     // Home and Search, centred on the window.
@@ -56,6 +70,10 @@ pub fn show(app: &Music, window: &mut Window, cx: &mut Context<Music>, width: f3
             .group("window-home")
             .cursor_pointer()
             .hover(move |s| s.bg(lit))
+            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                this.go(Page::Home);
+                cx.notify();
+            }))
             .child(
                 place(24.0 - 11.0, 24.0 - 11.0, 22.0, 22.0).child(
                     gpui::svg()
@@ -103,7 +121,8 @@ pub fn show(app: &Music, window: &mut Window, cx: &mut Context<Music>, width: f3
             )),
     );
 
-    // The account: its picture, which opens Settings (still to come).
+    // The account: its picture, which opens Settings (whose page is still
+    // to come).
     let (ax, ay) = (width - 16.0 - 24.0, y);
     let picture = match &app.profile_picture {
         Some(p) => artwork(window, cx, Some(&p.url(64)), 32.0, 16.0, &theme),
@@ -114,6 +133,10 @@ pub fn show(app: &Music, window: &mut Window, cx: &mut Context<Music>, width: f3
             .id("window-account")
             .cursor_pointer()
             .hover(move |s| s.bg(lit))
+            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                this.go(Page::Settings);
+                cx.notify();
+            }))
             .child(place(8.0, 8.0, 32.0, 32.0).child(picture)),
     )
 }

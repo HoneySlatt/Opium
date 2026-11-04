@@ -17,13 +17,14 @@ use std::time::Duration;
 use gpui::prelude::FluentBuilder;
 
 use gpui::{
-    App, BoxShadow, Div, ElementId, InteractiveElement, IntoElement, ObjectFit, ParentElement,
-    Pixels, Rgba, SharedString, Stateful, StatefulInteractiveElement, Styled, StyledImage, Window,
-    div, img, linear_color_stop, linear_gradient, point, px,
+    App, BoxShadow, ClickEvent, Div, ElementId, InteractiveElement, IntoElement, ObjectFit,
+    ParentElement, Pixels, Rgba, SharedString, Stateful, StatefulInteractiveElement, Styled,
+    StyledImage, Window, div, img, linear_color_stop, linear_gradient, point, px,
 };
+use music_core::model::Track;
 
-use crate::app::Music;
-use crate::color::{alpha, lerp, mix};
+use crate::app::{Music, Page};
+use crate::color::{BLACK, WHITE, alpha, lerp, mix};
 use crate::fonts::{Weight, line_height};
 use crate::icons::{self, Icon};
 use crate::theme::Theme;
@@ -361,6 +362,98 @@ pub fn hline(x: f32, y: f32, w: f32, color: Rgba) -> Div {
 /// How tall Spotify's bar over a scrolled page is.
 pub const BANNER_BAR: f32 = 64.0;
 
+/// Spotify's bar over a page scrolled past its banner, `shown` of the way
+/// in: the page's colour, a round Play and the title, over the page. Its
+/// Play plays the page, or pauses it.
+pub fn banner_bar(
+    cx: &mut gpui::Context<Music>,
+    theme: &Theme,
+    width: f32,
+    color: Rgba,
+    title: &str,
+    shown: f32,
+    playing: bool,
+) -> Div {
+    let bar = BANNER_BAR;
+    let lit = mix(theme.accent, WHITE, 0.85);
+    let (px, py) = (40.0 + 24.0, bar / 2.0);
+    div()
+        .absolute()
+        .left_0()
+        .top_0()
+        .size_full()
+        .opacity(shown)
+        .child(
+            // The bar takes the pointer over it, not the rows under it.
+            place(0.0, 0.0, width, bar)
+                .id("banner-bar")
+                .block_mouse_except_scroll()
+                .bg(mix(BLACK, color, 0.6)),
+        )
+        .child(
+            disc(px, py, 24.0, theme.accent)
+                .id("banner-bar-play")
+                .cursor_pointer()
+                .hover(move |s| s.bg(lit))
+                .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
+                    this.play_page(page_tracks(this));
+                    this.acted(window, cx);
+                }))
+                .child(icon_at(
+                    if playing {
+                        icons::PAUSE_FILL
+                    } else {
+                        icons::PLAY_FILL
+                    },
+                    24.0,
+                    24.0,
+                    20.0,
+                    theme.on_accent(),
+                )),
+        )
+        .child(text_at(
+            px + 24.0 + 12.0,
+            py,
+            24.0,
+            Align::Min,
+            label_cut(title.to_owned(), 24.0, Weight::Bold, WHITE, width - 200.0),
+        ))
+}
+
+/// The cover colours behind album and playlist pages, fitted to the theme.
+/// (An artist's come with their page.)
+pub fn backdrop(app: &mut Music) -> Option<crate::palette::Palette> {
+    let url = match &app.page {
+        Page::Album(id) => match app.albums.get(id) {
+            Some(crate::app::Loaded::Ready((album, _))) => album.artwork.as_ref()?.url(96),
+            _ => return None,
+        },
+        Page::Playlist(id) => app.playlist(id)?.artwork.as_ref()?.url(96),
+        _ => return None,
+    };
+    let light = app.theme.light;
+    app.palette(&url)
+        .map(|p| p.map(|c| crate::palette::fit_header(c, light)))
+}
+
+/// The songs the page shown lists, in its order: what its Play plays.
+pub fn page_tracks(app: &Music) -> Vec<Track> {
+    match app.page {
+        Page::Songs => songs::shown_tracks(app),
+        _ => detail::shown_tracks(app).to_vec(),
+    }
+}
+
+/// What a row's click asked for, done by the page shown, whose list it is,
+/// as each of egui's pages does the `RowAction` its rows return.
+pub fn row_action(app: &mut Music, position: usize, action: tracks::RowAction) {
+    match app.page {
+        Page::Songs => songs::row_action(app, position, action),
+        Page::Album(_) | Page::Playlist(_) => detail::row_action(app, position, action),
+        _ => {}
+    }
+}
+
 /// The window, as egui's `ui::show` places its panels: the window's bar,
 /// the docked player, the sidebar, the side column, the page between.
 pub fn show(app: &mut Music, window: &mut Window, cx: &mut gpui::Context<Music>) -> Div {
@@ -473,8 +566,16 @@ pub fn show(app: &mut Music, window: &mut Window, cx: &mut gpui::Context<Music>)
     let (main_w, main_h) = (right - gap - x, bottom - top);
     let pad = if narrow { 24.0 } else { 40.0 };
     let mut main = card(x, top, main_w, main_h).overflow_hidden();
-    if app.page == crate::app::Page::Songs {
-        main = main.child(songs::show(app, window, cx, main_w, main_h, pad));
+    // The pages still to come leave the card empty.
+    match app.page.clone() {
+        Page::Songs => main = main.child(songs::show(app, window, cx, main_w, main_h, pad)),
+        Page::Album(id) => {
+            main = main.child(detail::album(app, window, cx, main_w, main_h, pad, &id))
+        }
+        Page::Playlist(id) => {
+            main = main.child(detail::playlist(app, window, cx, main_w, main_h, pad, &id));
+        }
+        _ => {}
     }
     root = root.child(if cards {
         main.child(round_off(main_w, main_h, theme.crust, radius))
@@ -488,6 +589,7 @@ pub fn show(app: &mut Music, window: &mut Window, cx: &mut gpui::Context<Music>)
     if app.dragging.is_some() {
         root = root.child(drag_listeners(cx));
     }
+    root = root.child(mouse_navigation(cx));
     root.track_focus(&app.focus).on_key_down(cx.listener(
         |this, e: &gpui::KeyDownEvent, window, cx| {
             keys(this, &e.keystroke, window, cx);
@@ -522,6 +624,37 @@ fn drag_listeners(cx: &mut gpui::Context<Music>) -> impl IntoElement {
     .size_full()
 }
 
+/// The mouse's back and forward buttons go back and forward between pages,
+/// as in a browser: pressed anywhere in the window, as egui reads them.
+fn mouse_navigation(cx: &mut gpui::Context<Music>) -> impl IntoElement {
+    let entity = cx.entity();
+    gpui::canvas(
+        |_, _, _| {},
+        move |_, _, window, _| {
+            let entity = entity.clone();
+            window.on_mouse_event(move |e: &gpui::MouseDownEvent, phase, _, cx| {
+                use gpui::{MouseButton::Navigate, NavigationDirection};
+                if phase != gpui::DispatchPhase::Bubble {
+                    return;
+                }
+                entity.update(cx, |this, cx| match e.button {
+                    Navigate(NavigationDirection::Back) => {
+                        this.go_back();
+                        cx.notify();
+                    }
+                    Navigate(NavigationDirection::Forward) => {
+                        this.go_forward();
+                        cx.notify();
+                    }
+                    _ => {}
+                });
+            });
+        },
+    )
+    .absolute()
+    .size_full()
+}
+
 /// How far the volume keys move it.
 const VOLUME_STEP: f32 = 0.05;
 /// How far Shift with the arrows moves in the song.
@@ -529,8 +662,8 @@ const SEEK_STEP: Duration = Duration::from_secs(10);
 
 /// The keys, as egui's `shortcuts` and `player_shortcuts`: Space plays or
 /// pauses; as Apple Music's, Ctrl with the arrows for the next or previous
-/// song and the volume, Shift with them to move in the song; then the
-/// page's own.
+/// song and the volume, Shift with them to move in the song, Ctrl+J to the
+/// page playing; then the page's own.
 fn keys(
     app: &mut Music,
     key: &gpui::Keystroke,
@@ -561,6 +694,7 @@ fn keys(
         "m" if ctrl => app.toggle_mute(),
         "s" if ctrl => app.toggle_shuffle(),
         "r" if ctrl => app.cycle_repeat(),
+        "j" if ctrl => app.go_to_playing(),
         // A live stream has no length, and doesn't move.
         "right" | "left" if shift => {
             let Some(length) = app.shown().duration else {
@@ -578,8 +712,13 @@ fn keys(
                 app.next();
             }
         }
-        _ if !m.modified() && app.page == crate::app::Page::Songs => {
+        _ if !m.modified() && app.page == Page::Songs => {
             if !songs::keyboard(app, &key.key) {
+                return;
+            }
+        }
+        _ if !m.modified() && matches!(app.page, Page::Album(_) | Page::Playlist(_)) => {
+            if !detail::keyboard(app, &key.key) {
                 return;
             }
         }

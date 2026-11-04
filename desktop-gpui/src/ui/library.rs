@@ -141,15 +141,24 @@ pub fn show(
     );
     if !collapsed && filter != Filter::Playlists {
         out = out.child(
-            place(width - 32.0 - 16.0, head_h / 2.0 - 16.0, 32.0, 32.0).child(icon_button(
-                "library-grid",
-                &theme,
-                icons::GRID,
-                32.0,
-                16.0,
-                theme.subtext0,
-                true,
-            )),
+            place(width - 32.0 - 16.0, head_h / 2.0 - 16.0, 32.0, 32.0).child(
+                icon_button(
+                    "library-grid",
+                    &theme,
+                    icons::GRID,
+                    32.0,
+                    16.0,
+                    theme.subtext0,
+                    true,
+                )
+                .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                    this.go(match filter {
+                        Filter::Albums => Page::Albums,
+                        _ => Page::Artists,
+                    });
+                    cx.notify();
+                })),
+            ),
         );
     }
 
@@ -327,7 +336,14 @@ fn row_ui(
         .cursor_pointer()
         .when(active, |r| r.bg(alpha(theme.text, 0.1)))
         .when(!active, |r| r.hover(move |s| s.bg(hover)))
-        .active(move |s| s.bg(press));
+        .active(move |s| s.bg(press))
+        .on_click({
+            let page = row.page.clone();
+            cx.listener(move |this, _: &ClickEvent, _, cx| {
+                this.go(page.clone());
+                cx.notify();
+            })
+        });
     let size = 48.0;
     let lead = if collapsed { w / 2.0 } else { 8.0 + size / 2.0 };
     let radius = if row.round { size / 2.0 } else { 4.0 };
