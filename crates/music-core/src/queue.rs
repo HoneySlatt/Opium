@@ -98,7 +98,12 @@ impl Queue {
 
     /// Back within [`LIMIT`]: what played goes first, then the far end.
     fn trim(&mut self) {
-        let excess = self.order.len().saturating_sub(LIMIT);
+        self.trim_to(LIMIT);
+    }
+
+    /// Back within `limit`, as [`trim`](Self::trim): never the track playing.
+    fn trim_to(&mut self, limit: usize) {
+        let excess = self.order.len().saturating_sub(limit);
         if excess == 0 {
             return;
         }
@@ -183,9 +188,11 @@ impl Queue {
 
     pub fn add_last(&mut self, track: Track) {
         self.revision += 1;
+        // Room made first, so that a queue already [`LIMIT`] long drops what
+        // is furthest off rather than the track just added.
+        self.trim_to(LIMIT - 1);
         self.order.push(self.tracks.len());
         self.tracks.push(track);
-        self.trim();
     }
 
     /// How many tracks follow the current one.
@@ -514,7 +521,7 @@ mod tests {
 
     #[test]
     fn a_long_list_keeps_the_hundred_from_the_song_picked() {
-        let mut q = queue_of(300, 20);
+        let q = queue_of(300, 20);
         assert_eq!(number(q.current()), Some(20));
         assert_eq!(q.upcoming_len(), LIMIT - 1);
         assert_eq!(number(q.upcoming().last()), Some(119));
@@ -604,4 +611,26 @@ mod tests {
         q.move_upcoming(9, 0);
         assert_eq!(ids(&q), moved);
     }
+    #[test]
+    fn a_full_queue_still_takes_a_track_added() {
+        // The queue is at its limit with nothing played: what is added goes
+        // to the end all the same, the song furthest off making room.
+        let mut q = queue_of(LIMIT as u32, 0);
+        q.add_last(track(900));
+        assert_eq!(q.upcoming_len(), LIMIT - 1);
+        assert_eq!(number(q.upcoming().last()), Some(900));
+        assert_eq!(number(q.current()), Some(0));
+
+        q.add_next(track(901));
+        assert_eq!(number(q.upcoming().next()), Some(901));
+        assert_eq!(q.upcoming_len(), LIMIT - 1);
+        assert_eq!(number(q.current()), Some(0));
+
+        // A station going on keeps every song it adds.
+        for n in 0..10 {
+            q.add_last(track(910 + n));
+        }
+        assert_eq!(number(q.upcoming().last()), Some(919));
+    }
+
 }
