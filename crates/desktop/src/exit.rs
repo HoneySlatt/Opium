@@ -15,7 +15,7 @@ const GRACE: Duration = Duration::from_secs(5);
 static STAGE: Mutex<&str> = Mutex::new("");
 static WATCH: Once = Once::new();
 
-/// What is kept is on disk: from now on the app ends within [`GRACE`],
+/// What is kept is on disk: from now on the app ends within `GRACE`,
 /// torn down or not.
 pub fn leaving() {
     reached("tearing down");

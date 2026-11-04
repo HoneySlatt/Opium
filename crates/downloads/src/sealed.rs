@@ -3,7 +3,7 @@
 //! anywhere without opening the rest. Only Opium, which has the key, reads
 //! them.
 //!
-//! The file is a header, then the chunks: [`MAGIC`] and a random nonce
+//! The file is a header, then the chunks: `MAGIC` and a random nonce
 //! prefix, each chunk's nonce that prefix and the chunk's index. The last
 //! chunk is sealed as the last, so a file cut short doesn't read as whole.
 

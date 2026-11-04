@@ -1,6 +1,6 @@
 //! SoundCloud, through the web player's own API (`api-v2`): the official one
 //! takes no new apps. Requests carry the web player's client id, read from
-//! soundcloud.com (see [`client_id`]), and the user's token from the
+//! soundcloud.com (see `client_id`), and the user's token from the
 //! `oauth_token` cookie of a browser sign-in (see [`signin`]). That token now
 //! lasts a day or so: it is renewed the way the web does, with the
 //! `oauth_refresh_token` cookie, and the new pair handed back to be kept.

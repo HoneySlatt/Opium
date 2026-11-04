@@ -153,7 +153,7 @@ impl AudioStream {
     }
 
     /// A fragmented MP4 of `len` bytes still downloading, which reads as it
-    /// comes: its [`Feed`] takes the bytes, each fragment is indexed once it
+    /// comes: its `Feed` takes the bytes, each fragment is indexed once it
     /// is whole, and decrypted in the background as the others are.
     pub fn downloading(len: u64, sample_duration: Duration, decrypt: Decrypt) -> (Self, Feed) {
         let stream = Self::with_state(
