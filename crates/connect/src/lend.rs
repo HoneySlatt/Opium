@@ -13,7 +13,7 @@ use music_core::model::Track;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
-use crate::{Conn, failed, wire};
+use crate::{Conn, LENDING, STEP, failed, within, wire};
 
 /// The bytes of a song come in pieces this long.
 const PIECE: usize = 256 * 1024;
@@ -91,9 +91,11 @@ pub(crate) async fn borrow(
 ) -> io::Result<(Lent, Borrowed)> {
     let ask = serde_json::to_vec(&Ask { track, original }).map_err(io::Error::other)?;
     let (mut sent, mut heard) = (0, 0);
-    wire::send(&mut stream, &keys, &mut sent, &ask).await?;
-    let answer: Answer = serde_json::from_slice(&wire::receive(&mut stream, &keys, &mut heard).await?)
-        .map_err(io::Error::other)?;
+    within(STEP, wire::send(&mut stream, &keys, &mut sent, &ask)).await?;
+    let answer: Answer = serde_json::from_slice(
+        &within(STEP, wire::receive(&mut stream, &keys, &mut heard)).await?,
+    )
+    .map_err(io::Error::other)?;
     let lent = match answer {
         Answer::Coming(lent) => lent,
         Answer::Refused(reason) => return Err(failed(&reason)),
@@ -103,7 +105,7 @@ pub(crate) async fn borrow(
     tokio::spawn(async move {
         let mut got = 0u64;
         loop {
-            let piece = match wire::receive(&mut stream, &keys, &mut heard).await {
+            let piece = match within(LENDING, wire::receive(&mut stream, &keys, &mut heard)).await {
                 Ok(piece) => piece,
                 Err(e) => {
                     let _ = tx.send(Err(e)).await;
@@ -136,8 +138,9 @@ pub(crate) async fn borrow(
 /// Answer a device asking for a song over `stream`, its handshake made.
 pub(crate) async fn lend(mut stream: Conn, keys: wire::Keys, lender: Option<&dyn Lender>) -> io::Result<()> {
     let (mut sent, mut heard) = (0, 0);
-    let ask: Ask = serde_json::from_slice(&wire::receive(&mut stream, &keys, &mut heard).await?)
-        .map_err(io::Error::other)?;
+    let ask: Ask =
+        serde_json::from_slice(&within(STEP, wire::receive(&mut stream, &keys, &mut heard)).await?)
+            .map_err(io::Error::other)?;
     let lent = match lender {
         Some(lender) => lender.lend(ask.track, ask.original).await,
         None => Err("this device doesn't lend songs".into()),
@@ -146,7 +149,7 @@ pub(crate) async fn lend(mut stream: Conn, keys: wire::Keys, lender: Option<&dyn
         Ok(lent) => lent,
         Err(reason) => {
             let answer = serde_json::to_vec(&Answer::Refused(reason)).map_err(io::Error::other)?;
-            return wire::send(&mut stream, &keys, &mut sent, &answer).await;
+            return within(STEP, wire::send(&mut stream, &keys, &mut sent, &answer)).await;
         }
     };
     let answer = serde_json::to_vec(&Answer::Coming(lent)).map_err(io::Error::other)?;
@@ -179,7 +182,7 @@ pub(crate) async fn lend(mut stream: Conn, keys: wire::Keys, lender: Option<&dyn
         }
     });
     while let Some(piece) = pieces.recv().await {
-        wire::send(&mut stream, &keys, &mut sent, &piece?).await?;
+        within(LENDING, wire::send(&mut stream, &keys, &mut sent, &piece?)).await?;
     }
-    wire::send(&mut stream, &keys, &mut sent, &[]).await
+    within(LENDING, wire::send(&mut stream, &keys, &mut sent, &[])).await
 }

@@ -1,6 +1,7 @@
 //! What goes over a connection: frames in the clear until the two devices
 //! have proved they were paired, then Noise messages only they can read.
 
+use std::future::Future;
 use std::io;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -125,6 +126,18 @@ pub async fn send<W: AsyncWriteExt + Unpin>(
     w.flush().await
 }
 
+/// How long a piece of a message may take to come before the device at the
+/// other end is taken to have left: three times the `PING` a connection
+/// says something at.
+const IDLE: std::time::Duration = std::time::Duration::from_secs(45);
+
+/// `read` given [`IDLE`] to answer.
+async fn idle<T>(read: impl Future<Output = io::Result<T>>) -> io::Result<T> {
+    tokio::time::timeout(IDLE, read)
+        .await
+        .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "nothing more came"))?
+}
+
 pub async fn receive<R: AsyncReadExt + Unpin>(
     r: &mut R,
     keys: &Keys,
@@ -134,8 +147,12 @@ pub async fn receive<R: AsyncReadExt + Unpin>(
     let mut sealed = vec![0; NOISE_MAX];
     let mut plain = vec![0; NOISE_MAX];
     loop {
-        let len = r.read_u16().await? as usize;
-        r.read_exact(&mut sealed[..len]).await?;
+        // Each piece has the whole of the wait to itself, rather than the
+        // message as a whole: the playlists of a long library run to
+        // megabytes, and a limit on all of it would cut a slow link off
+        // part way, over and over, so the two devices never caught up.
+        let len = idle(r.read_u16()).await? as usize;
+        idle(r.read_exact(&mut sealed[..len])).await?;
         let n = keys
             .read_message(*nonce, &sealed[..len], &mut plain)
             .map_err(|_| invalid("a message was tampered with"))?;

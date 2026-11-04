@@ -51,11 +51,14 @@ const VERSION: u32 = 1;
 /// How many of the songs coming up are shown elsewhere.
 const UPCOMING_SHOWN: usize = 100;
 /// A connection says something this often, and is given up when silent
-/// three times as long: the other device left the network.
+/// three times as long (`wire::IDLE`): the other device left the network.
 const PING: Duration = Duration::from_secs(15);
-const SILENT: Duration = Duration::from_secs(45);
 /// How long the greetings and each step of a handshake may take.
-const STEP: Duration = Duration::from_secs(5);
+pub(crate) const STEP: Duration = Duration::from_secs(5);
+/// How long a song lent may go without a piece of it passing: a device
+/// that left the network without saying so would otherwise hold the
+/// connection, the reader and a thread of the pool for good.
+pub(crate) const LENDING: Duration = Duration::from_secs(30);
 /// How long reaching a device through iroh may take: finding its relay,
 /// then it.
 const AWAY: Duration = Duration::from_secs(20);
@@ -365,11 +368,11 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-fn failed(what: &str) -> io::Error {
+pub(crate) fn failed(what: &str) -> io::Error {
     io::Error::other(what.to_owned())
 }
 
-async fn within<T>(limit: Duration, f: impl Future<Output = io::Result<T>>) -> io::Result<T> {
+pub(crate) async fn within<T>(limit: Duration, f: impl Future<Output = io::Result<T>>) -> io::Result<T> {
     timeout(limit, f)
         .await
         .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "no answer"))?
@@ -1017,7 +1020,10 @@ impl Inner {
         });
         let mut nonce = 0;
         let ended = loop {
-            let bytes = match within(SILENT, wire::receive(&mut read, &keys, &mut nonce)).await {
+            // The wait is per piece, inside `receive`: a whole message of
+            // several megabytes mustn't be cut off for taking longer than
+            // one piece may.
+            let bytes = match wire::receive(&mut read, &keys, &mut nonce).await {
                 Ok(bytes) => bytes,
                 Err(e) => break e,
             };
