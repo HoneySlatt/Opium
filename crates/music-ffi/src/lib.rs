@@ -770,12 +770,17 @@ impl Session {
         tracks: Vec<Track>,
     ) -> Result<Playlist, MusicError> {
         if kind == ProviderKind::Music {
-            let own = self.connect()?;
-            let (id, change) = own.1.create_playlist(name, description, tracks);
-            own.changed(change);
-            return Ok(self
-                .own_playlist(&ItemId::new(ProviderKind::Music, id))?
-                .model());
+            // Off the caller's thread as the reads are: it waits on the
+            // playlists being read from disk, and writes the cover.
+            return off(async move {
+                let own = self.connect()?;
+                let (id, change) = own.1.create_playlist(name, description, tracks);
+                own.changed(change);
+                Ok(self
+                    .own_playlist(&ItemId::new(ProviderKind::Music, id))?
+                    .model())
+            })
+            .await;
         }
         let tracks: Vec<ItemId> = tracks.into_iter().map(|t| t.id).collect();
         off(async move {
@@ -794,9 +799,12 @@ impl Session {
         description: String,
     ) -> Result<(), MusicError> {
         if playlist.provider == ProviderKind::Music {
-            let own = self.connect()?;
-            own.changed(own.1.edit_playlist(&playlist.id, name, description));
-            return Ok(());
+            return off(async move {
+                let own = self.connect()?;
+                own.changed(own.1.edit_playlist(&playlist.id, name, description));
+                Ok(())
+            })
+            .await;
         }
         off(async move {
             Ok(self
@@ -856,9 +864,12 @@ impl Session {
 
     pub async fn delete_playlist(self: Arc<Self>, playlist: ItemId) -> Result<(), MusicError> {
         if playlist.provider == ProviderKind::Music {
-            let own = self.connect()?;
-            own.changed(own.1.delete_playlist(&playlist.id));
-            return Ok(());
+            return off(async move {
+                let own = self.connect()?;
+                own.changed(own.1.delete_playlist(&playlist.id));
+                Ok(())
+            })
+            .await;
         }
         off(async move {
             Ok(self
@@ -877,10 +888,13 @@ impl Session {
         entry: ItemId,
     ) -> Result<(), MusicError> {
         if playlist.provider == ProviderKind::Music {
-            let entries = self.own_playlist(&playlist)?.entries_of(&entry);
-            let own = self.connect()?;
-            own.changed(own.1.remove_from_playlist(&playlist.id, &entries));
-            return Ok(());
+            return off(async move {
+                let entries = self.own_playlist(&playlist)?.entries_of(&entry);
+                let own = self.connect()?;
+                own.changed(own.1.remove_from_playlist(&playlist.id, &entries));
+                Ok(())
+            })
+            .await;
         }
         off(async move {
             Ok(self
@@ -897,9 +911,12 @@ impl Session {
         tracks: Vec<Track>,
     ) -> Result<(), MusicError> {
         if playlist.provider == ProviderKind::Music {
-            let own = self.connect()?;
-            own.changed(own.1.add_to_playlist(&playlist.id, tracks));
-            return Ok(());
+            return off(async move {
+                let own = self.connect()?;
+                own.changed(own.1.add_to_playlist(&playlist.id, tracks));
+                Ok(())
+            })
+            .await;
         }
         let tracks: Vec<ItemId> = tracks.into_iter().map(|t| t.id).collect();
         off(async move {
