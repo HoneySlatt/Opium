@@ -132,16 +132,15 @@ pub fn write_tags_to(open: &mut std::fs::File, edit: &TagEdit) -> Result<(), Str
         seed.remove_empty();
         file.insert_tag(seed);
     }
-    let tag = file
-        .primary_tag_mut()
-        .ok_or("this file takes no tags")?;
-    let set = |tag: &mut Tag, value: &Option<String>, put: fn(&mut Tag, String), clear: fn(&mut Tag)| {
-        match value.as_deref().map(str::trim) {
-            Some("") => clear(tag),
-            Some(text) => put(tag, text.to_owned()),
-            None => {}
-        }
-    };
+    let tag = file.primary_tag_mut().ok_or("this file takes no tags")?;
+    let set =
+        |tag: &mut Tag, value: &Option<String>, put: fn(&mut Tag, String), clear: fn(&mut Tag)| {
+            match value.as_deref().map(str::trim) {
+                Some("") => clear(tag),
+                Some(text) => put(tag, text.to_owned()),
+                None => {}
+            }
+        };
     set(tag, &edit.title, Tag::set_title, Tag::remove_title);
     set(tag, &edit.artist, Tag::set_artist, Tag::remove_artist);
     set(tag, &edit.album, Tag::set_album, Tag::remove_album);

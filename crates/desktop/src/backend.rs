@@ -6,12 +6,12 @@ use std::sync::Arc;
 use std::sync::mpsc;
 
 use apple_music::{AppleMusic, AudioStream, LiveStream};
+use navidrome::Navidrome;
 use opium_core::model::{
     Album, Artist, ArtistDetail, Collection, Cursor, FavouriteKind, ItemId, Lyrics, Playlist,
     ProviderKind, SearchResults, Shelf, Track,
 };
 use opium_core::{Error, Provider};
-use navidrome::Navidrome;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use services::Services;
@@ -565,7 +565,10 @@ impl Own {
             }
             Request::SetPlaylistCover { id, jpeg } if opium(&id) => {
                 self.share(self.kept.cover_playlist(&id.id, jpeg.as_deref()));
-                self.reply(Reply::CoverChanged { id: id.clone(), result: Ok(()) });
+                self.reply(Reply::CoverChanged {
+                    id: id.clone(),
+                    result: Ok(()),
+                });
                 self.tell(&[id]);
                 None
             }
@@ -709,23 +712,36 @@ fn show_local(files: &local::Local, scanning: bool, replies: &Replies) {
 async fn local_lists(files: Arc<local::Local>, request: Request, replies: Replies) {
     let provider = ProviderKind::Local;
     let reply = match request {
-        Request::LibraryAlbums => files.library_albums(None).await.map(|page| Reply::LibraryAlbums {
-            provider,
-            albums: page.items,
-            done: true,
-            whole: true,
-        }),
-        Request::LibraryArtists => files.library_artists(None).await.map(|page| Reply::LibraryArtists {
-            provider,
-            artists: page.items,
-            done: true,
-            whole: true,
-        }),
-        _ => files.recently_added(None).await.map(|page| Reply::RecentlyAdded {
-            provider,
-            items: page.items,
-            done: true,
-        }),
+        Request::LibraryAlbums => {
+            files
+                .library_albums(None)
+                .await
+                .map(|page| Reply::LibraryAlbums {
+                    provider,
+                    albums: page.items,
+                    done: true,
+                    whole: true,
+                })
+        }
+        Request::LibraryArtists => {
+            files
+                .library_artists(None)
+                .await
+                .map(|page| Reply::LibraryArtists {
+                    provider,
+                    artists: page.items,
+                    done: true,
+                    whole: true,
+                })
+        }
+        _ => files
+            .recently_added(None)
+            .await
+            .map(|page| Reply::RecentlyAdded {
+                provider,
+                items: page.items,
+                done: true,
+            }),
     };
     if let Ok(reply) = reply {
         replies.send(reply);
@@ -961,8 +977,7 @@ impl Backend {
 }
 
 /// What a sign-in needs, said as the user can act on it.
-pub const NO_BROWSER: &str =
-    "Signing in needs one of Chromium, Chrome, Brave, Vivaldi or Edge installed: Opium opens the service's own page in it. None was found on this computer.";
+pub const NO_BROWSER: &str = "Signing in needs one of Chromium, Chrome, Brave, Vivaldi or Edge installed: Opium opens the service's own page in it. None was found on this computer.";
 
 /// The browser the sign-in opens, to call it by in the window: none when
 /// there is none to open.
@@ -1319,7 +1334,9 @@ async fn run(
                 if let Some(files) = local.clone() {
                     tokio::spawn(async move {
                         let scanned = files.clone();
-                        let Ok(changed) = tokio::task::spawn_blocking(move || scanned.rescan()).await else {
+                        let Ok(changed) =
+                            tokio::task::spawn_blocking(move || scanned.rescan()).await
+                        else {
                             return;
                         };
                         if changed {
@@ -1355,7 +1372,9 @@ async fn run(
                             .iter()
                             .filter_map(|path| {
                                 let name = path.file_name()?.to_string_lossy().into_owned();
-                                local::write_tags(path, &edit).err().map(|e| format!("{name}: {e}"))
+                                local::write_tags(path, &edit)
+                                    .err()
+                                    .map(|e| format!("{name}: {e}"))
                             })
                             .collect();
                         // Read again at once, not when the watching settles.
@@ -1364,7 +1383,9 @@ async fn run(
                     })
                     .await;
                     let Ok((failed, changed, files)) = written else {
-                        return replies.send(Reply::TagsWritten(Err("the tags couldn't be written".into())));
+                        return replies.send(Reply::TagsWritten(Err(
+                            "the tags couldn't be written".into(),
+                        )));
                     };
                     if let (true, Some(files)) = (changed, files) {
                         show_local(&files, false, &replies);
@@ -1806,11 +1827,16 @@ async fn run(
             }
             Request::NavidromeSession(password) => {
                 let Some(server) = nd.clone() else {
-                    replies.send(Reply::NavidromeSession(Err("Navidrome isn't connected".into())));
+                    replies.send(Reply::NavidromeSession(Err(
+                        "Navidrome isn't connected".into()
+                    )));
                     continue;
                 };
                 tokio::spawn(async move {
-                    let result = server.open_session(&password).await.map_err(|e| e.to_string());
+                    let result = server
+                        .open_session(&password)
+                        .await
+                        .map_err(|e| e.to_string());
                     drop(password);
                     if result == Ok(true) {
                         let _ = keep_navidrome(&server.credentials());
@@ -2474,9 +2500,18 @@ fn unanswered(request: Request, service: &str, replies: &Replies) {
         Request::AlbumExtras(id) => Reply::AlbumExtras { id, result: Err(e) },
         Request::LibraryArtistAlbums(id) => Reply::LibraryArtistAlbums { id, result: Err(e) },
         Request::StationTracks(id) => Reply::StationTracks { id, result: Err(e) },
-        Request::Home(source) => Reply::Home { source, result: Err(e) },
-        Request::Radio(source) => Reply::Radio { source, result: Err(e) },
-        Request::NewMusic(source) => Reply::NewMusic { source, result: Err(e) },
+        Request::Home(source) => Reply::Home {
+            source,
+            result: Err(e),
+        },
+        Request::Radio(source) => Reply::Radio {
+            source,
+            result: Err(e),
+        },
+        Request::NewMusic(source) => Reply::NewMusic {
+            source,
+            result: Err(e),
+        },
         // A change shown at once is undone, and the user told why.
         Request::SetFavourite { id, on, .. } => Reply::Favourite {
             id,

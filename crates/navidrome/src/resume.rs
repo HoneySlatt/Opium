@@ -201,5 +201,4 @@ mod tests {
         assert!(ended.is_err(), "it says the download broke off");
         assert_eq!(got, &body[..body.len() / 2], "and pushed nothing twice");
     }
-
 }

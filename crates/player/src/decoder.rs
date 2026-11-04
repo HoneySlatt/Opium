@@ -239,7 +239,8 @@ mod tests {
     fn an_opus_file_decodes_through_libopus() {
         let bytes = include_bytes!("../tests/data/tone.opus").to_vec();
         let len = bytes.len() as u64;
-        let mut decoder = Decoder::open(Source::new(std::io::Cursor::new(bytes), len, Some("opus"))).unwrap();
+        let mut decoder =
+            Decoder::open(Source::new(std::io::Cursor::new(bytes), len, Some("opus"))).unwrap();
         assert_eq!(decoder.info.sample_rate, 48_000);
         let mut frames = 0;
         while let Some(samples) = decoder.next().unwrap() {
@@ -282,5 +283,4 @@ mod tests {
         let opened = Decoder::open(Source::new(std::io::Cursor::new(bytes), len, Some("wav")));
         assert!(opened.is_err(), "it must not open");
     }
-
 }

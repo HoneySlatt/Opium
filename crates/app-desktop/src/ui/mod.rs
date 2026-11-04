@@ -380,7 +380,9 @@ fn waiting_for_favourites(app: &App) -> &'static str {
     match app.connection {
         crate::app::Connection::Connected => "Loading your favourite songs…",
         crate::app::Connection::Connecting => "Connecting to Apple Music…",
-        _ => "Favourite songs are Apple Music's own playlist of them. Sign in to Apple Music in Settings to see yours here.",
+        _ => {
+            "Favourite songs are Apple Music's own playlist of them. Sign in to Apple Music in Settings to see yours here."
+        }
     }
 }
 

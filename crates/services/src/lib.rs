@@ -6,9 +6,9 @@ use std::sync::Arc;
 
 use apple_music::AppleMusic;
 use local::Local;
+use navidrome::Navidrome;
 use opium_core::Provider;
 use opium_core::model::{Album, ItemId, ProviderKind, SearchResults, Track};
-use navidrome::Navidrome;
 use soundcloud::SoundCloud;
 
 /// Where a search looks.

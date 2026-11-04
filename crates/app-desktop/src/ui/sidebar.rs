@@ -236,7 +236,10 @@ fn section(
 /// `top` below the top of what is scrolled.
 fn visible(viewport: Rect, top: f32, count: usize) -> std::ops::Range<usize> {
     let first = ((viewport.top() - top) / PLAYLIST.height).floor().max(0.0) as usize;
-    let last = (((viewport.bottom() - top) / PLAYLIST.height).ceil().max(0.0) as usize).min(count);
+    let last = (((viewport.bottom() - top) / PLAYLIST.height)
+        .ceil()
+        .max(0.0) as usize)
+        .min(count);
     first.min(last)..last
 }
 

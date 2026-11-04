@@ -37,9 +37,17 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
     let catalogue = catalogue(app, ui.ctx());
     let colours = app.appearance();
     let total = BODY_TOP
-        + if choosing { GROUP_HEAD + GROUP_GAP + ROW } else { 0.0 }
+        + if choosing {
+            GROUP_HEAD + GROUP_GAP + ROW
+        } else {
+            0.0
+        }
         + ROW
-        + if folders > 0 { GROUP_HEAD + GROUP_GAP + folders as f32 * ROW } else { 0.0 }
+        + if folders > 0 {
+            GROUP_HEAD + GROUP_GAP + folders as f32 * ROW
+        } else {
+            0.0
+        }
         + 11.0 * (GROUP_HEAD + GROUP_GAP)
         + 3.0 * ROW
         + THEMES * (1 + theme_rows(&catalogue)) as f32
@@ -660,7 +668,8 @@ fn services(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect) {
                 let folders = app.local_folders().len();
                 let detail = match &app.local {
                     _ if folders == 0 => {
-                        "Choose the folders your music is in: its files play as they are.".to_owned()
+                        "Choose the folders your music is in: its files play as they are."
+                            .to_owned()
                     }
                     SoundCloudState::Connected(songs) if app.local_scanning => {
                         format!("{songs} · reading the folders…")
@@ -756,9 +765,10 @@ fn local_folders(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect) {
         if button(ui, theme, right, y, "Remove", true) {
             app.remove_local_folder(i);
         }
-        let name = folder
-            .file_name()
-            .map_or_else(|| folder.display().to_string(), |n| n.to_string_lossy().into_owned());
+        let name = folder.file_name().map_or_else(
+            || folder.display().to_string(),
+            |n| n.to_string_lossy().into_owned(),
+        );
         // Under the home folder, as `~/…`.
         let path = match home.as_ref().and_then(|h| folder.strip_prefix(h).ok()) {
             Some(rest) => format!("~/{}", rest.display()),
@@ -1302,7 +1312,14 @@ fn motion_quality(app: &mut App, ui: &mut Ui, theme: &Theme, right: f32, y: f32)
 
 /// The services Home, New and Radio may come from, as pills ending at
 /// `right`, the one in use filled; where they start.
-fn browse_source(app: &mut App, ui: &mut Ui, theme: &Theme, sources: &[ProviderKind], right: f32, y: f32) -> f32 {
+fn browse_source(
+    app: &mut App,
+    ui: &mut Ui,
+    theme: &Theme,
+    sources: &[ProviderKind],
+    right: f32,
+    y: f32,
+) -> f32 {
     let chosen = app.browse_source();
     let body = font(12.5, Weight::Medium);
     let name = |p: ProviderKind| match p {
@@ -1321,7 +1338,11 @@ fn browse_source(app: &mut App, ui: &mut Ui, theme: &Theme, sources: &[ProviderK
     for (&source, w) in sources.iter().zip(widths) {
         let rect = Rect::from_min_size(pos2(x, y - 14.0), vec2(w, 28.0));
         x += w + 6.0;
-        let response = ui.interact(rect, Id::unique(("browse-source", name(source))), Sense::click());
+        let response = ui.interact(
+            rect,
+            Id::unique(("browse-source", name(source))),
+            Sense::click(),
+        );
         let on = Some(source) == chosen;
         let (fill, fg) = if on {
             (theme.text_a(0.9), theme.base)
@@ -1332,8 +1353,19 @@ fn browse_source(app: &mut App, ui: &mut Ui, theme: &Theme, sources: &[ProviderK
         };
         ui.painter().rect_filled(rect, 14.0, fill);
         let g = text(ui, name(source), body.clone(), fg, w);
-        paint_text(ui, g, rect.center().x, rect.center().y, egui::Align::Center, fg);
-        if response.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() && !on {
+        paint_text(
+            ui,
+            g,
+            rect.center().x,
+            rect.center().y,
+            egui::Align::Center,
+            fg,
+        );
+        if response
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .clicked()
+            && !on
+        {
             app.set_browse_source(source);
         }
     }

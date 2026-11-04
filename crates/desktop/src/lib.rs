@@ -47,7 +47,11 @@ pub fn file_path(uri: &str) -> Option<std::path::PathBuf> {
     let mut i = 0;
     while i < escaped.len() {
         let hex = |b: u8| (b as char).to_digit(16);
-        match (escaped[i], escaped.get(i + 1).copied().and_then(hex), escaped.get(i + 2).copied().and_then(hex)) {
+        match (
+            escaped[i],
+            escaped.get(i + 1).copied().and_then(hex),
+            escaped.get(i + 2).copied().and_then(hex),
+        ) {
             (b'%', Some(high), Some(low)) => {
                 path.push((high * 16 + low) as u8);
                 i += 3;
@@ -61,4 +65,3 @@ pub fn file_path(uri: &str) -> Option<std::path::PathBuf> {
     use std::os::unix::ffi::OsStringExt;
     Some(std::ffi::OsString::from_vec(path).into())
 }
-

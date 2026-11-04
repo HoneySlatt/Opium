@@ -815,7 +815,10 @@ mod tests {
     /// and of each fragment are `free`, the rest as it was, every size kept.
     #[test]
     fn decrypted_boxes_say_nothing_of_encryption() {
-        let moov = boxed(b"moov", &concat(&[boxed(b"pssh", &[1; 12]), boxed(b"trak", &[])]));
+        let moov = boxed(
+            b"moov",
+            &concat(&[boxed(b"pssh", &[1; 12]), boxed(b"trak", &[])]),
+        );
         let traf = boxed(
             b"traf",
             &concat(&[
@@ -829,13 +832,25 @@ mod tests {
             ]),
         );
         let moof = boxed(b"moof", &traf);
-        let mut data = concat(&[boxed(b"ftyp", b"isom"), moov, moof.clone(), boxed(b"mdat", &[7; 4])]);
+        let mut data = concat(&[
+            boxed(b"ftyp", b"isom"),
+            moov,
+            moof.clone(),
+            boxed(b"mdat", &[7; 4]),
+        ]);
         let before = data.len();
         let at = data.len() - moof.len() - 12;
         clear_init(&mut data);
         clear_fragment(&mut data, at);
         assert_eq!(data.len(), before);
-        let kinds: Vec<&[u8]> = data.windows(4).filter(|w| [b"pssh", b"saiz", b"saio", b"senc", b"sbgp", b"sgpd"].iter().any(|k| w == *k)).collect();
+        let kinds: Vec<&[u8]> = data
+            .windows(4)
+            .filter(|w| {
+                [b"pssh", b"saiz", b"saio", b"senc", b"sbgp", b"sgpd"]
+                    .iter()
+                    .any(|k| w == *k)
+            })
+            .collect();
         assert!(kinds.is_empty(), "left: {kinds:?}");
         for kind in [b"ftyp", b"trak", b"tfhd", b"trun", b"mdat"] {
             assert!(data.windows(4).any(|w| w == kind));

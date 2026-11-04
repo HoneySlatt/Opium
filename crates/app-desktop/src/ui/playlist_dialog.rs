@@ -367,9 +367,12 @@ pub fn show_new(app: &mut App, ctx: &egui::Context) {
                 let custom = match &new.cover {
                     crate::app::CoverChoice::Chosen(jpeg) => {
                         ui.painter().rect_filled(art, 10.0, theme.surface0);
-                        egui::Image::from_bytes(format!("bytes://new-cover-{}.jpg", jpeg.len()), egui::load::Bytes::Shared(jpeg.clone()))
-                            .corner_radius(10)
-                            .paint_at(ui, art);
+                        egui::Image::from_bytes(
+                            format!("bytes://new-cover-{}.jpg", jpeg.len()),
+                            egui::load::Bytes::Shared(jpeg.clone()),
+                        )
+                        .corner_radius(10)
+                        .paint_at(ui, art);
                         true
                     }
                     crate::app::CoverChoice::Removed => {
@@ -380,17 +383,25 @@ pub fn show_new(app: &mut App, ctx: &egui::Context) {
                         artwork(ui, new.artwork.clone(), art, 10.0, &theme);
                         new.editing.is_some()
                             && (provider == Some(opium_core::model::ProviderKind::Navidrome)
-                                || new.artwork.as_deref().is_some_and(|a| a.starts_with("file://")))
+                                || new
+                                    .artwork
+                                    .as_deref()
+                                    .is_some_and(|a| a.starts_with("file://")))
                     }
                 };
                 let x = art.right() + 16.0;
                 let choose = Rect::from_min_size(pos2(x, art.center().y - 38.0), vec2(150.0, 34.0));
-                let label = if custom { "Change Cover…" } else { "Choose Cover…" };
+                let label = if custom {
+                    "Change Cover…"
+                } else {
+                    "Choose Cover…"
+                };
                 if pill(ui, &theme, choose, label, false, true) {
                     new.pick_cover(ui.ctx());
                 }
                 if custom {
-                    let remove = Rect::from_min_size(pos2(x, art.center().y + 4.0), vec2(150.0, 34.0));
+                    let remove =
+                        Rect::from_min_size(pos2(x, art.center().y + 4.0), vec2(150.0, 34.0));
                     if pill(ui, &theme, remove, "Remove Cover", false, true)
                         && let Some(new) = &mut app.new_playlist
                     {

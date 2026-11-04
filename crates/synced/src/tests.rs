@@ -408,7 +408,10 @@ fn a_playlist_s_cover_is_the_last_chosen_on_any_device() {
     a.cover_playlist("p", Some("AAA".into()), 2000);
     b.cover_playlist("p", Some("BBB".into()), 3000);
     meet(&mut a, &mut b);
-    assert_eq!(a.shared.playlists.get("p").unwrap().cover_data.as_deref(), Some("BBB"));
+    assert_eq!(
+        a.shared.playlists.get("p").unwrap().cover_data.as_deref(),
+        Some("BBB")
+    );
     // Taken off: the first song's again, on both.
     a.cover_playlist("p", None, 4000);
     meet(&mut a, &mut b);
@@ -425,7 +428,15 @@ fn a_chosen_cover_shows_from_a_file_of_its_own() {
     let first = kept.playlist(&id).unwrap().cover.unwrap();
     let path = first.strip_prefix("file://").unwrap();
     assert_eq!(std::fs::read(path).unwrap(), b"jpeg one");
-    assert_eq!(kept.playlist(&id).unwrap().model().artwork.unwrap().url_template, first);
+    assert_eq!(
+        kept.playlist(&id)
+            .unwrap()
+            .model()
+            .artwork
+            .unwrap()
+            .url_template,
+        first
+    );
     // Another one: the first file goes.
     kept.cover_playlist(&id, Some(b"jpeg two"));
     let second = kept.playlist(&id).unwrap().cover.unwrap();
@@ -589,7 +600,9 @@ fn a_device_whose_clock_is_wrong_doesnt_pin_the_times_everywhere() {
     // is believed, so Recently Added and Add to Playlist stay as they are.
     let mut here = Shared {
         seen: [("a".to_owned(), 1_700_000_000u64)].into_iter().collect(),
-        used: [("p".to_owned(), 1_700_000_000_000u64)].into_iter().collect(),
+        used: [("p".to_owned(), 1_700_000_000_000u64)]
+            .into_iter()
+            .collect(),
         ..Shared::default()
     };
     let before = here.clone();

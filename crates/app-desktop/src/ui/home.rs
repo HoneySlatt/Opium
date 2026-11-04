@@ -162,8 +162,7 @@ fn page(app: &mut App, ui: &mut Ui, pad: f32, which: Which) -> f32 {
                 Ok(Some(shelves)) => shelves,
             };
             if shelves.is_empty() {
-                let detail =
-                    "Nothing to suggest yet. Listen a little, then refresh.";
+                let detail = "Nothing to suggest yet. Listen a little, then refresh.";
                 message(ui, &theme, left, y, width, "Nothing here yet", detail);
                 return;
             }

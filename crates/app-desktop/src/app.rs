@@ -304,7 +304,11 @@ fn pick_cover(picked: Arc<std::sync::Mutex<Option<Vec<u8>>>>, ctx: &egui::Contex
                 .accept_label("Choose")
                 .modal(true)
                 .multiple(false)
-                .filter(FileFilter::new("Pictures").mimetype("image/jpeg").mimetype("image/png"))
+                .filter(
+                    FileFilter::new("Pictures")
+                        .mimetype("image/jpeg")
+                        .mimetype("image/png"),
+                )
                 .send()
                 .await?
                 .response()
@@ -315,7 +319,10 @@ fn pick_cover(picked: Arc<std::sync::Mutex<Option<Vec<u8>>>>, ctx: &egui::Contex
         else {
             return;
         };
-        let Some(cover) = std::fs::read(file).ok().and_then(|b| opium_core::cover::square(&b)) else {
+        let Some(cover) = std::fs::read(file)
+            .ok()
+            .and_then(|b| opium_core::cover::square(&b))
+        else {
             return;
         };
         *picked.lock().unwrap_or_else(|e| e.into_inner()) = Some(cover);
@@ -1372,7 +1379,12 @@ impl App {
 
     /// The folders chosen in the desktop's window, added.
     fn add_picked_folders(&mut self) {
-        let Some(folders) = self.local_picked.lock().unwrap_or_else(|e| e.into_inner()).take() else {
+        let Some(folders) = self
+            .local_picked
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take()
+        else {
             return;
         };
         let mut changed = false;
@@ -1402,8 +1414,9 @@ impl App {
         } else {
             SoundCloudState::Connecting
         };
-        self.backend
-            .send(Request::SetLocalFolders(self.settings.local_folders.clone()));
+        self.backend.send(Request::SetLocalFolders(
+            self.settings.local_folders.clone(),
+        ));
         if self.settings.local_folders.is_empty() {
             self.leave_library(ProviderKind::Local);
         }
@@ -1414,8 +1427,10 @@ impl App {
     /// read again, those shown now at once.
     fn files_changed(&mut self) {
         // The files' album and artist pages, as they were read, go.
-        self.albums.retain(|id, _| id.provider != ProviderKind::Local);
-        self.artists.retain(|id, _| id.provider != ProviderKind::Local);
+        self.albums
+            .retain(|id, _| id.provider != ProviderKind::Local);
+        self.artists
+            .retain(|id, _| id.provider != ProviderKind::Local);
         // The album shown renamed (its title or artist): it shows as it is now.
         if let Page::Album(id) = &self.page
             && id.provider == ProviderKind::Local
@@ -1480,7 +1495,11 @@ impl App {
                 (&mut before.title, other.title, &mut mixed.title),
                 (&mut before.artist, other.artist, &mut mixed.artist),
                 (&mut before.album, other.album, &mut mixed.album),
-                (&mut before.album_artist, other.album_artist, &mut mixed.album_artist),
+                (
+                    &mut before.album_artist,
+                    other.album_artist,
+                    &mut mixed.album_artist,
+                ),
                 (&mut before.genre, other.genre, &mut mixed.genre),
                 (&mut before.track, other.track, &mut mixed.track),
                 (&mut before.disc, other.disc, &mut mixed.disc),
@@ -1493,7 +1512,10 @@ impl App {
             }
         }
         self.song_info = Some(SongInfo {
-            artwork: tracks.iter().find_map(|t| t.artwork.as_ref()).map(|a| a.url(300)),
+            artwork: tracks
+                .iter()
+                .find_map(|t| t.artwork.as_ref())
+                .map(|a| a.url(300)),
             tracks,
             fields: before.clone(),
             before,
@@ -1507,18 +1529,26 @@ impl App {
 
     /// Write what the Info window changed into the files.
     pub fn save_info(&mut self) {
-        let Some(info) = &mut self.song_info else { return };
-        let (now, then) = (&info.fields, &info.before);
-        let text = |now: &String, then: &String| (now.trim() != then.trim()).then(|| now.trim().to_owned());
-        let number = |now: &String, then: &String, name: &str| -> Result<Option<Option<u32>>, String> {
-            if now.trim() == then.trim() {
-                return Ok(None);
-            }
-            match now.trim() {
-                "" => Ok(Some(None)),
-                n => n.parse().map(|n| Some(Some(n))).map_err(|_| format!("{name} is a number")),
-            }
+        let Some(info) = &mut self.song_info else {
+            return;
         };
+        let (now, then) = (&info.fields, &info.before);
+        let text = |now: &String, then: &String| {
+            (now.trim() != then.trim()).then(|| now.trim().to_owned())
+        };
+        let number =
+            |now: &String, then: &String, name: &str| -> Result<Option<Option<u32>>, String> {
+                if now.trim() == then.trim() {
+                    return Ok(None);
+                }
+                match now.trim() {
+                    "" => Ok(Some(None)),
+                    n => n
+                        .parse()
+                        .map(|n| Some(Some(n)))
+                        .map_err(|_| format!("{name} is a number")),
+                }
+            };
         let numbers = (|| {
             Ok::<_, String>((
                 number(&now.track, &then.track, "The track")?,
@@ -1554,7 +1584,11 @@ impl App {
         }
         info.saving = true;
         info.error = None;
-        let paths = info.tracks.iter().map(|t| std::path::PathBuf::from(&t.id.id)).collect();
+        let paths = info
+            .tracks
+            .iter()
+            .map(|t| std::path::PathBuf::from(&t.id.id))
+            .collect();
         self.tags_written = info.tracks.iter().map(|t| t.id.clone()).collect();
         self.backend.send(Request::WriteTags { paths, edit });
     }
@@ -1957,10 +1991,14 @@ impl App {
             // The files have no picks.
             ProviderKind::Local | ProviderKind::Opium => false,
         };
-        [ProviderKind::AppleMusic, ProviderKind::SoundCloud, ProviderKind::Navidrome]
-            .into_iter()
-            .filter(|&p| self.service_on(p) && connected(p))
-            .collect()
+        [
+            ProviderKind::AppleMusic,
+            ProviderKind::SoundCloud,
+            ProviderKind::Navidrome,
+        ]
+        .into_iter()
+        .filter(|&p| self.service_on(p) && connected(p))
+        .collect()
     }
 
     /// Where Home, New and Radio come from: the one chosen if connected,
@@ -1970,7 +2008,12 @@ impl App {
         self.settings
             .browse_source
             .filter(|s| connected.contains(s))
-            .or_else(|| connected.iter().copied().find(|&p| p == ProviderKind::AppleMusic))
+            .or_else(|| {
+                connected
+                    .iter()
+                    .copied()
+                    .find(|&p| p == ProviderKind::AppleMusic)
+            })
             .or_else(|| connected.first().copied())
     }
 
@@ -2020,7 +2063,10 @@ impl App {
         let waiting_on_nothing = self.browse_from.is_none()
             && self.browse_source().is_none()
             && !self.browse_connecting()
-            && !matches!(self.shelves(which), Some(Loaded::Ready(_)) | Some(Loaded::Failed(_)));
+            && !matches!(
+                self.shelves(which),
+                Some(Loaded::Ready(_)) | Some(Loaded::Failed(_))
+            );
         if self.browse_source() == self.browse_from && !waiting_on_nothing {
             return false;
         }
@@ -2502,7 +2548,9 @@ impl App {
             }
             (_, CollectionChoice::AddToLibrary) => self.add_collection_to_library(item, now),
             // A folder's album: its files' tags, all at once.
-            (Collection::Album(a), CollectionChoice::Edit) if a.id.provider == ProviderKind::Local => {
+            (Collection::Album(a), CollectionChoice::Edit)
+                if a.id.provider == ProviderKind::Local =>
+            {
                 let mut tracks: Vec<Track> = self
                     .songs
                     .iter()
@@ -2676,7 +2724,10 @@ impl App {
         };
         if let Some(id) = new.editing {
             if let Some(jpeg) = jpeg {
-                self.backend.send(Request::SetPlaylistCover { id: id.clone(), jpeg });
+                self.backend.send(Request::SetPlaylistCover {
+                    id: id.clone(),
+                    jpeg,
+                });
             }
             let changed = self.playlist(&id).is_some_and(|p| {
                 p.name != name || p.description.as_deref().unwrap_or_default() != description
@@ -3242,7 +3293,8 @@ impl App {
     /// Whether `id` can be downloaded: a service's song, not a station, nor
     /// a file here already.
     pub fn downloadable(&self, id: &ItemId) -> bool {
-        !matches!(id.provider, ProviderKind::Opium | ProviderKind::Local) && !id.id.starts_with("ra.")
+        !matches!(id.provider, ProviderKind::Opium | ProviderKind::Local)
+            && !id.id.starts_with("ra.")
     }
 
     /// What a song's menu offers of downloads: Download, or Remove
@@ -3732,8 +3784,10 @@ impl App {
     /// being the file itself.
     fn server_copy(&mut self, track: &Track) -> Option<Track> {
         // A file here plays as it is.
-        if matches!(track.id.provider, ProviderKind::Navidrome | ProviderKind::Local)
-            || !matches!(self.navidrome, SoundCloudState::Connected(_))
+        if matches!(
+            track.id.provider,
+            ProviderKind::Navidrome | ProviderKind::Local
+        ) || !matches!(self.navidrome, SoundCloudState::Connected(_))
         {
             return None;
         }
@@ -4662,7 +4716,10 @@ impl App {
     }
 
     pub fn move_upcoming(&mut self, from: usize, to: usize) {
-        if self.ask_far(connect::Command::MoveUpcoming { from: from as u32, to: to as u32 }) {
+        if self.ask_far(connect::Command::MoveUpcoming {
+            from: from as u32,
+            to: to as u32,
+        }) {
             return;
         }
         self.queue.move_upcoming(from, to);
@@ -4718,7 +4775,9 @@ impl App {
 
     fn source(playable: Playable) -> player::Source {
         match playable {
-            Playable::Local(audio) => player::Source::new(audio.file, audio.len, Some(&audio.extension)),
+            Playable::Local(audio) => {
+                player::Source::new(audio.file, audio.len, Some(&audio.extension))
+            }
             Playable::Track { stream, .. } => {
                 let len = stream.len();
                 let hint = stream.seek_hint();
@@ -5188,7 +5247,10 @@ impl App {
                         );
                         let id = playlist.id.clone();
                         if let Some(jpeg) = self.cover_for_created.take() {
-                            self.backend.send(Request::SetPlaylistCover { id: id.clone(), jpeg: Some(jpeg) });
+                            self.backend.send(Request::SetPlaylistCover {
+                                id: id.clone(),
+                                jpeg: Some(jpeg),
+                            });
                         }
                         self.playlists.push(playlist);
                         if std::mem::take(&mut self.open_created) {
@@ -5205,7 +5267,8 @@ impl App {
                         }
                     }
                     Err(crate::backend::CoverRefused::Password(jpeg)) => {
-                        self.navidrome_password = Some((Request::SetPlaylistCover { id, jpeg }, String::new(), false));
+                        self.navidrome_password =
+                            Some((Request::SetPlaylistCover { id, jpeg }, String::new(), false));
                     }
                     Err(crate::backend::CoverRefused::Failed(e)) => {
                         self.notify(format!("Couldn't change the cover: {e}"), now);
@@ -5413,7 +5476,9 @@ impl App {
                     Err(e) => self.notify(format!("Couldn't get its link: {e}"), now),
                 },
                 Reply::Palette { url, palette } => {
-                    let state = palette.map_or(PaletteState::Failed, |p| PaletteState::Ready(crate::palette::colors(p)));
+                    let state = palette.map_or(PaletteState::Failed, |p| {
+                        PaletteState::Ready(crate::palette::colors(p))
+                    });
                     self.palettes.insert(url, state);
                 }
                 Reply::Lyrics { id, result } => match result {
@@ -6126,8 +6191,13 @@ impl eframe::App for App {
         self.media_controls(ctx);
         self.add_picked_folders();
         // Files dropped on the window play, as opened.
-        let dropped: Vec<std::path::PathBuf> =
-            ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_owned()).collect());
+        let dropped: Vec<std::path::PathBuf> = ctx.input(|i| {
+            i.raw
+                .dropped_files
+                .iter()
+                .map(|f| f.path().to_owned())
+                .collect()
+        });
         self.open_files(dropped);
         self.other_devices(now);
         if let Some(edited) = self.search_edited {

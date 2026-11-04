@@ -13,7 +13,7 @@ use opium_core::model::Track;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
-use crate::{Conn, LENDING, STEP, failed, within, wire};
+use crate::{Conn, LENDING, STEP, failed, wire, within};
 
 /// The bytes of a song come in pieces this long.
 const PIECE: usize = 256 * 1024;
@@ -39,7 +39,11 @@ pub struct Lent {
 pub trait Lender: Send + Sync {
     /// `track` as downloading it would get it; `original`: a SoundCloud
     /// uploader's own file, where they allow it.
-    async fn lend(&self, track: Track, original: bool) -> Result<(Lent, Box<dyn Read + Send>), String>;
+    async fn lend(
+        &self,
+        track: Track,
+        original: bool,
+    ) -> Result<(Lent, Box<dyn Read + Send>), String>;
 }
 
 #[derive(Serialize, Deserialize)]
@@ -92,10 +96,9 @@ pub(crate) async fn borrow(
     let ask = serde_json::to_vec(&Ask { track, original }).map_err(io::Error::other)?;
     let (mut sent, mut heard) = (0, 0);
     within(STEP, wire::send(&mut stream, &keys, &mut sent, &ask)).await?;
-    let answer: Answer = serde_json::from_slice(
-        &within(STEP, wire::receive(&mut stream, &keys, &mut heard)).await?,
-    )
-    .map_err(io::Error::other)?;
+    let answer: Answer =
+        serde_json::from_slice(&within(STEP, wire::receive(&mut stream, &keys, &mut heard)).await?)
+            .map_err(io::Error::other)?;
     let lent = match answer {
         Answer::Coming(lent) => lent,
         Answer::Refused(reason) => return Err(failed(&reason)),
@@ -136,7 +139,11 @@ pub(crate) async fn borrow(
 }
 
 /// Answer a device asking for a song over `stream`, its handshake made.
-pub(crate) async fn lend(mut stream: Conn, keys: wire::Keys, lender: Option<&dyn Lender>) -> io::Result<()> {
+pub(crate) async fn lend(
+    mut stream: Conn,
+    keys: wire::Keys,
+    lender: Option<&dyn Lender>,
+) -> io::Result<()> {
     let (mut sent, mut heard) = (0, 0);
     let ask: Ask =
         serde_json::from_slice(&within(STEP, wire::receive(&mut stream, &keys, &mut heard)).await?)

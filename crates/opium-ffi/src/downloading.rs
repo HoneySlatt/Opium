@@ -21,13 +21,19 @@ use crate::{Connect, OpiumError, Session};
 pub enum DownloadState {
     Queued,
     /// How much has come, from 0 to 1.
-    Coming { part: f32 },
+    Coming {
+        part: f32,
+    },
     /// Kept; until when it plays (seconds since the epoch) if it came through
     /// a service's DRM.
-    Kept { until: Option<u64> },
+    Kept {
+        until: Option<u64>,
+    },
     /// Kept, but its subscription wasn't confirmed in the last 30 days.
     Expired,
-    Failed { reason: String },
+    Failed {
+        reason: String,
+    },
     /// Not kept, or no longer.
     Gone,
 }
@@ -106,7 +112,11 @@ struct Phone {
 impl Phone {
     /// `track` from the paired computer connected now.
     async fn borrow(&self, track: Track, original: bool) -> Result<Fetched, String> {
-        let connect = self.connect.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let connect = self
+            .connect
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
         let node = connect.as_ref().map(|c| &c.0);
         let Some(from) = node.and_then(|n| n.lenders().into_iter().next()) else {
             return Err("Comes through your computer: open Opium on it".into());
@@ -159,7 +169,9 @@ impl Fetcher for Phone {
                 // the computer brings it.
                 let audio = match sc.audio(id, original, None).await {
                     Ok(audio) => audio,
-                    Err(opium_core::Error::Playback(m)) if m.contains("encrypted") => return self.borrow(track, original).await,
+                    Err(opium_core::Error::Playback(m)) if m.contains("encrypted") => {
+                        return self.borrow(track, original).await;
+                    }
                     Err(e) => return Err(e.to_string()),
                 };
                 Ok(Fetched {
@@ -200,14 +212,15 @@ impl Downloads {
         let key: sealed::Key = key.try_into().map_err(|_| OpiumError::Failed {
             reason: "the downloads' key isn't 32 bytes".into(),
         })?;
-        let store = tokio::task::spawn_blocking(move || Store::open(std::path::Path::new(&dir), key))
-            .await
-            .map_err(|e| OpiumError::Failed {
-                reason: e.to_string(),
-            })?
-            .map_err(|e| OpiumError::Failed {
-                reason: format!("Couldn't open the downloads: {e}"),
-            })?;
+        let store =
+            tokio::task::spawn_blocking(move || Store::open(std::path::Path::new(&dir), key))
+                .await
+                .map_err(|e| OpiumError::Failed {
+                    reason: e.to_string(),
+                })?
+                .map_err(|e| OpiumError::Failed {
+                    reason: format!("Couldn't open the downloads: {e}"),
+                })?;
         let phone = Arc::new(Phone {
             session,
             connect: Mutex::default(),

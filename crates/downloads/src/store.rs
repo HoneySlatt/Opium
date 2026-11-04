@@ -123,8 +123,10 @@ impl Store {
                     eprintln!(
                         "downloads: {} doesn't read ({}): kept aside, the songs left alone",
                         path.display(),
-                        read.err()
-                            .map_or_else(|| format!("version {VERSION} at most"), |e| e.to_string())
+                        read.err().map_or_else(
+                            || format!("version {VERSION} at most"),
+                            |e| e.to_string()
+                        )
                     );
                     std::fs::rename(&path, dir.join("manifest.corrupt.json"))?;
                     (Manifest::default(), false)
@@ -590,5 +592,4 @@ mod tests {
             "it fails to open, so the song plays from its service"
         );
     }
-
 }

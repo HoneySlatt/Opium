@@ -238,14 +238,20 @@ mod tests {
     #[test]
     fn another_devices_file_plays_from_the_best_copy_here() {
         let mut theirs = track(ProviderKind::Local, "Song", "Artist", 200);
-        theirs.id = ItemId::new(ProviderKind::Local, "content://media/external/audio/media/1");
+        theirs.id = ItemId::new(
+            ProviderKind::Local,
+            "content://media/external/audio/media/1",
+        );
         let here = [
             track(ProviderKind::SoundCloud, "Song", "Artist", 201),
             track(ProviderKind::AppleMusic, "Song", "Artist", 200),
             track(ProviderKind::Navidrome, "Song (Live)", "Artist", 260),
         ];
         let copies = Copies::of(&here);
-        assert_eq!(copies.best(&theirs).unwrap().id.provider, ProviderKind::AppleMusic);
+        assert_eq!(
+            copies.best(&theirs).unwrap().id.provider,
+            ProviderKind::AppleMusic
+        );
         let alone = Copies::of(std::slice::from_ref(&theirs));
         assert!(alone.best(&theirs).is_none(), "not its own copy");
     }
@@ -353,5 +359,4 @@ mod tests {
             "the ten-minute version stays reachable"
         );
     }
-
 }

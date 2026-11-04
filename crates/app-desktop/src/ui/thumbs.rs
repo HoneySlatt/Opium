@@ -90,11 +90,7 @@ impl ImageLoader for Thumbs {
             .spawn(move || {
                 let read = shrink(&path, at);
                 // Let go of meanwhile: not kept, and nothing to repaint for.
-                let wanted = match into
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .get_mut(&uri)
-                {
+                let wanted = match into.lock().unwrap_or_else(|e| e.into_inner()).get_mut(&uri) {
                     Some(entry) => {
                         *entry = Poll::Ready(read);
                         true
@@ -110,7 +106,10 @@ impl ImageLoader for Thumbs {
     }
 
     fn forget(&self, uri: &str) {
-        self.kept.lock().unwrap_or_else(|e| e.into_inner()).remove(uri);
+        self.kept
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(uri);
     }
 
     fn forget_all(&self) {

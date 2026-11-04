@@ -58,7 +58,9 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
         .show(ctx, |ui| {
             ui.set_width(WIDTH);
             ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
-            let Some(info) = &mut app.song_info else { return };
+            let Some(info) = &mut app.song_info else {
+                return;
+            };
 
             // The cover, with its title and file beside it.
             let (head, _) = ui.allocate_exact_size(vec2(WIDTH, 152.0), Sense::hover());
@@ -90,11 +92,23 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
             let g = text(ui, &sub, font(12.5, Weight::Regular), theme.subtext0, words);
             paint_text(ui, g, x, art.top() + 34.0, egui::Align::Min, theme.subtext0);
             let choose = Rect::from_min_size(pos2(x, art.bottom() - 34.0), vec2(124.0, 34.0));
-            if pill(ui, &theme, choose, if has_cover { "Change Cover…" } else { "Add Cover…" }, false, true) {
+            if pill(
+                ui,
+                &theme,
+                choose,
+                if has_cover {
+                    "Change Cover…"
+                } else {
+                    "Add Cover…"
+                },
+                false,
+                true,
+            ) {
                 info.pick_cover(ui.ctx());
             }
             if has_cover {
-                let remove = Rect::from_min_size(pos2(choose.right() + 8.0, choose.top()), vec2(84.0, 34.0));
+                let remove =
+                    Rect::from_min_size(pos2(choose.right() + 8.0, choose.top()), vec2(84.0, 34.0));
                 if pill(ui, &theme, remove, "Remove", false, true) {
                     info.cover = CoverChoice::Removed;
                 }
@@ -136,7 +150,14 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
             for (label, value, mixed) in numbers {
                 let g = text(ui, label, font(13.0, Weight::Medium), theme.subtext0, 80.0);
                 let w = g.size().x;
-                paint_text(ui, g, left, row.top() + FIELD / 2.0, egui::Align::Min, theme.subtext0);
+                paint_text(
+                    ui,
+                    g,
+                    left,
+                    row.top() + FIELD / 2.0,
+                    egui::Align::Min,
+                    theme.subtext0,
+                );
                 let rect = Rect::from_min_size(pos2(left + w + 10.0, row.top()), vec2(64.0, FIELD));
                 edit(ui, &theme, rect, value, mixed, false);
                 left = rect.right() + 20.0;
@@ -145,8 +166,21 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
             if let Some(error) = &info.error {
                 ui.add_space(4.0);
                 let (row, _) = ui.allocate_exact_size(vec2(WIDTH, 20.0), Sense::hover());
-                let g = text(ui, error, font(12.5, Weight::Regular), theme.red, WIDTH - 48.0);
-                paint_text(ui, g, row.left() + 24.0, row.center().y, egui::Align::Min, theme.red);
+                let g = text(
+                    ui,
+                    error,
+                    font(12.5, Weight::Regular),
+                    theme.red,
+                    WIDTH - 48.0,
+                );
+                paint_text(
+                    ui,
+                    g,
+                    row.left() + 24.0,
+                    row.center().y,
+                    egui::Align::Min,
+                    theme.red,
+                );
             }
 
             ui.add_space(12.0);
@@ -154,8 +188,10 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
             ui.painter()
                 .hline(foot.x_range(), foot.top(), Stroke::new(1.0, theme.line()));
             let y = foot.center().y;
-            let cancel_rect = Rect::from_center_size(pos2(foot.center().x - 70.0, y), vec2(124.0, 40.0));
-            let save_rect = Rect::from_center_size(pos2(foot.center().x + 70.0, y), vec2(124.0, 40.0));
+            let cancel_rect =
+                Rect::from_center_size(pos2(foot.center().x - 70.0, y), vec2(124.0, 40.0));
+            let save_rect =
+                Rect::from_center_size(pos2(foot.center().x + 70.0, y), vec2(124.0, 40.0));
             if pill(ui, &theme, cancel_rect, "Cancel", false, true) {
                 cancel = true;
             }
@@ -177,8 +213,21 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
 /// A labelled tag on its row.
 fn field(ui: &mut Ui, theme: &Theme, label: &str, value: &mut String, mixed: bool, first: bool) {
     let (row, _) = ui.allocate_exact_size(vec2(WIDTH, FIELD + FIELD_GAP), Sense::hover());
-    let g = text(ui, label, font(13.0, Weight::Medium), theme.subtext0, LABELS);
-    paint_text(ui, g, row.left() + 24.0, row.top() + FIELD / 2.0, egui::Align::Min, theme.subtext0);
+    let g = text(
+        ui,
+        label,
+        font(13.0, Weight::Medium),
+        theme.subtext0,
+        LABELS,
+    );
+    paint_text(
+        ui,
+        g,
+        row.left() + 24.0,
+        row.top() + FIELD / 2.0,
+        egui::Align::Min,
+        theme.subtext0,
+    );
     let rect = Rect::from_min_max(
         pos2(row.left() + 24.0 + LABELS, row.top()),
         pos2(row.right() - 24.0, row.top() + FIELD),

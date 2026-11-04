@@ -632,5 +632,4 @@ mod tests {
         }
         assert_eq!(number(q.upcoming().last()), Some(919));
     }
-
 }

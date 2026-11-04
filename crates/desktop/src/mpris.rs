@@ -150,7 +150,8 @@ async fn its_opium(bus: &mpris_server::zbus::Connection) -> bool {
                 .ok()
         }
     };
-    said("DesktopEntry").await.as_deref() == Some("opium") && said("Identity").await.as_deref() == Some("Opium")
+    said("DesktopEntry").await.as_deref() == Some("opium")
+        && said("Identity").await.as_deref() == Some("Opium")
 }
 
 /// Bring the Opium already running forward; whether one was there. Two of
@@ -185,7 +186,10 @@ pub fn raise_running() -> bool {
 /// Hand `files` to the Opium already running, through its media controls,
 /// and bring it forward; whether one was there to take them.
 pub fn open_in_running(files: &[std::path::PathBuf]) -> bool {
-    let Ok(runtime) = tokio::runtime::Builder::new_current_thread().enable_all().build() else {
+    let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    else {
         return false;
     };
     runtime.block_on(async {
@@ -201,14 +205,26 @@ pub fn open_in_running(files: &[std::path::PathBuf]) -> bool {
                 let path = "/org/mpris/MediaPlayer2";
                 let to = Some(BUS_NAME);
                 match uri {
-                    Some(uri) => bus.call_method(to, path, Some(interface), method, &(uri,)).await,
-                    None => bus.call_method(to, path, Some(interface), method, &()).await,
+                    Some(uri) => {
+                        bus.call_method(to, path, Some(interface), method, &(uri,))
+                            .await
+                    }
+                    None => {
+                        bus.call_method(to, path, Some(interface), method, &())
+                            .await
+                    }
                 }
                 .is_ok()
             }
         };
         for file in files {
-            if !call("org.mpris.MediaPlayer2.Player", "OpenUri", Some(file_uri(file))).await {
+            if !call(
+                "org.mpris.MediaPlayer2.Player",
+                "OpenUri",
+                Some(file_uri(file)),
+            )
+            .await
+            {
                 return false;
             }
         }

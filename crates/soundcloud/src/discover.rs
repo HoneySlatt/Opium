@@ -325,9 +325,18 @@ mod tests {
             {"kind":"user","id":3}
         ],"next_href":null}}],"next_href":null}"#;
         let page: types::Collection<Selection> = serde_json::from_str(json).unwrap();
-        let items = page.collection.into_iter().next().unwrap().items.unwrap().collection;
+        let items = page
+            .collection
+            .into_iter()
+            .next()
+            .unwrap()
+            .items
+            .unwrap()
+            .collection;
         assert_eq!(items.len(), 3);
-        let Item::System(weekly) = &items[0] else { panic!("a system playlist") };
+        let Item::System(weekly) = &items[0] else {
+            panic!("a system playlist")
+        };
         let shown = system_playlist(weekly);
         assert_eq!(shown.id.id, "soundcloud:system-playlists:weekly:1");
         assert_eq!(shown.name, "Weekly Wave");

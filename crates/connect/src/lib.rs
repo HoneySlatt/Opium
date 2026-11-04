@@ -372,7 +372,10 @@ pub(crate) fn failed(what: &str) -> io::Error {
     io::Error::other(what.to_owned())
 }
 
-pub(crate) async fn within<T>(limit: Duration, f: impl Future<Output = io::Result<T>>) -> io::Result<T> {
+pub(crate) async fn within<T>(
+    limit: Duration,
+    f: impl Future<Output = io::Result<T>>,
+) -> io::Result<T> {
     timeout(limit, f)
         .await
         .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "no answer"))?
@@ -631,14 +634,21 @@ impl Node {
     pub fn lenders(&self) -> Vec<String> {
         lock(&self.inner.seen)
             .iter()
-            .filter(|(_, s)| s.device.kind == DeviceKind::Computer && s.link.as_ref().is_some_and(Link::alive))
+            .filter(|(_, s)| {
+                s.device.kind == DeviceKind::Computer && s.link.as_ref().is_some_and(Link::alive)
+            })
             .map(|(id, _)| id.clone())
             .collect()
     }
 
     /// Borrow `track` from `from`, a paired device lending songs: what it
     /// is, and its bytes as they come.
-    pub async fn borrow(&self, from: &str, track: Track, original: bool) -> io::Result<(Lent, Borrowed)> {
+    pub async fn borrow(
+        &self,
+        from: &str,
+        track: Track,
+        original: bool,
+    ) -> io::Result<(Lent, Borrowed)> {
         self.inner
             .rt
             .spawn(self.inner.clone().borrow(from.to_owned(), track, original))
@@ -767,7 +777,12 @@ impl Inner {
     }
 
     /// Borrow `track` from `id`, over a connection of its own.
-    async fn borrow(self: Arc<Self>, id: String, track: Track, original: bool) -> io::Result<(Lent, Borrowed)> {
+    async fn borrow(
+        self: Arc<Self>,
+        id: String,
+        track: Track,
+        original: bool,
+    ) -> io::Result<(Lent, Borrowed)> {
         let key = lock(&self.store)
             .key(&id)
             .ok_or_else(|| failed("not paired"))?;
@@ -901,7 +916,8 @@ impl Inner {
         if let Some(s) = lock(&self.seen).get_mut(id) {
             s.failures = 0;
         }
-        self.talk(hello.device, hello.digests, stream, keys, true).await
+        self.talk(hello.device, hello.digests, stream, keys, true)
+            .await
     }
 
     /// A device connected to this one: to talk, or to pair (on the network
@@ -928,7 +944,8 @@ impl Inner {
             return lend::lend(stream, keys, lender.as_deref()).await;
         }
         lock(&self.store).update(&hello.device);
-        self.talk(hello.device, hello.digests, stream, keys, false).await
+        self.talk(hello.device, hello.digests, stream, keys, false)
+            .await
     }
 
     /// Talk with `peer` over a connection both have proved theirs.
@@ -1614,7 +1631,11 @@ mod tests {
 
     #[async_trait::async_trait]
     impl Lender for Lends {
-        async fn lend(&self, track: Track, _: bool) -> Result<(Lent, Box<dyn std::io::Read + Send>), String> {
+        async fn lend(
+            &self,
+            track: Track,
+            _: bool,
+        ) -> Result<(Lent, Box<dyn std::io::Read + Send>), String> {
             if track.id.id == "refused" {
                 return Err("not this one".into());
             }
@@ -1637,9 +1658,20 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("connect-lend-{}", std::process::id()));
         let node = |name: &str, kind| {
             let d = dir.join(name);
-            Node::launch(name.into(), kind, &d, Kept::open(&d, Vec::new), None, Box::new(|_| {}), false)
+            Node::launch(
+                name.into(),
+                kind,
+                &d,
+                Kept::open(&d, Vec::new),
+                None,
+                Box::new(|_| {}),
+                false,
+            )
         };
-        let (phone, computer) = (node("p", DeviceKind::Phone), node("c", DeviceKind::Computer));
+        let (phone, computer) = (
+            node("p", DeviceKind::Phone),
+            node("c", DeviceKind::Computer),
+        );
         let key = [5; 32];
         lock(&phone.inner.store).pair(computer.me(), key);
         lock(&computer.inner.store).pair(phone.me(), key);

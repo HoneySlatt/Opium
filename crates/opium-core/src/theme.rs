@@ -110,9 +110,13 @@ impl Palette {
             primary: self.primary.unwrap_or(d.primary),
             on_primary: self.on_primary.unwrap_or(d.on_primary),
             secondary_container: self.secondary_container.unwrap_or(d.secondary_container),
-            on_secondary_container: self.on_secondary_container.unwrap_or(d.on_secondary_container),
+            on_secondary_container: self
+                .on_secondary_container
+                .unwrap_or(d.on_secondary_container),
             tertiary_container: self.tertiary_container.unwrap_or(d.tertiary_container),
-            on_tertiary_container: self.on_tertiary_container.unwrap_or(d.on_tertiary_container),
+            on_tertiary_container: self
+                .on_tertiary_container
+                .unwrap_or(d.on_tertiary_container),
         }
     }
 

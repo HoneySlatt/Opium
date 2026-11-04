@@ -10,8 +10,8 @@ use apple_music::AppleMusic;
 pub use downloads::queue::{Downloading, KeptSong};
 use downloads::queue::{Fetched, Fetcher, Listener};
 use downloads::store::{Song, Store};
-use opium_core::model::{ItemId, ProviderKind, Track};
 use navidrome::Navidrome;
+use opium_core::model::{ItemId, ProviderKind, Track};
 use soundcloud::SoundCloud;
 
 use super::{Playable, Replies, Reply};

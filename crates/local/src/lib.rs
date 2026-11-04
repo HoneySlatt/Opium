@@ -12,14 +12,17 @@ use std::sync::{Arc, Mutex, RwLock};
 
 use async_trait::async_trait;
 use opium_core::model::{
-    Album, Artist, ArtistDetail, AudioQuality, Collection, Cursor, ItemId, Page, Playlist, ProviderKind,
-    SearchResults, Track,
+    Album, Artist, ArtistDetail, AudioQuality, Collection, Cursor, ItemId, Page, Playlist,
+    ProviderKind, SearchResults, Track,
 };
 use opium_core::text::fold;
 use opium_core::{Error, Provider, Result};
 
 pub use scan::{EXTENSIONS, is_music};
-pub use tags::{Cover, TagEdit, Tags, lyrics_from, lyrics_of, read_tags, read_tags_from, write_tags, write_tags_to};
+pub use tags::{
+    Cover, TagEdit, Tags, lyrics_from, lyrics_of, read_tags, read_tags_from, write_tags,
+    write_tags_to,
+};
 pub use watch::Watching;
 
 pub use scan::Entry;
@@ -234,13 +237,13 @@ fn audio(id: &ItemId, index: &Index) -> Result<Audio> {
         return Err(Error::Protocol("not a file of this device".into()));
     }
     let path = Path::new(&id.id);
-    let file = std::fs::File::open(path).map_err(|e| Error::Playback(format!("{}: {e}", path.display())))?;
-    let len = file.metadata().map_err(|e| Error::Playback(e.to_string()))?.len();
-    let quality = index
-        .entries
-        .iter()
-        .find(|e| e.path == id.id)
-        .map(quality);
+    let file = std::fs::File::open(path)
+        .map_err(|e| Error::Playback(format!("{}: {e}", path.display())))?;
+    let len = file
+        .metadata()
+        .map_err(|e| Error::Playback(e.to_string()))?
+        .len();
+    let quality = index.entries.iter().find(|e| e.path == id.id).map(quality);
     Ok(Audio {
         file,
         len,
@@ -366,8 +369,11 @@ fn albums(index: &Index) -> Vec<(Album, Vec<usize>)> {
         .map(|(key, mut songs)| {
             songs.sort_by(|a, b| {
                 let (a, b) = (&index.entries[*a], &index.entries[*b]);
-                (a.disc.unwrap_or(1), a.track.unwrap_or(u32::MAX), &a.title)
-                    .cmp(&(b.disc.unwrap_or(1), b.track.unwrap_or(u32::MAX), &b.title))
+                (a.disc.unwrap_or(1), a.track.unwrap_or(u32::MAX), &a.title).cmp(&(
+                    b.disc.unwrap_or(1),
+                    b.track.unwrap_or(u32::MAX),
+                    &b.title,
+                ))
             });
             let songs_of = || songs.iter().map(|at| &index.entries[*at]);
             let first = &index.entries[songs[0]];
@@ -396,7 +402,11 @@ fn albums(index: &Index) -> Vec<(Album, Vec<usize>)> {
         })
         .collect();
     albums.sort_by(|(a, _), (b, _)| {
-        (fold(&a.artists[0]), a.year, fold(&a.title)).cmp(&(fold(&b.artists[0]), b.year, fold(&b.title)))
+        (fold(&a.artists[0]), a.year, fold(&a.title)).cmp(&(
+            fold(&b.artists[0]),
+            b.year,
+            fold(&b.title),
+        ))
     });
     albums
 }
@@ -486,7 +496,10 @@ impl Provider for Local {
                 .iter()
                 .filter(|e| {
                     let album = e.album.as_deref().unwrap_or_default();
-                    matches(&words, &format!("{} {} {album}", e.title, e.artists.join(" ")))
+                    matches(
+                        &words,
+                        &format!("{} {} {album}", e.title, e.artists.join(" ")),
+                    )
                 })
                 .map(|e| (rank(&whole, &e.title), e))
                 .collect(),
@@ -540,7 +553,11 @@ impl Provider for Local {
 
     async fn library_albums(&self, _cursor: Option<&Cursor>) -> Result<Page<Album>> {
         Ok(page(
-            self.catalog().albums.iter().map(|(a, _)| a.clone()).collect(),
+            self.catalog()
+                .albums
+                .iter()
+                .map(|(a, _)| a.clone())
+                .collect(),
         ))
     }
 
@@ -553,7 +570,12 @@ impl Provider for Local {
     }
 
     async fn recently_added(&self, _cursor: Option<&Cursor>) -> Result<Page<Collection>> {
-        let mut albums: Vec<Album> = self.catalog().albums.iter().map(|(a, _)| a.clone()).collect();
+        let mut albums: Vec<Album> = self
+            .catalog()
+            .albums
+            .iter()
+            .map(|(a, _)| a.clone())
+            .collect();
         albums.sort_by(|a, b| b.added.cmp(&a.added));
         Ok(page(albums.into_iter().map(Collection::Album).collect()))
     }
@@ -608,8 +630,9 @@ impl Provider for Local {
             .collect();
         songs.sort_by_key(|e| (std::cmp::Reverse(e.year), e.album.clone(), e.disc, e.track));
         let artwork = own.iter().find_map(|a| a.artwork.clone());
-        let (singles, albums): (Vec<Album>, Vec<Album>) =
-            own.into_iter().partition(|a| a.track_count.is_some_and(|n| n <= 3));
+        let (singles, albums): (Vec<Album>, Vec<Album>) = own
+            .into_iter()
+            .partition(|a| a.track_count.is_some_and(|n| n <= 3));
         Ok(ArtistDetail {
             artist: Artist { artwork, ..name },
             top_songs: songs
@@ -645,8 +668,14 @@ impl Provider for Local {
         Ok(lyrics_of(Path::new(&track.id), &title))
     }
 
-    async fn playlist_tracks(&self, _playlist: &ItemId, _cursor: Option<&Cursor>) -> Result<Page<Track>> {
-        Err(Error::Protocol("files have no playlists of their own".into()))
+    async fn playlist_tracks(
+        &self,
+        _playlist: &ItemId,
+        _cursor: Option<&Cursor>,
+    ) -> Result<Page<Track>> {
+        Err(Error::Protocol(
+            "files have no playlists of their own".into(),
+        ))
     }
 }
 
@@ -707,9 +736,15 @@ mod tests {
         let albums = library.library_albums(None).await.unwrap().items;
         assert_eq!(albums.len(), 1);
         assert_eq!(albums[0].track_count, Some(2));
-        assert_eq!(albums[0].artwork.as_ref().unwrap().url_template, "file:///covers/a.jpg");
+        assert_eq!(
+            albums[0].artwork.as_ref().unwrap().url_template,
+            "file:///covers/a.jpg"
+        );
         let songs = library.album_tracks(&albums[0].id).await.unwrap();
-        assert_eq!(songs.iter().map(|t| t.title.as_str()).collect::<Vec<_>>(), ["First", "Second"]);
+        assert_eq!(
+            songs.iter().map(|t| t.title.as_str()).collect::<Vec<_>>(),
+            ["First", "Second"]
+        );
         // The album's cover for its songs without one.
         assert!(songs[0].artwork.is_some());
         let artists = library.library_artists(None).await.unwrap().items;
@@ -719,7 +754,10 @@ mod tests {
         assert_eq!(found.tracks[0].title, "Second");
         let page = library.artist(&artists[0].id).await.unwrap();
         assert_eq!(page.artist.name, "Ébène");
-        assert_eq!((page.albums.len() + page.singles.len(), page.top_songs.len()), (1, 2));
+        assert_eq!(
+            (page.albums.len() + page.singles.len(), page.top_songs.len()),
+            (1, 2)
+        );
         assert!(page.artist.artwork.is_some(), "their album's cover");
         let newest = library.library_tracks_newest(None).await.unwrap().items;
         assert_eq!(newest[0].title, "Second");
@@ -771,15 +809,32 @@ mod tests {
         write_tags(&path, &edit).unwrap();
         let tags = read_tags(&path).unwrap();
         assert_eq!(
-            (tags.title.as_str(), tags.artist.as_str(), tags.album.as_str(), tags.track, tags.year),
+            (
+                tags.title.as_str(),
+                tags.artist.as_str(),
+                tags.album.as_str(),
+                tags.track,
+                tags.year
+            ),
             ("Renamed", "Someone", "An Album", Some(4), Some(1999))
         );
         assert!(library.rescan(), "the file changed");
         let track = &library.tracks()[0];
-        assert_eq!((track.title.as_str(), track.track_number), ("Renamed", Some(4)));
+        assert_eq!(
+            (track.title.as_str(), track.track_number),
+            ("Renamed", Some(4))
+        );
         assert!(track.artwork.is_some(), "its cover");
         // Cleared again.
-        write_tags(&path, &TagEdit { title: Some(String::new()), cover: Cover::Removed, ..TagEdit::default() }).unwrap();
+        write_tags(
+            &path,
+            &TagEdit {
+                title: Some(String::new()),
+                cover: Cover::Removed,
+                ..TagEdit::default()
+            },
+        )
+        .unwrap();
         assert_eq!(read_tags(&path).unwrap().title, "");
         library.rescan();
         assert_eq!(library.tracks()[0].title, "song");
@@ -812,16 +867,22 @@ mod tests {
             if file.primary_tag().is_none() {
                 file.insert_tag(lofty::tag::Tag::new(file.primary_tag_type()));
             }
-            file.primary_tag_mut()
-                .unwrap()
-                .insert_text(lofty::tag::ItemKey::UnsyncLyrics, "First words\nSecond words".into());
-            file.save_to_path(&path, lofty::config::WriteOptions::default()).unwrap();
+            file.primary_tag_mut().unwrap().insert_text(
+                lofty::tag::ItemKey::UnsyncLyrics,
+                "First words\nSecond words".into(),
+            );
+            file.save_to_path(&path, lofty::config::WriteOptions::default())
+                .unwrap();
         }
         let tagged = library.lyrics(&id).await.unwrap().unwrap();
         assert!(!tagged.synced);
         assert_eq!(tagged.lines[0].text, "First words");
         // An .lrc beside it comes first, timed, line by line.
-        std::fs::write(path.with_extension("lrc"), "[00:01.00]<00:01.00>Hello <00:01.50>world\n[00:03.00]Next\n").unwrap();
+        std::fs::write(
+            path.with_extension("lrc"),
+            "[00:01.00]<00:01.00>Hello <00:01.50>world\n[00:03.00]Next\n",
+        )
+        .unwrap();
         let beside = library.lyrics(&id).await.unwrap().unwrap();
         assert!(beside.synced);
         assert_eq!(beside.lines[0].text, "Hello world");
@@ -860,15 +921,30 @@ mod tests {
                 album: Some("Real Album".into()),
                 ..Default::default()
             };
-            let mut file = std::fs::OpenOptions::new().read(true).write(true).open(&path).unwrap();
+            let mut file = std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(&path)
+                .unwrap();
             v1.save_to(&mut file, WriteOptions::default()).unwrap();
         }
         assert_eq!(read_tags(&path).unwrap().title, "Real Title", "read before");
 
-        write_tags(&path, &TagEdit { album: Some("Edited Album".into()), ..TagEdit::default() }).unwrap();
+        write_tags(
+            &path,
+            &TagEdit {
+                album: Some("Edited Album".into()),
+                ..TagEdit::default()
+            },
+        )
+        .unwrap();
         let tags = read_tags(&path).unwrap();
         assert_eq!(
-            (tags.title.as_str(), tags.artist.as_str(), tags.album.as_str()),
+            (
+                tags.title.as_str(),
+                tags.artist.as_str(),
+                tags.album.as_str()
+            ),
             ("Real Title", "Real Artist", "Edited Album")
         );
         // The file's own kind of tag now holds it all, so that another
@@ -881,9 +957,12 @@ mod tests {
                 primary.artist().as_deref(),
                 primary.album().as_deref()
             ),
-            (Some("Real Title"), Some("Real Artist"), Some("Edited Album"))
+            (
+                Some("Real Title"),
+                Some("Real Artist"),
+                Some("Edited Album")
+            )
         );
         std::fs::remove_dir_all(dir).unwrap();
     }
-
 }

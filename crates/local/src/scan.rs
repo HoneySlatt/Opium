@@ -131,7 +131,9 @@ pub(crate) fn walk(folders: &[PathBuf]) -> Vec<(PathBuf, u64, u64)> {
                 }
             } else if !hidden && is_music(&path) {
                 // Through a link, as what it points to.
-                let Ok(meta) = std::fs::metadata(&path) else { continue };
+                let Ok(meta) = std::fs::metadata(&path) else {
+                    continue;
+                };
                 // A name that isn't text can't be told apart from another
                 // of its kind once said, so it is left out rather than
                 // listed as a song that won't open.
@@ -147,9 +149,16 @@ pub(crate) fn walk(folders: &[PathBuf]) -> Vec<(PathBuf, u64, u64)> {
 /// Read `folders` again: the files kept as they were reused, the others
 /// read; whether anything changed.
 pub fn scan(folders: &[PathBuf], before: &Index, covers: &Path) -> (Index, bool) {
-    let known: HashMap<&str, &Entry> = before.entries.iter().map(|e| (e.path.as_str(), e)).collect();
-    let skipped_before: HashMap<&str, (u64, u64)> =
-        before.skipped.iter().map(|(p, size, modified)| (p.as_str(), (*size, *modified))).collect();
+    let known: HashMap<&str, &Entry> = before
+        .entries
+        .iter()
+        .map(|e| (e.path.as_str(), e))
+        .collect();
+    let skipped_before: HashMap<&str, (u64, u64)> = before
+        .skipped
+        .iter()
+        .map(|(p, size, modified)| (p.as_str(), (*size, *modified)))
+        .collect();
     // A folder that can't be read at all — a drive unplugged, a share not
     // mounted — says nothing about its songs, so what was read of it last
     // time stays as it was rather than its half of the library going (and
@@ -158,10 +167,7 @@ pub fn scan(folders: &[PathBuf], before: &Index, covers: &Path) -> (Index, bool)
         .into_iter()
         .filter(|root| std::fs::read_dir(root).is_err())
         .collect();
-    let under_away = |path: &str| {
-        away.iter()
-            .any(|root| Path::new(path).starts_with(root))
-    };
+    let under_away = |path: &str| away.iter().any(|root| Path::new(path).starts_with(root));
     let files = walk(folders);
     let mut kept = Vec::with_capacity(files.len());
     let mut skipped = Vec::new();
@@ -189,24 +195,31 @@ pub fn scan(folders: &[PathBuf], before: &Index, covers: &Path) -> (Index, bool)
             continue;
         }
         match known.get(name.as_ref()) {
-            Some(entry) if entry.size == size && entry.modified == modified => kept.push((*entry).clone()),
+            Some(entry) if entry.size == size && entry.modified == modified => {
+                kept.push((*entry).clone())
+            }
             entry => fresh.push((path, size, modified, entry.map(|e| e.added))),
         }
     }
     // Read on every core: tags are mostly waiting on the disk.
     let next = AtomicUsize::new(0);
     let read = Mutex::new(Vec::with_capacity(fresh.len()));
-    let workers = std::thread::available_parallelism().map_or(4, |n| n.get()).min(8);
+    let workers = std::thread::available_parallelism()
+        .map_or(4, |n| n.get())
+        .min(8);
     std::thread::scope(|scope| {
         for _ in 0..workers {
-            scope.spawn(|| loop {
-                let i = next.fetch_add(1, Ordering::Relaxed);
-                let Some((path, size, modified, added)) = fresh.get(i) else {
-                    return;
-                };
-                let entry = read_file(path, *size, *modified, added.unwrap_or(*modified), covers)
-                    .ok_or_else(|| (path.to_string_lossy().into_owned(), *size, *modified));
-                read.lock().unwrap_or_else(|e| e.into_inner()).push(entry);
+            scope.spawn(|| {
+                loop {
+                    let i = next.fetch_add(1, Ordering::Relaxed);
+                    let Some((path, size, modified, added)) = fresh.get(i) else {
+                        return;
+                    };
+                    let entry =
+                        read_file(path, *size, *modified, added.unwrap_or(*modified), covers)
+                            .ok_or_else(|| (path.to_string_lossy().into_owned(), *size, *modified));
+                    read.lock().unwrap_or_else(|e| e.into_inner()).push(entry);
+                }
             });
         }
     });
@@ -225,7 +238,13 @@ pub fn scan(folders: &[PathBuf], before: &Index, covers: &Path) -> (Index, bool)
 
 /// The file at `path` as an entry, its tags read; none if it isn't music
 /// the player decodes.
-pub fn read_file(path: &Path, size: u64, modified: u64, added: u64, covers: &Path) -> Option<Entry> {
+pub fn read_file(
+    path: &Path,
+    size: u64,
+    modified: u64,
+    added: u64,
+    covers: &Path,
+) -> Option<Entry> {
     let file = lofty::read_from_path(path).ok()?;
     let props = file.properties();
     let codec = match file.file_type() {
@@ -245,7 +264,13 @@ pub fn read_file(path: &Path, size: u64, modified: u64, added: u64, covers: &Pat
     // What the file says, every tag of it read: see [`tags::tags_of`].
     let said = crate::tags::tags_of(&file);
     let mut artists: Vec<String> = tag
-        .map(|t| t.get_strings(ItemKey::TrackArtist).map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned).collect())
+        .map(|t| {
+            t.get_strings(ItemKey::TrackArtist)
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_owned)
+                .collect()
+        })
         .unwrap_or_default();
     if artists.is_empty() {
         artists.extend(Some(said.artist.clone()).filter(|a| !a.is_empty()));
@@ -309,7 +334,9 @@ pub fn keep_cover(bytes: &[u8], covers: &Path) -> Option<String> {
 fn folder_covers(entries: &mut [Entry], covers: &Path) {
     let mut found: HashMap<PathBuf, Option<String>> = HashMap::new();
     for entry in entries.iter_mut().filter(|e| e.cover.is_none()) {
-        let Some(dir) = Path::new(&entry.path).parent() else { continue };
+        let Some(dir) = Path::new(&entry.path).parent() else {
+            continue;
+        };
         entry.cover = found
             .entry(dir.to_owned())
             .or_insert_with(|| folder_cover(dir, covers))
@@ -338,7 +365,9 @@ fn folder_cover(dir: &Path, covers: &Path) -> Option<String> {
 
 /// FNV-1a, 64 bits.
 pub fn fnv(bytes: &[u8]) -> u64 {
-    bytes.iter().fold(0xcbf2_9ce4_8422_2325, |h, b| (h ^ *b as u64).wrapping_mul(0x0000_0100_0000_01b3))
+    bytes.iter().fold(0xcbf2_9ce4_8422_2325, |h, b| {
+        (h ^ *b as u64).wrapping_mul(0x0000_0100_0000_01b3)
+    })
 }
 
 #[cfg(test)]
@@ -393,7 +422,11 @@ pub(crate) mod tests {
         // Not music the tags can be read from: skipped, and not read again.
         std::fs::write(music.join("broken.mp3"), b"not an mp3").unwrap();
         std::fs::write(music.join(".hidden").join("x.flac"), b"x").unwrap();
-        assert_eq!(walk(std::slice::from_ref(&music)).len(), 2, "hidden folders are left out");
+        assert_eq!(
+            walk(std::slice::from_ref(&music)).len(),
+            2,
+            "hidden folders are left out"
+        );
         let covers = dir.join("covers");
         let (index, changed) = scan(std::slice::from_ref(&music), &Index::default(), &covers);
         assert!(changed);
@@ -442,7 +475,10 @@ pub(crate) mod tests {
         std::fs::remove_dir_all(&music).unwrap();
         let (after, changed) = scan(std::slice::from_ref(&music), &index, &covers);
         assert_eq!(after.entries.len(), 1, "its songs stay as they were");
-        assert_eq!(after.entries[0].added, added, "and keep when they were added");
+        assert_eq!(
+            after.entries[0].added, added,
+            "and keep when they were added"
+        );
         assert!(!changed);
 
         // Emptied for real, with the folder there: the song goes.
@@ -451,5 +487,4 @@ pub(crate) mod tests {
         assert!(empty.entries.is_empty() && changed);
         std::fs::remove_dir_all(dir).unwrap();
     }
-
 }

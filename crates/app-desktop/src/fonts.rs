@@ -151,8 +151,14 @@ fn system_fallbacks() -> Vec<Fallback> {
 /// family and whether it is variable; none if it is the wrong kind of font.
 fn candidate(line: &str) -> Option<(u8, &str, u32, &str, bool)> {
     let mut f = line.split('|');
-    let (file, index, family, style, variable, slant) =
-        (f.next()?, f.next()?, f.next()?, f.next()?, f.next()?, f.next()?);
+    let (file, index, family, style, variable, slant) = (
+        f.next()?,
+        f.next()?,
+        f.next()?,
+        f.next()?,
+        f.next()?,
+        f.next()?,
+    );
     let index: u32 = index.parse().ok()?;
     let variable = variable == "True";
     // Upright only: a variable font's own entry has no style to tell its
@@ -165,8 +171,8 @@ fn candidate(line: &str) -> Option<(u8, &str, u32, &str, bool)> {
         || style.contains("Condensed")
         || slant != "0";
     // A named instance of a variable font, or another weight.
-    let regular = variable && index >> 16 == 0
-        || !variable && (style == "Regular" || style == "Book");
+    let regular =
+        variable && index >> 16 == 0 || !variable && (style == "Regular" || style == "Book");
     if odd || !regular {
         return None;
     }

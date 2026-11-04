@@ -4,12 +4,12 @@
 use std::sync::{Arc, RwLock};
 
 use apple_music::{AppleMusic, Protected};
+use navidrome::Navidrome;
 use opium_core::Provider;
 use opium_core::model::{
     Album, AlbumExtras, Artist, ArtistDetail, Collection, Cursor, FavouriteKind, ItemId, Lyrics,
     Playlist, ProviderKind, SearchResults, Shelf, SongLinks, Track,
 };
-use navidrome::Navidrome;
 use services::Services;
 
 uniffi::setup_scaffolding!();
@@ -56,11 +56,14 @@ impl From<LocalFile> for local::Entry {
             // Apple Lossless has the same type as AAC: told by its rate, or
             // a depth no AAC has.
             "audio/mp4" | "audio/x-m4a" | "audio/m4a" | "audio/aac" | "audio/mp4a-latm"
-                if f.bitrate_kbps.is_some_and(|k| k > 500) || f.bit_depth.is_some_and(|b| b > 16) =>
+                if f.bitrate_kbps.is_some_and(|k| k > 500)
+                    || f.bit_depth.is_some_and(|b| b > 16) =>
             {
                 Codec::Alac
             }
-            "audio/mp4" | "audio/x-m4a" | "audio/m4a" | "audio/aac" | "audio/mp4a-latm" => Codec::Aac,
+            "audio/mp4" | "audio/x-m4a" | "audio/m4a" | "audio/aac" | "audio/mp4a-latm" => {
+                Codec::Aac
+            }
             other => Codec::Other(other.to_owned()),
         };
         local::Entry {
@@ -847,7 +850,10 @@ impl Session {
 
     /// A session on the Navidrome server's own API, for `password`, kept
     /// with the sign-in (see `navidrome_kept`): whether it was given.
-    pub async fn navidrome_open_session(self: Arc<Self>, password: String) -> Result<bool, OpiumError> {
+    pub async fn navidrome_open_session(
+        self: Arc<Self>,
+        password: String,
+    ) -> Result<bool, OpiumError> {
         off(async move {
             let server = self.services().navidrome.ok_or(OpiumError::NotSignedIn)?;
             Ok(server.open_session(&password).await?)
@@ -994,17 +1000,27 @@ impl Session {
         off(async move { Ok(self.provider(source)?.home().await?) }).await
     }
 
-    pub async fn new_music(self: Arc<Self>, source: ProviderKind) -> Result<Vec<Shelf>, OpiumError> {
+    pub async fn new_music(
+        self: Arc<Self>,
+        source: ProviderKind,
+    ) -> Result<Vec<Shelf>, OpiumError> {
         off(async move { Ok(self.provider(source)?.new_music().await?) }).await
     }
 
     /// `source`'s genres, to browse from Search.
-    pub async fn genres(self: Arc<Self>, source: ProviderKind) -> Result<Vec<opium_core::model::Genre>, OpiumError> {
+    pub async fn genres(
+        self: Arc<Self>,
+        source: ProviderKind,
+    ) -> Result<Vec<opium_core::model::Genre>, OpiumError> {
         off(async move { Ok(self.provider(source)?.genres().await?) }).await
     }
 
     /// A genre of `source`'s, as shelves.
-    pub async fn genre_charts(self: Arc<Self>, source: ProviderKind, genre: String) -> Result<Vec<Shelf>, OpiumError> {
+    pub async fn genre_charts(
+        self: Arc<Self>,
+        source: ProviderKind,
+        genre: String,
+    ) -> Result<Vec<Shelf>, OpiumError> {
         off(async move { Ok(self.provider(source)?.genre_charts(&genre).await?) }).await
     }
 
@@ -1992,7 +2008,9 @@ pub enum FileCover {
     Kept,
     Removed,
     /// A JPEG, the front cover from now on.
-    Set { jpeg: Vec<u8> },
+    Set {
+        jpeg: Vec<u8>,
+    },
 }
 
 /// What to change in a file's tags: each text given is written (empty

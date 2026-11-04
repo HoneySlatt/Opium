@@ -323,7 +323,11 @@ mod tests {
 
     #[test]
     fn the_sites_lyrics_are_timed_line_by_line() {
-        let timed = lrc::parse("[00:10.00]<00:10.00>Hello <00:10.50>world\n[00:12.00]Next\n", "Song").unwrap();
+        let timed = lrc::parse(
+            "[00:10.00]<00:10.00>Hello <00:10.50>world\n[00:12.00]Next\n",
+            "Song",
+        )
+        .unwrap();
         assert!(!timed.lines[0].words.is_empty());
         let lines = line_by_line(timed);
         assert_eq!(lines.lines[0].text, "Hello world");
