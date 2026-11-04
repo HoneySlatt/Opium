@@ -1197,6 +1197,7 @@ pub(super) fn song_columns(
             super::tracks::favourite_star(&row_ui, theme, pos2(end + 12.0, cell.center().y - 9.0));
         }
         let facts = || TrackFacts {
+            file: track.id.provider == music_core::model::ProviderKind::Local,
             has_album: track.album_id.is_some(),
             favourite,
             in_library: app.track_in_library(track),

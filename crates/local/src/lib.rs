@@ -3,6 +3,7 @@
 //! their pictures the covers. They play as they are.
 
 mod scan;
+mod tags;
 mod watch;
 
 use std::collections::HashMap;
@@ -18,6 +19,7 @@ use music_core::text::fold;
 use music_core::{Error, Provider, Result};
 
 pub use scan::{EXTENSIONS, is_music};
+pub use tags::{Cover, TagEdit, Tags, read_tags, write_tags};
 pub use watch::Watching;
 
 use scan::{Entry, Index};
@@ -557,6 +559,55 @@ mod tests {
         assert!(page.artist.artwork.is_some(), "their album's cover");
         let newest = library.library_tracks_newest(None).await.unwrap().items;
         assert_eq!(newest[0].title, "Second");
+    }
+
+    #[test]
+    fn tags_written_are_read_back_and_the_index_follows() {
+        let dir = std::env::temp_dir().join(format!("local-tags-{}", std::process::id()));
+        let music = dir.join("music");
+        std::fs::create_dir_all(&music).unwrap();
+        let path = music.join("song.wav");
+        std::fs::write(&path, scan::tests::wav()).unwrap();
+        let library = Local::open(vec![music.clone()], &dir.join("cache"));
+        library.rescan();
+        assert_eq!(library.tracks()[0].title, "song");
+        // A picture made a square JPEG as a picked one is.
+        let cover = music_core::cover::square(&image_png()).expect("a cover");
+        let edit = TagEdit {
+            title: Some("Renamed".into()),
+            artist: Some("Someone".into()),
+            album: Some("An Album".into()),
+            album_artist: Some("Someone".into()),
+            track: Some(Some(4)),
+            year: Some(Some(1999)),
+            cover: Cover::Set(cover),
+            ..TagEdit::default()
+        };
+        write_tags(&path, &edit).unwrap();
+        let tags = read_tags(&path).unwrap();
+        assert_eq!(
+            (tags.title.as_str(), tags.artist.as_str(), tags.album.as_str(), tags.track, tags.year),
+            ("Renamed", "Someone", "An Album", Some(4), Some(1999))
+        );
+        assert!(library.rescan(), "the file changed");
+        let track = &library.tracks()[0];
+        assert_eq!((track.title.as_str(), track.track_number), ("Renamed", Some(4)));
+        assert!(track.artwork.is_some(), "its cover");
+        // Cleared again.
+        write_tags(&path, &TagEdit { title: Some(String::new()), cover: Cover::Removed, ..TagEdit::default() }).unwrap();
+        assert_eq!(read_tags(&path).unwrap().title, "");
+        library.rescan();
+        assert_eq!(library.tracks()[0].title, "song");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// A small PNG.
+    fn image_png() -> Vec<u8> {
+        let mut png = std::io::Cursor::new(Vec::new());
+        image::RgbImage::from_pixel(8, 8, image::Rgb([200, 40, 90]))
+            .write_to(&mut png, image::ImageFormat::Png)
+            .unwrap();
+        png.into_inner()
     }
 
     #[test]

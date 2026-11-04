@@ -212,6 +212,7 @@ fn song(app: &mut App, ui: &mut Ui, theme: &Theme, column: Rect) {
     // The track's menu, as in the lists (a station has none).
     let station = track.id.id.starts_with("ra.");
     let facts = TrackFacts {
+        file: track.id.provider == music_core::model::ProviderKind::Local,
         has_album: track.album_id.is_some(),
         favourite: app.is_favourite(FavouriteKind::Song, &track.id),
         in_library: app.track_in_library(&track),

@@ -289,6 +289,9 @@ pub(super) struct TrackFacts {
     pub in_playlist: bool,
     /// Whether it is downloaded (or on its way), when it can be.
     pub download: Option<bool>,
+    /// A music file of this computer: its tags can be changed, and it has
+    /// no favourite, station nor library of a service.
+    pub file: bool,
 }
 
 /// The track menu; Add to Library only when the song isn't there yet, Go to
@@ -323,11 +326,17 @@ fn track_entries(facts: TrackFacts) -> Vec<Entry<TrackChoice>> {
     let mut entries = vec![
         Entry::Item(icons::NEXT, "Play Next", TrackChoice::PlayNext),
         Entry::Item(icons::LATER, "Add to Queue", TrackChoice::AddToQueue),
-        Entry::Item(icons::RADIO, "Start Radio", TrackChoice::StartRadio),
-        Entry::Line,
-        star,
     ];
-    if !facts.in_library {
+    if !facts.file {
+        entries.extend([
+            Entry::Item(icons::RADIO, "Start Radio", TrackChoice::StartRadio),
+            Entry::Line,
+            star,
+        ]);
+    } else {
+        entries.push(Entry::Line);
+    }
+    if !facts.in_library && !facts.file {
         entries.push(Entry::Item(
             icons::PLUS,
             "Add to Library",
@@ -381,6 +390,10 @@ fn track_entries(facts: TrackFacts) -> Vec<Entry<TrackChoice>> {
             "Remove from Library",
             TrackChoice::RemoveFromLibrary,
         ));
+    }
+    if facts.file {
+        entries.push(Entry::Line);
+        entries.push(Entry::Item(icons::EDIT, "Get Info…", TrackChoice::GetInfo));
     }
     entries
 }

@@ -8,6 +8,7 @@ mod drawer;
 mod fab;
 mod grid;
 mod home;
+mod info_dialog;
 mod library;
 mod library_artist;
 mod loading;
@@ -97,6 +98,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         playlist_dialog::show_new(app, ui.ctx());
         playlist_dialog::show_navidrome_password(app, ui.ctx());
         playlist_dialog::show_delete(app, ui.ctx());
+        info_dialog::show(app, ui.ctx());
         detail::notes_window(app, ui.ctx());
         pairing::show(app, ui.ctx());
         shortcuts(app, ui);
@@ -320,6 +322,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     playlist_dialog::show_new(app, ui.ctx());
     playlist_dialog::show_navidrome_password(app, ui.ctx());
     playlist_dialog::show_delete(app, ui.ctx());
+    info_dialog::show(app, ui.ctx());
     detail::notes_window(app, ui.ctx());
     pairing::show(app, ui.ctx());
     shortcuts(app, ui);

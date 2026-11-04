@@ -202,6 +202,11 @@ pub enum Request {
     /// Files opened from elsewhere (the file manager, the command line, a
     /// drop on the window), a folder for its music files: to play now.
     OpenFiles(Vec<PathBuf>),
+    /// Write `edit` into the tags of the music files `paths` name.
+    WriteTags {
+        paths: Vec<PathBuf>,
+        edit: local::TagEdit,
+    },
     /// Every service's library songs as they were added, the last first.
     NewestSongs,
     /// An album and its tracks.
@@ -280,6 +285,8 @@ pub enum Reply {
     FilesChanged,
     /// Files opened from elsewhere, as songs, to play.
     Opened(Vec<Track>),
+    /// The tags were written, or why some couldn't be.
+    TagsWritten(Result<(), String>),
     PlaylistEdited {
         id: ItemId,
         name: String,
@@ -1314,6 +1321,36 @@ async fn run(
                 });
                 continue;
             }
+            Request::WriteTags { paths, edit } => {
+                let files = local.clone();
+                tokio::spawn(async move {
+                    let written = tokio::task::spawn_blocking(move || {
+                        let failed: Vec<String> = paths
+                            .iter()
+                            .filter_map(|path| {
+                                let name = path.file_name()?.to_string_lossy().into_owned();
+                                local::write_tags(path, &edit).err().map(|e| format!("{name}: {e}"))
+                            })
+                            .collect();
+                        // Read again at once, not when the watching settles.
+                        let changed = files.as_ref().is_some_and(|f| f.rescan());
+                        (failed, changed, files)
+                    })
+                    .await;
+                    let Ok((failed, changed, files)) = written else {
+                        return replies.send(Reply::TagsWritten(Err("the tags couldn't be written".into())));
+                    };
+                    if let (true, Some(files)) = (changed, files) {
+                        show_local(&files, false, &replies);
+                        replies.send(Reply::FilesChanged);
+                    }
+                    replies.send(Reply::TagsWritten(match failed.is_empty() {
+                        true => Ok(()),
+                        false => Err(failed.join("; ")),
+                    }));
+                });
+                continue;
+            }
             Request::SetService { provider, on } => {
                 if on {
                     turned_off.remove(&provider);
@@ -1816,6 +1853,7 @@ async fn run(
             | Request::SetLocalFolders(_)
             | Request::RescanLocal
             | Request::OpenFiles(_)
+            | Request::WriteTags { .. }
             | Request::SignOut(_)
             | Request::SignInSoundCloud
             | Request::ReconnectSoundCloud

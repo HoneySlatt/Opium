@@ -1,0 +1,138 @@
+//! A file's tags, as the Info window shows them and writes them back.
+
+use std::path::Path;
+
+use lofty::config::WriteOptions;
+use lofty::file::{AudioFile, TaggedFileExt};
+use lofty::picture::{MimeType, Picture, PictureType};
+use lofty::tag::{Accessor, ItemKey, Tag};
+
+/// What a file's tags say, an empty text for none.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Tags {
+    pub title: String,
+    pub artist: String,
+    pub album: String,
+    pub album_artist: String,
+    pub genre: String,
+    pub track: Option<u32>,
+    pub disc: Option<u32>,
+    pub year: Option<u16>,
+}
+
+/// What a cover becomes.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum Cover {
+    #[default]
+    Kept,
+    Removed,
+    /// A JPEG, the front cover from now on.
+    Set(Vec<u8>),
+}
+
+/// What to change in a file's tags: each field given is written (an empty
+/// text, a `None` number clears it), the others are left as they are.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TagEdit {
+    pub title: Option<String>,
+    pub artist: Option<String>,
+    pub album: Option<String>,
+    pub album_artist: Option<String>,
+    pub genre: Option<String>,
+    pub track: Option<Option<u32>>,
+    pub disc: Option<Option<u32>>,
+    pub year: Option<Option<u16>>,
+    pub cover: Cover,
+}
+
+impl TagEdit {
+    pub fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
+/// The tags of the file at `path`, as written in it.
+pub fn read_tags(path: &Path) -> Option<Tags> {
+    let file = lofty::read_from_path(path).ok()?;
+    let Some(tag) = file.primary_tag().or_else(|| file.first_tag()) else {
+        return Some(Tags::default());
+    };
+    let text = |value: Option<std::borrow::Cow<'_, str>>| value.map(|v| v.trim().to_owned()).unwrap_or_default();
+    Some(Tags {
+        title: text(tag.title()),
+        artist: text(tag.artist()),
+        album: text(tag.album()),
+        album_artist: tag.get_string(ItemKey::AlbumArtist).map(|v| v.trim().to_owned()).unwrap_or_default(),
+        genre: text(tag.genre()),
+        track: tag.track(),
+        disc: tag.disk(),
+        year: tag.date().map(|d| d.year).filter(|&y| y > 0),
+    })
+}
+
+/// Write `edit` into the file at `path`, in its own kind of tag.
+pub fn write_tags(path: &Path, edit: &TagEdit) -> Result<(), String> {
+    let mut file = lofty::read_from_path(path).map_err(|e| e.to_string())?;
+    if file.primary_tag().is_none() {
+        file.insert_tag(Tag::new(file.primary_tag_type()));
+    }
+    let tag = file
+        .primary_tag_mut()
+        .ok_or("this file takes no tags")?;
+    let set = |tag: &mut Tag, value: &Option<String>, put: fn(&mut Tag, String), clear: fn(&mut Tag)| {
+        match value.as_deref().map(str::trim) {
+            Some("") => clear(tag),
+            Some(text) => put(tag, text.to_owned()),
+            None => {}
+        }
+    };
+    set(tag, &edit.title, Tag::set_title, Tag::remove_title);
+    set(tag, &edit.artist, Tag::set_artist, Tag::remove_artist);
+    set(tag, &edit.album, Tag::set_album, Tag::remove_album);
+    set(tag, &edit.genre, Tag::set_genre, Tag::remove_genre);
+    set(
+        tag,
+        &edit.album_artist,
+        |t, v| {
+            t.insert_text(ItemKey::AlbumArtist, v);
+        },
+        |t| t.remove_key(ItemKey::AlbumArtist),
+    );
+    match edit.track {
+        Some(Some(n)) => tag.set_track(n),
+        Some(None) => tag.remove_track(),
+        None => {}
+    }
+    match edit.disc {
+        Some(Some(n)) => tag.set_disk(n),
+        Some(None) => tag.remove_disk(),
+        None => {}
+    }
+    match edit.year {
+        Some(Some(year)) => tag.set_date(lofty::tag::items::Timestamp {
+            year,
+            ..Default::default()
+        }),
+        Some(None) => tag.remove_date(),
+        None => {}
+    }
+    match &edit.cover {
+        Cover::Kept => {}
+        Cover::Removed => {
+            while !tag.pictures().is_empty() {
+                tag.remove_picture(0);
+            }
+        }
+        Cover::Set(jpeg) => {
+            tag.remove_picture_type(PictureType::CoverFront);
+            tag.push_picture(
+                Picture::unchecked(jpeg.clone())
+                    .pic_type(PictureType::CoverFront)
+                    .mime_type(MimeType::Jpeg)
+                    .build(),
+            );
+        }
+    }
+    file.save_to_path(path, WriteOptions::default())
+        .map_err(|e| e.to_string())
+}

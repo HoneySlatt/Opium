@@ -626,6 +626,7 @@ pub fn row(
     }
 
     let facts = TrackFacts {
+        file: track.id.provider == music_core::model::ProviderKind::Local,
         has_album: track.album_id.is_some(),
         favourite: state.favourite,
         in_library: state.in_library,

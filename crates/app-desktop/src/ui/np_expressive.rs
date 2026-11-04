@@ -379,6 +379,7 @@ fn top_buttons(app: &mut App, ui: &mut Ui, theme: &Theme, full: Rect) {
     let open = super::fab::round(ui, theme, more, "np-more", icons::MORE, 20.0, theme.text)
         .on_hover_text("More");
     let facts = TrackFacts {
+        file: track.id.provider == music_core::model::ProviderKind::Local,
         has_album: track.album_id.is_some(),
         favourite: app.is_favourite(FavouriteKind::Song, &track.id),
         in_library: app.track_in_library(&track),

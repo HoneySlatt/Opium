@@ -626,6 +626,7 @@ fn controls(app: &mut App, ui: &mut Ui, theme: &Theme, track: &Track, card: Rect
             true,
         );
         let facts = TrackFacts {
+            file: track.id.provider == music_core::model::ProviderKind::Local,
             has_album: track.album_id.is_some(),
             favourite,
             in_library: app.track_in_library(track),

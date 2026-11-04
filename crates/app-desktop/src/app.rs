@@ -268,39 +268,81 @@ impl NewPlaylist {
     /// Pick a picture in the desktop's file window, made a cover, for the
     /// window to show once it is.
     pub fn pick_cover(&self, ctx: &egui::Context) {
-        let picked = self.picked.clone();
-        let ctx = ctx.clone();
-        std::thread::spawn(move || {
-            // Through the desktop's portal: its own file window, whatever
-            // the desktop, and no library loaded for it.
-            use ashpd::desktop::file_chooser::{FileFilter, SelectedFiles};
-            let Ok(rt) = tokio::runtime::Builder::new_current_thread().enable_all().build() else {
-                return;
-            };
-            let chosen = rt.block_on(async {
-                SelectedFiles::open_file()
-                    .title("Choose a Cover")
-                    .accept_label("Choose")
-                    .modal(true)
-                    .multiple(false)
-                    .filter(FileFilter::new("Pictures").mimetype("image/jpeg").mimetype("image/png"))
-                    .send()
-                    .await?
-                    .response()
-            });
-            let Some(file) = chosen
-                .ok()
-                .and_then(|files| files.uris().first().and_then(|u| file_path(&u.to_string())))
-            else {
-                return;
-            };
-            let Some(cover) = std::fs::read(file).ok().and_then(|b| music_core::cover::square(&b)) else {
-                return;
-            };
-            *picked.lock().unwrap_or_else(|e| e.into_inner()) = Some(cover);
-            ctx.request_repaint();
-        });
+        pick_cover(self.picked.clone(), ctx);
     }
+}
+
+/// The Info window: a music file's tags, or an album's files' alike.
+pub struct SongInfo {
+    pub tracks: Vec<Track>,
+    /// As typed.
+    pub fields: InfoFields,
+    /// As the files say; for several, empty where they differ.
+    pub before: InfoFields,
+    /// The fields the files differ in.
+    pub mixed: InfoFields<bool>,
+    /// The cover shown, an address.
+    pub artwork: Option<String>,
+    pub cover: CoverChoice,
+    pub picked: Arc<std::sync::Mutex<Option<Vec<u8>>>>,
+    /// Being written.
+    pub saving: bool,
+    pub error: Option<String>,
+}
+
+/// A file's tags as the Info window shows them, or something of each.
+#[derive(Clone, Default, PartialEq)]
+pub struct InfoFields<T = String> {
+    pub title: T,
+    pub artist: T,
+    pub album: T,
+    pub album_artist: T,
+    pub genre: T,
+    pub track: T,
+    pub disc: T,
+    pub year: T,
+}
+
+impl SongInfo {
+    pub fn pick_cover(&self, ctx: &egui::Context) {
+        pick_cover(self.picked.clone(), ctx);
+    }
+}
+
+/// Pick a picture in the desktop's file window, made a square cover, into
+/// `picked` for the window to show once it is.
+fn pick_cover(picked: Arc<std::sync::Mutex<Option<Vec<u8>>>>, ctx: &egui::Context) {
+    let ctx = ctx.clone();
+    std::thread::spawn(move || {
+        // Through the desktop's portal: its own file window, whatever
+        // the desktop, and no library loaded for it.
+        use ashpd::desktop::file_chooser::{FileFilter, SelectedFiles};
+        let Ok(rt) = tokio::runtime::Builder::new_current_thread().enable_all().build() else {
+            return;
+        };
+        let chosen = rt.block_on(async {
+            SelectedFiles::open_file()
+                .title("Choose a Cover")
+                .accept_label("Choose")
+                .modal(true)
+                .multiple(false)
+                .filter(FileFilter::new("Pictures").mimetype("image/jpeg").mimetype("image/png"))
+                .send()
+                .await?
+                .response()
+        });
+        let Some(file) = chosen
+            .ok()
+            .and_then(|files| files.uris().first().and_then(|u| file_path(&u.to_string())))
+        else {
+            return;
+        };
+        let Some(cover) = std::fs::read(file).ok().and_then(|b| music_core::cover::square(&b)) else {
+            return;
+        };
+        *picked.lock().unwrap_or_else(|e| e.into_inner()) = Some(cover);
+        ctx.request_repaint();
+    });
 }
 
 /// The file a `file://` address names, its escapes undone.
@@ -356,6 +398,8 @@ pub enum TrackChoice {
     /// Keep it to play offline, or no longer.
     Download,
     RemoveDownload,
+    /// A music file's tags, to change.
+    GetInfo,
 }
 
 /// An album or playlist waiting for its tracks before going into the queue.
@@ -638,6 +682,8 @@ pub struct App {
     radio_from: Option<Track>,
     /// The New Playlist window, when open.
     pub new_playlist: Option<NewPlaylist>,
+    /// The Info window of music files, when open.
+    pub song_info: Option<SongInfo>,
     /// The playlist the Delete window asks about, when open.
     pub deleting: Option<Collection>,
     /// A playlist being made from the sidebar, to open once it exists.
@@ -926,6 +972,7 @@ impl App {
             library_songs: Default::default(),
             radio_from: None,
             new_playlist: None,
+            song_info: None,
             deleting: None,
             open_created: false,
             playlist_dialog: None,
@@ -1397,6 +1444,14 @@ impl App {
     /// The files changed: their albums, artists and recent additions are
     /// read again, those shown now at once.
     fn files_changed(&mut self) {
+        // The files' album and artist pages, as they were read, go.
+        self.albums.retain(|id, _| id.provider != ProviderKind::Local);
+        self.artists.retain(|id, _| id.provider != ProviderKind::Local);
+        if let Page::Album(id) | Page::Artist(id) = &self.page
+            && id.provider == ProviderKind::Local
+        {
+            self.arrived();
+        }
         self.library_albums = Streamed::default();
         self.library_artists = Streamed::default();
         self.recently_added = Streamed::default();
@@ -1412,6 +1467,114 @@ impl App {
             }
             _ => {}
         }
+    }
+
+    /// The Info window for `tracks`, music files: their tags as written,
+    /// what they share filled in.
+    pub fn open_info(&mut self, tracks: Vec<Track>) {
+        let tracks: Vec<Track> = tracks
+            .into_iter()
+            .filter(|t| t.id.provider == ProviderKind::Local)
+            .collect();
+        let tags: Vec<local::Tags> = tracks
+            .iter()
+            .map(|t| local::read_tags(std::path::Path::new(&t.id.id)).unwrap_or_default())
+            .collect();
+        let Some(first) = tags.first() else { return };
+        let number = |n: Option<u32>| n.map(|n| n.to_string()).unwrap_or_default();
+        let of = |tags: &local::Tags| InfoFields {
+            title: tags.title.clone(),
+            artist: tags.artist.clone(),
+            album: tags.album.clone(),
+            album_artist: tags.album_artist.clone(),
+            genre: tags.genre.clone(),
+            track: number(tags.track),
+            disc: number(tags.disc),
+            year: number(tags.year.map(u32::from)),
+        };
+        let mut before = of(first);
+        let mut mixed = InfoFields::<bool>::default();
+        for other in tags.iter().skip(1).map(of) {
+            for (field, other, mixed) in [
+                (&mut before.title, other.title, &mut mixed.title),
+                (&mut before.artist, other.artist, &mut mixed.artist),
+                (&mut before.album, other.album, &mut mixed.album),
+                (&mut before.album_artist, other.album_artist, &mut mixed.album_artist),
+                (&mut before.genre, other.genre, &mut mixed.genre),
+                (&mut before.track, other.track, &mut mixed.track),
+                (&mut before.disc, other.disc, &mut mixed.disc),
+                (&mut before.year, other.year, &mut mixed.year),
+            ] {
+                if *mixed || *field != other {
+                    *mixed = true;
+                    field.clear();
+                }
+            }
+        }
+        self.song_info = Some(SongInfo {
+            artwork: tracks.iter().find_map(|t| t.artwork.as_ref()).map(|a| a.url(300)),
+            tracks,
+            fields: before.clone(),
+            before,
+            mixed,
+            cover: CoverChoice::Unchanged,
+            picked: Default::default(),
+            saving: false,
+            error: None,
+        });
+    }
+
+    /// Write what the Info window changed into the files.
+    pub fn save_info(&mut self) {
+        let Some(info) = &mut self.song_info else { return };
+        let (now, then) = (&info.fields, &info.before);
+        let text = |now: &String, then: &String| (now.trim() != then.trim()).then(|| now.trim().to_owned());
+        let number = |now: &String, then: &String, name: &str| -> Result<Option<Option<u32>>, String> {
+            if now.trim() == then.trim() {
+                return Ok(None);
+            }
+            match now.trim() {
+                "" => Ok(Some(None)),
+                n => n.parse().map(|n| Some(Some(n))).map_err(|_| format!("{name} is a number")),
+            }
+        };
+        let numbers = (|| {
+            Ok::<_, String>((
+                number(&now.track, &then.track, "The track")?,
+                number(&now.disc, &then.disc, "The disc")?,
+                number(&now.year, &then.year, "The year")?,
+            ))
+        })();
+        let (track, disc, year) = match numbers {
+            Ok(numbers) => numbers,
+            Err(e) => {
+                info.error = Some(e);
+                return;
+            }
+        };
+        let edit = local::TagEdit {
+            title: text(&now.title, &then.title),
+            artist: text(&now.artist, &then.artist),
+            album: text(&now.album, &then.album),
+            album_artist: text(&now.album_artist, &then.album_artist),
+            genre: text(&now.genre, &then.genre),
+            track,
+            disc,
+            year: year.map(|y| y.and_then(|y| u16::try_from(y).ok())),
+            cover: match &info.cover {
+                CoverChoice::Unchanged => local::Cover::Kept,
+                CoverChoice::Removed => local::Cover::Removed,
+                CoverChoice::Chosen(jpeg) => local::Cover::Set(jpeg.to_vec()),
+            },
+        };
+        if edit.is_empty() {
+            self.song_info = None;
+            return;
+        }
+        info.saving = true;
+        info.error = None;
+        let paths = info.tracks.iter().map(|t| std::path::PathBuf::from(&t.id.id)).collect();
+        self.backend.send(Request::WriteTags { paths, edit });
     }
 
     /// Play the music files `paths` name (a folder, those under it), from
@@ -2236,12 +2399,14 @@ impl App {
         let catalog = Self::album_catalog_id(album);
         // Apple's favourites and Suggest Less; a SoundCloud like is its library.
         let rated = catalog.as_ref().filter(|_| apple);
+        let files = album.id.provider == ProviderKind::Local;
         CollectionFacts {
             songs: true,
             playlist: false,
             addable: self.can_add_album(&listed.id),
             deletable: apple && album.id.id.starts_with("l."),
-            editable: false,
+            // A folder's album: its files' tags.
+            editable: files,
             favourite: rated.map(|id| {
                 self.favourites_known
                     .get(id)
@@ -2250,10 +2415,12 @@ impl App {
                     .unwrap_or(false)
             }),
             less: rated.map(|id| self.less_known.get(id).copied().unwrap_or(false)),
-            download: Some(self.downloaded_songs(match self.albums.get(&listed.id) {
-                Some(Loaded::Ready((_, tracks))) => Some(tracks.as_slice()),
-                _ => None,
-            })),
+            download: (!files).then(|| {
+                self.downloaded_songs(match self.albums.get(&listed.id) {
+                    Some(Loaded::Ready((_, tracks))) => Some(tracks.as_slice()),
+                    _ => None,
+                })
+            }),
             artist: album.artist_id.is_some(),
             radio: rated.is_some(),
             shareable: catalog.is_some_and(|id| {
@@ -2343,6 +2510,17 @@ impl App {
                 self.playlist_songs(p, ForSongs::AddToPlaylist, now)
             }
             (_, CollectionChoice::AddToLibrary) => self.add_collection_to_library(item, now),
+            // A folder's album: its files' tags, all at once.
+            (Collection::Album(a), CollectionChoice::Edit) if a.id.provider == ProviderKind::Local => {
+                let mut tracks: Vec<Track> = self
+                    .songs
+                    .iter()
+                    .filter(|t| t.album_id.as_ref() == Some(&a.id))
+                    .cloned()
+                    .collect();
+                tracks.sort_by_key(|t| (t.disc_number, t.track_number));
+                self.open_info(tracks);
+            }
             (Collection::Playlist(p), CollectionChoice::Edit) => {
                 self.playlist_dialog = None;
                 self.new_playlist = Some(NewPlaylist {
@@ -4170,6 +4348,7 @@ impl App {
             TrackChoice::Favourite => self.toggle_favourite(FavouriteKind::Song, track.id),
             TrackChoice::AddToLibrary => self.add_to_library(&track, now),
             TrackChoice::AddToPlaylist => self.open_playlist_dialog(vec![track]),
+            TrackChoice::GetInfo => self.open_info(vec![track]),
             TrackChoice::GoToAlbum => {
                 if let Some(album) = track.album_id {
                     self.go(Page::Album(album));
@@ -5025,6 +5204,15 @@ impl App {
                     };
                 }
                 Reply::FilesChanged => self.files_changed(),
+                Reply::TagsWritten(result) => match result {
+                    Ok(()) => self.song_info = None,
+                    Err(e) => {
+                        if let Some(info) = &mut self.song_info {
+                            info.saving = false;
+                            info.error = Some(e);
+                        }
+                    }
+                },
                 Reply::Opened(tracks) => {
                     if tracks.is_empty() {
                         self.notify("Nothing there plays here", now);

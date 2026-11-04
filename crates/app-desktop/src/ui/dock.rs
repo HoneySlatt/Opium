@@ -101,6 +101,7 @@ fn now_playing(app: &mut App, ui: &mut Ui, theme: &Theme, area: Rect) {
     let removable = track.library_id.is_some();
     let download = app.download_offer(&track.id);
     let facts = || TrackFacts {
+        file: track.id.provider == music_core::model::ProviderKind::Local,
         has_album,
         favourite,
         in_library,
