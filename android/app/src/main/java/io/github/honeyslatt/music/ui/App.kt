@@ -140,7 +140,21 @@ fun App(core: Core, library: Library, playback: io.github.honeyslatt.music.playb
             val sites = settings.lyricsSites.filter { it in settings.lyricsSitesOn }
             val key = "${track.id.provider}:${track.id.id}:$sites:${settings.sitesFirst}"
             synchronized(lyricsFound) { lyricsFound[key] }
-                ?: runCatching { core.session.lyrics(track, sites, settings.sitesFirst) }.getOrNull()?.also {
+                ?: run {
+                    // A file of the phone's has those of its tags, as a service's.
+                    val own = if (track.id.provider == io.github.honeyslatt.music.core.model.ProviderKind.LOCAL) {
+                        (appContext as io.github.honeyslatt.music.MusicApp).localFiles.lyrics(track)
+                    } else {
+                        null
+                    }
+                    val found = if (own?.synced == true && !settings.sitesFirst) {
+                        own
+                    } else {
+                        runCatching { core.session.lyrics(track, sites, settings.sitesFirst) }.getOrNull()
+                    }
+                    // Synced beats plain, whichever had them.
+                    (if (found?.synced == true) found else own ?: found)
+                }?.also {
                     synchronized(lyricsFound) { lyricsFound[key] = it }
                 }
         }

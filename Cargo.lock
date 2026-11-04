@@ -3664,6 +3664,7 @@ dependencies = [
  "async-trait",
  "image",
  "lofty",
+ "lyrics",
  "music-core",
  "notify",
  "serde",

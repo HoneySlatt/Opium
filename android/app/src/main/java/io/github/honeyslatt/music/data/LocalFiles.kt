@@ -195,6 +195,14 @@ class LocalFiles(private val context: Context, private val core: Core, private v
         }.getOrNull()
     }
 
+    /** The lyrics in a file of the phone's tags, if any. */
+    suspend fun lyrics(track: io.github.honeyslatt.music.core.model.Track): io.github.honeyslatt.music.core.model.Lyrics? = withContext(Dispatchers.IO) {
+        if (!track.id.id.startsWith("content://")) return@withContext null
+        runCatching {
+            context.contentResolver.openFileDescriptor(Uri.parse(track.id.id), "r")?.let { io.github.honeyslatt.music.core.fileLyrics(it.detachFd(), track.title) }
+        }.getOrNull()
+    }
+
     /** Android's leave to change the files of `tracks`, asked of the user: their window. */
     fun writeRequest(tracks: List<io.github.honeyslatt.music.core.model.Track>): android.content.IntentSender =
         MediaStore.createWriteRequest(context.contentResolver, tracks.map { Uri.parse(it.id.id) }).intentSender

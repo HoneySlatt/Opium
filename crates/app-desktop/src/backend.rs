@@ -752,6 +752,14 @@ fn local_request(
         return;
     };
     let Some(files) = files else {
+        // A file opened from elsewhere has its lyrics all the same.
+        if let Request::Lyrics(id) = request {
+            tokio::task::spawn_blocking(move || {
+                let result = Ok(local::lyrics_of(Path::new(&id.id), ""));
+                replies.send(Reply::Lyrics { id, result });
+            });
+            return;
+        }
         return unanswered(request, "Files", &replies);
     };
     let Some(request) = shared_request(files.clone(), request, replies.clone()) else {

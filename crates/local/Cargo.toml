@@ -7,6 +7,7 @@ license.workspace = true
 [dependencies]
 async-trait = "0.1.92"
 lofty = "0.25.5"
+lyrics = { path = "../lyrics" }
 music-core = { path = "../music-core" }
 notify = "8"
 serde = { version = "1.0.229", features = ["derive"] }

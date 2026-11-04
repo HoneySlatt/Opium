@@ -2038,6 +2038,13 @@ pub fn write_file_tags(fd: i32, edit: FileTagEdit) -> Result<(), MusicError> {
     local::write_tags_to(&mut file, &edit).map_err(|reason| MusicError::Failed { reason })
 }
 
+/// The lyrics in the tags of the file `fd` is open on (read), handed over,
+/// then closed; `title` is left out of them where a site would put it.
+#[uniffi::export]
+pub fn file_lyrics(fd: i32, title: String) -> Option<Lyrics> {
+    local::lyrics_from(&mut owned_file(fd)?, &title)
+}
+
 /// The file `fd` names, owned from now on: closed once dropped.
 fn owned_file(fd: i32) -> Option<std::fs::File> {
     use std::os::fd::FromRawFd;

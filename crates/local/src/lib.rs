@@ -19,7 +19,7 @@ use music_core::text::fold;
 use music_core::{Error, Provider, Result};
 
 pub use scan::{EXTENSIONS, is_music};
-pub use tags::{Cover, TagEdit, Tags, read_tags, read_tags_from, write_tags, write_tags_to};
+pub use tags::{Cover, TagEdit, Tags, lyrics_from, lyrics_of, read_tags, read_tags_from, write_tags, write_tags_to};
 pub use watch::Watching;
 
 pub use scan::Entry;
@@ -506,6 +506,20 @@ impl Provider for Local {
         })
     }
 
+    /// An `.lrc` beside the file, else the lyrics in its tags; none for the
+    /// phone's, which the app reads itself.
+    async fn lyrics(&self, track: &ItemId) -> Result<Option<music_core::model::Lyrics>> {
+        mine(track)?;
+        let title = self
+            .index()
+            .entries
+            .iter()
+            .find(|e| e.path == track.id)
+            .map(|e| e.title.clone())
+            .unwrap_or_default();
+        Ok(lyrics_of(Path::new(&track.id), &title))
+    }
+
     async fn playlist_tracks(&self, _playlist: &ItemId, _cursor: Option<&Cursor>) -> Result<Page<Track>> {
         Err(Error::Protocol("files have no playlists of their own".into()))
     }
@@ -632,6 +646,40 @@ mod tests {
             .write_to(&mut png, image::ImageFormat::Png)
             .unwrap();
         png.into_inner()
+    }
+
+    #[tokio::test]
+    async fn a_files_lyrics_come_from_beside_it_else_from_its_tags() {
+        let dir = std::env::temp_dir().join(format!("local-lyrics-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("song.wav");
+        std::fs::write(&path, scan::tests::wav()).unwrap();
+        let library = Local::open(vec![dir.clone()], &dir.join("cache"));
+        library.rescan();
+        let id = ItemId::new(ProviderKind::Local, path.to_string_lossy());
+        assert!(library.lyrics(&id).await.unwrap().is_none());
+        // Its tags', plain.
+        {
+            use lofty::file::{AudioFile, TaggedFileExt};
+            let mut file = lofty::read_from_path(&path).unwrap();
+            if file.primary_tag().is_none() {
+                file.insert_tag(lofty::tag::Tag::new(file.primary_tag_type()));
+            }
+            file.primary_tag_mut()
+                .unwrap()
+                .insert_text(lofty::tag::ItemKey::UnsyncLyrics, "First words\nSecond words".into());
+            file.save_to_path(&path, lofty::config::WriteOptions::default()).unwrap();
+        }
+        let tagged = library.lyrics(&id).await.unwrap().unwrap();
+        assert!(!tagged.synced);
+        assert_eq!(tagged.lines[0].text, "First words");
+        // An .lrc beside it comes first, timed, line by line.
+        std::fs::write(path.with_extension("lrc"), "[00:01.00]<00:01.00>Hello <00:01.50>world\n[00:03.00]Next\n").unwrap();
+        let beside = library.lyrics(&id).await.unwrap().unwrap();
+        assert!(beside.synced);
+        assert_eq!(beside.lines[0].text, "Hello world");
+        assert!(beside.lines.iter().all(|l| l.words.is_empty()));
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
