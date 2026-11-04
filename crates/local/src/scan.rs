@@ -434,13 +434,13 @@ pub(crate) mod tests {
         std::fs::create_dir_all(&music).unwrap();
         std::fs::create_dir_all(&covers).unwrap();
         std::fs::write(music.join("song.wav"), wav()).unwrap();
-        let (index, _) = scan(&[music.clone()], &Index::default(), &covers);
+        let (index, _) = scan(std::slice::from_ref(&music), &Index::default(), &covers);
         assert_eq!(index.entries.len(), 1);
         let added = index.entries[0].added;
 
         // The drive away: the folder is gone, not emptied.
         std::fs::remove_dir_all(&music).unwrap();
-        let (after, changed) = scan(&[music.clone()], &index, &covers);
+        let (after, changed) = scan(std::slice::from_ref(&music), &index, &covers);
         assert_eq!(after.entries.len(), 1, "its songs stay as they were");
         assert_eq!(after.entries[0].added, added, "and keep when they were added");
         assert!(!changed);

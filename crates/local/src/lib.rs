@@ -718,10 +718,12 @@ mod tests {
         let path = dir.join("song.mp3");
         std::fs::write(&path, scan::tests::mp3()).unwrap();
         {
-            let mut v1 = lofty::id3::v1::Id3v1Tag::default();
-            v1.title = Some("Real Title".into());
-            v1.artist = Some("Real Artist".into());
-            v1.album = Some("Real Album".into());
+            let v1 = lofty::id3::v1::Id3v1Tag {
+                title: Some("Real Title".into()),
+                artist: Some("Real Artist".into()),
+                album: Some("Real Album".into()),
+                ..Default::default()
+            };
             let mut file = std::fs::OpenOptions::new().read(true).write(true).open(&path).unwrap();
             v1.save_to(&mut file, WriteOptions::default()).unwrap();
         }

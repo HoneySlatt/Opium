@@ -103,7 +103,7 @@ pub fn songs(songs: &[Track]) -> HashSet<usize> {
         |t| (title_key(&t.title), artist_key(&t.artists)),
         |t| t.id.provider,
         rank,
-        |a, b| same_length(a, b),
+        same_length,
     )
 }
 

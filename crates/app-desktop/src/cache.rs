@@ -43,7 +43,14 @@ pub fn write<T: Serialize>(name: &str, value: &T) {
     let Ok(bytes) = serde_json::to_vec(value) else {
         return;
     };
-    let partial = path.with_extension("json.part");
+    // A name of its own per write: two writers of one entry (an album
+    // opened twice over) would otherwise each put part of theirs in the
+    // same file, and what was renamed into place wouldn't read.
+    static WRITES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let partial = path.with_extension(format!(
+        "json.part.{}",
+        WRITES.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    ));
     let _ = std::fs::create_dir_all(&dir)
         .and_then(|()| std::fs::write(&partial, bytes))
         .and_then(|()| std::fs::rename(&partial, &path));

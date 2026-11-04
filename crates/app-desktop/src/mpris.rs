@@ -144,7 +144,7 @@ async fn its_music(bus: &mpris_server::zbus::Connection) -> bool {
                 .ok()?;
             reply
                 .body()
-                .deserialize::<mpris_server::zbus::zvariant::Value>()
+                .deserialize::<mpris_server::zbus::Variant>()
                 .ok()?
                 .downcast_ref::<String>()
                 .ok()

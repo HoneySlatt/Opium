@@ -372,6 +372,17 @@ fn page(app: &mut App, ui: &mut Ui, narrow: bool) -> f32 {
     }
 }
 
+/// What Favourite Songs says while Apple Music hasn't told which of its
+/// playlists holds them: it is their own, so without Apple Music there is
+/// none to show.
+fn waiting_for_favourites(app: &App) -> &'static str {
+    match app.connection {
+        crate::app::Connection::Connected => "Loading your favourite songs…",
+        crate::app::Connection::Connecting => "Connecting to Apple Music…",
+        _ => "Favourite songs are Apple Music's own playlist of them. Sign in to Apple Music in Settings to see yours here.",
+    }
+}
+
 fn placeholder(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
     let theme = &app.theme;
     let rect = ui.max_rect();
@@ -393,7 +404,11 @@ fn placeholder(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
         .galley(pos2(left, rect.top() + 70.0), galley, theme.text);
     let note = text(
         ui,
-        "This page comes in a later step.",
+        if app.page == Page::Favourites {
+            waiting_for_favourites(app)
+        } else {
+            "Nothing to show here."
+        },
         font(13.0, Weight::Regular),
         theme.subtext0,
         rect.width(),
