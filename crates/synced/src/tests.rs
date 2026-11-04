@@ -290,15 +290,10 @@ fn kept_on_disk_from_one_launch_to_the_next() {
     kept.played(track(3));
     let (id, _) = kept.create_playlist("Mix".into(), String::new(), vec![track(4)]);
     let me = kept.me();
+    // On disk, both files, before the app closes.
+    kept.flush();
     drop(kept);
-    // The writer goes on a moment after.
     let path = dir.join("shared.json");
-    for _ in 0..100 {
-        if std::fs::read_to_string(dir.join("playlists.json")).is_ok_and(|t| t.contains("Song 4")) {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(20));
-    }
     let again = Some(Kept::open(&dir, Vec::new)).filter(|k| k.playlist(&id).is_some());
     let again = again.expect("kept on disk");
     assert_eq!(again.me(), me);
