@@ -10,7 +10,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use lofty::file::{AudioFile, FileType, TaggedFileExt};
 use lofty::picture::PictureType;
-use lofty::tag::{Accessor, ItemKey, Tag};
+use lofty::tag::{ItemKey, Tag};
 use music_core::model::Codec;
 use serde::{Deserialize, Serialize};
 
@@ -70,7 +70,14 @@ impl Index {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
         }
-        let partial = path.with_extension("part");
+        // A name of its own, so that two writes at once can't each put
+        // half of theirs in the same file and leave it unreadable.
+        static WRITES: AtomicUsize = AtomicUsize::new(0);
+        let partial = path.with_extension(format!(
+            "part.{}.{}",
+            std::process::id(),
+            WRITES.fetch_add(1, Ordering::Relaxed)
+        ));
         std::fs::write(&partial, serde_json::to_vec(self)?)?;
         std::fs::rename(partial, path)
     }
@@ -89,11 +96,27 @@ pub fn is_music(path: &Path) -> bool {
         .is_some_and(|e| EXTENSIONS.contains(&e.to_ascii_lowercase().as_str()))
 }
 
+/// The folders to walk, each once: one chosen inside another (`/music` and
+/// `/music/rock`) would otherwise have its files found twice, each song
+/// showing twice and its album counting double.
+pub(crate) fn roots(folders: &[PathBuf]) -> Vec<PathBuf> {
+    let mut roots: Vec<PathBuf> = Vec::new();
+    for folder in folders {
+        let folder = folder.canonicalize().unwrap_or_else(|_| folder.clone());
+        if roots.iter().any(|kept: &PathBuf| folder.starts_with(kept)) {
+            continue;
+        }
+        roots.retain(|kept| !kept.starts_with(&folder));
+        roots.push(folder);
+    }
+    roots
+}
+
 /// The music files under `folders`, with their size and when they changed;
 /// hidden folders are left out.
 pub(crate) fn walk(folders: &[PathBuf]) -> Vec<(PathBuf, u64, u64)> {
     let mut found = Vec::new();
-    let mut todo: Vec<PathBuf> = folders.to_vec();
+    let mut todo: Vec<PathBuf> = roots(folders);
     while let Some(dir) = todo.pop() {
         let Ok(items) = std::fs::read_dir(&dir) else {
             continue;
@@ -109,7 +132,10 @@ pub(crate) fn walk(folders: &[PathBuf]) -> Vec<(PathBuf, u64, u64)> {
             } else if !hidden && is_music(&path) {
                 // Through a link, as what it points to.
                 let Ok(meta) = std::fs::metadata(&path) else { continue };
-                if meta.is_file() {
+                // A name that isn't text can't be told apart from another
+                // of its kind once said, so it is left out rather than
+                // listed as a song that won't open.
+                if meta.is_file() && path.to_str().is_some() {
                     found.push((path, meta.len(), secs(meta.modified())));
                 }
             }
@@ -124,10 +150,38 @@ pub fn scan(folders: &[PathBuf], before: &Index, covers: &Path) -> (Index, bool)
     let known: HashMap<&str, &Entry> = before.entries.iter().map(|e| (e.path.as_str(), e)).collect();
     let skipped_before: HashMap<&str, (u64, u64)> =
         before.skipped.iter().map(|(p, size, modified)| (p.as_str(), (*size, *modified))).collect();
+    // A folder that can't be read at all — a drive unplugged, a share not
+    // mounted — says nothing about its songs, so what was read of it last
+    // time stays as it was rather than its half of the library going (and
+    // coming back as newly added once the drive returns).
+    let away: Vec<PathBuf> = roots(folders)
+        .into_iter()
+        .filter(|root| std::fs::read_dir(root).is_err())
+        .collect();
+    let under_away = |path: &str| {
+        away.iter()
+            .any(|root| Path::new(path).starts_with(root))
+    };
     let files = walk(folders);
     let mut kept = Vec::with_capacity(files.len());
     let mut skipped = Vec::new();
     let mut fresh = Vec::new();
+    if !away.is_empty() {
+        kept.extend(
+            before
+                .entries
+                .iter()
+                .filter(|e| under_away(&e.path))
+                .cloned(),
+        );
+        skipped.extend(
+            before
+                .skipped
+                .iter()
+                .filter(|(path, _, _)| under_away(path))
+                .cloned(),
+        );
+    }
     for (path, size, modified) in files {
         let name = path.to_string_lossy();
         if skipped_before.get(name.as_ref()) == Some(&(size, modified)) {
@@ -188,16 +242,18 @@ pub fn read_file(path: &Path, size: u64, modified: u64, added: u64, covers: &Pat
         _ => return None,
     };
     let tag = file.primary_tag().or_else(|| file.first_tag());
-    let text = |key: ItemKey| tag.and_then(|t| t.get_string(key)).map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned);
+    // What the file says, every tag of it read: see [`tags::tags_of`].
+    let said = crate::tags::tags_of(&file);
     let mut artists: Vec<String> = tag
         .map(|t| t.get_strings(ItemKey::TrackArtist).map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned).collect())
         .unwrap_or_default();
     if artists.is_empty() {
-        artists.extend(text(ItemKey::AlbumArtist));
+        artists.extend(Some(said.artist.clone()).filter(|a| !a.is_empty()));
     }
-    let title = tag
-        .and_then(|t| t.title())
-        .map(|t| t.trim().to_owned())
+    if artists.is_empty() {
+        artists.extend(Some(said.album_artist.clone()).filter(|a| !a.is_empty()));
+    }
+    let title = Some(said.title.clone())
         .filter(|t| !t.is_empty())
         .or_else(|| path.file_stem().map(|s| s.to_string_lossy().into_owned()))
         .unwrap_or_default();
@@ -208,12 +264,12 @@ pub fn read_file(path: &Path, size: u64, modified: u64, added: u64, covers: &Pat
         added,
         title,
         artists,
-        album_artist: text(ItemKey::AlbumArtist),
-        album: tag.and_then(|t| t.album()).map(|a| a.trim().to_owned()).filter(|a| !a.is_empty()),
-        track: tag.and_then(|t| t.track()),
-        disc: tag.and_then(|t| t.disk()),
-        year: tag.and_then(|t| t.date()).map(|d| d.year).filter(|&y| y > 0),
-        genre: tag.and_then(|t| t.genre()).map(|g| g.trim().to_owned()).filter(|g| !g.is_empty()),
+        album_artist: Some(said.album_artist).filter(|a| !a.is_empty()),
+        album: Some(said.album).filter(|a| !a.is_empty()),
+        track: said.track,
+        disc: said.disc,
+        year: said.year,
+        genre: Some(said.genre).filter(|g| !g.is_empty()),
         duration_ms: props.duration().as_millis() as u64,
         codec,
         sample_rate: props.sample_rate(),
@@ -317,6 +373,17 @@ pub(crate) mod tests {
         bytes
     }
 
+    /// Ten frames of MPEG-1 Layer III at 44.1 kHz, 128 kbps: enough of an
+    /// MP3 for the tags to be read and written.
+    pub(crate) fn mp3() -> Vec<u8> {
+        let mut bytes = Vec::new();
+        for _ in 0..10 {
+            bytes.extend([0xFF, 0xFB, 0x90, 0x00]);
+            bytes.resize(bytes.len() + 417 - 4, 0);
+        }
+        bytes
+    }
+
     #[test]
     fn a_file_read_once_is_kept_until_it_changes() {
         let dir = std::env::temp_dir().join(format!("local-scan-{}", std::process::id()));
@@ -345,4 +412,44 @@ pub(crate) mod tests {
         assert!(changed && gone.entries.is_empty());
         std::fs::remove_dir_all(dir).unwrap();
     }
+    #[test]
+    fn a_folder_chosen_inside_another_is_walked_once() {
+        let dir = std::env::temp_dir().join(format!("local-roots-{}", std::process::id()));
+        let music = dir.join("music");
+        let rock = music.join("rock");
+        std::fs::create_dir_all(&rock).unwrap();
+        std::fs::write(rock.join("song.wav"), wav()).unwrap();
+        let found = walk(&[music.clone(), rock.clone()]);
+        assert_eq!(found.len(), 1, "the song is found once");
+        // Whichever way round they were chosen.
+        assert_eq!(walk(&[rock, music]).len(), 1);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_folder_out_of_reach_keeps_the_songs_it_had() {
+        let dir = std::env::temp_dir().join(format!("local-away-{}", std::process::id()));
+        let music = dir.join("music");
+        let covers = dir.join("covers");
+        std::fs::create_dir_all(&music).unwrap();
+        std::fs::create_dir_all(&covers).unwrap();
+        std::fs::write(music.join("song.wav"), wav()).unwrap();
+        let (index, _) = scan(&[music.clone()], &Index::default(), &covers);
+        assert_eq!(index.entries.len(), 1);
+        let added = index.entries[0].added;
+
+        // The drive away: the folder is gone, not emptied.
+        std::fs::remove_dir_all(&music).unwrap();
+        let (after, changed) = scan(&[music.clone()], &index, &covers);
+        assert_eq!(after.entries.len(), 1, "its songs stay as they were");
+        assert_eq!(after.entries[0].added, added, "and keep when they were added");
+        assert!(!changed);
+
+        // Emptied for real, with the folder there: the song goes.
+        std::fs::create_dir_all(&music).unwrap();
+        let (empty, changed) = scan(&[music], &index, &covers);
+        assert!(empty.entries.is_empty() && changed);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
 }

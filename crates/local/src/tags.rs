@@ -59,20 +59,48 @@ pub fn read_tags(path: &Path) -> Option<Tags> {
 /// The tags of `file`, open: the phone's, from Android's media index.
 pub fn read_tags_from(file: &mut std::fs::File) -> Option<Tags> {
     let file = lofty::read_from(file).ok()?;
-    let Some(tag) = file.primary_tag().or_else(|| file.first_tag()) else {
-        return Some(Tags::default());
+    Some(tags_of(&file))
+}
+
+/// What a file says, its own kind of tag first and anything it also carries
+/// behind it, field by field: an MP3 whose ID3v2 is there but empty still
+/// shows what its ID3v1 says.
+pub(crate) fn tags_of(file: &lofty::file::TaggedFile) -> Tags {
+    let tags: Vec<&Tag> = file
+        .primary_tag()
+        .into_iter()
+        .chain(file.tags().iter().filter(|t| {
+            file.primary_tag()
+                .is_none_or(|p| p.tag_type() != t.tag_type())
+        }))
+        .collect();
+    let text = |pick: fn(&Tag) -> Option<std::borrow::Cow<'_, str>>| {
+        tags.iter()
+            .filter_map(|t| pick(t))
+            .map(|v| v.trim().to_owned())
+            .find(|v| !v.is_empty())
+            .unwrap_or_default()
     };
-    let text = |value: Option<std::borrow::Cow<'_, str>>| value.map(|v| v.trim().to_owned()).unwrap_or_default();
-    Some(Tags {
-        title: text(tag.title()),
-        artist: text(tag.artist()),
-        album: text(tag.album()),
-        album_artist: tag.get_string(ItemKey::AlbumArtist).map(|v| v.trim().to_owned()).unwrap_or_default(),
-        genre: text(tag.genre()),
-        track: tag.track(),
-        disc: tag.disk(),
-        year: tag.date().map(|d| d.year).filter(|&y| y > 0),
-    })
+    let number = |pick: fn(&Tag) -> Option<u32>| tags.iter().find_map(|t| pick(t));
+    Tags {
+        title: text(Accessor::title),
+        artist: text(Accessor::artist),
+        album: text(Accessor::album),
+        album_artist: tags
+            .iter()
+            .filter_map(|t| t.get_string(ItemKey::AlbumArtist))
+            .map(|v| v.trim().to_owned())
+            .find(|v| !v.is_empty())
+            .unwrap_or_default(),
+        genre: text(Accessor::genre),
+        track: number(Accessor::track),
+        disc: number(Accessor::disk),
+        year: tags
+            .iter()
+            .filter_map(|t| t.date())
+            .map(|d| d.year)
+            .find(|&y| y > 0),
+    }
 }
 
 /// Write `edit` into the file at `path`, in its own kind of tag.
@@ -90,7 +118,19 @@ pub fn write_tags_to(open: &mut std::fs::File, edit: &TagEdit) -> Result<(), Str
     use std::io::Seek;
     let mut file = lofty::read_from(open).map_err(|e| e.to_string())?;
     if file.primary_tag().is_none() {
-        file.insert_tag(Tag::new(file.primary_tag_type()));
+        // What the file already says, carried over: a tag of another kind
+        // (an MP3 with only an ID3v1) would otherwise be left behind an
+        // empty one of its own kind, and the song read as untitled.
+        let mut seed = match file.first_tag() {
+            Some(carried) => {
+                let mut tag = carried.clone();
+                tag.re_map(file.primary_tag_type());
+                tag
+            }
+            None => Tag::new(file.primary_tag_type()),
+        };
+        seed.remove_empty();
+        file.insert_tag(seed);
     }
     let tag = file
         .primary_tag_mut()
