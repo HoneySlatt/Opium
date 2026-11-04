@@ -24,7 +24,6 @@ pub enum Shape {
     Sunny,
     Clover4,
     Pentagon,
-    Burst,
 }
 
 /// A cookie of `k` scallops `depth` deep.
@@ -43,7 +42,6 @@ impl Shape {
             Shape::Sunny => cookie(8.0, 0.09, a),
             Shape::Clover4 => 0.5 * (0.68 + 0.32 * (2.0 * a).cos().abs().powf(0.55)),
             Shape::Pentagon => cookie(5.0, 0.17, a),
-            Shape::Burst => cookie(12.0, 0.12, a),
         }
     }
 
@@ -194,7 +192,6 @@ mod tests {
             Shape::Sunny,
             Shape::Clover4,
             Shape::Pentagon,
-            Shape::Burst,
         ] {
             let r = shape.radii();
             assert!(

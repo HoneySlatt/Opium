@@ -95,16 +95,14 @@ pub fn theme_change(ui: &Ui, theme: &Theme) {
     ui.ctx().request_repaint();
 }
 
-/// Material 3 Expressive's springs: spatial ones (size, position, shape,
-/// corners) overshoot a little, effects (colour, opacity) don't.
+/// Material 3 Expressive's spatial springs, for size, position, shape and
+/// corners: they overshoot a little.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Spring {
     /// Spatial, fast: stiffness 800, damping ratio 0.6.
     Fast,
     /// Spatial, slow: 380, 0.8.
     Slow,
-    /// Effects: 1600, critically damped.
-    Effects,
 }
 
 impl Spring {
@@ -112,7 +110,6 @@ impl Spring {
         match self {
             Spring::Fast => (800.0, 0.6),
             Spring::Slow => (380.0, 0.8),
-            Spring::Effects => (1600.0, 1.0),
         }
     }
 }
