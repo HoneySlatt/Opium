@@ -298,10 +298,7 @@ fn pick_cover(picked: Arc<std::sync::Mutex<Option<Vec<u8>>>>, ctx: &egui::Contex
         // Through the desktop's portal: its own file window, whatever
         // the desktop, and no library loaded for it.
         use ashpd::desktop::file_chooser::{FileFilter, SelectedFiles};
-        let Ok(rt) = tokio::runtime::Builder::new_current_thread().enable_all().build() else {
-            return;
-        };
-        let chosen = rt.block_on(async {
+        let chosen = async_io::block_on(async {
             SelectedFiles::open_file()
                 .title("Choose a Cover")
                 .accept_label("Choose")
@@ -1351,10 +1348,7 @@ impl App {
         let ctx = ctx.clone();
         std::thread::spawn(move || {
             use ashpd::desktop::file_chooser::SelectedFiles;
-            let Ok(rt) = tokio::runtime::Builder::new_current_thread().enable_all().build() else {
-                return;
-            };
-            let chosen = rt.block_on(async {
+            let chosen = async_io::block_on(async {
                 SelectedFiles::open_file()
                     .title("Add Music Folders")
                     .accept_label("Add")
