@@ -11,7 +11,7 @@ use gpui::{
     ClickEvent, Context, Div, ElementId, InteractiveElement, ParentElement, Rgba,
     StatefulInteractiveElement, Styled, Window, div,
 };
-use music_core::model::{Album, FavouriteKind, ItemId, Track};
+use music_core::model::{Album, FavouriteKind, ItemId, MusicVideo, Track};
 
 use crate::app::{Loaded, Music, Page};
 use crate::color::{BLACK, WHITE, black_alpha, mix, white_alpha};
@@ -19,6 +19,7 @@ use crate::fonts::{Weight, line_height};
 use crate::icons::{self, Icon};
 use crate::theme::Theme;
 
+use super::grid::{CARD_TEXT, CardClick, SHELF_HEAD, ShelfCard, cover_shelf, video_shelf};
 use super::tracks::{self, Columns, PageDownload, RowAction, RowState};
 use super::{
     Align, artwork, disc, icon_button, label_cut, loved_tile, place, shadow, text_at, text_width,
@@ -80,28 +81,54 @@ struct Listing {
 }
 
 /// Under an album's tracks: whether Apple mastered it, its date, count and
-/// copyright. (Its other editions, its songs' music videos and the artist's
-/// other releases come with the shelves of covers.)
+/// copyright, then its other editions, its songs' music videos and the
+/// artist's other releases.
 struct AlbumFoot {
     /// A library album with only some of its songs there: its catalog
     /// version, which Show Full Album opens.
     full_album: Option<ItemId>,
     mastered: bool,
     lines: Vec<String>,
+    other_versions: Vec<Album>,
+    videos: Vec<MusicVideo>,
+    /// The artist, and what else they put out, newest first.
+    more_by: Option<(String, ItemId, Vec<Album>)>,
 }
 
 /// How tall the album's foot is.
 fn foot_height(foot: &AlbumFoot) -> f32 {
-    24.0 + if foot.full_album.is_some() {
-        FULL_ALBUM
-    } else {
-        0.0
-    } + if foot.mastered { 30.0 } else { 0.0 }
-        + foot.lines.len() as f32 * 18.0
+    let mut h =
+        24.0 + if foot.full_album.is_some() {
+            FULL_ALBUM
+        } else {
+            0.0
+        } + if foot.mastered { 30.0 } else { 0.0 }
+            + foot.lines.len() as f32 * 18.0;
+    if !foot.other_versions.is_empty() {
+        h += shelf_height(MORE_BY_CARD);
+    }
+    if !foot.videos.is_empty() {
+        h += shelf_height(VIDEO_CARD * 9.0 / 16.0);
+    }
+    if foot.more_by.is_some() {
+        h += shelf_height(MORE_BY_CARD);
+    }
+    h
 }
+
+/// A shelf under the album's details, with the gap above it.
+fn shelf_height(card: f32) -> f32 {
+    40.0 + SHELF_HEAD + card + CARD_TEXT
+}
+
+/// The music videos' stills, wide.
+const VIDEO_CARD: f32 = 240.0;
 
 /// The row of Show Full Album.
 const FULL_ALBUM: f32 = 40.0;
+
+/// The covers of the artist's other releases.
+const MORE_BY_CARD: f32 = 190.0;
 
 /// An album's page, `width` by `height` points in the main card.
 pub fn album(
@@ -153,11 +180,13 @@ pub fn album(
     page(app, window, cx, width, height, pad, header, tracks, listing)
 }
 
-/// The foot of an album's page, once the album has come: its details.
-fn album_foot(app: &Music, id: &ItemId) -> Option<AlbumFoot> {
+/// The foot of an album's page, once the album has come: its details, then
+/// the artist's other releases once their page has.
+fn album_foot(app: &mut Music, id: &ItemId) -> Option<AlbumFoot> {
     let Some(Loaded::Ready((album, _))) = app.albums.get(id) else {
         return None;
     };
+    let album = album.clone();
     let tracks = app.album_tracks(id).unwrap_or_default();
     let mut lines = Vec::new();
     if let Some(date) = album.released.as_deref().and_then(long_date) {
@@ -173,6 +202,41 @@ fn album_foot(app: &Music, id: &ItemId) -> Option<AlbumFoot> {
     if let Some(copyright) = &album.copyright {
         lines.push(copyright.clone());
     }
+    // The lists under the songs are the catalog album's.
+    let catalog = Music::album_catalog_id(&album);
+    let extras = catalog.as_ref().and_then(|c| app.album_extras(c));
+    let (other_versions, videos) = match (&extras, &catalog) {
+        (Some(extras), Some(catalog)) => (
+            extras
+                .other_versions
+                .iter()
+                .filter(|a| &a.id != catalog && a.id != album.id)
+                .cloned()
+                .collect(),
+            extras.videos.clone(),
+        ),
+        _ => (Vec::new(), Vec::new()),
+    };
+    let more_by = album.artist_id.clone().and_then(|artist| {
+        let detail = app.artist_detail(&artist)?;
+        let mine = |a: &Album| {
+            a.id == album.id || album.catalog_id.as_ref() == Some(&a.id) || a.title == album.title
+        };
+        let mut others: Vec<Album> = Vec::new();
+        for a in detail
+            .latest
+            .iter()
+            .chain(&detail.albums)
+            .chain(&detail.singles)
+        {
+            if !mine(a) && !others.iter().any(|o| o.id == a.id) {
+                others.push(a.clone());
+            }
+        }
+        others.sort_by(|a, b| b.released.cmp(&a.released));
+        others.truncate(20);
+        (!others.is_empty()).then(|| (detail.artist.name.clone(), artist, others))
+    });
     let full_album = album
         .catalog_id
         .clone()
@@ -182,6 +246,9 @@ fn album_foot(app: &Music, id: &ItemId) -> Option<AlbumFoot> {
         full_album,
         mastered: album.mastered,
         lines,
+        other_versions,
+        videos,
+        more_by,
     })
 }
 
@@ -517,7 +584,8 @@ fn banner_header(
             .cursor_pointer()
             .hover(move |s| s.bg(lit).left(z(px - 30.0)).top(z(py - 30.0)).size(z(60.0)))
             .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
-                this.play_page(super::page_tracks(this));
+                let tracks = super::page_tracks(this);
+                this.play_page(tracks);
                 this.acted(window, cx);
             }))
             .child(
@@ -851,7 +919,16 @@ fn page(
         }
         let foot_top = rows_top + rows as f32 * tracks::ROW;
         if let Some(foot) = &listing.album {
-            content = content.child(album_foot_ui(cx, &theme, foot, left, list_width, foot_top));
+            content = content.child(album_foot_ui(
+                app,
+                window,
+                cx,
+                &theme,
+                foot,
+                (left, list_width),
+                foot_top,
+                (offset, offset + height),
+            ));
         } else if let Some(length) = total_length(&tracks) {
             let minutes = (length.as_secs() + 30) / 60;
             let foot_text = format!(
@@ -905,14 +982,19 @@ fn page(
 }
 
 /// Under an album's tracks, from `top`: Show Full Album, Apple's mastering,
-/// the date, the count and the copyright.
+/// the date, the count and the copyright; then its other versions, its
+/// music videos and More by its artist, those in `seen` (the page's part in
+/// sight) laid out.
+#[allow(clippy::too_many_arguments)]
 fn album_foot_ui(
+    app: &mut Music,
+    window: &mut Window,
     cx: &mut Context<Music>,
     theme: &Theme,
     foot: &AlbumFoot,
-    left: f32,
-    width: f32,
+    (left, width): (f32, f32),
     top: f32,
+    seen: (f32, f32),
 ) -> Div {
     let muted = theme.muted();
     let mut out = div().absolute().left_0().top_0().size_full();
@@ -976,16 +1058,155 @@ fn album_foot_ui(
         ));
         y += 18.0;
     }
-    out
+    // A shelf `card` points tall from `y` on, in sight.
+    let in_sight = |y: f32, card: f32| y + shelf_height(card) > seen.0 && y < seen.1;
+    if !foot.other_versions.is_empty() {
+        if in_sight(y, MORE_BY_CARD) {
+            let at = (left, y + 40.0 - 18.0);
+            let versions = foot.other_versions.clone();
+            let cards: Vec<ShelfCard> = versions
+                .iter()
+                .map(|a| ShelfCard {
+                    title: a.title.clone(),
+                    sub: match a.track_count {
+                        Some(n) => format!("{} · {n} Songs", a.artists.join(", ")),
+                        None => a.artists.join(", "),
+                    },
+                    url: a.artwork.as_ref().map(|art| art.url(400)),
+                    explicit: a.explicit,
+                })
+                .collect();
+            out = out.child(cover_shelf(
+                app,
+                window,
+                cx,
+                theme,
+                at,
+                width,
+                "Other Versions",
+                &cards,
+                MORE_BY_CARD,
+                "other-versions",
+                move |app, i, click, _| match click {
+                    CardClick::Open => app.go(Page::Album(versions[i].id.clone())),
+                    CardClick::Enqueue => app.enqueue_album(versions[i].id.clone()),
+                },
+            ));
+        }
+        y += shelf_height(MORE_BY_CARD);
+    }
+    if !foot.videos.is_empty() {
+        if in_sight(y, VIDEO_CARD * 9.0 / 16.0) {
+            let at = (left, y + 40.0 - 18.0);
+            let cards: Vec<ShelfCard> = foot
+                .videos
+                .iter()
+                .map(|v| ShelfCard {
+                    title: v.title.clone(),
+                    sub: v.artists.join(", "),
+                    url: v.thumbnail.clone(),
+                    explicit: v.explicit,
+                })
+                .collect();
+            let urls: Vec<Option<String>> = foot.videos.iter().map(|v| v.url.clone()).collect();
+            // There is no video player here: they play on Apple Music's website.
+            out = out.child(video_shelf(
+                app,
+                window,
+                cx,
+                theme,
+                at,
+                width,
+                "Music Videos",
+                &cards,
+                VIDEO_CARD,
+                "music-videos",
+                move |_, i, cx| {
+                    if let Some(url) = &urls[i] {
+                        cx.open_url(url);
+                    }
+                },
+            ));
+        }
+        y += shelf_height(VIDEO_CARD * 9.0 / 16.0);
+    }
+    let Some((name, artist, albums)) = &foot.more_by else {
+        return out;
+    };
+    if !in_sight(y, MORE_BY_CARD) {
+        return out;
+    }
+    let at = (left, y + 40.0 - 18.0);
+    let title = format!("More by {name}");
+    let cards: Vec<ShelfCard> = albums
+        .iter()
+        .map(|a| ShelfCard {
+            title: a.title.clone(),
+            sub: a.artists.join(", "),
+            url: a.artwork.as_ref().map(|art| art.url(400)),
+            explicit: a.explicit,
+        })
+        .collect();
+    let id = format!("more-by-{}", artist.id);
+    // The title, and a chevron after it, lead to the artist. (Their page
+    // comes later.)
+    let (size, weight) = super::heading(theme);
+    let chevron = (
+        at.0 + text_width(window, &title, size, weight).min(600.0) + 12.0,
+        at.1 + 12.0,
+    );
+    let (text, artist) = (theme.text, artist.clone());
+    out = out.child(
+        place(at.0, at.1 - 3.0, chevron.0 + 10.0 - at.0, 28.0)
+            .id("more-by-title")
+            .group("more-by-title")
+            .cursor_pointer()
+            .child(
+                place(
+                    chevron.0 - 8.0 - at.0,
+                    chevron.1 - 8.0 - (at.1 - 3.0),
+                    16.0,
+                    16.0,
+                )
+                .child(
+                    gpui::svg()
+                        .data(icons::RIGHT.bytes())
+                        .size(z(16.0))
+                        .text_color(muted)
+                        .group_hover("more-by-title", move |s| s.text_color(text)),
+                ),
+            )
+            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                this.go(Page::Artist(artist.clone()));
+                cx.notify();
+            })),
+    );
+    let albums = albums.clone();
+    out.child(cover_shelf(
+        app,
+        window,
+        cx,
+        theme,
+        at,
+        width,
+        &title,
+        &cards,
+        MORE_BY_CARD,
+        &id,
+        move |app, i, click, _| match click {
+            CardClick::Open => app.go(Page::Album(albums[i].id.clone())),
+            CardClick::Enqueue => app.enqueue_album(albums[i].id.clone()),
+        },
+    ))
 }
 
 /// The album's or playlist's songs the page shows, in its order.
-pub fn shown_tracks(app: &Music) -> Arc<Vec<Track>> {
-    match &app.page {
-        Page::Album(id) => app.album_tracks(id).unwrap_or_default(),
+pub fn shown_tracks(app: &mut Music) -> Arc<Vec<Track>> {
+    match app.page.clone() {
+        Page::Album(id) => app.album_tracks(&id).unwrap_or_default(),
         Page::Playlist(id) => app
             .playlist_tracks
-            .get(id)
+            .get(&id)
             .map(|p| p.tracks.clone())
             .unwrap_or_default(),
         _ => Arc::default(),
@@ -998,7 +1219,8 @@ pub fn row_action(app: &mut Music, position: usize, action: RowAction) {
         RowAction::Select => app.detail_selected = Some(position),
         RowAction::Play => {
             app.detail_selected = Some(position);
-            app.play_list(shown_tracks(app).to_vec(), position);
+            let tracks = shown_tracks(app).to_vec();
+            app.play_list(tracks, position);
         }
         RowAction::OpenAlbum(id) => app.go(Page::Album(id)),
     }

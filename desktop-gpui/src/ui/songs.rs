@@ -5,7 +5,7 @@
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    ClickEvent, Context, Div, InteractiveElement, IntoElement, ParentElement,
+    ClickEvent, Context, Div, ElementId, InteractiveElement, IntoElement, ParentElement, Stateful,
     StatefulInteractiveElement, Styled, Window, div,
 };
 use music_core::model::{FavouriteKind, ProviderKind, Track};
@@ -18,9 +18,7 @@ use crate::theme::{Header, Motion, Theme};
 
 use super::detail::{self, ACTIONS, BANNER, SONGS_BAND};
 use super::tracks::{self, Columns, RowAction, RowState};
-use super::{
-    Align, TOP_BAR, hline, icon_at, icon_button, label, label_cut, place, text_at, text_width, z,
-};
+use super::{Align, icon_at, icon_button, label, label_cut, place, text_at, text_width, z};
 
 const TABLE_TOP: f32 = 179.0;
 
@@ -125,18 +123,7 @@ pub fn show(
 
     // The bar over the page once scrolled: the page's colour and title.
     if offset > 24.0 {
-        page = page.child(
-            place(0.0, 0.0, width, TOP_BAR)
-                .bg(crate::color::alpha(theme.base, 0.96))
-                .child(hline(0.0, TOP_BAR - 0.5, width, theme.line()))
-                .child(text_at(
-                    width / 2.0,
-                    TOP_BAR / 2.0,
-                    13.0,
-                    Align::Center,
-                    label("Songs", 13.0, Weight::SemiBold, theme.text),
-                )),
-        );
+        page = page.child(super::scrolled_bar(&theme, width, "Songs".into()));
     }
     if banner {
         // Past the banner, Spotify's bar with its Play, and the column
@@ -387,4 +374,129 @@ fn empty(app: &Music, theme: &Theme, top: f32, left: f32, width: f32) -> Div {
             Align::Min,
             label_cut(detail, 13.0, Weight::Regular, theme.subtext0, width - 20.0),
         ))
+}
+
+/// A cover grid's title, `title` its rect (x, y, w, h), offering its source
+/// filter with a chevron after it, with more than one service: clicked, the
+/// filter shows or hides. Its chevron, whether the filter shows, and where
+/// the title now ends.
+pub fn sources_shown(
+    app: &Music,
+    cx: &mut Context<Music>,
+    theme: &Theme,
+    page: &Page,
+    (x, y, w, h): (f32, f32, f32, f32),
+    services: &[ProviderKind],
+) -> (Option<Stateful<Div>>, bool, f32) {
+    if services.len() < 2 {
+        return (None, false, x + w);
+    }
+    let shown = app.sources_shown.contains(page);
+    let end = x + w + 30.0;
+    let (text, muted) = (theme.text, theme.muted());
+    let chevron = if shown { icons::DOWN } else { icons::RIGHT };
+    let page = page.clone();
+    let button = place(x, y, end - x, h)
+        .id("grid-sources")
+        .group("grid-sources")
+        .cursor_pointer()
+        .child(
+            place(w + 17.0 - 9.0, h / 2.0 - 9.0, 18.0, 18.0).child(
+                gpui::svg()
+                    .data(chevron.bytes())
+                    .size(z(18.0))
+                    .text_color(muted)
+                    .group_hover("grid-sources", move |s| s.text_color(text)),
+            ),
+        )
+        .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+            if !this.sources_shown.remove(&page) {
+                this.sources_shown.insert(page.clone());
+            }
+            cx.notify();
+        }));
+    (Some(button), shown, end)
+}
+
+/// The source filter chips (All · Apple Music · SoundCloud · Navidrome), the
+/// services of `services` only, ending at `right`; a click narrows the
+/// cover grids to it, kept for next time.
+pub fn source_chips(
+    window: &mut Window,
+    cx: &mut Context<Music>,
+    theme: &Theme,
+    right: f32,
+    top: f32,
+    current: Option<ProviderKind>,
+    services: &[ProviderKind],
+) -> Div {
+    let mut chips: Vec<(Option<ProviderKind>, Option<icons::Icon>, &str)> = vec![
+        (None, None, "All"),
+        (
+            Some(ProviderKind::AppleMusic),
+            Some(icons::APPLE_MUSIC),
+            "Apple Music",
+        ),
+        (
+            Some(ProviderKind::SoundCloud),
+            Some(icons::SOUNDCLOUD),
+            "SoundCloud",
+        ),
+        (
+            Some(ProviderKind::Navidrome),
+            Some(icons::NAVIDROME),
+            "Navidrome",
+        ),
+    ];
+    chips.retain(|(source, _, _)| source.is_none_or(|s| services.contains(&s)));
+    let widths: Vec<f32> = chips
+        .iter()
+        .map(|(_, icon, name)| {
+            text_width(window, name, 13.0, Weight::Regular)
+                + 24.0
+                + if icon.is_some() { 19.0 } else { 0.0 }
+        })
+        .collect();
+    let mut x = right - widths.iter().sum::<f32>() - 6.0 * (chips.len() - 1) as f32;
+    let mut out = div().absolute().left_0().top_0().size_full();
+    for ((source, icon, name), w) in chips.into_iter().zip(widths) {
+        let on = current == source;
+        let (text, hover) = (theme.text, theme.hover());
+        let (fg, icon_color) = if on {
+            (theme.base, theme.base)
+        } else {
+            (theme.subtext0, theme.muted())
+        };
+        let group = format!("source-filter-{name}");
+        let mut chip = place(x, top, w, 28.0)
+            .id(ElementId::Name(group.clone().into()))
+            .group(group.clone())
+            .cursor_pointer()
+            .rounded(z(14.0))
+            .border(z(1.0))
+            .border_color(if on { theme.text } else { theme.line() })
+            .when(on, |c| c.bg(text))
+            .when(!on, |c| c.hover(move |s| s.bg(hover)));
+        let mut cx_ = 12.0;
+        if let Some(icon) = icon {
+            chip = chip.child(icon_at(icon, cx_ + 6.5, 14.0, 13.0, icon_color));
+            cx_ += 19.0;
+        }
+        chip = chip
+            .child(text_at(
+                cx_ - 1.0,
+                14.0,
+                13.0,
+                Align::Min,
+                label(name, 13.0, Weight::Regular, fg)
+                    .when(!on, |l| l.group_hover(group, move |s| s.text_color(text))),
+            ))
+            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                this.set_grid_source(source);
+                cx.notify();
+            }));
+        out = out.child(chip);
+        x += w + 6.0;
+    }
+    out
 }

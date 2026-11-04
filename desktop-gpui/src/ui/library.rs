@@ -207,10 +207,24 @@ pub fn show(
 
     // The rows, only those in sight laid out.
     let pinned_count = pinned(app, filter).len();
-    let listed = match filter {
-        Filter::Playlists => app.playlists.len(),
-        // The library's albums and artists come with their pages.
-        Filter::Albums | Filter::Artists => 0,
+    let listed: Vec<usize> = match filter {
+        Filter::Playlists => (0..app.playlists.len()).collect(),
+        Filter::Albums => {
+            app.want_library_albums();
+            let copies = app.copies(0);
+            app.albums_in_order()
+                .iter()
+                .copied()
+                .filter(|i| !copies.contains(i))
+                .collect()
+        }
+        Filter::Artists => {
+            app.want_library_artists();
+            let copies = app.copies(1);
+            (0..app.library_artists.items.len())
+                .filter(|i| !copies.contains(i))
+                .collect()
+        }
     };
     let row_height = if collapsed { 56.0 } else { 64.0 };
     // As egui's `show_rows`: each row at its own place, `row_height` apart
@@ -218,7 +232,7 @@ pub fn show(
     // `uniform_list` would space them by their height snapped to the
     // device's pixels, drifting from egui's row after row.)
     let list_h = (height - top).max(0.0);
-    let count = pinned_count + listed;
+    let count = pinned_count + listed.len();
     let scroll = &app.library_scroll[filter as usize];
     let offset = (-f32::from(scroll.offset().y) / super::zoom()).max(0.0);
     let first = (offset / row_height).floor() as usize;
@@ -228,7 +242,7 @@ pub fn show(
     for i in first.min(last)..last {
         let row = match i.checked_sub(pins.len()) {
             None => pins[i].take().expect("each pinned row once"),
-            Some(k) => listed_row(app, k),
+            Some(k) => listed_row(app, filter, listed[k]),
         };
         rows = rows.child(
             div()
@@ -240,7 +254,7 @@ pub fn show(
                 )),
         );
     }
-    out.child(
+    out = out.child(
         place(0.0, top, width, list_h).child(
             div()
                 .id(("library-rows", filter as usize))
@@ -249,8 +263,41 @@ pub fn show(
                 .track_scroll(scroll)
                 .child(rows),
         ),
-    )
-    .into_any_element()
+    );
+    // Their albums or artists on their way: rows in grey (Apple Music's
+    // spinner over them comes with its theme).
+    let coming = match filter {
+        Filter::Playlists => false,
+        Filter::Albums => !app.library_albums.done,
+        Filter::Artists => !app.library_artists.done,
+    };
+    if listed.is_empty() && coming && !collapsed {
+        let first = top + pinned_count as f32 * row_height;
+        for k in 0..6 {
+            let y = first + k as f32 * row_height + (row_height - 48.0) / 2.0;
+            let x = 16.0;
+            let round = if filter == Filter::Artists { 24.0 } else { 4.0 };
+            out = out
+                .child(super::loading_shape(&theme, x, y, 48.0, 48.0, round))
+                .child(super::loading_shape(
+                    &theme,
+                    x + 60.0,
+                    y + 8.0,
+                    140.0,
+                    12.0,
+                    4.0,
+                ))
+                .child(super::loading_shape(
+                    &theme,
+                    x + 60.0,
+                    y + 28.0,
+                    90.0,
+                    10.0,
+                    4.0,
+                ));
+        }
+    }
+    out.into_any_element()
 }
 
 /// The pages pinned over the chip's list.
@@ -290,23 +337,47 @@ fn pinned(app: &Music, filter: Filter) -> Vec<Row> {
     }
 }
 
-/// The `i`th of the library's playlists, as the Playlists chip lists them
-/// (the albums' and artists' rows come with their pages).
-fn listed_row(app: &Music, i: usize) -> Row {
-    let p = &app.playlists[i];
-    let by = if p.editable {
-        capitalised_user()
-    } else {
-        p.curator
-            .clone()
-            .unwrap_or_else(|| service(p.id.provider).into())
-    };
-    Row {
-        title: p.name.clone(),
-        subtitle: format!("Playlist · {by}"),
-        art: Art::Cover(p.artwork.as_ref().map(|a| a.url(120))),
-        round: false,
-        page: Page::Playlist(p.id.clone()),
+/// The `i`th item of the library's list the chip shows.
+fn listed_row(app: &Music, filter: Filter, i: usize) -> Row {
+    match filter {
+        Filter::Playlists => {
+            let p = &app.playlists[i];
+            let by = if p.editable {
+                capitalised_user()
+            } else {
+                p.curator
+                    .clone()
+                    .unwrap_or_else(|| service(p.id.provider).into())
+            };
+            Row {
+                title: p.name.clone(),
+                subtitle: format!("Playlist · {by}"),
+                art: Art::Cover(p.artwork.as_ref().map(|a| a.url(120))),
+                round: false,
+                page: Page::Playlist(p.id.clone()),
+            }
+        }
+        Filter::Albums => {
+            let a = &app.library_albums.items[i];
+            Row {
+                title: a.title.clone(),
+                subtitle: format!("Album · {}", a.artists.join(", ")),
+                art: Art::Cover(a.artwork.as_ref().map(|art| art.url(120))),
+                round: false,
+                page: Page::Album(a.id.clone()),
+            }
+        }
+        Filter::Artists => {
+            let a = &app.library_artists.items[i];
+            Row {
+                title: a.name.clone(),
+                subtitle: "Artist".into(),
+                art: Art::Cover(a.artwork.as_ref().map(|art| art.url(120))),
+                round: true,
+                // The library's own id, which its page asks by.
+                page: Page::LibraryArtist(a.library_id.clone().unwrap_or_else(|| a.id.clone())),
+            }
+        }
     }
 }
 

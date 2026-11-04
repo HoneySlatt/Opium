@@ -1,19 +1,25 @@
 //! The window's state, as the egui window's `app.rs` keeps it, the part
-//! drawn so far: the library's songs and playlists as the backend sends
-//! them, the Songs page's order and sort, the albums and playlists opened
-//! and their covers' colours; the pages gone to, back and forth; the
-//! player, the queue and the last session, the media controls; and the
-//! glue to the backend. Its names and shapes are egui's `App`'s, for the
-//! screens still to come to slot in.
+//! drawn so far: the library's songs, playlists, albums, artists and recent
+//! additions as the backend sends them, the Songs page's order and sort,
+//! the albums, playlists and library artists opened and their covers'
+//! colours, Home's, New's and Radio's shelves; the pages gone to, back and
+//! forth; the player, the queue and the last session, the media controls;
+//! and the glue to the backend. Its names and shapes are egui's `App`'s,
+//! for the screens still to come to slot in.
 
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use desktop::backend::{Backend, Downloading, Own, Playable, Reply, Request};
+use desktop::settings::AlbumSort;
 use gpui::{Context, FocusHandle, IntoElement, Render, ScrollHandle, Window};
-use music_core::model::{Album, FavouriteKind, ItemId, Playlist, ProviderKind, Track};
+use music_core::model::{
+    Album, Artist, ArtistDetail, Collection, FavouriteKind, ItemId, Playlist, ProviderKind, Shelf,
+    Station, StationKind, Track,
+};
 use music_core::{Queue, Repeat};
 use player::{Event, Player, Status, Token};
 
@@ -42,6 +48,79 @@ pub enum Page {
     LibraryArtist(ItemId),
     Search(String),
     Settings,
+    /// One shelf of Home, New or Radio in full, named by its title.
+    Shelf(Shelves, String),
+}
+
+/// A page of shelves. (Home, New and Radio, whose See All open one of
+/// them in full, come with their pages.)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[allow(dead_code)]
+pub enum Shelves {
+    Home,
+    New,
+    Radio,
+}
+
+/// A list that arrives page by page, fetched on first visit.
+pub struct Streamed<T> {
+    pub items: Vec<T>,
+    /// Every service that lists it has answered all of it, not the first.
+    pub done: bool,
+    requested: bool,
+    /// The services that have.
+    answered: HashSet<ProviderKind>,
+    /// Moves on with every change, for what is built from the items.
+    pub version: u64,
+}
+
+impl<T> Default for Streamed<T> {
+    fn default() -> Self {
+        Self {
+            items: Vec::new(),
+            done: false,
+            requested: false,
+            answered: Default::default(),
+            version: 0,
+        }
+    }
+}
+
+impl<T> Streamed<T> {
+    /// Whether to ask for it now: true once.
+    fn first_ask(&mut self) -> bool {
+        !std::mem::replace(&mut self.requested, true)
+    }
+
+    fn extend(&mut self, items: Vec<T>, done: bool) {
+        self.items.extend(items);
+        self.done = done;
+        // From one count for every list, so a list emptied and read again
+        // never meets an old version.
+        static VERSIONS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        self.version = VERSIONS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// `provider`'s page, or with `whole` its whole list, replacing its
+    /// items only: those `of_it` says are. Done once every one of
+    /// `listing` has answered.
+    fn arrived_from(
+        &mut self,
+        provider: ProviderKind,
+        (items, done, whole): (Vec<T>, bool, bool),
+        listing: &[ProviderKind],
+        of_it: impl Fn(&T) -> bool,
+    ) {
+        if whole {
+            self.items.retain(|item| !of_it(item));
+        }
+        if done {
+            self.answered.insert(provider);
+        } else {
+            self.answered.remove(&provider);
+        }
+        self.extend(items, listing.iter().all(|p| self.answered.contains(p)));
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -125,6 +204,16 @@ pub enum Loaded<T> {
 
 /// An album and its tracks, as its page shows them.
 pub type AlbumPage = (Album, Arc<Vec<Track>>);
+
+/// What the albums' order was built from: the list's version and the sort.
+type AlbumsOrderKey = (u64, AlbumSort, bool);
+
+/// An album or a playlist whose songs are on their way, to play once they
+/// are in: a card's Play. (Queuing them next or last comes with the menus.)
+enum Waiting {
+    Album(ItemId),
+    Playlist(ItemId),
+}
 
 /// A playlist's tracks, filled page by page.
 #[derive(Default)]
@@ -217,6 +306,49 @@ pub struct Music {
     pub songs_done: bool,
     pub songs_view: SongsView,
     pub playlists: Vec<Playlist>,
+    pub library_albums: Streamed<Album>,
+    /// The library albums in the order the Albums page sorts them, and what
+    /// it was sorted from.
+    albums_order: Option<(AlbumsOrderKey, Arc<Vec<usize>>)>,
+    /// Whether catalog albums and playlists are wholly in the library, as
+    /// Apple said.
+    in_library: HashMap<ItemId, bool>,
+    /// Those to ask Apple about once drawn, and those asked already.
+    in_library_wanted: RefCell<Vec<(FavouriteKind, ItemId)>>,
+    in_library_asked: HashSet<ItemId>,
+    pub library_artists: Streamed<Artist>,
+    /// The copies the library's lists leave out, by the version of the list
+    /// they were found in: albums, artists, recent additions.
+    copies: [Option<(u64, Arc<HashSet<usize>>)>; 3],
+    /// Library artists' albums in the library, by artist.
+    pub artist_albums: HashMap<ItemId, Loaded<Arc<Vec<Album>>>>,
+    pub recently_added: Streamed<Collection>,
+    /// Playlists opened from outside the library (a shelf, Recently Added).
+    other_playlists: HashMap<ItemId, Playlist>,
+    /// The new music page's shelves, once asked for.
+    pub new_music: Option<Loaded<Arc<Vec<Shelf>>>>,
+    /// The radio page's shelves, once asked for.
+    pub radio: Option<Loaded<Arc<Vec<Shelf>>>>,
+    /// The home shelves, once asked for.
+    pub home: Option<Loaded<Arc<Vec<Shelf>>>>,
+    /// The service Home, New and Radio were last asked of.
+    browse_from: Option<ProviderKind>,
+    /// The source filter on the cover grids.
+    pub grid_source: Option<ProviderKind>,
+    /// Albums made whole from their copies on other services, and how many
+    /// copies they were made from.
+    whole_albums: HashMap<ItemId, (usize, Arc<Vec<Track>>)>,
+    /// An album's copies on other services, as of a version of the
+    /// library's albums; an artist's, of its artists.
+    twins: HashMap<ItemId, (u64, Vec<ItemId>)>,
+    artist_twins: HashMap<ItemId, (u64, Vec<ItemId>)>,
+    /// Catalog artists' pages, as far as they have come: an album's More by
+    /// reads them. (The page itself comes later.)
+    pub artists: HashMap<ItemId, Loaded<Arc<ArtistDetail>>>,
+    /// Catalog albums' other editions and music videos.
+    album_extras: HashMap<ItemId, Loaded<Arc<music_core::model::AlbumExtras>>>,
+    /// An album or a playlist to play once its songs are in.
+    waiting: Option<Waiting>,
     /// The songs in the library, by catalog id.
     library_songs: HashSet<ItemId>,
     /// The songs in Apple's playlist of favourites.
@@ -302,6 +434,10 @@ pub struct Music {
     /// Each album and playlist keeps its own place, as egui's scroll areas
     /// salted by the page.
     page_scroll: HashMap<Page, ScrollHandle>,
+    /// The cover grids whose source filter shows, its title clicked.
+    pub sources_shown: HashSet<Page>,
+    /// Where each shelf is scrolled sideways, by its name.
+    pub shelf_scroll: HashMap<String, crate::ui::grid::ShelfScroll>,
     // What GPUI asks for besides.
     /// Takes the keys: the window's own, as egui's input is.
     pub focus: FocusHandle,
@@ -400,6 +536,29 @@ impl Music {
                 ..SongsView::default()
             },
             playlists: Vec::new(),
+            library_albums: Streamed::default(),
+            albums_order: None,
+            in_library: HashMap::new(),
+            in_library_wanted: RefCell::default(),
+            in_library_asked: HashSet::new(),
+            library_artists: Streamed::default(),
+            copies: Default::default(),
+            artist_albums: HashMap::new(),
+            recently_added: Streamed::default(),
+            other_playlists: HashMap::new(),
+            new_music: None,
+            radio: None,
+            home: None,
+            browse_from: None,
+            grid_source: settings
+                .grid_source
+                .filter(|p| !settings.services_off.contains(p)),
+            whole_albums: HashMap::new(),
+            twins: HashMap::new(),
+            artist_twins: HashMap::new(),
+            artists: HashMap::new(),
+            album_extras: HashMap::new(),
+            waiting: None,
             library_songs: HashSet::new(),
             favourite_songs: HashSet::new(),
             favourites_known: HashMap::new(),
@@ -449,6 +608,8 @@ impl Music {
             library_scroll: Default::default(),
             songs_scroll: ScrollHandle::new(),
             page_scroll: HashMap::new(),
+            sources_shown: HashSet::new(),
+            shelf_scroll: HashMap::new(),
             focus: cx.focus_handle(),
             ticking: false,
             dragging: None,
@@ -646,15 +807,24 @@ impl Music {
             .map(|p| p.id.clone())
     }
 
-    /// One of the library's playlists (those found elsewhere come with the
-    /// pages that find them).
+    /// One of the library's playlists, or one opened from outside it.
     pub fn playlist(&self, id: &ItemId) -> Option<&Playlist> {
-        self.playlists.iter().find(|p| &p.id == id)
+        self.playlists
+            .iter()
+            .find(|p| &p.id == id)
+            .or_else(|| self.other_playlists.get(id))
+    }
+
+    /// Open a playlist that is not in the library.
+    pub fn open_playlist(&mut self, playlist: &Playlist) {
+        self.other_playlists
+            .entry(playlist.id.clone())
+            .or_insert_with(|| playlist.clone());
+        self.go(Page::Playlist(playlist.id.clone()));
     }
 
     /// Whether an album or a playlist is in the library, if known: a library
-    /// one is. (A catalog one, as Apple says, is asked with the covers that
-    /// show it, still to come.)
+    /// one is, a catalog one as Apple says, asked the first time it is shown.
     fn collection_in_library(&self, kind: FavouriteKind, id: &ItemId) -> Option<bool> {
         // A SoundCloud playlist is in the library once liked or made; its
         // albums aren't kept there yet.
@@ -667,7 +837,32 @@ impl Music {
             FavouriteKind::Album => id.id.starts_with("l."),
             _ => id.id.starts_with("p."),
         };
-        library.then_some(true)
+        if library {
+            return Some(true);
+        }
+        let known = self.in_library.get(id).copied();
+        if known.is_none() && !self.in_library_asked.contains(id) {
+            self.in_library_wanted.borrow_mut().push((kind, id.clone()));
+        }
+        known
+    }
+
+    /// Ask Apple, in one request a kind, about the covers drawn last.
+    pub fn ask_in_library(&mut self) {
+        let wanted = std::mem::take(&mut *self.in_library_wanted.borrow_mut());
+        for kind in [FavouriteKind::Album, FavouriteKind::Playlist] {
+            let ids: Vec<ItemId> = wanted
+                .iter()
+                .filter(|(k, _)| *k == kind)
+                .map(|(_, id)| id.clone())
+                // Apple answers for its own only.
+                .filter(|id| id.provider == ProviderKind::AppleMusic)
+                .filter(|id| self.in_library_asked.insert(id.clone()))
+                .collect();
+            if !ids.is_empty() {
+                self.backend.send(Request::InLibrary { kind, ids });
+            }
+        }
     }
 
     /// Whether Add to Library is offered for a playlist.
@@ -680,13 +875,445 @@ impl Music {
         self.collection_in_library(FavouriteKind::Album, id) == Some(false)
     }
 
-    /// The album's tracks once it has come. (Made whole from its copies on
-    /// the library's other services once the library's albums are read,
-    /// with their pages.)
-    pub fn album_tracks(&self, id: &ItemId) -> Option<Arc<Vec<Track>>> {
-        match self.albums.get(id) {
-            Some(Loaded::Ready((_, tracks))) => Some(tracks.clone()),
+    /// The album's copies on the library's other services, by their title
+    /// and artist.
+    pub fn album_twins(&mut self, id: &ItemId) -> Vec<ItemId> {
+        let version = self.library_albums.version;
+        if let Some((built, twins)) = self.twins.get(id)
+            && *built == version
+        {
+            return twins.clone();
+        }
+        let Some(Loaded::Ready((album, _))) = self.albums.get(id) else {
+            return Vec::new();
+        };
+        let key = music_core::dedupe::album_key(album);
+        let twins: Vec<ItemId> = self
+            .library_albums
+            .items
+            .iter()
+            .filter(|a| a.id.provider != id.provider && music_core::dedupe::album_key(a) == key)
+            .map(|a| a.id.clone())
+            .collect();
+        self.twins.insert(id.clone(), (version, twins.clone()));
+        twins
+    }
+
+    /// The album's tracks, whole from its copies on every service the
+    /// library has it on, asked for the first time; its own until they come.
+    pub fn album_tracks(&mut self, id: &ItemId) -> Option<Arc<Vec<Track>>> {
+        let own = match self.albums.get(id) {
+            Some(Loaded::Ready((_, tracks))) => tracks.clone(),
+            _ => return None,
+        };
+        let mut copies = vec![own.clone()];
+        for twin in self.album_twins(id) {
+            match self.albums.get(&twin) {
+                Some(Loaded::Ready((_, tracks))) => copies.push(tracks.clone()),
+                Some(_) => {}
+                None => {
+                    self.albums.insert(twin.clone(), Loaded::Loading);
+                    self.backend.send(Request::Album(twin));
+                }
+            }
+        }
+        if copies.len() == 1 {
+            return Some(own);
+        }
+        if let Some((made_of, whole)) = self.whole_albums.get(id)
+            && *made_of == copies.len()
+        {
+            return Some(whole.clone());
+        }
+        let slices: Vec<&[Track]> = copies.iter().map(|c| c.as_slice()).collect();
+        let whole = Arc::new(music_core::dedupe::album_tracks(&slices));
+        self.whole_albums
+            .insert(id.clone(), (copies.len(), whole.clone()));
+        Some(whole)
+    }
+
+    /// The catalog id an album's favourites, Suggest Less, radio and link
+    /// go by: none for one the user uploaded.
+    pub fn album_catalog_id(album: &Album) -> Option<ItemId> {
+        album
+            .catalog_id
+            .clone()
+            .or_else(|| (!album.id.id.starts_with("l.")).then(|| album.id.clone()))
+    }
+
+    /// The catalog album `id`'s other editions and music videos, asked for
+    /// the first time.
+    pub fn album_extras(&mut self, id: &ItemId) -> Option<Arc<music_core::model::AlbumExtras>> {
+        match self.album_extras.get(id) {
+            Some(Loaded::Ready(extras)) => Some(extras.clone()),
+            Some(_) => None,
+            None => {
+                self.album_extras.insert(id.clone(), Loaded::Loading);
+                self.backend.send(Request::AlbumExtras(id.clone()));
+                None
+            }
+        }
+    }
+
+    /// An artist's page as far as it has come; asks for it the first time.
+    pub fn artist_detail(&mut self, id: &ItemId) -> Option<Arc<ArtistDetail>> {
+        match self.artists.get(id) {
+            Some(Loaded::Ready(artist)) => Some(artist.clone()),
+            Some(_) => None,
+            None => {
+                self.artists.insert(id.clone(), Loaded::Loading);
+                self.backend.send(Request::Artist(id.clone()));
+                None
+            }
+        }
+    }
+
+    /// Ask for the library's albums, unless they were asked for already:
+    /// the library sidebar lists them without their page being opened.
+    pub fn want_library_albums(&mut self) {
+        if self.library_albums.first_ask() {
+            self.backend.send(Request::LibraryAlbums);
+        }
+    }
+
+    /// The same for the library's artists.
+    pub fn want_library_artists(&mut self) {
+        if self.library_artists.first_ask() {
+            self.backend.send(Request::LibraryArtists);
+        }
+    }
+
+    /// The services whose albums, artists and recent additions are listed
+    /// (Apple Music's and the server's), signed in or on their way to.
+    fn listing_services(&self) -> Vec<ProviderKind> {
+        let mut listing = Vec::new();
+        if self.service_on(ProviderKind::AppleMusic)
+            && matches!(
+                self.connection,
+                Connection::Connecting | Connection::Connected
+            )
+        {
+            listing.push(ProviderKind::AppleMusic);
+        }
+        if self.service_on(ProviderKind::Navidrome)
+            && matches!(
+                self.navidrome,
+                SoundCloudState::Connecting | SoundCloudState::Connected(_)
+            )
+        {
+            listing.push(ProviderKind::Navidrome);
+        }
+        if self.service_on(ProviderKind::Local)
+            && matches!(
+                self.local,
+                SoundCloudState::Connecting | SoundCloudState::Connected(_)
+            )
+        {
+            listing.push(ProviderKind::Local);
+        }
+        listing
+    }
+
+    pub fn recent_by_date(&self) -> bool {
+        self.settings.recent_by_date.unwrap_or(false)
+    }
+
+    /// Recently Added each service's together, in the same order every
+    /// time; then, by date if so set, merged by when each was added, each
+    /// service's own order kept.
+    fn order_recent(&mut self) {
+        self.recently_added.items.sort_by_key(|c| {
+            match match c {
+                Collection::Album(a) => a.id.provider,
+                Collection::Playlist(p) => p.id.provider,
+                Collection::Station(s) => s.id.provider,
+            } {
+                ProviderKind::AppleMusic => 0,
+                ProviderKind::SoundCloud => 1,
+                ProviderKind::Navidrome => 2,
+                ProviderKind::Local => 3,
+                ProviderKind::Music => 4,
+            }
+        });
+        if self.recent_by_date() {
+            let items = std::mem::take(&mut self.recently_added.items);
+            self.recently_added.items = music_core::recent::in_time_order(items);
+        }
+        // What was built from the items, by place, is built again.
+        self.recently_added.version += 1;
+    }
+
+    /// Albums' and Recently Added's source, kept for next time.
+    pub fn set_grid_source(&mut self, source: Option<ProviderKind>) {
+        self.grid_source = source;
+        self.settings.grid_source = source;
+        self.settings.save();
+    }
+
+    /// A library artist by their library id, once the library's artists are
+    /// read.
+    pub fn library_artist(&self, id: &ItemId) -> Option<&Artist> {
+        // Apple Music's by their library id; the others' have one id.
+        self.library_artists.items.iter().find(|a| {
+            a.library_id.as_ref() == Some(id)
+                || (a.id.provider != ProviderKind::AppleMusic && a.id == *id)
+        })
+    }
+
+    /// The artist's page ids on every service the library has them on, by
+    /// their name: `id`'s own first.
+    pub fn artist_twins(&mut self, id: &ItemId) -> Vec<ItemId> {
+        let version = self.library_artists.version;
+        if let Some((built, twins)) = self.artist_twins.get(id)
+            && *built == version
+        {
+            return twins.clone();
+        }
+        let Some(name) = self.library_artist(id).map(|a| fold(a.name.trim())) else {
+            return vec![id.clone()];
+        };
+        let mut twins = vec![id.clone()];
+        for a in &self.library_artists.items {
+            let page = a.library_id.clone().unwrap_or_else(|| a.id.clone());
+            if page != *id && fold(a.name.trim()) == name {
+                twins.push(page);
+            }
+        }
+        self.artist_twins
+            .insert(id.clone(), (version, twins.clone()));
+        twins
+    }
+
+    /// The copies the Albums (`0`), Artists (`1`) or Recently Added (`2`)
+    /// page leaves out: found again when its list changes.
+    pub fn copies(&mut self, list: usize) -> Arc<HashSet<usize>> {
+        let version = match list {
+            0 => self.library_albums.version,
+            1 => self.library_artists.version,
+            _ => self.recently_added.version,
+        };
+        if let Some((built, copies)) = &self.copies[list]
+            && *built == version
+        {
+            return copies.clone();
+        }
+        let copies = Arc::new(match list {
+            0 => music_core::dedupe::albums(&self.library_albums.items),
+            1 => music_core::dedupe::artists(&self.library_artists.items),
+            _ => {
+                // The albums among them, as albums.
+                let (at, albums): (Vec<usize>, Vec<Album>) = self
+                    .recently_added
+                    .items
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, c)| match c {
+                        Collection::Album(a) => Some((i, a.clone())),
+                        _ => None,
+                    })
+                    .unzip();
+                music_core::dedupe::albums(&albums)
+                    .into_iter()
+                    .map(|k| at[k])
+                    .collect()
+            }
+        });
+        self.copies[list] = Some((version, copies.clone()));
+        copies
+    }
+
+    /// The library's songs from `albums`, album by album in that order, each
+    /// in its discs' and tracks' order.
+    pub fn songs_of(&self, albums: &[Album]) -> Vec<Track> {
+        let place: HashMap<&ItemId, usize> =
+            albums.iter().enumerate().map(|(i, a)| (&a.id, i)).collect();
+        let mut songs: Vec<(usize, &Track)> = self
+            .songs
+            .iter()
+            .filter_map(|t| Some((*place.get(t.album_id.as_ref()?)?, t)))
+            .collect();
+        songs.sort_by_key(|(album, t)| (*album, t.disc_number, t.track_number));
+        songs.into_iter().map(|(_, t)| t.clone()).collect()
+    }
+
+    /// How the Albums page is sorted, and whether ascending.
+    pub fn albums_sort(&self) -> (AlbumSort, bool) {
+        (
+            self.settings.albums_sort.unwrap_or(AlbumSort::Name),
+            self.settings.albums_ascending.unwrap_or(true),
+        )
+    }
+
+    /// The library albums' indices, sorted as the Albums page shows them:
+    /// names without case or accents, dates as Apple writes them; those
+    /// without the date sorted by go last either way.
+    pub fn albums_in_order(&mut self) -> Arc<Vec<usize>> {
+        let (by, ascending) = self.albums_sort();
+        let key = (self.library_albums.version, by, ascending);
+        if let Some((built, order)) = &self.albums_order
+            && *built == key
+        {
+            return order.clone();
+        }
+        let albums = &self.library_albums.items;
+        let name = |i: usize| fold(&albums[i].title);
+        let mut order: Vec<usize> = (0..albums.len()).collect();
+        let direct = |o: std::cmp::Ordering| if ascending { o } else { o.reverse() };
+        match by {
+            AlbumSort::Name => {
+                let names: Vec<String> = (0..albums.len()).map(name).collect();
+                order.sort_by(|&a, &b| direct(names[a].cmp(&names[b])));
+            }
+            AlbumSort::Artist => {
+                let keys: Vec<(String, String)> = (0..albums.len())
+                    .map(|i| (fold(&albums[i].artists.join(", ")), name(i)))
+                    .collect();
+                order.sort_by(|&a, &b| direct(keys[a].cmp(&keys[b])));
+            }
+            AlbumSort::Added | AlbumSort::Released => {
+                let date = |i: usize| match by {
+                    AlbumSort::Added => albums[i].added.clone(),
+                    _ => albums[i]
+                        .released
+                        .clone()
+                        .or_else(|| albums[i].year.map(|y| y.to_string())),
+                };
+                let dates: Vec<Option<String>> = (0..albums.len()).map(date).collect();
+                order.sort_by(|&a, &b| match (&dates[a], &dates[b]) {
+                    (Some(x), Some(y)) => direct(x.cmp(y)),
+                    (Some(_), None) => std::cmp::Ordering::Less,
+                    (None, Some(_)) => std::cmp::Ordering::Greater,
+                    (None, None) => std::cmp::Ordering::Equal,
+                });
+            }
+        }
+        let order = Arc::new(order);
+        self.albums_order = Some((key, order.clone()));
+        order
+    }
+
+    // ---- Home, New and Radio's shelves ----
+
+    /// The services connected now that can fill Home, New and Radio.
+    pub fn browse_sources(&self) -> Vec<ProviderKind> {
+        let connected = |provider| match provider {
+            ProviderKind::AppleMusic => matches!(self.connection, Connection::Connected),
+            ProviderKind::SoundCloud => matches!(self.soundcloud, SoundCloudState::Connected(_)),
+            ProviderKind::Navidrome => matches!(self.navidrome, SoundCloudState::Connected(_)),
+            // The files have no picks.
+            ProviderKind::Local | ProviderKind::Music => false,
+        };
+        [
+            ProviderKind::AppleMusic,
+            ProviderKind::SoundCloud,
+            ProviderKind::Navidrome,
+        ]
+        .into_iter()
+        .filter(|&p| self.service_on(p) && connected(p))
+        .collect()
+    }
+
+    /// Where Home, New and Radio come from: the one chosen if connected,
+    /// else Apple Music, else the first connected.
+    pub fn browse_source(&self) -> Option<ProviderKind> {
+        let connected = self.browse_sources();
+        self.settings
+            .browse_source
+            .filter(|s| connected.contains(s))
+            .or_else(|| {
+                connected
+                    .iter()
+                    .copied()
+                    .find(|&p| p == ProviderKind::AppleMusic)
+            })
+            .or_else(|| connected.first().copied())
+    }
+
+    /// The pages' service is another now (chosen, or connected): what they
+    /// showed goes, to be asked of it on arriving.
+    fn browse_changed(&mut self) {
+        let source = self.browse_source();
+        if source != self.browse_from {
+            self.browse_from = source;
+            self.home = None;
+            self.new_music = None;
+            self.radio = None;
+        }
+    }
+
+    /// Whether a service that could fill Home, New or Radio is still
+    /// connecting, so that the pages wait on it.
+    fn browse_connecting(&self) -> bool {
+        [&self.soundcloud, &self.navidrome]
+            .iter()
+            .any(|s| matches!(s, SoundCloudState::Connecting))
+            || matches!(self.connection, Connection::Connecting)
+    }
+
+    /// On a page of shelves, their service another now (chosen, or just
+    /// connected): asked of it. Whether it was. (Home, New and Radio
+    /// themselves come with their pages; one of their shelves in full is
+    /// here.)
+    fn browse_page(&mut self) -> bool {
+        let shelves = match &self.page {
+            Page::Shelf(which, _) => Some(*which),
             _ => None,
+        };
+        let Some(which) = shelves else { return false };
+        // Asked while every service was still connecting, the page was left
+        // waiting on one: once none is connecting any more, it is asked
+        // again, so that a first run says to connect a service in Settings
+        // rather than turning for ever.
+        let waiting_on_nothing = self.browse_from.is_none()
+            && self.browse_source().is_none()
+            && !self.browse_connecting()
+            && !matches!(
+                self.shelves(which),
+                Some(Loaded::Ready(_)) | Some(Loaded::Failed(_))
+            );
+        if self.browse_source() == self.browse_from && !waiting_on_nothing {
+            return false;
+        }
+        self.browse_changed();
+        self.refresh(which);
+        true
+    }
+
+    /// Ask `which` of the pages' service, or say none is connected.
+    fn ask_browse(&mut self, request: fn(ProviderKind) -> Request) -> Loaded<Arc<Vec<Shelf>>> {
+        self.browse_changed();
+        match self.browse_from {
+            Some(source) => {
+                self.backend.send(request(source));
+                Loaded::Loading
+            }
+            // One connecting: asked once it has (see `browse_page`).
+            None if self.browse_connecting() => Loaded::Loading,
+            None => Loaded::Failed("Connect a service in Settings to see its picks here.".into()),
+        }
+    }
+
+    /// Home's, New's or Radio's shelves, as far as they have come.
+    pub fn shelves(&self, which: Shelves) -> Option<&Loaded<Arc<Vec<Shelf>>>> {
+        match which {
+            Shelves::Home => self.home.as_ref(),
+            Shelves::New => self.new_music.as_ref(),
+            Shelves::Radio => self.radio.as_ref(),
+        }
+    }
+
+    /// Ask for Home's, New's or Radio's shelves again.
+    pub fn refresh(&mut self, which: Shelves) {
+        let request = match which {
+            Shelves::Home => Request::Home,
+            Shelves::New => Request::NewMusic,
+            Shelves::Radio => Request::Radio,
+        };
+        let shelves = Some(self.ask_browse(request));
+        match which {
+            Shelves::Home => self.home = shelves,
+            Shelves::New => self.new_music = shelves,
+            Shelves::Radio => self.radio = shelves,
         }
     }
 
@@ -810,8 +1437,8 @@ impl Music {
         }
     }
 
-    /// Where an album's or a playlist's page is scrolled to: its own, kept
-    /// as long as the window, as egui keeps its scroll areas'.
+    /// Where a page is scrolled to: its own, kept as long as the window, as
+    /// egui keeps its scroll areas'.
     pub fn page_scroll(&mut self, page: &Page) -> ScrollHandle {
         self.page_scroll.entry(page.clone()).or_default().clone()
     }
@@ -1047,6 +1674,9 @@ impl Music {
         {
             self.page = Page::Playlist(id);
         }
+        if self.browse_page() {
+            return;
+        }
         match &self.page {
             // Not asked yet, or failed (offline, a service not connected
             // yet): asked again on arriving.
@@ -1058,6 +1688,29 @@ impl Music {
             {
                 self.albums.insert(id.clone(), Loaded::Loading);
                 self.backend.send(Request::Album(id.clone()));
+            }
+            Page::Shelf(which, _) if self.shelves(*which).is_none() => self.refresh(*which),
+            Page::Albums if self.library_albums.first_ask() => {
+                self.backend.send(Request::LibraryAlbums);
+            }
+            Page::Artists if self.library_artists.first_ask() => {
+                self.backend.send(Request::LibraryArtists);
+            }
+            Page::RecentlyAdded if self.recently_added.first_ask() => {
+                self.backend.send(Request::RecentlyAdded);
+            }
+            // Their releases on every service the library has them on.
+            Page::LibraryArtist(id) => {
+                let id = id.clone();
+                for twin in self.artist_twins(&id) {
+                    if !matches!(
+                        self.artist_albums.get(&twin),
+                        Some(Loaded::Loading | Loaded::Ready(_))
+                    ) {
+                        self.artist_albums.insert(twin.clone(), Loaded::Loading);
+                        self.backend.send(Request::LibraryArtistAlbums(twin));
+                    }
+                }
             }
             // A catalog playlist says whether it is a favourite when asked.
             Page::Playlist(id)
@@ -1106,6 +1759,39 @@ impl Music {
             if page != self.page {
                 self.go(page);
             }
+        }
+    }
+
+    /// The page's title, as the bar over it says it once scrolled.
+    pub fn page_title(&self) -> String {
+        match &self.page {
+            Page::Home => "Home".into(),
+            Page::New => "New".into(),
+            Page::Radio => "Radio".into(),
+            Page::RecentlyAdded => "Recently Added".into(),
+            Page::Songs => "Songs".into(),
+            Page::Albums => "Albums".into(),
+            Page::Artists => "Artists".into(),
+            Page::Favourites => "Favourite Songs".into(),
+            Page::Playlist(id) => self
+                .playlist(id)
+                .map(|p| p.name.clone())
+                .unwrap_or_default(),
+            Page::Album(id) => match self.albums.get(id) {
+                Some(Loaded::Ready((album, _))) => album.title.clone(),
+                _ => String::new(),
+            },
+            Page::Artist(id) => match self.artists.get(id) {
+                Some(Loaded::Ready(artist)) => artist.artist.name.clone(),
+                _ => String::new(),
+            },
+            Page::LibraryArtist(id) => self
+                .library_artist(id)
+                .map(|a| a.name.clone())
+                .unwrap_or_default(),
+            Page::Search(_) => "Search".into(),
+            Page::Settings => "Settings".into(),
+            Page::Shelf(_, title) => title.clone(),
         }
     }
 
@@ -1231,6 +1917,113 @@ impl Music {
             | Page::Favourites => Some(self.page.clone()),
             _ => None,
         };
+    }
+
+    /// Play a station: what airs (or an episode) as one endless track, a
+    /// station of songs as a queue that tops itself up.
+    pub fn play_station(&mut self, station: &Station) {
+        match station.kind {
+            StationKind::Live | StationKind::Episode => {
+                let track = Track {
+                    id: station.id.clone(),
+                    title: station.name.clone(),
+                    artists: vec![match station.kind {
+                        StationKind::Live => "Live radio".to_owned(),
+                        _ => "Radio".to_owned(),
+                    }],
+                    album: station.description.clone(),
+                    album_id: None,
+                    duration: None,
+                    track_number: None,
+                    disc_number: None,
+                    artwork: station.artwork.clone(),
+                    explicit: false,
+                    quality: None,
+                    in_library: false,
+                    library_id: None,
+                };
+                self.play_list(vec![track], 0);
+            }
+            StationKind::Tracks => {
+                self.play_list(Vec::new(), 0);
+                self.station = Some(station.id.clone());
+                self.station_loading = true;
+                self.backend
+                    .send(Request::StationTracks(station.id.clone()));
+            }
+        }
+    }
+
+    /// Play an album now, as a card's Play: its songs fetched first if need
+    /// be.
+    pub fn enqueue_album(&mut self, id: ItemId) {
+        if let Some(tracks) = self.album_tracks(&id) {
+            self.play_from(tracks.to_vec(), Page::Album(id));
+            return;
+        }
+        if !matches!(self.albums.get(&id), Some(Loaded::Loading)) {
+            self.albums.insert(id.clone(), Loaded::Loading);
+            self.backend.send(Request::Album(id.clone()));
+        }
+        self.waiting = Some(Waiting::Album(id));
+    }
+
+    /// Play a playlist now, as a card's Play: its songs fetched first if
+    /// need be.
+    pub fn enqueue_playlist(&mut self, playlist: &Playlist) {
+        self.other_playlists
+            .entry(playlist.id.clone())
+            .or_insert_with(|| playlist.clone());
+        let id = playlist.id.clone();
+        if let Some(entry) = self.playlist_tracks.get(&id)
+            && entry.done
+        {
+            let tracks = entry.tracks.to_vec();
+            self.play_from(tracks, Page::Playlist(id));
+            return;
+        }
+        if !self.playlist_tracks.contains_key(&id) {
+            self.playlist_tracks
+                .insert(id.clone(), PlaylistTracks::default());
+            self.backend.send(Request::Playlist(id.clone()));
+        }
+        self.waiting = Some(Waiting::Playlist(id));
+    }
+
+    /// Play the album or playlist that was waiting, once its tracks are in.
+    fn queue_waiting(&mut self) {
+        let tracks = match &self.waiting {
+            Some(Waiting::Album(id)) => match self.albums.get(id) {
+                Some(Loaded::Ready((_, tracks))) => Some(tracks.to_vec()),
+                Some(Loaded::Failed(_)) => Some(Vec::new()),
+                _ => None,
+            },
+            Some(Waiting::Playlist(id)) => self
+                .playlist_tracks
+                .get(id)
+                .filter(|p| p.done)
+                .map(|p| p.tracks.to_vec()),
+            None => None,
+        };
+        if let Some(tracks) = tracks
+            && let Some(waiting) = self.waiting.take()
+        {
+            let from = match waiting {
+                Waiting::Album(id) => Page::Album(id),
+                Waiting::Playlist(id) => Page::Playlist(id),
+            };
+            self.play_from(tracks, from);
+        }
+    }
+
+    /// An album's or a playlist's songs played now, as egui's `enqueue_from`
+    /// with `Enqueue::Now`: they play from its page.
+    fn play_from(&mut self, tracks: Vec<Track>, from: Page) {
+        if tracks.is_empty() {
+            return;
+        }
+        self.play_list(tracks, 0);
+        self.playing_from = Some(from);
     }
 
     fn issue(&mut self, track: Track) -> Token {
@@ -1728,7 +2521,10 @@ impl Music {
                     }
                 },
                 Reply::ProfilePicture(picture) => self.profile_picture = Some(picture),
-                Reply::Connected { .. } => self.connection = Connection::Connected,
+                Reply::Connected { .. } => {
+                    self.connection = Connection::Connected;
+                    self.browse_page();
+                }
                 Reply::NotSignedIn => self.connection = Connection::NotSignedIn,
                 Reply::CouldntConnect(e) => self.connection = Connection::Failed(e),
                 Reply::SoundCloud(_) if !self.service_on(ProviderKind::SoundCloud) => {}
@@ -1739,6 +2535,7 @@ impl Music {
                         Ok(None) => SoundCloudState::NotSignedIn,
                         Err(e) => SoundCloudState::Failed(e),
                     };
+                    self.browse_page();
                 }
                 Reply::Navidrome(result) => {
                     self.navidrome = match result {
@@ -1746,6 +2543,7 @@ impl Music {
                         Ok(None) => SoundCloudState::NotSignedIn,
                         Err(e) => SoundCloudState::Failed(e),
                     };
+                    self.browse_page();
                 }
                 Reply::Starred(ids) => {
                     for id in ids {
@@ -1825,6 +2623,114 @@ impl Music {
                         self.apple_playlists_arrived();
                     }
                 }
+                Reply::LibraryAlbums {
+                    provider,
+                    albums,
+                    done,
+                    whole,
+                } => {
+                    let listing = self.listing_services();
+                    self.library_albums.arrived_from(
+                        provider,
+                        (albums, done, whole),
+                        &listing,
+                        |a| a.id.provider == provider,
+                    );
+                }
+                Reply::LibraryArtists {
+                    provider,
+                    artists,
+                    done,
+                    whole,
+                } => {
+                    let listing = self.listing_services();
+                    self.library_artists.arrived_from(
+                        provider,
+                        (artists, done, whole),
+                        &listing,
+                        |a| a.id.provider == provider,
+                    );
+                }
+                Reply::AlbumExtras { id, result } => {
+                    let loaded = match result {
+                        Ok(extras) => Loaded::Ready(extras),
+                        Err(e) => Loaded::Failed(e),
+                    };
+                    self.album_extras.insert(id, loaded);
+                }
+                Reply::LibraryArtistAlbums { id, result } => {
+                    let loaded = match result {
+                        Ok(albums) => Loaded::Ready(Arc::new(albums)),
+                        Err(e) => Loaded::Failed(e),
+                    };
+                    self.artist_albums.insert(id, loaded);
+                }
+                // Asked of another service since: not shown.
+                Reply::NewMusic { source, .. }
+                | Reply::Radio { source, .. }
+                | Reply::Home { source, .. }
+                    if Some(source) != self.browse_from => {}
+                Reply::NewMusic { result, .. } => {
+                    self.new_music = Some(match result {
+                        Ok(shelves) => Loaded::Ready(Arc::new(shelves)),
+                        Err(e) => Loaded::Failed(e),
+                    });
+                }
+                Reply::Radio { result, .. } => {
+                    self.radio = Some(match result {
+                        Ok(shelves) => Loaded::Ready(Arc::new(shelves)),
+                        Err(e) => Loaded::Failed(e),
+                    });
+                }
+                Reply::Home { result, .. } => {
+                    self.home = Some(match result {
+                        Ok(shelves) => Loaded::Ready(Arc::new(shelves)),
+                        Err(e) => Loaded::Failed(e),
+                    });
+                }
+                Reply::RecentlyAdded {
+                    provider,
+                    items,
+                    done,
+                } => {
+                    // Each service's whole, in place of what it said before.
+                    let whole = true;
+                    let mut listing = self.listing_services();
+                    if self.service_on(ProviderKind::SoundCloud)
+                        && matches!(
+                            self.soundcloud,
+                            SoundCloudState::Connecting | SoundCloudState::Connected(_)
+                        )
+                    {
+                        listing.push(ProviderKind::SoundCloud);
+                    }
+                    self.recently_added.arrived_from(
+                        provider,
+                        (items, done, whole),
+                        &listing,
+                        |c| match c {
+                            Collection::Album(a) => a.id.provider == provider,
+                            Collection::Playlist(p) => p.id.provider == provider,
+                            Collection::Station(s) => s.id.provider == provider,
+                        },
+                    );
+                    self.order_recent();
+                }
+                Reply::Artist { id, result } => {
+                    let loaded = match result {
+                        Ok(artist) => {
+                            if let Some(on) = artist.artist.in_favourites {
+                                self.favourites_known
+                                    .entry(artist.artist.id.clone())
+                                    .or_insert(on);
+                            }
+                            Loaded::Ready(artist)
+                        }
+                        Err(e) => Loaded::Failed(e),
+                    };
+                    self.artists.insert(id, loaded);
+                }
+                Reply::InLibrary(known) => self.in_library.extend(known),
                 Reply::Album { id, result } => {
                     let loaded = match result.map(|b| *b) {
                         Ok((album, tracks)) => {
@@ -2048,6 +2954,9 @@ impl Music {
             }
         }
         self.status = self.player.status();
+        if self.waiting.is_some() {
+            self.queue_waiting();
+        }
     }
 }
 
@@ -2055,7 +2964,10 @@ impl Render for Music {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         crate::ui::set_zoom(self.scale() * desktop::settings::SCALE_UNIT);
         crate::covers::forget_unseen(window, cx);
-        crate::ui::show(self, window, cx)
+        let shown = crate::ui::show(self, window, cx);
+        // The covers just drawn that Apple hasn't said about yet.
+        self.ask_in_library();
+        shown
     }
 }
 

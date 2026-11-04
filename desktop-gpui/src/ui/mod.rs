@@ -5,7 +5,9 @@
 
 pub mod detail;
 pub mod dock;
+pub mod grid;
 pub mod library;
+pub mod library_artist;
 mod paint;
 pub mod songs;
 pub mod tracks;
@@ -141,6 +143,30 @@ pub fn text_width(window: &Window, s: &str, size: f32, weight: Weight) -> f32 {
     f32::from(line.width) / zoom()
 }
 
+/// `s` as egui's `truncate_at_width` sets it in `max` points: whole if it
+/// fits, else as much of it as fits with an ellipsis after. GPUI's own
+/// truncation cuts sooner, which matters where something follows the text.
+pub fn elide(window: &Window, s: &str, size: f32, weight: Weight, max: f32) -> String {
+    if text_width(window, s, size, weight) <= max {
+        return s.to_owned();
+    }
+    let ends: Vec<usize> = s.char_indices().map(|(i, _)| i).skip(1).collect();
+    // The most characters that fit with the ellipsis.
+    let (mut fit, mut over) = (0, ends.len());
+    while fit < over {
+        let mid = (fit + over).div_ceil(2);
+        if text_width(window, &format!("{}…", &s[..ends[mid - 1]]), size, weight) <= max {
+            fit = mid;
+        } else {
+            over = mid - 1;
+        }
+    }
+    match fit {
+        0 => "…".to_owned(),
+        n => format!("{}…", &s[..ends[n - 1]]),
+    }
+}
+
 /// An icon `size` points square centred on `x`, `y`.
 pub fn icon_at(icon: Icon, x: f32, y: f32, size: f32, color: Rgba) -> Div {
     place(x - size / 2.0, y - size / 2.0, size, size).child(icon.element(size, color))
@@ -256,15 +282,30 @@ pub fn artwork(
     radius: f32,
     theme: &Theme,
 ) -> Div {
+    artwork_sized(window, cx, url, size, size, radius, theme)
+}
+
+/// …in a box `w` by `h` points, the picture stretched to it: a music
+/// video's still.
+pub fn artwork_sized(
+    window: &mut Window,
+    cx: &mut App,
+    url: Option<&str>,
+    w: f32,
+    h: f32,
+    radius: f32,
+    theme: &Theme,
+) -> Div {
     let frame = div()
         .flex_none()
-        .size(z(size))
+        .w(z(w))
+        .h(z(h))
         .rounded(z(radius))
         .bg(theme.surface0);
     let Some(url) = url else {
         return frame;
     };
-    let pixels = size * zoom() * window.scale_factor();
+    let pixels = w.max(h) * zoom() * window.scale_factor();
     let Some(cover) = crate::covers::Cover::drawn(url, pixels) else {
         return frame;
     };
@@ -275,7 +316,8 @@ pub fn artwork(
     };
     frame.child(
         img(image)
-            .size(z(size))
+            .w(z(w))
+            .h(z(h))
             .rounded(z(radius))
             .object_fit(ObjectFit::Fill),
     )
@@ -331,6 +373,151 @@ pub fn vertical_gradient(w: Option<f32>, h: f32, top: Rgba, bottom: Rgba) -> Div
                 linear_color_stop(lerp(top, bottom, t1), 1.0),
             ))
     }))
+}
+
+/// The glow at the top of pages without a cover, `width` by `height`
+/// points, as the theme has it: Spotify's grey from the top, M3E's tonal
+/// containers fading into the page, else the accent's and mauve's.
+pub fn glow(window: &Window, theme: &Theme, width: f32, height: f32) -> Div {
+    use crate::theme::Glow;
+    use paint::Blob;
+    let blob = |center, radii, color, alpha, fade| Blob {
+        center,
+        radii,
+        color,
+        alpha,
+        fade,
+    };
+    let (blobs, fade_to_base) = match theme.layout.glow {
+        Glow::Grey => (
+            vec![blob((0.5, -0.6), (1.4, 1.3), theme.surface2, 0.55, 0.9)],
+            false,
+        ),
+        // M3E's: the accent, the secondary and the tertiary containers
+        // across the top, fading into the page.
+        Glow::Tonal => (
+            vec![
+                blob(
+                    (0.12, 0.0),
+                    (0.60, 0.75),
+                    mix(theme.accent, theme.base, 0.55),
+                    0.9,
+                    0.7,
+                ),
+                blob(
+                    (0.52, 0.0),
+                    (0.45, 0.65),
+                    mix(theme.tonal.secondary_container, theme.base, 0.8),
+                    0.9,
+                    0.7,
+                ),
+                blob(
+                    (0.92, 0.06),
+                    (0.45, 0.70),
+                    mix(theme.tonal.tertiary_container, theme.base, 0.7),
+                    0.9,
+                    0.7,
+                ),
+            ],
+            true,
+        ),
+        _ => (
+            vec![
+                blob((0.08, -0.10), (0.55, 0.90), theme.accent, 0.26, 0.70),
+                blob((0.62, -0.25), (0.45, 0.80), theme.mauve, 0.20, 0.72),
+            ],
+            false,
+        ),
+    };
+    // Smooth as it is, a pixel in four either way is enough: the GPU
+    // stretches it, blending as the mesh would.
+    let pixels = |points: f32| ((points * zoom() * window.scale_factor()) / 4.0).ceil() as u32;
+    place(0.0, 0.0, width, height).child(
+        img(paint::wash(
+            theme.base,
+            &blobs,
+            fade_to_base,
+            pixels(width),
+            pixels(height),
+        ))
+        .size_full()
+        .object_fit(ObjectFit::Fill),
+    )
+}
+
+/// A shape of what loads, `w` by `h` points at `x`, `y`: grey in Spotify's,
+/// none in Apple Music's, whose spinner stands for them all (still to
+/// come, as is the shapes' breathing).
+pub fn loading_shape(theme: &Theme, x: f32, y: f32, w: f32, h: f32, radius: f32) -> Div {
+    if theme.layout.motion != crate::theme::Motion::Spotify {
+        return div();
+    }
+    place(x, y, w, h).rounded(z(radius)).bg(theme.hover())
+}
+
+/// How large a section's title is set, as the theme's headings are.
+pub fn heading(theme: &Theme) -> (f32, Weight) {
+    match theme.layout.headings {
+        crate::theme::Headings::Small => (18.0, Weight::SemiBold),
+        crate::theme::Headings::Large => (24.0, Weight::Bold),
+    }
+}
+
+/// A section's title at `left`, its top at `top`, as egui's `section_head`.
+pub fn section_head(theme: &Theme, left: f32, top: f32, title: &str) -> Div {
+    let (size, weight) = heading(theme);
+    text_at(
+        left,
+        top + 11.0,
+        size,
+        Align::Min,
+        label_cut(title.to_owned(), size, weight, theme.text, 600.0),
+    )
+}
+
+/// What a page says instead of what it couldn't show: a title, a line
+/// under it.
+pub fn message(theme: &Theme, left: f32, top: f32, width: f32, title: &str, detail: &str) -> Div {
+    div()
+        .absolute()
+        .left_0()
+        .top_0()
+        .size_full()
+        .child(text_at(
+            left,
+            top + 20.0,
+            15.0,
+            Align::Min,
+            label_cut(title.to_owned(), 15.0, Weight::SemiBold, theme.text, width),
+        ))
+        .child(text_at(
+            left,
+            top + 44.0,
+            13.0,
+            Align::Min,
+            label_cut(
+                detail.to_owned(),
+                13.0,
+                Weight::Regular,
+                theme.subtext0,
+                width,
+            ),
+        ))
+}
+
+/// The bar over a page scrolled down, as egui's top bar turns solid: the
+/// page's colour and its title.
+pub fn scrolled_bar(theme: &Theme, width: f32, title: String) -> Div {
+    place(0.0, 0.0, width, TOP_BAR)
+        .bg(alpha(theme.base, 0.96))
+        .child(hline(0.0, TOP_BAR - 0.5, width, theme.line()))
+        .child(text_at(
+            width / 2.0,
+            TOP_BAR / 2.0,
+            13.0,
+            Align::Center,
+            label_cut(title, 13.0, Weight::SemiBold, theme.text, 400.0),
+        ))
 }
 
 /// egui's `Shadow { offset, blur, spread: 0, color }`.
@@ -396,7 +583,8 @@ pub fn banner_bar(
                 .cursor_pointer()
                 .hover(move |s| s.bg(lit))
                 .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
-                    this.play_page(page_tracks(this));
+                    let tracks = page_tracks(this);
+                    this.play_page(tracks);
                     this.acted(window, cx);
                 }))
                 .child(icon_at(
@@ -437,7 +625,7 @@ pub fn backdrop(app: &mut Music) -> Option<crate::palette::Palette> {
 }
 
 /// The songs the page shown lists, in its order: what its Play plays.
-pub fn page_tracks(app: &Music) -> Vec<Track> {
+pub fn page_tracks(app: &mut Music) -> Vec<Track> {
     match app.page {
         Page::Songs => songs::shown_tracks(app),
         _ => detail::shown_tracks(app).to_vec(),
@@ -574,6 +762,21 @@ pub fn show(app: &mut Music, window: &mut Window, cx: &mut gpui::Context<Music>)
         }
         Page::Playlist(id) => {
             main = main.child(detail::playlist(app, window, cx, main_w, main_h, pad, &id));
+        }
+        Page::LibraryArtist(id) => {
+            main = main.child(library_artist::show(
+                app, window, cx, main_w, main_h, pad, &id,
+            ));
+        }
+        Page::Albums => main = main.child(grid::albums(app, window, cx, main_w, main_h, pad)),
+        Page::Artists => main = main.child(grid::artists(app, window, cx, main_w, main_h, pad)),
+        Page::RecentlyAdded => {
+            main = main.child(grid::recently_added(app, window, cx, main_w, main_h, pad));
+        }
+        Page::Shelf(which, title) => {
+            main = main.child(grid::shelf(
+                app, window, cx, main_w, main_h, pad, which, &title,
+            ));
         }
         _ => {}
     }
