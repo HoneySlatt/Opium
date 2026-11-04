@@ -57,7 +57,7 @@ with Jetpack Compose, over the same Rust core.
 With Nix:
 
 ```sh
-nix run github:HoneySlatt/Music
+nix run github:HoneySlatt/Opium
 ```
 
 Or with Cargo. Besides a Rust toolchain you need `pkg-config`, a C and C++
