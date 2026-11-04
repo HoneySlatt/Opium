@@ -264,15 +264,14 @@ pub fn show(
         };
         match &galleys[i] {
             // The line being sung: what is sung lights up as it goes, word
-            // by word as timed, else each word in its share of the line.
+            // by word as timed, else the whole line at once.
             Some(_) if on => {
-                let next = lyrics.lines.get(i + 1);
                 let (size, wrap) = if grown {
                     (size * LIT, wrap * LIT)
                 } else {
                     (size, wrap)
                 };
-                let lit = words(line, next, position);
+                let lit = words(line, position);
                 let galley = sung(ui, &lit, size, wrap, theme, fade);
                 let top = rect.center().y - galley.size().y / 2.0;
                 let mut shape = egui::Shape::galley(pos2(rect.left() + PAD.x, top), galley, color);
@@ -342,9 +341,9 @@ const EDGE: f32 = 1.8;
 const LIGHT_STEPS: f32 = 16.0;
 
 /// The words of the line playing, each with how far it has been sung: as
-/// timed word by word, else each its share of the line by its length, as
-/// on the phone. Their text keeps the space after them.
-fn words(line: &LyricLine, next: Option<&LyricLine>, position: Duration) -> Vec<(String, f32)> {
+/// timed word by word (Apple Music's), else all of them at once, as on the
+/// phone. Their text keeps the space after them.
+fn words(line: &LyricLine, position: Duration) -> Vec<(String, f32)> {
     if !line.words.is_empty() {
         return line
             .words
@@ -356,29 +355,18 @@ fn words(line: &LyricLine, next: Option<&LyricLine>, position: Duration) -> Vec<
             })
             .collect();
     }
-    let end = line
-        .end
-        .or(next.map(|n| n.start))
-        .unwrap_or(line.start + Duration::from_secs(4));
-    // The line is sung a little ahead of its end.
-    let span = (end.saturating_sub(line.start).as_secs_f32() * 0.82).max(0.5);
-    let sung = (position.saturating_sub(line.start).as_secs_f32() / span).clamp(0.0, 1.0);
+    // Timed line by line: the whole line lit at once.
     let parts: Vec<&str> = line.text.split(' ').filter(|w| !w.is_empty()).collect();
-    let total: f32 = parts.iter().map(|w| w.chars().count() as f32 + 1.0).sum();
-    let mut done = 0.0;
     parts
         .iter()
         .enumerate()
         .map(|(k, w)| {
-            let from = done / total;
-            done += w.chars().count() as f32 + 1.0;
-            let to = done / total;
             let text = if k + 1 < parts.len() {
                 format!("{w} ")
             } else {
                 (*w).to_owned()
             };
-            (text, ((sung - from) / (to - from)).clamp(0.0, 1.0))
+            (text, 1.0)
         })
         .collect()
 }
@@ -537,21 +525,16 @@ mod tests {
     }
 
     #[test]
-    fn an_untimed_line_is_shared_among_its_words_by_length() {
+    fn an_untimed_line_lights_whole_at_once() {
         let line = LyricLine {
             start: Duration::from_secs(10),
             end: Some(Duration::from_secs(20)),
             text: "a longer line".into(),
             words: Vec::new(),
         };
-        let at = |s: f32| words(&line, None, Duration::from_secs_f32(s));
-        assert!(at(10.0).iter().all(|(_, p)| *p == 0.0));
-        let half = at(13.0);
-        assert_eq!(half[0], ("a ".to_owned(), 1.0));
-        assert!(half[1].1 > 0.0 && half[1].1 < 1.0);
-        assert_eq!(half[2].1, 0.0);
-        // Sung by 82 % of its span.
-        assert!(at(18.3).iter().all(|(_, p)| *p == 1.0));
-        assert_eq!(at(18.3).last().unwrap().0, "line");
+        let lit = words(&line, Duration::from_secs(10));
+        assert!(lit.iter().all(|(_, p)| *p == 1.0));
+        assert_eq!(lit[0].0, "a ");
+        assert_eq!(lit.last().unwrap().0, "line");
     }
 }

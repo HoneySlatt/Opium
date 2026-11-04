@@ -165,7 +165,7 @@ fun Lyrics(playback: Playback, track: Track, calm: Boolean, onFound: (Boolean) -
                 ) {
                     when {
                         line.text.isBlank() -> Dots(on)
-                        on -> Sung(line, l.lines.getOrNull(i + 1), position)
+                        on -> Sung(line, position)
                         else -> BasicText(line.text, style = lyricStyle().copy(color = if (l.synced) lerp(np.dim, np.fg, lit) else np.fg))
                     }
                 }
@@ -228,10 +228,10 @@ private fun lyricStyle() = geist(27.sp, FontWeight.Bold, -0.01f).copy(lineHeight
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun Sung(line: LyricLine, next: LyricLine?, positionState: State<Long>) {
+private fun Sung(line: LyricLine, positionState: State<Long>) {
     val np = LocalNp.current
     val words = remember(line) { line.text.split(' ').filter { it.isNotEmpty() } }
-    val sung = remember(line, next) { Singing(line, next, words) }
+    val sung = remember(line) { Singing(line, words) }
     val glow = Shadow(np.fg.copy(alpha = 0.22f), blurRadius = 28f)
     val dim = lyricStyle().copy(color = np.dim, shadow = glow)
     val lit = lyricStyle().copy(color = np.fg)
@@ -266,7 +266,7 @@ private fun Sung(line: LyricLine, next: LyricLine?, positionState: State<Long>) 
 }
 
 /** How far each word of `line` is sung, at a time; worked out once a frame for all of them. */
-private class Singing(private val line: LyricLine, private val next: LyricLine?, private val words: List<String>) {
+private class Singing(line: LyricLine, private val words: List<String>) {
     /** The source timed each word: from when to when, in ms. */
     private val timed: List<Pair<Long, Long>>? = line.words.filter { it.text.isNotBlank() }
         .takeIf { line.words.isNotEmpty() && it.size == words.size }
@@ -280,25 +280,11 @@ private class Singing(private val line: LyricLine, private val next: LyricLine?,
     fun at(position: Long, word: Int): Float {
         if (position != at) {
             at = position
+            // Timed line by line (all but Apple Music's): the whole line lit at once.
             progress = timed?.map { (start, end) -> ((position - start).toFloat() / (end - start)).coerceIn(0f, 1f) }
-                ?: shares(words, line, next, position)
+                ?: List(words.size) { 1f }
         }
         return progress.getOrElse(word) { 0f }
-    }
-}
-
-/** Without word timings: each word gets its share of the line by length. */
-private fun shares(words: List<String>, line: LyricLine, next: LyricLine?, position: Long): List<Float> {
-    val start = line.startMs
-    val end = (line.end?.toMillis() ?: next?.startMs ?: (start + 4_000))
-    val sung = ((position - start).toFloat() / ((end - start) * 0.82f).coerceAtLeast(500f)).coerceIn(0f, 1f)
-    val total = words.sumOf { it.length + 1 }.toFloat()
-    var acc = 0f
-    return words.map { w ->
-        val a = acc / total
-        acc += w.length + 1
-        val b = acc / total
-        ((sung - a) / (b - a)).coerceIn(0f, 1f)
     }
 }
 
