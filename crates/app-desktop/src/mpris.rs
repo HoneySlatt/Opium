@@ -110,6 +110,10 @@ const MIME_TYPES: [&str; 14] = [
     "audio/x-vorbis+ogg",
 ];
 
+/// The name Music takes on the bus, and looks for a Music already running
+/// under.
+const BUS_NAME: &str = "org.mpris.MediaPlayer2.music";
+
 /// The files the command line names (paths, or `file://` addresses).
 pub fn files_from_args() -> Vec<std::path::PathBuf> {
     std::env::args_os()
@@ -119,6 +123,34 @@ pub fn files_from_args() -> Vec<std::path::PathBuf> {
             _ => std::path::absolute(arg).ok(),
         })
         .collect()
+}
+
+/// Whether the player on the bus under Music's name is Music itself: any
+/// program may take that name first, and a stranger's player mustn't be
+/// handed this one's files, nor stand for it and keep it from starting.
+async fn its_music(bus: &mpris_server::zbus::Connection) -> bool {
+    let said = |property: &'static str| {
+        let bus = bus.clone();
+        async move {
+            let reply = bus
+                .call_method(
+                    Some(BUS_NAME),
+                    "/org/mpris/MediaPlayer2",
+                    Some("org.freedesktop.DBus.Properties"),
+                    "Get",
+                    &("org.mpris.MediaPlayer2", property),
+                )
+                .await
+                .ok()?;
+            reply
+                .body()
+                .deserialize::<mpris_server::zbus::zvariant::Value>()
+                .ok()?
+                .downcast_ref::<String>()
+                .ok()
+        }
+    };
+    said("DesktopEntry").await.as_deref() == Some("music") && said("Identity").await.as_deref() == Some("Music")
 }
 
 /// Bring the Music already running forward; whether one was there. Two of
@@ -135,8 +167,11 @@ pub fn raise_running() -> bool {
         let Ok(bus) = mpris_server::zbus::Connection::session().await else {
             return false;
         };
+        if !its_music(&bus).await {
+            return false;
+        }
         bus.call_method(
-            Some("org.mpris.MediaPlayer2.music"),
+            Some(BUS_NAME),
             "/org/mpris/MediaPlayer2",
             Some("org.mpris.MediaPlayer2"),
             "Raise",
@@ -157,11 +192,14 @@ pub fn open_in_running(files: &[std::path::PathBuf]) -> bool {
         let Ok(bus) = mpris_server::zbus::Connection::session().await else {
             return false;
         };
+        if !its_music(&bus).await {
+            return false;
+        }
         let call = |interface: &'static str, method: &'static str, uri: Option<String>| {
             let bus = bus.clone();
             async move {
                 let path = "/org/mpris/MediaPlayer2";
-                let to = Some("org.mpris.MediaPlayer2.music");
+                let to = Some(BUS_NAME);
                 match uri {
                     Some(uri) => bus.call_method(to, path, Some(interface), method, &(uri,)).await,
                     None => bus.call_method(to, path, Some(interface), method, &()).await,
