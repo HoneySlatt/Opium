@@ -2,7 +2,9 @@
 //!
 //! Neither token comes from an official developer account: the developer token is
 //! read from the web player ([`auth`]) and the user token from a browser sign-in
-//! ([`signin`]). Request shapes follow Kopuz (<https://github.com/Kopuz-org/kopuz>).
+//! ([`signin`]). Request shapes follow Kopuz (<https://github.com/Kopuz-org/kopuz>),
+//! Copyright (c) 2026 Temidaradev and the Kopuz contributors, EUPL-1.2, used
+//! here under the GPL-3.0-or-later through the EUPL's compatibility clause.
 
 pub mod auth;
 mod convert;
@@ -213,6 +215,23 @@ impl AppleMusic {
             // A song's start needs three of Apple's hosts: their connections
             // are kept a while, not dropped after 90 s.
             .pool_idle_timeout(std::time::Duration::from_secs(300))
+            // Every request carries the account's token in a header of
+            // Apple's own, which nothing strips on the way: a redirect to
+            // another host would hand the account over with it, so one is
+            // followed only to Apple's own hosts.
+            .redirect(reqwest::redirect::Policy::custom(|attempt| {
+                let apple = attempt
+                    .url()
+                    .host_str()
+                    .is_some_and(|host| host == "apple.com" || host.ends_with(".apple.com"));
+                if !apple {
+                    attempt.stop()
+                } else if attempt.previous().len() > 5 {
+                    attempt.error("too many redirects")
+                } else {
+                    attempt.follow()
+                }
+            }))
             .build()
             .map_err(|e| Error::Network(e.to_string()))?;
         let developer_token = auth::developer_token(&http).await?;

@@ -1,7 +1,9 @@
 //! Full-track playback: `webPlayback` → media playlist → Widevine licence → CENC.
 //!
 //! Endpoints and request shapes follow Kopuz (<https://github.com/Kopuz-org/kopuz>,
-//! revision a58c385, `daemon/server/src/applemusic/stream.rs`), EUPL-1.2.
+//! revision a58c385, `daemon/server/src/applemusic/stream.rs`), Copyright (c)
+//! 2026 Temidaradev and the Kopuz contributors, EUPL-1.2, used here under the
+//! GPL-3.0-or-later through the EUPL's compatibility clause.
 //!
 //! Apple's web player only licenses the `28:ctrp256` flavour to Widevine: AAC-LC,
 //! 256 kbps, 44.1 kHz. That is the best quality this path can reach.

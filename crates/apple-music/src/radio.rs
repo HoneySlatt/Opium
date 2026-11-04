@@ -450,15 +450,18 @@ fn ts_to_adts(segment: &[u8]) -> Result<Vec<u8>> {
 
 impl AppleMusic {
     async fn text(&self, url: &str) -> Result<String> {
+        // Said without the address: a station's is signed, and the message
+        // is shown and screenshotted into bug reports.
+        let failed = |e: reqwest::Error| Error::Network(format!("station: {}", e.without_url()));
         self.http
             .get(url)
             .send()
             .await
             .and_then(|r| r.error_for_status())
-            .map_err(|e| Error::Network(format!("{url}: {e}")))?
+            .map_err(failed)?
             .text()
             .await
-            .map_err(|e| Error::Network(format!("{url}: {e}")))
+            .map_err(failed)
     }
 
     /// Where `station` streams, and its key server.
