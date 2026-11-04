@@ -1718,13 +1718,18 @@ async fn run(
             Request::Palette(url) => {
                 let http = http.clone();
                 tokio::spawn(async move {
-                    // The cover is often kept already, the page showing it.
-                    let bytes = match crate::covers::read(&url) {
-                        Some(bytes) => Some(bytes),
-                        None => match http.get(crate::covers::signed(&url)).send().await {
+                    // A cover of the user's own (a playlist's, a file's) is
+                    // read where it is; another is often kept already, the
+                    // page showing it.
+                    let bytes = if let Some(path) = crate::file_path(&url) {
+                        std::fs::read(path).ok()
+                    } else if let Some(bytes) = crate::covers::read(&url) {
+                        Some(bytes)
+                    } else {
+                        match http.get(crate::covers::signed(&url)).send().await {
                             Ok(resp) => resp.bytes().await.ok().map(|b| b.to_vec()),
                             Err(_) => None,
-                        },
+                        }
                     };
                     let palette = match bytes {
                         Some(bytes) => {
