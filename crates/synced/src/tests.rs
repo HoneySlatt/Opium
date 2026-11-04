@@ -491,10 +491,13 @@ fn a_device_opened_and_closed_without_playing_doesnt_pass_for_the_last() {
 
 #[test]
 fn of_two_devices_times_for_a_song_the_earliest_wins_whoever_hears_first() {
+    // Real times: a device's clock decides these two fields outright, so
+    // one saying 1970 is not believed (see `plausible`).
+    const WHEN: u64 = 1_700_000_000;
     let seen = |pairs: &[(&str, u64)]| Shared {
         seen: pairs
             .iter()
-            .map(|(id, at)| ((*id).to_owned(), *at))
+            .map(|(id, at)| ((*id).to_owned(), WHEN + *at))
             .collect(),
         ..Shared::default()
     };
@@ -512,10 +515,11 @@ fn of_two_devices_times_for_a_song_the_earliest_wins_whoever_hears_first() {
 
 #[test]
 fn the_playlists_used_last_are_alike_everywhere_and_few() {
+    const WHEN: u64 = 1_700_000_000_000;
     let used = |pairs: &[(&str, u64)]| Shared {
         used: pairs
             .iter()
-            .map(|(id, at)| ((*id).to_owned(), *at))
+            .map(|(id, at)| ((*id).to_owned(), WHEN + *at))
             .collect(),
         ..Shared::default()
     };
@@ -582,4 +586,23 @@ fn songs_of_a_service_taken_out_of_the_app_are_dropped_not_everything() {
     assert!(kept.session().is_none());
     assert!(!dir.join("shared.json.bad").exists());
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_device_whose_clock_is_wrong_doesnt_pin_the_times_everywhere() {
+    // A phone booting with its clock in 1970, and one years ahead: neither
+    // is believed, so Recently Added and Add to Playlist stay as they are.
+    let mut here = Shared {
+        seen: [("a".to_owned(), 1_700_000_000u64)].into_iter().collect(),
+        used: [("p".to_owned(), 1_700_000_000_000u64)].into_iter().collect(),
+        ..Shared::default()
+    };
+    let before = here.clone();
+    let wrong = Shared {
+        seen: [("a".to_owned(), 60u64)].into_iter().collect(),
+        used: [("p".to_owned(), u64::MAX / 2)].into_iter().collect(),
+        ..Shared::default()
+    };
+    assert!(!here.merge(wrong), "nothing of it is taken in");
+    assert_eq!(here, before);
 }

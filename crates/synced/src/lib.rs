@@ -54,10 +54,32 @@ pub(crate) fn latest<T>(mine: &mut Option<Latest<T>>, theirs: Option<Latest<T>>)
     false
 }
 
+/// When a time another device says is worth believing. These two fields are
+/// the only ones a device's own clock decides outright — everywhere else the
+/// hybrid clock orders changes — so a device booting with its clock in 1970,
+/// or years ahead, would otherwise pin every song's "first seen" and the
+/// playlists last added to for good, on every device, unrecoverably.
+fn plausible(at: u64, seconds: bool) -> bool {
+    /// 2000-01-01, before which no device of this app's time ran.
+    const EARLIEST: u64 = 946_684_800;
+    /// A day's room for a clock a little ahead, or a timezone's worth.
+    const AHEAD: u64 = 24 * 60 * 60;
+    let (earliest, now) = if seconds {
+        (EARLIEST, now() / 1000)
+    } else {
+        (EARLIEST * 1000, now())
+    };
+    let ahead = if seconds { AHEAD } else { AHEAD * 1000 };
+    at >= earliest && at <= now.saturating_add(ahead)
+}
+
 /// `theirs` taken in, of two times for a song the earliest: whether any was.
 fn earliest(mine: &mut BTreeMap<String, u64>, theirs: BTreeMap<String, u64>) -> bool {
     let mut changed = false;
     for (id, at) in theirs {
+        if !plausible(at, true) {
+            continue;
+        }
         let known = mine.entry(id).or_insert(u64::MAX);
         if at < *known {
             *known = at;
@@ -71,7 +93,7 @@ fn earliest(mine: &mut BTreeMap<String, u64>, theirs: BTreeMap<String, u64>) -> 
 /// [`USED`] kept: whether that changed anything.
 fn latest_used(mine: &mut BTreeMap<String, u64>, theirs: BTreeMap<String, u64>) -> bool {
     let before = mine.clone();
-    for (id, at) in theirs {
+    for (id, at) in theirs.into_iter().filter(|&(_, at)| plausible(at, false)) {
         let known = mine.entry(id).or_insert(0);
         *known = (*known).max(at);
     }
