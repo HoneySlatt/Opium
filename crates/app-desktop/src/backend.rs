@@ -846,7 +846,7 @@ async fn connect_soundcloud(replies: &Replies) -> Option<Arc<SoundCloud>> {
     };
     let notify = replies.clone();
     let browser = crate::soundcloud_browser::ChromeLike::new(
-        sign_in_browser(),
+        sign_in_browser()?,
         soundcloud_dir().join("browser-profile"),
         soundcloud_dir().join("datadome"),
         Box::new(move |message| notify.send(Reply::Changed(Ok(message)))),
@@ -874,7 +874,7 @@ async fn connect_soundcloud(replies: &Replies) -> Option<Arc<SoundCloud>> {
 async fn sign_in_soundcloud() -> Result<(), String> {
     let profile = soundcloud_dir().join("browser-profile");
     private_dir(&profile).map_err(|e| e.to_string())?;
-    let browser = sign_in_browser();
+    let browser = sign_in_browser().ok_or(NO_BROWSER)?;
     let tokens = soundcloud::signin::sign_in(
         browser.as_ref(),
         &profile,
@@ -960,9 +960,28 @@ impl Backend {
     }
 }
 
+/// What a sign-in needs, said as the user can act on it.
+pub const NO_BROWSER: &str =
+    "Signing in needs one of Chromium, Chrome, Brave, Vivaldi or Edge installed: Music opens the service's own page in it. None was found on this computer.";
+
+/// The browser the sign-in opens, to call it by in the window: none when
+/// there is none to open.
+pub fn browser_name() -> Option<String> {
+    static FOUND: std::sync::LazyLock<Option<String>> = std::sync::LazyLock::new(|| {
+        sign_in_browser().map(|browser| {
+            std::path::Path::new(&browser)
+                .file_name()
+                .unwrap_or(browser.as_os_str())
+                .to_string_lossy()
+                .into_owned()
+        })
+    });
+    FOUND.clone()
+}
+
 /// The browser the sign-in opens: `MUSIC_BROWSER`, else the first
-/// Chromium-family browser on the `PATH`.
-fn sign_in_browser() -> std::ffi::OsString {
+/// Chromium-family browser on the `PATH`; none when none is installed.
+fn sign_in_browser() -> Option<std::ffi::OsString> {
     const BROWSERS: [&str; 9] = [
         "brave-origin",
         "brave",
@@ -975,14 +994,13 @@ fn sign_in_browser() -> std::ffi::OsString {
         "microsoft-edge",
     ];
     if let Some(browser) = std::env::var_os("MUSIC_BROWSER") {
-        return browser;
+        return Some(browser);
     }
     let path = std::env::var_os("PATH").unwrap_or_default();
     BROWSERS
         .iter()
         .find(|b| std::env::split_paths(&path).any(|dir| dir.join(b).is_file()))
-        .unwrap_or(&"chromium")
-        .into()
+        .map(|b| (*b).into())
 }
 
 /// Connect with the saved token, telling the UI how it went.
@@ -1041,7 +1059,7 @@ async fn sign_in() -> Result<(), String> {
     let dir = apple_music_dir();
     let profile = dir.join("browser-profile");
     private_dir(&profile).map_err(|e| e.to_string())?;
-    let browser = sign_in_browser();
+    let browser = sign_in_browser().ok_or(NO_BROWSER)?;
     let token = apple_music::signin::sign_in(
         browser.as_ref(),
         &profile,
@@ -2957,6 +2975,8 @@ struct Kept<T> {
     name: Option<String>,
     /// The kept list was shown.
     shown: bool,
+    /// What was kept had something in it.
+    had: bool,
     all: Vec<T>,
 }
 
@@ -2965,12 +2985,14 @@ impl<T: Clone + Serialize + DeserializeOwned + Send + 'static> Kept<T> {
     fn start(name: &str, show: &impl Fn(Vec<T>, bool, bool)) -> Self {
         let kept = cache::read::<Vec<T>>(name);
         let shown = kept.is_some();
+        let had = kept.as_ref().is_some_and(|items| !items.is_empty());
         if let Some(items) = kept {
             show(items, true, true);
         }
         Self {
             name: Some(name.to_owned()),
             shown,
+            had,
             all: Vec::new(),
         }
     }
@@ -2980,6 +3002,7 @@ impl<T: Clone + Serialize + DeserializeOwned + Send + 'static> Kept<T> {
         Self {
             name: None,
             shown: false,
+            had: false,
             all: Vec::new(),
         }
     }
@@ -2988,6 +3011,17 @@ impl<T: Clone + Serialize + DeserializeOwned + Send + 'static> Kept<T> {
         if self.shown {
             self.all.extend(items);
             if done {
+                // A service that answers with nothing at all, where it had
+                // a library last time, has far more likely failed in a way
+                // that reads as empty — a 404, a shape it no longer sends —
+                // than been emptied. What was kept stays shown, and stays
+                // on disk, rather than the library going for good.
+                if self.all.is_empty() && self.had {
+                    if let Some(name) = self.name.take() {
+                        eprintln!("{name}: came back empty, so what was kept stays");
+                    }
+                    return;
+                }
                 show(self.all.clone(), true, true);
             }
         } else {
@@ -2998,7 +3032,10 @@ impl<T: Clone + Serialize + DeserializeOwned + Send + 'static> Kept<T> {
         }
         if done && let Some(name) = self.name.take() {
             let all = std::mem::take(&mut self.all);
-            tokio::task::spawn_blocking(move || cache::write(&name, &all));
+            // Nothing is kept as a whole library: read again next time.
+            if !all.is_empty() {
+                tokio::task::spawn_blocking(move || cache::write(&name, &all));
+            }
         }
     }
 

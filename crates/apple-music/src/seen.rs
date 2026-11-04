@@ -47,6 +47,12 @@ impl Seen {
     /// When each of `ids` (the newest songs) was first seen: now for one
     /// not seen before. Only theirs are kept.
     pub fn when(&mut self, ids: &[String]) -> Vec<Option<String>> {
+        // No songs at all means the newest couldn't be read, not that there
+        // are none: what was seen stays, so that a request that failed
+        // doesn't have every song stamped as seen now next time.
+        if ids.is_empty() {
+            return Vec::new();
+        }
         let now = music_core::recent::rfc3339(
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
