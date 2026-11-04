@@ -1071,6 +1071,12 @@ impl Inner {
     }
 
     fn heard(self: &Arc<Self>, from: &str, message: Message) {
+        // Unpaired while it was connected, it is no longer listened to:
+        // the connection stands until it falls silent, but what comes over
+        // it after is dropped rather than left to work the player.
+        if lock(&self.store).key(from).is_none() {
+            return;
+        }
         if let Some(link) = lock(&self.seen).get_mut(from).and_then(|s| s.link.as_mut()) {
             link.heard = Instant::now();
         }
