@@ -1182,16 +1182,16 @@ pub(super) fn page_search(
 }
 
 /// Note the song the pointer is on this frame, for the app to fetch ahead.
-pub(super) fn pointer_on(ui: &Ui, track: &music_core::model::Track) {
+pub(super) fn pointer_on(ui: &Ui, track: &opium_core::model::Track) {
     ui.ctx().data_mut(|d| {
         d.insert_temp(egui::Id::unique("pointer-on-song"), Some(track.clone()));
     });
 }
 
 /// The song the pointer was on this frame, if any.
-pub fn song_under_pointer(ctx: &egui::Context) -> Option<music_core::model::Track> {
+pub fn song_under_pointer(ctx: &egui::Context) -> Option<opium_core::model::Track> {
     ctx.data_mut(|d| {
-        d.remove_temp::<Option<music_core::model::Track>>(egui::Id::unique("pointer-on-song"))
+        d.remove_temp::<Option<opium_core::model::Track>>(egui::Id::unique("pointer-on-song"))
     })
     .flatten()
 }
@@ -1282,11 +1282,11 @@ pub fn explicit_badge(ui: &Ui, theme: &Theme, center: Pos2) {
 }
 
 /// Whether `track` plays as Spatial Audio, its Dolby Atmos mix.
-pub fn plays_in_atmos(track: &music_core::model::Track) -> bool {
+pub fn plays_in_atmos(track: &opium_core::model::Track) -> bool {
     track
         .quality
         .as_ref()
-        .is_some_and(|q| q.codec == music_core::model::Codec::Other("Dolby Atmos".into()))
+        .is_some_and(|q| q.codec == opium_core::model::Codec::Other("Dolby Atmos".into()))
 }
 
 /// The Dolby double D, centred on `center`, `size` high: two half discs
@@ -1309,7 +1309,7 @@ pub fn dolby_logo(ui: &Ui, center: Pos2, size: f32, color: Color32) {
 
 /// The badge a track's quality earns, as Apple Music gives them: Lossless or
 /// Dolby Atmos, none for a lossy stream.
-pub fn quality_badge(track: &music_core::model::Track) -> Option<&'static str> {
+pub fn quality_badge(track: &opium_core::model::Track) -> Option<&'static str> {
     if plays_in_atmos(track) {
         Some("Dolby Atmos")
     } else if track.quality.as_ref()?.codec.is_lossless() {
@@ -1320,8 +1320,8 @@ pub fn quality_badge(track: &music_core::model::Track) -> Option<&'static str> {
 }
 
 /// `AAC 256`, `FLAC 24/96`… from what the provider says it delivers.
-pub fn quality_label(track: &music_core::model::Track) -> Option<(String, bool)> {
-    use music_core::model::Codec;
+pub fn quality_label(track: &opium_core::model::Track) -> Option<(String, bool)> {
+    use opium_core::model::Codec;
     let q = track.quality.as_ref()?;
     let codec = match &q.codec {
         Codec::Aac => "AAC",
@@ -1453,7 +1453,7 @@ pub(super) fn motion_over(
 
 /// Artwork URLs share one size so the list, the sidebar and the player bar hit
 /// the same cached image.
-pub fn thumb_url(track: &music_core::model::Track) -> Option<String> {
+pub fn thumb_url(track: &opium_core::model::Track) -> Option<String> {
     track.artwork.as_ref().map(|a| a.url(120))
 }
 

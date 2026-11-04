@@ -1,7 +1,7 @@
 //! Try the SoundCloud client from the command line.
 //!
 //! `sc signin` opens a browser on soundcloud.com and keeps the tokens under
-//! `$XDG_CONFIG_HOME/music/soundcloud/`, readable by the user only; they are
+//! `$XDG_CONFIG_HOME/opium/soundcloud/`, readable by the user only; they are
 //! never printed. Then: `sc me`, `sc likes`, `sc playlists`, `sc playlist <id>`,
 //! `sc search <words>`, `sc radio <track id>`, `sc fetch <track id> <out>
 //! [--stream]`. `sc public
@@ -10,15 +10,15 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use music_core::Provider;
-use music_core::model::{ItemId, ProviderKind};
+use opium_core::Provider;
+use opium_core::model::{ItemId, ProviderKind};
 use soundcloud::{SoundCloud, Tokens};
 
 fn dir() -> PathBuf {
     let base = std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(std::env::var_os("HOME").expect("HOME")).join(".config"));
-    base.join("music/soundcloud")
+    base.join("opium/soundcloud")
 }
 
 fn keep(tokens: &Tokens) {
@@ -91,7 +91,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let profile = dir().join("browser-profile");
             std::fs::create_dir_all(&profile)?;
             let browser =
-                std::env::var_os("MUSIC_BROWSER").unwrap_or_else(|| "brave-origin".into());
+                std::env::var_os("OPIUM_BROWSER").unwrap_or_else(|| "brave-origin".into());
             let tokens =
                 soundcloud::signin::sign_in(browser.as_ref(), &profile, Duration::from_secs(600))
                     .await?;

@@ -12,8 +12,8 @@ use mpris_server::{
     LoopStatus, Metadata, PlaybackRate, PlaybackStatus, PlayerInterface, Property, RootInterface,
     Server, Signal, Time, TrackId, Volume,
 };
-use music_core::Repeat;
-use music_core::model::{ProviderKind, Track};
+use opium_core::Repeat;
+use opium_core::model::{ProviderKind, Track};
 
 /// What a controller asked for.
 #[derive(Debug, Clone, PartialEq)]
@@ -110,9 +110,9 @@ const MIME_TYPES: [&str; 14] = [
     "audio/x-vorbis+ogg",
 ];
 
-/// The name Music takes on the bus, and looks for a Music already running
+/// The name Opium takes on the bus, and looks for an Opium already running
 /// under.
-const BUS_NAME: &str = "org.mpris.MediaPlayer2.music";
+const BUS_NAME: &str = "org.mpris.MediaPlayer2.opium";
 
 /// The files the command line names (paths, or `file://` addresses).
 pub fn files_from_args() -> Vec<std::path::PathBuf> {
@@ -125,10 +125,10 @@ pub fn files_from_args() -> Vec<std::path::PathBuf> {
         .collect()
 }
 
-/// Whether the player on the bus under Music's name is Music itself: any
+/// Whether the player on the bus under Opium's name is Opium itself: any
 /// program may take that name first, and a stranger's player mustn't be
 /// handed this one's files, nor stand for it and keep it from starting.
-async fn its_music(bus: &mpris_server::zbus::Connection) -> bool {
+async fn its_opium(bus: &mpris_server::zbus::Connection) -> bool {
     let said = |property: &'static str| {
         let bus = bus.clone();
         async move {
@@ -150,10 +150,10 @@ async fn its_music(bus: &mpris_server::zbus::Connection) -> bool {
                 .ok()
         }
     };
-    said("DesktopEntry").await.as_deref() == Some("music") && said("Identity").await.as_deref() == Some("Music")
+    said("DesktopEntry").await.as_deref() == Some("opium") && said("Identity").await.as_deref() == Some("Opium")
 }
 
-/// Bring the Music already running forward; whether one was there. Two of
+/// Bring the Opium already running forward; whether one was there. Two of
 /// them would share the settings, the downloads and the library kept on
 /// disk, each undoing the other's writes.
 pub fn raise_running() -> bool {
@@ -167,7 +167,7 @@ pub fn raise_running() -> bool {
         let Ok(bus) = mpris_server::zbus::Connection::session().await else {
             return false;
         };
-        if !its_music(&bus).await {
+        if !its_opium(&bus).await {
             return false;
         }
         bus.call_method(
@@ -182,7 +182,7 @@ pub fn raise_running() -> bool {
     })
 }
 
-/// Hand `files` to the Music already running, through its media controls,
+/// Hand `files` to the Opium already running, through its media controls,
 /// and bring it forward; whether one was there to take them.
 pub fn open_in_running(files: &[std::path::PathBuf]) -> bool {
     let Ok(runtime) = tokio::runtime::Builder::new_current_thread().enable_all().build() else {
@@ -192,7 +192,7 @@ pub fn open_in_running(files: &[std::path::PathBuf]) -> bool {
         let Ok(bus) = mpris_server::zbus::Connection::session().await else {
             return false;
         };
-        if !its_music(&bus).await {
+        if !its_opium(&bus).await {
             return false;
         }
         let call = |interface: &'static str, method: &'static str, uri: Option<String>| {
@@ -232,7 +232,7 @@ fn file_uri(path: &std::path::Path) -> String {
 }
 
 impl Mpris {
-    /// Take the name `org.mpris.MediaPlayer2.music` on a thread of its own;
+    /// Take the name `org.mpris.MediaPlayer2.opium` on a thread of its own;
     /// `wake` is called when an action comes. Without a session bus nothing
     /// happens, and the app plays on.
     pub fn start(wake: crate::Wake) -> Self {
@@ -254,7 +254,7 @@ impl Mpris {
                     return;
                 };
                 runtime.block_on(async move {
-                    let server = match Server::new("music", imp).await {
+                    let server = match Server::new("opium", imp).await {
                         Ok(server) => server,
                         Err(e) => {
                             eprintln!("media controls unavailable: {e}");
@@ -364,7 +364,7 @@ fn track_id(track: &Track) -> TrackId {
     let hash = track.id.id.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
         (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
     });
-    TrackId::try_from(format!("/music/track/{hash:016x}")).unwrap_or(TrackId::NO_TRACK)
+    TrackId::try_from(format!("/opium/track/{hash:016x}")).unwrap_or(TrackId::NO_TRACK)
 }
 
 fn metadata(state: &State) -> Metadata {
@@ -461,11 +461,11 @@ impl RootInterface for Imp {
     }
 
     async fn identity(&self) -> fdo::Result<String> {
-        Ok("Music".into())
+        Ok("Opium".into())
     }
 
     async fn desktop_entry(&self) -> fdo::Result<String> {
-        Ok("music".into())
+        Ok("opium".into())
     }
 
     async fn supported_uri_schemes(&self) -> fdo::Result<Vec<String>> {

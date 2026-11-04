@@ -1,6 +1,6 @@
 //! Devices changing their copies apart, then meeting in every order.
 
-use music_core::model::{ItemId, ProviderKind, Track};
+use opium_core::model::{ItemId, ProviderKind, Track};
 
 use super::*;
 
@@ -447,7 +447,7 @@ fn session(songs: &[u32], at: u32, position_ms: u64) -> Handoff {
         order: (0..songs.len() as u32).collect(),
         at,
         shuffle: false,
-        repeat: music_core::Repeat::Off,
+        repeat: opium_core::Repeat::Off,
         position_ms,
         playing: true,
         station: None,
@@ -565,7 +565,7 @@ fn songs_of_a_service_taken_out_of_the_app_are_dropped_not_everything() {
             order: vec![0],
             at: 0,
             shuffle: false,
-            repeat: music_core::Repeat::Off,
+            repeat: opium_core::Repeat::Off,
             position_ms: 0,
             playing: false,
             station: None,

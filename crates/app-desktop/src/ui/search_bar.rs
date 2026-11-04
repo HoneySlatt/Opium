@@ -43,7 +43,7 @@ pub fn show(app: &mut App, ui: &mut Ui, rail: f32) {
         let mark = Rect::from_center_size(pos2(toggle.right() + 12.0 + 15.0, y), vec2(30.0, 30.0));
         Shape::Cookie9.radii().fill(ui, mark, 0.0, theme.accent);
         paint_icon(ui, icons::NOTE, mark.center(), 15.0, theme.on_accent());
-        let g = text(ui, "Music", font(20.0, Weight::SemiBold), theme.text, 120.0);
+        let g = text(ui, "Opium", font(20.0, Weight::SemiBold), theme.text, 120.0);
         paint_text(ui, g, mark.right() + 9.0, y, egui::Align::Min, theme.text);
     }
 

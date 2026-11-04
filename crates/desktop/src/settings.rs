@@ -1,4 +1,4 @@
-//! What the app remembers between runs, in `~/.config/music/settings.toml`.
+//! What the app remembers between runs, in `~/.config/opium/settings.toml`.
 
 use std::path::PathBuf;
 
@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 pub enum Appearance {
     /// The theme's own (Stock's: Carbonfox's black with Apple Music's pink).
     Stock,
-    /// Whatever Amane's theme switch last wrote to `~/.config/music/theme.toml`.
+    /// Whatever Amane's theme switch last wrote to `~/.config/opium/theme.toml`.
     Amane,
 }
 
@@ -19,16 +19,16 @@ pub enum Appearance {
 pub struct Settings {
     /// The source each page was last narrowed to: Albums and Recently
     /// Added, Songs, Search.
-    pub grid_source: Option<music_core::model::ProviderKind>,
-    pub songs_source: Option<music_core::model::ProviderKind>,
-    pub search_source: Option<music_core::model::ProviderKind>,
+    pub grid_source: Option<opium_core::model::ProviderKind>,
+    pub songs_source: Option<opium_core::model::ProviderKind>,
+    pub search_source: Option<opium_core::model::ProviderKind>,
     /// The service Home, New and Radio come from, when several are
     /// connected; unset: Apple Music, else the first connected.
-    pub browse_source: Option<music_core::model::ProviderKind>,
+    pub browse_source: Option<opium_core::model::ProviderKind>,
     /// Unset: Amane when its theme file exists, Stock otherwise.
     pub appearance: Option<Appearance>,
     /// The theme's id: a built-in one, or a file's stem in
-    /// `~/.config/music/themes/`. Unset or gone, Stock.
+    /// `~/.config/opium/themes/`. Unset or gone, Stock.
     pub theme: Option<String>,
     /// The interface scale, 1.0 for 100 % (which draws at [`SCALE_UNIT`]);
     /// Ctrl +, Ctrl − and Ctrl 0 change it. `None` is 100 %.
@@ -40,7 +40,7 @@ pub struct Settings {
     /// unless turned off), as Apple Music's own option does.
     pub playlist_songs_to_library: Option<bool>,
     /// A song taken out of the library leaves the user's playlists too:
-    /// Music's and SoundCloud's, Apple's doing so itself. Off unless set.
+    /// Opium's and SoundCloud's, Apple's doing so itself. Off unless set.
     pub removals_leave_playlists: Option<bool>,
     /// The playlists songs were last added to, most recent first, as kept
     /// here before the devices shared them: taken in once, then emptied.
@@ -76,7 +76,7 @@ pub struct Settings {
     /// binaural rendering (on unless turned off).
     pub spatial_audio: Option<bool>,
     /// The services turned off: still signed in, but not used.
-    pub services_off: Vec<music_core::model::ProviderKind>,
+    pub services_off: Vec<opium_core::model::ProviderKind>,
     /// The folders whose music files are the library's own.
     pub local_folders: Vec<std::path::PathBuf>,
     /// The sidebar was folded when the app last closed.
@@ -101,7 +101,7 @@ pub enum Repeat {
     One,
 }
 
-impl From<Repeat> for music_core::Repeat {
+impl From<Repeat> for opium_core::Repeat {
     fn from(repeat: Repeat) -> Self {
         match repeat {
             Repeat::Off => Self::Off,
@@ -111,12 +111,12 @@ impl From<Repeat> for music_core::Repeat {
     }
 }
 
-impl From<music_core::Repeat> for Repeat {
-    fn from(repeat: music_core::Repeat) -> Self {
+impl From<opium_core::Repeat> for Repeat {
+    fn from(repeat: opium_core::Repeat) -> Self {
         match repeat {
-            music_core::Repeat::Off => Self::Off,
-            music_core::Repeat::All => Self::All,
-            music_core::Repeat::One => Self::One,
+            opium_core::Repeat::Off => Self::Off,
+            opium_core::Repeat::All => Self::All,
+            opium_core::Repeat::One => Self::One,
         }
     }
 }
@@ -147,7 +147,7 @@ pub fn dir() -> PathBuf {
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
         .unwrap_or_default();
-    config.join("music")
+    config.join("opium")
 }
 
 fn path() -> PathBuf {

@@ -14,8 +14,8 @@
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
-use music_core::model::ItemId;
-use music_core::{Error, Result};
+use opium_core::model::ItemId;
+use opium_core::{Error, Result};
 use widevine::{Cdm, Session};
 
 use crate::AppleMusic;

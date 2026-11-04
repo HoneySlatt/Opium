@@ -1,4 +1,4 @@
-//! Songs downloaded to play offline, kept sealed so that only Music plays
+//! Songs downloaded to play offline, kept sealed so that only Opium plays
 //! them.
 
 #[cfg(feature = "keyring")]

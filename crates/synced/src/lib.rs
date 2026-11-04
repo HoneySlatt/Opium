@@ -1,5 +1,5 @@
 //! What the user's devices keep in common: the songs played lately, the
-//! playlists made in Music itself, where the music last stopped, on
+//! playlists made in Opium itself, where the music last stopped, on
 //! whichever device, when the library's newest songs were first seen, the
 //! playlists songs were last added to, and the user's settings.
 //!
@@ -19,8 +19,8 @@ use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard, mpsc};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use music_core::Handoff;
-use music_core::model::Track;
+use opium_core::Handoff;
+use opium_core::model::Track;
 use serde::{Deserialize, Serialize};
 
 pub use history::History;
@@ -336,7 +336,7 @@ fn unknown(value: &serde_json::Value) -> bool {
     match value {
         Value::Object(map) => map.iter().any(|(key, v)| {
             (key == "provider"
-                && serde_json::from_value::<music_core::model::ProviderKind>(v.clone()).is_err())
+                && serde_json::from_value::<opium_core::model::ProviderKind>(v.clone()).is_err())
                 || unknown(v)
         }),
         Value::Array(items) => items.iter().any(unknown),

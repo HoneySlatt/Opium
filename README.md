@@ -1,4 +1,4 @@
-# Music
+# Opium
 
 A music player for the computer and the phone that puts Apple Music,
 SoundCloud, Navidrome and your own music files in one library, in the spirit
@@ -24,7 +24,7 @@ with Jetpack Compose, over the same Rust core.
   or KuGou.
 - **Desktop:** a Now Playing view, a queue, MPRIS (media keys and desktop
   widgets), and keyboard shortcuts.
-- **Music Connect:** paired devices share the play history, Music's own
+- **Opium Connect:** paired devices share the play history, Opium's own
   playlists and where the music stopped, and each can work the other's
   player. On the same network they find each other over mDNS and talk on TCP
   port 47820 (so allow 47820/tcp and 5353/udp through the firewall); away
@@ -41,7 +41,7 @@ with Jetpack Compose, over the same Rust core.
   nothing plays.
 - A Chromium-family browser (Brave, Chromium, Chrome, Vivaldi or Edge) to sign
   in to Apple Music and SoundCloud. The app opens it on a profile of its own.
-  Set `MUSIC_BROWSER` to choose one.
+  Set `OPIUM_BROWSER` to choose one.
 - Apple Music and SoundCloud's protected streams need the Widevine CDM that
   Chrome, Brave, Vivaldi or Firefox installs. Play any DRM video once in that
   browser so the CDM gets its certificate. Set `WIDEVINE_CDM` to point at a
@@ -66,11 +66,11 @@ against, and `cmake`, `perl` and `git` to build BoringSSL from source:
 
 ```sh
 cargo build --release -p app-desktop
-./target/release/music
+./target/release/opium
 ```
 
-Settings live in `~/.config/music`; covers and animated artwork are cached
-in `~/.cache/music`; downloaded songs in `~/.local/share/music`.
+Settings live in `~/.config/opium`; covers and animated artwork are cached
+in `~/.cache/opium`; downloaded songs in `~/.local/share/opium`.
 
 ### The Android app
 
@@ -94,7 +94,7 @@ Android's debug key** for now, so it is not fit to hand to anyone else.
   from [Simple Icons](https://simpleicons.org) (CC0), and the Navidrome logo
   from [its website](https://github.com/navidrome/website) (Apache-2.0).
 
-Music is not affiliated with Apple, SoundCloud or Navidrome. Their names and
+Opium is not affiliated with Apple, SoundCloud or Navidrome. Their names and
 logos belong to their owners.
 
 ## Licence

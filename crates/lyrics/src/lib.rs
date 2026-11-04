@@ -8,13 +8,13 @@ pub mod lrc;
 use std::time::Duration;
 
 use base64::Engine;
-use music_core::model::Lyrics;
+use opium_core::model::Lyrics;
 use serde::{Deserialize, Serialize};
 
 /// How much a song's length may differ from the lyrics' and still match.
 const SAME_LENGTH: Duration = Duration::from_secs(3);
 /// As LRCLIB asks its clients to say who they are.
-const USER_AGENT: &str = "Music (a GPL desktop player)";
+const USER_AGENT: &str = "Opium (a GPL desktop player)";
 
 /// Where lyrics come from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

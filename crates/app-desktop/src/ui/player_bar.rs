@@ -5,7 +5,7 @@
 use std::time::Duration;
 
 use egui::{Color32, Id, Rect, Sense, Stroke, Ui, pos2, vec2};
-use music_core::model::FavouriteKind;
+use opium_core::model::FavouriteKind;
 
 use crate::app::App;
 use crate::color::mix;
@@ -141,9 +141,9 @@ fn transport(app: &mut App, ui: &mut Ui, theme: &Theme, inner: Rect) -> f32 {
         app.next();
     }
     let (repeat_icon, repeat_color) = match shown.repeat {
-        music_core::Repeat::Off => (icons::REPEAT, dim),
-        music_core::Repeat::All => (icons::REPEAT, theme.accent),
-        music_core::Repeat::One => (icons::REPEAT_ONE, theme.accent),
+        opium_core::Repeat::Off => (icons::REPEAT, dim),
+        opium_core::Repeat::All => (icons::REPEAT, theme.accent),
+        opium_core::Repeat::One => (icons::REPEAT_ONE, theme.accent),
     };
     if icon_button(&mut row, theme, repeat_icon, 30.0, 15.0, repeat_color, true)
         .on_hover_text("Repeat")
@@ -323,7 +323,7 @@ fn now_playing(app: &mut App, ui: &mut Ui, theme: &Theme, lcd: Rect) {
     let removable = track.library_id.is_some();
     let download = app.download_offer(&track.id);
     let facts = || TrackFacts {
-        file: track.id.provider == music_core::model::ProviderKind::Local,
+        file: track.id.provider == opium_core::model::ProviderKind::Local,
         has_album,
         favourite,
         in_library,

@@ -203,10 +203,10 @@ pub(super) enum SortChoice {
 pub(super) fn sources_menu(
     response: &Response,
     theme: &Theme,
-    current: Option<music_core::model::ProviderKind>,
-    services: &[music_core::model::ProviderKind],
-) -> Option<Option<music_core::model::ProviderKind>> {
-    use music_core::model::ProviderKind;
+    current: Option<opium_core::model::ProviderKind>,
+    services: &[opium_core::model::ProviderKind],
+) -> Option<Option<opium_core::model::ProviderKind>> {
+    use opium_core::model::ProviderKind;
     let mut entries = vec![Entry::Choice(
         icons::LIST,
         "All services",

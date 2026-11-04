@@ -2,7 +2,7 @@
 //! sortable track list that only lays out the rows on screen.
 
 use egui::{Id, Rect, Sense, Stroke, Ui, pos2, vec2};
-use music_core::model::{FavouriteKind, ProviderKind, Track};
+use opium_core::model::{FavouriteKind, ProviderKind, Track};
 
 use crate::app::{App, Connection, Page, SortKey};
 use crate::fonts::{Weight, font};
@@ -207,7 +207,7 @@ fn banner_header(app: &mut App, ui: &mut Ui, theme: &Theme, content: Rect, pad: 
         Some(ProviderKind::SoundCloud) => "SoundCloud",
         Some(ProviderKind::Navidrome) => "Navidrome",
         Some(ProviderKind::Local) => "Files",
-        Some(ProviderKind::Music) => "Music",
+        Some(ProviderKind::Opium) => "Opium",
     };
     let f = font(14.0, Weight::Regular);
     let w = text(ui, label, f.clone(), theme.text, 200.0).size().x + 8.0 + 14.0;
@@ -441,7 +441,7 @@ fn rebuild_order(app: &mut App) {
         view.prepared = Some(crate::app::PreparedSongs {
             count: songs.len(),
             downloaded,
-            copies: music_core::dedupe::songs(songs),
+            copies: opium_core::dedupe::songs(songs),
             folded: songs
                 .iter()
                 .map(|t| {

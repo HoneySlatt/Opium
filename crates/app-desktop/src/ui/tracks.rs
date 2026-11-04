@@ -2,7 +2,7 @@
 //! header and its rows.
 
 use egui::{Id, Rect, Response, Sense, Stroke, Ui, pos2, vec2};
-use music_core::model::{ItemId, Track};
+use opium_core::model::{ItemId, Track};
 
 use crate::app::{SortKey, TrackChoice};
 use crate::color::alpha;
@@ -626,7 +626,7 @@ pub fn row(
     }
 
     let facts = TrackFacts {
-        file: track.id.provider == music_core::model::ProviderKind::Local,
+        file: track.id.provider == opium_core::model::ProviderKind::Local,
         has_album: track.album_id.is_some(),
         favourite: state.favourite,
         in_library: state.in_library,
@@ -635,7 +635,7 @@ pub fn row(
         // track itself.
         in_playlist: state.in_playlist
             && (track.library_id.is_some()
-                || track.id.provider == music_core::model::ProviderKind::SoundCloud),
+                || track.id.provider == opium_core::model::ProviderKind::SoundCloud),
         download: state
             .downloadable
             .then_some(state.download.is_some_and(|b| b != Badge::Failed)),

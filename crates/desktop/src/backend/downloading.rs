@@ -10,7 +10,7 @@ use apple_music::AppleMusic;
 pub use downloads::queue::{Downloading, KeptSong};
 use downloads::queue::{Fetched, Fetcher, Listener};
 use downloads::store::{Song, Store};
-use music_core::model::{ItemId, ProviderKind, Track};
+use opium_core::model::{ItemId, ProviderKind, Track};
 use navidrome::Navidrome;
 use soundcloud::SoundCloud;
 
@@ -23,7 +23,7 @@ fn dir() -> PathBuf {
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
         .unwrap_or_default()
-        .join("music/downloads")
+        .join("opium/downloads")
 }
 
 /// The services as they are now, for the download that comes next.
@@ -191,7 +191,7 @@ async fn fetch(services: Services, track: Track, original: bool) -> Result<Fetch
             let nd = services.navidrome.ok_or("Navidrome isn't connected")?;
             Playable::Navidrome(nd.audio(id).await.map_err(|e| e.to_string())?)
         }
-        ProviderKind::Music => return Err("Music has no songs of its own".into()),
+        ProviderKind::Opium => return Err("Opium has no songs of its own".into()),
         ProviderKind::Local => return Err("this song's file is on this computer already".into()),
     };
     Ok(match playable {

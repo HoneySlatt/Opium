@@ -5,12 +5,12 @@ edition.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "music"
+name = "opium"
 path = "src/main.rs"
 
 [dependencies]
 desktop = { path = "../desktop" }
-music-core = { path = "../music-core" }
+opium-core = { path = "../opium-core" }
 apple-music = { path = "../apple-music" }
 soundcloud = { path = "../soundcloud" }
 browser-signin = { path = "../browser-signin" }

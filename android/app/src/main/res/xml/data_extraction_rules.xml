@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Nothing of the app leaves the phone in a backup or a transfer to another
-  one: its sign-ins, Music Connect's pairings and what was played stay here.
+  one: its sign-ins, Opium Connect's pairings and what was played stay here.
 -->
 <data-extraction-rules>
     <cloud-backup>

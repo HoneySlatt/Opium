@@ -6,5 +6,5 @@ pub type Palette = [[u8; 3]; 3];
 
 /// The palette of an encoded image (JPEG, PNG…).
 pub fn from_image(bytes: &[u8]) -> Option<Palette> {
-    music_core::palette::from_image(bytes)
+    opium_core::palette::from_image(bytes)
 }

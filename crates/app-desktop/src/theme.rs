@@ -3,14 +3,14 @@
 //! and the layout, which picks how each part of the window is drawn.
 //!
 //! Theme files are read by the core, which the phone shares (see
-//! `music_core::theme`): Stock and Spotify are built in, and every file in
-//! `~/.config/music/themes/` is one more.
+//! `opium_core::theme`): Stock and Spotify are built in, and every file in
+//! `~/.config/opium/themes/` is one more.
 
 use std::path::PathBuf;
 
 use egui::Color32;
-use music_core::theme::ThemeFile;
-pub use music_core::theme::{
+use opium_core::theme::ThemeFile;
+pub use opium_core::theme::{
     Cards, Favourite, Glow, Header, Headings, LyricsPlace as Lyrics, Motion, NowPlaying, Panel,
     PlayerBar, Rows, Sidebar, TopBar, Window,
 };
@@ -115,12 +115,12 @@ impl Tonal {
     /// From an accent, as the core derives them (the phone's alike).
     pub fn from_accent(accent: Color32) -> Tonal {
         let [r, g, b, _] = accent.to_srgba_unmultiplied();
-        Tonal::of_core(music_core::theme::Tonal::from_accent(
+        Tonal::of_core(opium_core::theme::Tonal::from_accent(
             u32::from(r) << 16 | u32::from(g) << 8 | u32::from(b),
         ))
     }
 
-    fn of_core(t: music_core::theme::Tonal) -> Tonal {
+    fn of_core(t: opium_core::theme::Tonal) -> Tonal {
         Tonal {
             primary: rgb(t.primary),
             on_primary: rgb(t.on_primary),
@@ -132,12 +132,12 @@ impl Tonal {
     }
 
     /// A theme file's, what it leaves out derived from its accent.
-    fn of(p: &music_core::theme::Palette) -> Tonal {
+    fn of(p: &opium_core::theme::Palette) -> Tonal {
         Tonal::of_core(p.tonal())
     }
 }
 
-use music_core::theme::BUILT_IN;
+use opium_core::theme::BUILT_IN;
 
 const fn rgb(v: u32) -> Color32 {
     Color32::from_rgb((v >> 16) as u8, (v >> 8) as u8, v as u8)
@@ -212,13 +212,13 @@ impl Theme {
         })
     }
 
-    /// Where Amane's `switch-theme.sh` writes the theme for Music.
+    /// Where Amane's `switch-theme.sh` writes the theme for Opium.
     pub fn amane_path() -> PathBuf {
         let config = std::env::var_os("XDG_CONFIG_HOME")
             .map(PathBuf::from)
             .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
             .unwrap_or_default();
-        config.join("music/theme.toml")
+        config.join("opium/theme.toml")
     }
 
     /// The Amane theme, if its file is there and valid.
@@ -229,7 +229,7 @@ impl Theme {
     /// A theme file: its name and the theme. What it leaves out is Stock's;
     /// a malformed colour or an unknown layout choice rejects it, with why.
     pub fn from_theme_file(source: &str) -> Result<(String, Self), String> {
-        let file = music_core::theme::parse(source)?;
+        let file = opium_core::theme::parse(source)?;
         let p = file.colors;
         let theme = Theme {
             layout: Layout::of(&file),

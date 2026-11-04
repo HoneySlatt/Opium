@@ -1,4 +1,4 @@
-//! Cover art kept on disk in `~/.cache/music/covers/`, so the covers seen once
+//! Cover art kept on disk in `~/.cache/opium/covers/`, so the covers seen once
 //! show at once afterwards: where each is kept, the signing of a server's on
 //! the way, the queue they are fetched in, and the trimming of the folder.
 //! The window's own loader, which draws them, is the app's.
@@ -19,7 +19,7 @@ pub(crate) fn cache_dir(name: &str) -> Option<PathBuf> {
     let cache = std::env::var_os("XDG_CACHE_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")))?;
-    Some(cache.join("music").join(name))
+    Some(cache.join("opium").join(name))
 }
 
 /// A hash of `url` (FNV-1a, which never changes), to name its file.
@@ -35,7 +35,7 @@ pub fn file(url: &str) -> Option<PathBuf> {
 }
 
 /// Where the animated cover at `url` is kept at `size`, in
-/// `~/.cache/music/motion/`.
+/// `~/.cache/opium/motion/`.
 pub fn motion_file(url: &str, size: u32) -> Option<PathBuf> {
     Some(cache_dir("motion")?.join(format!("{:016x}-{size}.mp4", hash(url))))
 }

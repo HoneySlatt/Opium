@@ -1,4 +1,4 @@
-//! Music: Apple Music, SoundCloud, Navidrome and your own files in one
+//! Opium: Apple Music, SoundCloud, Navidrome and your own files in one
 //! desktop player.
 
 mod app;
@@ -16,7 +16,7 @@ mod ui;
 use desktop::{backend, devices, mpris, settings};
 
 fn main() -> eframe::Result {
-    // Files opened while Music runs go to it, rather than to a second one;
+    // Files opened while Opium runs go to it, rather than to a second one;
     // started again with none, the one running comes forward.
     let files = mpris::files_from_args();
     let running = if files.is_empty() {
@@ -29,8 +29,8 @@ fn main() -> eframe::Result {
     }
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("Music")
-            .with_app_id("music")
+            .with_title("Opium")
+            .with_app_id("opium")
             .with_inner_size([1440.0, 900.0])
             .with_min_inner_size([760.0, 520.0])
             .with_icon(
@@ -40,7 +40,7 @@ fn main() -> eframe::Result {
         ..Default::default()
     };
     let result = eframe::run_native(
-        "Music",
+        "Opium",
         options,
         Box::new(|cc| Ok(Box::new(app::App::new(cc)))),
     );

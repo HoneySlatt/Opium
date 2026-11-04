@@ -7,7 +7,7 @@ use std::f32::consts::TAU;
 use std::time::Duration;
 
 use egui::{Color32, CornerRadius, Id, Rect, Sense, Stroke, Ui, pos2, vec2};
-use music_core::model::FavouriteKind;
+use opium_core::model::FavouriteKind;
 
 use crate::app::{App, SignalAnchor};
 use crate::color::{alpha, mix};
@@ -212,7 +212,7 @@ fn song(app: &mut App, ui: &mut Ui, theme: &Theme, column: Rect) {
     // The track's menu, as in the lists (a station has none).
     let station = track.id.id.starts_with("ra.");
     let facts = TrackFacts {
-        file: track.id.provider == music_core::model::ProviderKind::Local,
+        file: track.id.provider == opium_core::model::ProviderKind::Local,
         has_album: track.album_id.is_some(),
         favourite: app.is_favourite(FavouriteKind::Song, &track.id),
         in_library: app.track_in_library(&track),
@@ -293,9 +293,9 @@ fn transport(app: &mut App, ui: &mut Ui, theme: &Theme, column: Rect) {
         app.next();
     }
     let (icon, on) = match shown.repeat {
-        music_core::Repeat::Off => (icons::REPEAT, false),
-        music_core::Repeat::All => (icons::REPEAT, true),
-        music_core::Repeat::One => (icons::REPEAT_ONE, true),
+        opium_core::Repeat::Off => (icons::REPEAT, false),
+        opium_core::Repeat::All => (icons::REPEAT, true),
+        opium_core::Repeat::One => (icons::REPEAT_ONE, true),
     };
     let response = button(&mut row, theme, icon, 18.0, color(on), true).on_hover_text("Repeat");
     dot(&row, theme, response.rect, on);
@@ -507,7 +507,7 @@ fn tools(app: &mut App, ui: &mut Ui, theme: &Theme, column: Rect, side: bool) {
 
 /// What plays, as a label: lossless in the tertiary container, a yellow
 /// dot when the signal isn't bit-perfect. It opens the signal path.
-pub(super) fn quality(app: &mut App, ui: &mut Ui, theme: &Theme, track: &music_core::model::Track) {
+pub(super) fn quality(app: &mut App, ui: &mut Ui, theme: &Theme, track: &opium_core::model::Track) {
     let (label, lossless) = if super::plays_in_atmos(track) {
         ("Dolby Atmos".to_string(), true)
     } else {

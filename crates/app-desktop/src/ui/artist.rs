@@ -4,7 +4,7 @@
 //! columns; then shelves of their albums, videos, playlists and the like.
 
 use egui::{Color32, Id, Mesh, Rect, Sense, Ui, pos2, vec2};
-use music_core::model::{Album, ArtistDetail, Collection, FavouriteKind, ItemId, Playlist};
+use opium_core::model::{Album, ArtistDetail, Collection, FavouriteKind, ItemId, Playlist};
 
 use crate::app::{App, Loaded, Page};
 use crate::fonts::{Weight, font};

@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use music_core::model::{
+use opium_core::model::{
     Album, Artist, Artwork, AudioQuality, Codec, ItemId, Playlist, ProviderKind, Track,
 };
 

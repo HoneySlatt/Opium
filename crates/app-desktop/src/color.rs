@@ -1,7 +1,7 @@
 //! Colour maths in OKLab, the space the design mixes in (`color-mix(in oklab, …)`).
 
 use egui::Color32;
-pub use music_core::color::{Oklab, to_linear};
+pub use opium_core::color::{Oklab, to_linear};
 
 /// A colour in OKLab, from the core's maths.
 pub fn oklab(c: Color32) -> Oklab {

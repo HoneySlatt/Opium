@@ -1,7 +1,7 @@
 //! The sidebar: search, navigation, library, playlists and the account row.
 
 use egui::{Id, Rect, Sense, Stroke, Ui, pos2, vec2};
-use music_core::model::Collection;
+use opium_core::model::Collection;
 
 use crate::app::{App, CollectionChoice, Page};
 use crate::color::{alpha, mix};

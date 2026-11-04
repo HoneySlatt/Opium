@@ -2,7 +2,7 @@
 //! its signal, its album and what plays next; or the queue and what played.
 
 use egui::{Id, Rect, Sense, Ui, pos2, vec2};
-use music_core::model::{FavouriteKind, Track};
+use opium_core::model::{FavouriteKind, Track};
 
 use crate::app::{App, Page, Side};
 use crate::fonts::{Weight, font};

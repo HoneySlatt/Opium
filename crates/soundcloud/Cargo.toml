@@ -10,7 +10,7 @@ base64 = "0.23.1"
 browser-signin = { path = "../browser-signin" }
 cenc = { path = "../cenc" }
 futures-util = "0.3.34"
-music-core = { path = "../music-core" }
+opium-core = { path = "../opium-core" }
 regex = "1.13.1"
 reqwest = { version = "0.13.5", default-features = false, features = ["brotli", "gzip", "http2", "json", "query", "form", "rustls"] }
 serde = { version = "1.0.229", features = ["derive"] }

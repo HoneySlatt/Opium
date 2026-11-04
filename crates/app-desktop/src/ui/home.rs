@@ -4,7 +4,7 @@
 //! other shelf is a row of covers.
 
 use egui::{Color32, Id, Rect, Sense, Ui, pos2, vec2};
-use music_core::model::{Collection, Shelf};
+use opium_core::model::{Collection, Shelf};
 
 use crate::app::{App, CollectionChoice, Loaded, Page, Shelves as Which};
 use crate::fonts::{Weight, font};

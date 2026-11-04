@@ -5,7 +5,7 @@
 use std::time::Duration;
 
 use egui::{Color32, Id, Rect, Sense, Ui, pos2, vec2};
-use music_core::model::FavouriteKind;
+use opium_core::model::FavouriteKind;
 
 use crate::app::{App, Page, Side, SignalAnchor};
 use crate::fonts::{Weight, font};
@@ -101,7 +101,7 @@ fn now_playing(app: &mut App, ui: &mut Ui, theme: &Theme, area: Rect) {
     let removable = track.library_id.is_some();
     let download = app.download_offer(&track.id);
     let facts = || TrackFacts {
-        file: track.id.provider == music_core::model::ProviderKind::Local,
+        file: track.id.provider == opium_core::model::ProviderKind::Local,
         has_album,
         favourite,
         in_library,
@@ -307,9 +307,9 @@ fn controls(app: &mut App, ui: &mut Ui, theme: &Theme, area: Rect) {
         app.next();
     }
     let (repeat_icon, repeat) = match shown.repeat {
-        music_core::Repeat::Off => (icons::REPEAT, dim),
-        music_core::Repeat::All => (icons::REPEAT, theme.accent),
-        music_core::Repeat::One => (icons::REPEAT_ONE, theme.accent),
+        opium_core::Repeat::Off => (icons::REPEAT, dim),
+        opium_core::Repeat::All => (icons::REPEAT, theme.accent),
+        opium_core::Repeat::One => (icons::REPEAT_ONE, theme.accent),
     };
     if button(ui, 88.0, repeat_icon, 16.0, repeat, true, "Repeat") {
         app.cycle_repeat();

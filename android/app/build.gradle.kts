@@ -4,12 +4,12 @@ plugins {
 }
 
 android {
-    namespace = "io.github.honeyslatt.music"
+    namespace = "io.github.honeyslatt.opium"
     compileSdk = 37
     buildToolsVersion = "36.1.0"
 
     defaultConfig {
-        applicationId = "io.github.honeyslatt.music"
+        applicationId = "io.github.honeyslatt.opium"
         // Android 14: the first with bit-perfect USB audio.
         minSdk = 34
         targetSdk = 36

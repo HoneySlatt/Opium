@@ -2,7 +2,7 @@
 //! cover card and grid layout the artist page and search share.
 
 use egui::{Id, Rect, Sense, Stroke, Ui, pos2, vec2};
-use music_core::model::{
+use opium_core::model::{
     Collection, FavouriteKind, ItemId, Playlist, ProviderKind, Station, Track,
 };
 
@@ -1032,7 +1032,7 @@ fn facts(app: &App, kind: Kind, i: usize) -> CollectionFacts {
 }
 
 fn card(app: &App, kind: Kind, i: usize) -> (String, String, Option<String>, Open) {
-    let album = |a: &music_core::model::Album| {
+    let album = |a: &opium_core::model::Album| {
         let artists = a.artists.join(", ");
         let sub = match a.year {
             Some(year) => format!("{artists} · {year}"),
@@ -1197,7 +1197,7 @@ pub(super) fn song_columns(
             super::tracks::favourite_star(&row_ui, theme, pos2(end + 12.0, cell.center().y - 9.0));
         }
         let facts = || TrackFacts {
-            file: track.id.provider == music_core::model::ProviderKind::Local,
+            file: track.id.provider == opium_core::model::ProviderKind::Local,
             has_album: track.album_id.is_some(),
             favourite,
             in_library: app.track_in_library(track),

@@ -123,7 +123,7 @@ pub fn button(app: &mut App, ui: &mut Ui, theme: &Theme, shown: &Shown) {
                 note(
                     ui,
                     theme,
-                    "Your phone shows here once Music is open on it, on the same Wi-Fi.",
+                    "Your phone shows here once Opium is open on it, on the same Wi-Fi.",
                 );
             }
             if pick.is_some() {

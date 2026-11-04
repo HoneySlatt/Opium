@@ -11,7 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use lofty::file::{AudioFile, FileType, TaggedFileExt};
 use lofty::picture::PictureType;
 use lofty::tag::{ItemKey, Tag};
-use music_core::model::Codec;
+use opium_core::model::Codec;
 use serde::{Deserialize, Serialize};
 
 /// The files read as music: what the player decodes.
@@ -295,7 +295,7 @@ fn embedded_cover(tag: &Tag, covers: &Path) -> Option<String> {
 pub fn keep_cover(bytes: &[u8], covers: &Path) -> Option<String> {
     let path = covers.join(format!("{:016x}.jpg", fnv(bytes)));
     if !path.exists() {
-        let square = music_core::cover::square(bytes)?;
+        let square = opium_core::cover::square(bytes)?;
         std::fs::create_dir_all(covers).ok()?;
         let partial = path.with_extension("part");
         std::fs::write(&partial, square).ok()?;

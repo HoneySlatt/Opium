@@ -1,4 +1,4 @@
-//! Music Connect: the user's devices on the same network find each other,
+//! Opium Connect: the user's devices on the same network find each other,
 //! show what each one plays, control it, and hand the music over from one
 //! to another, as Spotify's devices do. No server is in between: each
 //! device plays with its own sign-ins, and tells the others only what it
@@ -8,7 +8,7 @@
 //! types in; only paired devices are listened to, and what they say to
 //! each other is encrypted.
 //!
-//! What they keep in common (the history, Music's own playlists: see the
+//! What they keep in common (the history, Opium's own playlists: see the
 //! `synced` crate) goes both ways each time two connect, and each change as
 //! it is made: a device off meanwhile catches up the next time.
 //!
@@ -28,9 +28,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
-pub use music_core::Handoff;
-use music_core::Repeat;
-use music_core::model::{Station, Track};
+pub use opium_core::Handoff;
+use opium_core::Repeat;
+use opium_core::model::{Station, Track};
 use serde::{Deserialize, Serialize};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, oneshot};
@@ -45,7 +45,7 @@ uniffi::setup_scaffolding!();
 
 /// Where a device listens, if it is free; the firewall lets it in.
 pub const PORT: u16 = 47820;
-const SERVICE: &str = "_music-connect._tcp.local.";
+const SERVICE: &str = "_opium-connect._tcp.local.";
 const VERSION: u32 = 1;
 
 /// How many of the songs coming up are shown elsewhere.
@@ -416,7 +416,7 @@ impl Node {
             .thread_name("connect")
             .enable_all()
             .build()
-            .expect("a runtime for Music Connect");
+            .expect("a runtime for Opium Connect");
         let store = Store::open(dir);
         let secret = on_network.then(|| store.secret()).flatten();
         let me = Device {
@@ -456,7 +456,7 @@ impl Node {
                 port
             }
             Err(e) => {
-                eprintln!("music connect: can't listen: {e}");
+                eprintln!("opium connect: can't listen: {e}");
                 PORT
             }
         };
@@ -464,7 +464,7 @@ impl Node {
         let mdns = on_network
             .then(|| {
                 discover(&inner, port)
-                    .map_err(|e| eprintln!("music connect: can't look for devices: {e}"))
+                    .map_err(|e| eprintln!("opium connect: can't look for devices: {e}"))
                     .ok()
             })
             .flatten();
@@ -1337,7 +1337,7 @@ impl Inner {
 
 /// Names both ends, the one that dialed first.
 fn prologue(dialer: &str, answerer: &str) -> Vec<u8> {
-    format!("music-connect {VERSION} {dialer} {answerer}").into_bytes()
+    format!("opium-connect {VERSION} {dialer} {answerer}").into_bytes()
 }
 
 async fn accept(inner: Arc<Inner>, listener: TcpListener) {
@@ -1384,7 +1384,7 @@ async fn redial(inner: Arc<Inner>) {
 fn discover(inner: &Arc<Inner>, port: u16) -> Result<mdns_sd::ServiceDaemon, mdns_sd::Error> {
     let mdns = mdns_sd::ServiceDaemon::new()?;
     let me = &inner.me;
-    let host = format!("music-{}.local.", me.id);
+    let host = format!("opium-{}.local.", me.id);
     let properties = [
         ("id", me.id.as_str()),
         ("name", me.name.as_str()),
@@ -1411,7 +1411,7 @@ mod tests {
 
     fn track(id: &str) -> Track {
         Track {
-            id: music_core::model::ItemId::new(music_core::model::ProviderKind::AppleMusic, id),
+            id: opium_core::model::ItemId::new(opium_core::model::ProviderKind::AppleMusic, id),
             title: id.into(),
             artists: Vec::new(),
             album: None,

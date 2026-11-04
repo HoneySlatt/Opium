@@ -3,8 +3,8 @@
 //! playlists), what the people followed posted, the charts, the stations of
 //! the songs played lately, and the genres it keeps a trending list of.
 
-use music_core::Result;
-use music_core::model::{
+use opium_core::Result;
+use opium_core::model::{
     Collection, Genre, ItemId, Playlist, ProviderKind, Shelf, Station, StationKind, Track,
 };
 use serde::Deserialize;

@@ -9,7 +9,7 @@
 
 use std::io::{self, Read};
 
-use music_core::model::Track;
+use opium_core::model::Track;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 

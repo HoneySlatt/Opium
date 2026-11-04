@@ -16,11 +16,11 @@ mod types;
 use std::sync::{Mutex, RwLock};
 
 use async_trait::async_trait;
-use music_core::model::{
+use opium_core::model::{
     Album, Artist, ArtistDetail, Collection, Cursor, FavouriteKind, Genre, ItemId, Page, Playlist,
     ProviderKind, SearchResults, Shelf, SongLinks, Track,
 };
-use music_core::{Error, Provider, Result};
+use opium_core::{Error, Provider, Result};
 use serde::de::DeserializeOwned;
 
 pub use stream::{Audio, Playable, Reader};

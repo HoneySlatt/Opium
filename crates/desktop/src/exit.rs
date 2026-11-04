@@ -64,7 +64,7 @@ fn report() {
             );
         }
     }
-    eprint!("music: {note}");
+    eprint!("opium: {note}");
     if let Some(dir) = crate::covers::cache_dir("") {
         let _ = std::fs::create_dir_all(&dir);
         if let Ok(mut log) = std::fs::OpenOptions::new()

@@ -3,7 +3,7 @@
 //! path, its album, what comes next), its lyrics, or the queue.
 
 use egui::{Color32, CornerRadius, Id, Rect, Sense, Ui, pos2, vec2};
-use music_core::model::{FavouriteKind, Track};
+use opium_core::model::{FavouriteKind, Track};
 
 use crate::app::{App, Page, Side};
 use crate::color::{alpha, mix};

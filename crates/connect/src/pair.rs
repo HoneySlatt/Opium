@@ -52,18 +52,18 @@ fn mac(key: &[u8], label: &[u8]) -> Vec<u8> {
 
 /// What `side` sends to show it has the key.
 pub fn proof(key: &[u8], side: &str) -> Vec<u8> {
-    mac(key, format!("music-connect confirm {side}").as_bytes())
+    mac(key, format!("opium-connect confirm {side}").as_bytes())
 }
 
 pub fn proves(key: &[u8], side: &str, proof: &[u8]) -> bool {
     let mut mac = hmac::Hmac::<sha2::Sha256>::new_from_slice(key).expect("any key length");
-    mac.update(format!("music-connect confirm {side}").as_bytes());
+    mac.update(format!("opium-connect confirm {side}").as_bytes());
     mac.verify_slice(proof).is_ok()
 }
 
 /// The key the two keep, apart from the one they confirmed with.
 pub fn kept(key: &[u8]) -> [u8; 32] {
-    mac(key, b"music-connect psk")
+    mac(key, b"opium-connect psk")
         .try_into()
         .expect("SHA-256 is 32 bytes")
 }

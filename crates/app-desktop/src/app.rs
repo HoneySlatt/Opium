@@ -5,11 +5,11 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use music_core::model::{
+use opium_core::model::{
     Album, Artist, ArtistDetail, Collection, FavouriteKind, ItemId, Lyrics, Playlist, ProviderKind,
     SearchResults, Shelf, Station, StationKind, Track,
 };
-use music_core::{Queue, Repeat};
+use opium_core::{Queue, Repeat};
 use player::{Event, Player, Status, Token};
 
 use crate::backend::{Backend, Downloading, Playable, Reply, Request};
@@ -151,7 +151,7 @@ struct Searched {
     numbers: Arc<Vec<u32>>,
 }
 
-pub use music_core::text::fold;
+pub use opium_core::text::fold;
 
 /// An animated cover playing: its video and size, the decoder, and the
 /// texture its latest frame went into.
@@ -222,7 +222,7 @@ pub struct NewPlaylist {
     pub name: String,
     pub description: String,
     pub tracks: Vec<Track>,
-    /// Where it is made: Music itself, or a service.
+    /// Where it is made: Opium itself, or a service.
     pub service: ProviderKind,
     /// The playlist being edited, when the window edits one instead.
     pub editing: Option<ItemId>,
@@ -241,7 +241,7 @@ pub enum CoverChoice {
     #[default]
     Unchanged,
     Removed,
-    /// A square JPEG (see `music_core::cover`).
+    /// A square JPEG (see `opium_core::cover`).
     Chosen(Arc<[u8]>),
 }
 
@@ -315,7 +315,7 @@ fn pick_cover(picked: Arc<std::sync::Mutex<Option<Vec<u8>>>>, ctx: &egui::Contex
         else {
             return;
         };
-        let Some(cover) = std::fs::read(file).ok().and_then(|b| music_core::cover::square(&b)) else {
+        let Some(cover) = std::fs::read(file).ok().and_then(|b| opium_core::cover::square(&b)) else {
             return;
         };
         *picked.lock().unwrap_or_else(|e| e.into_inner()) = Some(cover);
@@ -331,9 +331,9 @@ fn wake(ctx: &egui::Context) -> desktop::Wake {
     std::sync::Arc::new(move || ctx.request_repaint())
 }
 
-/// Whether `provider`'s playlists take a cover from here: Music's own and Navidrome's.
+/// Whether `provider`'s playlists take a cover from here: Opium's own and Navidrome's.
 pub fn coverable(provider: ProviderKind) -> bool {
-    matches!(provider, ProviderKind::Music | ProviderKind::Navidrome)
+    matches!(provider, ProviderKind::Opium | ProviderKind::Navidrome)
 }
 
 /// The Add to Playlists window: the songs, the playlists ticked, the search.
@@ -574,7 +574,7 @@ pub struct App {
     /// The Apple Music storefront (country) of the account, once connected.
     pub storefront: Option<String>,
     /// The account's picture on Apple Music, once read.
-    pub profile_picture: Option<music_core::model::Artwork>,
+    pub profile_picture: Option<opium_core::model::Artwork>,
     /// The browser sign-in is open, waiting for the user.
     pub signing_in: bool,
     pub soundcloud: SoundCloudState,
@@ -719,7 +719,7 @@ pub struct App {
     artist_twins: HashMap<ItemId, (u64, Vec<ItemId>)>,
     pub artists: HashMap<ItemId, Loaded<Arc<ArtistDetail>>>,
     /// Catalog albums' other editions and music videos.
-    album_extras: HashMap<ItemId, Loaded<Arc<music_core::model::AlbumExtras>>>,
+    album_extras: HashMap<ItemId, Loaded<Arc<opium_core::model::AlbumExtras>>>,
     pub playlist_tracks: HashMap<ItemId, PlaylistTracks>,
     palettes: HashMap<String, PaletteState>,
     lyrics: HashMap<ItemId, Loaded<Option<Arc<Lyrics>>>>,
@@ -761,10 +761,10 @@ pub struct App {
     now_stands_for: Option<ItemId>,
     /// The server's songs by title and artist, and how many songs the
     /// library had when they were indexed.
-    server_songs: Option<(usize, music_core::dedupe::Copies)>,
+    server_songs: Option<(usize, opium_core::dedupe::Copies)>,
     /// Every library song by what copies share, as it was at so many songs:
     /// another device's file plays from one here.
-    library_copies: Option<(usize, music_core::dedupe::Copies)>,
+    library_copies: Option<(usize, opium_core::dedupe::Copies)>,
     next_token: Token,
     /// Fetching, to play as soon as it arrives.
     pending_play: Option<Token>,
@@ -990,7 +990,7 @@ impl App {
                 Some(true) => None,
                 _ => Some(settings.side.unwrap_or(Side::NowPlaying)),
             },
-            lyrics_page: std::env::var_os("MUSIC_SCREENSHOT_LYRICS").is_some(),
+            lyrics_page: std::env::var_os("OPIUM_SCREENSHOT_LYRICS").is_some(),
             history: kept.history(),
             kept,
             followed: None,
@@ -1026,9 +1026,9 @@ impl App {
             muted: settings.muted.unwrap_or(false),
             volume_changed: None,
             toast: None,
-            drawer_open: std::env::var_os("MUSIC_SCREENSHOT_DRAWER").is_some(),
-            signal_open: std::env::var_os("MUSIC_SCREENSHOT_SIGNAL").map(|_| SignalAnchor::TopBar),
-            now_playing: std::env::var_os("MUSIC_SCREENSHOT_NP").is_some(),
+            drawer_open: std::env::var_os("OPIUM_SCREENSHOT_DRAWER").is_some(),
+            signal_open: std::env::var_os("OPIUM_SCREENSHOT_SIGNAL").map(|_| SignalAnchor::TopBar),
+            now_playing: std::env::var_os("OPIUM_SCREENSHOT_NP").is_some(),
             screenshot: crate::screenshot::Screenshot::from_env(),
             settings,
             theme_changed,
@@ -1283,7 +1283,7 @@ impl App {
             ProviderKind::SoundCloud => !matches!(self.soundcloud, SoundCloudState::NotSignedIn),
             ProviderKind::Navidrome => !matches!(self.navidrome, SoundCloudState::NotSignedIn),
             ProviderKind::Local => !matches!(self.local, SoundCloudState::NotSignedIn),
-            ProviderKind::Music => false,
+            ProviderKind::Opium => false,
         };
         [
             ProviderKind::AppleMusic,
@@ -1602,7 +1602,7 @@ impl App {
                 self.local = SoundCloudState::Connecting
             }
             ProviderKind::Local => self.local = SoundCloudState::NotSignedIn,
-            ProviderKind::Music => {}
+            ProviderKind::Opium => {}
         }
         if on {
             // Read again, the service's albums with the rest, when shown.
@@ -1632,7 +1632,7 @@ impl App {
             ProviderKind::AppleMusic => self.connection = Connection::NotSignedIn,
             ProviderKind::SoundCloud => self.soundcloud = SoundCloudState::NotSignedIn,
             ProviderKind::Navidrome => self.navidrome = SoundCloudState::NotSignedIn,
-            ProviderKind::Local | ProviderKind::Music => {}
+            ProviderKind::Local | ProviderKind::Opium => {}
         }
         self.leave_library(provider);
         let name = match provider {
@@ -1640,7 +1640,7 @@ impl App {
             ProviderKind::SoundCloud => "SoundCloud",
             ProviderKind::Navidrome => "Navidrome",
             ProviderKind::Local => "Files",
-            ProviderKind::Music => "Music",
+            ProviderKind::Opium => "Opium",
         };
         self.notify(format!("Signed out of {name}"), now);
         true
@@ -1955,7 +1955,7 @@ impl App {
             ProviderKind::SoundCloud => matches!(self.soundcloud, SoundCloudState::Connected(_)),
             ProviderKind::Navidrome => matches!(self.navidrome, SoundCloudState::Connected(_)),
             // The files have no picks.
-            ProviderKind::Local | ProviderKind::Music => false,
+            ProviderKind::Local | ProviderKind::Opium => false,
         };
         [ProviderKind::AppleMusic, ProviderKind::SoundCloud, ProviderKind::Navidrome]
             .into_iter()
@@ -2247,12 +2247,12 @@ impl App {
                 ProviderKind::SoundCloud => 1,
                 ProviderKind::Navidrome => 2,
                 ProviderKind::Local => 3,
-                ProviderKind::Music => 4,
+                ProviderKind::Opium => 4,
             }
         });
         if self.recent_by_date() {
             let items = std::mem::take(&mut self.recently_added.items);
-            self.recently_added.items = music_core::recent::in_time_order(items);
+            self.recently_added.items = opium_core::recent::in_time_order(items);
         }
         // What was built from the items, by place, is built again.
         self.recently_added.version += 1;
@@ -2268,7 +2268,7 @@ impl App {
         self.notify(format!("Adding “{}” to the library…", track.title), now);
     }
 
-    /// The user's own playlists that `tracks` can go in: Music's, which
+    /// The user's own playlists that `tracks` can go in: Opium's, which
     /// take any service's songs, and those of their service, as a service's
     /// playlist takes its own songs only.
     pub fn editable_playlists(&self, tracks: &[Track]) -> Vec<Playlist> {
@@ -2278,14 +2278,14 @@ impl App {
             .iter()
             .filter(|p| {
                 p.editable
-                    && (p.id.provider == ProviderKind::Music
+                    && (p.id.provider == ProviderKind::Opium
                         || (one_service && Some(p.id.provider) == provider))
             })
             .cloned()
             .collect()
     }
 
-    /// Where a new playlist of `tracks` can be made: in Music itself, or in
+    /// Where a new playlist of `tracks` can be made: in Opium itself, or in
     /// their service; any service in use, made empty.
     pub fn new_playlist_services(&self, tracks: &[Track]) -> Vec<ProviderKind> {
         let in_use = self.services_in_use();
@@ -2300,7 +2300,7 @@ impl App {
                 }
             }
         };
-        std::iter::once(ProviderKind::Music).chain(theirs).collect()
+        std::iter::once(ProviderKind::Opium).chain(theirs).collect()
     }
 
     /// The playlists songs were last added to, most recent first, that
@@ -2339,7 +2339,7 @@ impl App {
             name: String::new(),
             description: String::new(),
             tracks,
-            service: ProviderKind::Music,
+            service: ProviderKind::Opium,
             editing: None,
             artwork: None,
             cover: CoverChoice::Unchanged,
@@ -2357,7 +2357,7 @@ impl App {
     }
 
     /// The id a playlist's link goes by: none for an Apple playlist of the
-    /// user's never published, nor for Music's own or the server's.
+    /// user's never published, nor for Opium's own or the server's.
     fn playlist_share_id(playlist: &Playlist) -> Option<ItemId> {
         match playlist.id.provider {
             ProviderKind::AppleMusic => Self::playlist_favourite_id(playlist),
@@ -2705,8 +2705,8 @@ impl App {
                 }
             }
         }
-        if new.service == ProviderKind::Music {
-            self.backend.send(Request::CreateMusicPlaylist {
+        if new.service == ProviderKind::Opium {
+            self.backend.send(Request::CreateOpiumPlaylist {
                 name,
                 description,
                 tracks: new.tracks,
@@ -2758,9 +2758,9 @@ impl App {
         for playlist in dialog
             .chosen
             .iter()
-            .filter(|p| p.provider == ProviderKind::Music)
+            .filter(|p| p.provider == ProviderKind::Opium)
         {
-            self.backend.send(Request::AddToMusicPlaylist {
+            self.backend.send(Request::AddToOpiumPlaylist {
                 playlist: playlist.clone(),
                 tracks: dialog.tracks.clone(),
             });
@@ -2865,7 +2865,7 @@ impl App {
             std::mem::take(&mut results.tracks),
             songs.cloned().collect(),
         );
-        let worse = music_core::dedupe::songs(&all);
+        let worse = opium_core::dedupe::songs(&all);
         results.tracks = all
             .into_iter()
             .enumerate()
@@ -3228,7 +3228,7 @@ impl App {
                         .as_ref()
                         .is_none_or(|(_, copies)| copies.best(track).is_some())
             }
-            ProviderKind::Music => true,
+            ProviderKind::Opium => true,
         };
         !reached
             && !matches!(
@@ -3242,7 +3242,7 @@ impl App {
     /// Whether `id` can be downloaded: a service's song, not a station, nor
     /// a file here already.
     pub fn downloadable(&self, id: &ItemId) -> bool {
-        !matches!(id.provider, ProviderKind::Music | ProviderKind::Local) && !id.id.starts_with("ra.")
+        !matches!(id.provider, ProviderKind::Opium | ProviderKind::Local) && !id.id.starts_with("ra.")
     }
 
     /// What a song's menu offers of downloads: Download, or Remove
@@ -3256,7 +3256,7 @@ impl App {
         })
     }
 
-    /// Download those of `tracks` not kept nor on their way; Music's own
+    /// Download those of `tracks` not kept nor on their way; Opium's own
     /// songs are other services', and Apple's stations aren't songs.
     pub fn download(&mut self, tracks: &[Track]) {
         let tracks: Vec<Track> = tracks
@@ -3411,12 +3411,12 @@ impl App {
         let Some(Loaded::Ready((album, _))) = self.albums.get(id) else {
             return Vec::new();
         };
-        let key = music_core::dedupe::album_key(album);
+        let key = opium_core::dedupe::album_key(album);
         let twins: Vec<ItemId> = self
             .library_albums
             .items
             .iter()
-            .filter(|a| a.id.provider != id.provider && music_core::dedupe::album_key(a) == key)
+            .filter(|a| a.id.provider != id.provider && opium_core::dedupe::album_key(a) == key)
             .map(|a| a.id.clone())
             .collect();
         self.twins.insert(id.clone(), (version, twins.clone()));
@@ -3450,7 +3450,7 @@ impl App {
             return Some(whole.clone());
         }
         let slices: Vec<&[Track]> = copies.iter().map(|c| c.as_slice()).collect();
-        let whole = Arc::new(music_core::dedupe::album_tracks(&slices));
+        let whole = Arc::new(opium_core::dedupe::album_tracks(&slices));
         self.whole_albums
             .insert(id.clone(), (copies.len(), whole.clone()));
         Some(whole)
@@ -3470,8 +3470,8 @@ impl App {
             return copies.clone();
         }
         let copies = Arc::new(match list {
-            0 => music_core::dedupe::albums(&self.library_albums.items),
-            1 => music_core::dedupe::artists(&self.library_artists.items),
+            0 => opium_core::dedupe::albums(&self.library_albums.items),
+            1 => opium_core::dedupe::artists(&self.library_artists.items),
             _ => {
                 // The albums among them, as albums.
                 let (at, albums): (Vec<usize>, Vec<Album>) = self
@@ -3484,7 +3484,7 @@ impl App {
                         _ => None,
                     })
                     .unzip();
-                music_core::dedupe::albums(&albums)
+                opium_core::dedupe::albums(&albums)
                     .into_iter()
                     .map(|k| at[k])
                     .collect()
@@ -3523,7 +3523,7 @@ impl App {
 
     /// The catalog album `id`'s other editions and music videos, asked for
     /// the first time.
-    pub fn album_extras(&mut self, id: &ItemId) -> Option<Arc<music_core::model::AlbumExtras>> {
+    pub fn album_extras(&mut self, id: &ItemId) -> Option<Arc<opium_core::model::AlbumExtras>> {
         match self.album_extras.get(id) {
             Some(Loaded::Ready(extras)) => Some(extras.clone()),
             Some(_) => None,
@@ -3742,7 +3742,7 @@ impl App {
             .as_ref()
             .is_none_or(|(n, _)| *n != self.songs.len())
         {
-            let index = music_core::dedupe::Copies::of(
+            let index = opium_core::dedupe::Copies::of(
                 self.songs
                     .iter()
                     .filter(|t| t.id.provider == ProviderKind::Navidrome),
@@ -3754,7 +3754,7 @@ impl App {
     }
 
     /// Whether `track` is another device's file (a phone's, in a playlist of
-    /// Music's): not here to play.
+    /// Opium's): not here to play.
     fn elsewhere(track: &Track) -> bool {
         track.id.provider == ProviderKind::Local && !std::path::Path::new(&track.id.id).is_file()
     }
@@ -3770,7 +3770,7 @@ impl App {
             .as_ref()
             .is_none_or(|(n, _)| *n != self.songs.len())
         {
-            let index = music_core::dedupe::Copies::of(&self.songs);
+            let index = opium_core::dedupe::Copies::of(&self.songs);
             self.library_copies = Some((self.songs.len(), index));
         }
         let (_, index) = self.library_copies.as_ref()?;
@@ -3893,8 +3893,8 @@ impl App {
         if let Playable::Track { spatial: true, .. } = stream
             && let Some(track) = self.tracks.get_mut(&token)
         {
-            track.quality = Some(music_core::model::AudioQuality {
-                codec: music_core::model::Codec::Other("Dolby Atmos".into()),
+            track.quality = Some(opium_core::model::AudioQuality {
+                codec: opium_core::model::Codec::Other("Dolby Atmos".into()),
                 sample_rate: Some(48_000),
                 bit_depth: None,
                 bitrate_kbps: None,
@@ -4006,7 +4006,7 @@ impl App {
         // queue would be run through in silence.
         if let Some(why) = error.strip_prefix("audio output: ") {
             self.notify(
-                format!("Music found no sound card to play through: {why}. It plays through PipeWire, which doesn't seem to be running."),
+                format!("Opium found no sound card to play through: {why}. It plays through PipeWire, which doesn't seem to be running."),
                 now,
             );
             return;
@@ -4091,7 +4091,7 @@ impl App {
             && track
                 .quality
                 .as_ref()
-                .is_some_and(|q| q.codec == music_core::model::Codec::Other("Original".into()))
+                .is_some_and(|q| q.codec == opium_core::model::Codec::Other("Original".into()))
     }
 
     fn rest_on(&mut self, track: Option<Track>, now: f64, ctx: &egui::Context) {
@@ -4432,7 +4432,7 @@ impl App {
     }
 
     /// Songs taken out of the library leave the user's playlists too, if
-    /// Settings → Library says so: Music's own, and SoundCloud's of theirs.
+    /// Settings → Library says so: Opium's own, and SoundCloud's of theirs.
     /// Apple takes its songs out of its playlists itself.
     fn leave_playlists(&mut self, songs: &[Track]) {
         if !self.removals_leave_playlists() || songs.is_empty() {
@@ -4451,7 +4451,7 @@ impl App {
             .iter()
             .filter(|p| {
                 p.editable
-                    && (p.id.provider == ProviderKind::Music
+                    && (p.id.provider == ProviderKind::Opium
                         || (soundcloud && p.id.provider == ProviderKind::SoundCloud))
             })
             .map(|p| p.id.clone())
@@ -4497,11 +4497,11 @@ impl App {
     /// every row of it, as Apple does.
     pub fn remove_from_playlist(&mut self, playlist: &ItemId, track: &Track) {
         // Apple names a playlist's row by its library id; SoundCloud has a
-        // track once in a playlist, named by its own; Music takes out every
+        // track once in a playlist, named by its own; Opium takes out every
         // row of the song named.
         let entry = if matches!(
             playlist.provider,
-            ProviderKind::SoundCloud | ProviderKind::Music
+            ProviderKind::SoundCloud | ProviderKind::Opium
         ) {
             track.id.clone()
         } else {
@@ -4955,15 +4955,15 @@ impl App {
                     provider,
                     playlists,
                 } => {
-                    // A service's in place of its others: Music's own first,
+                    // A service's in place of its others: Opium's own first,
                     // then Apple Music's.
                     self.playlists.retain(|p| p.id.provider != provider);
                     let at = match provider {
-                        ProviderKind::Music => 0,
+                        ProviderKind::Opium => 0,
                         ProviderKind::AppleMusic => self
                             .playlists
                             .iter()
-                            .take_while(|p| p.id.provider == ProviderKind::Music)
+                            .take_while(|p| p.id.provider == ProviderKind::Opium)
                             .count(),
                         _ => self.playlists.len(),
                     };
@@ -5199,7 +5199,7 @@ impl App {
                 },
                 Reply::CoverChanged { id, result } => match result {
                     Ok(()) => {
-                        // Music's own come told again; a server's are read again.
+                        // Opium's own come told again; a server's are read again.
                         if id.provider == ProviderKind::Navidrome {
                             self.backend.send(Request::Playlists);
                         }
@@ -5769,7 +5769,7 @@ impl App {
                     let loaded: Vec<ItemId> = self
                         .playlist_tracks
                         .keys()
-                        .filter(|id| id.provider == ProviderKind::Music)
+                        .filter(|id| id.provider == ProviderKind::Opium)
                         .cloned()
                         .collect();
                     self.backend.own_changed(&loaded);
@@ -5778,7 +5778,7 @@ impl App {
         }
     }
 
-    /// Share the theme files of `~/.config/music/themes/` with the paired
+    /// Share the theme files of `~/.config/opium/themes/` with the paired
     /// phones, which choose among them too.
     fn share_themes(&self) {
         let mut themes: Vec<connect::SharedTheme> = std::fs::read_dir(Theme::themes_dir())
@@ -6200,9 +6200,9 @@ impl eframe::App for App {
         {
             self.go(page);
             // Going to a page closes Now Playing: the screenshot may want it.
-            self.now_playing = std::env::var_os("MUSIC_SCREENSHOT_NP").is_some();
-            self.lyrics_page = std::env::var_os("MUSIC_SCREENSHOT_LYRICS").is_some();
-            self.songs_view.downloaded = std::env::var_os("MUSIC_SCREENSHOT_DOWNLOADED").is_some();
+            self.now_playing = std::env::var_os("OPIUM_SCREENSHOT_NP").is_some();
+            self.lyrics_page = std::env::var_os("OPIUM_SCREENSHOT_LYRICS").is_some();
+            self.songs_view.downloaded = std::env::var_os("OPIUM_SCREENSHOT_DOWNLOADED").is_some();
         }
         // Play a row of the open playlist, or of Songs, once it has loaded.
         if self.screenshot.is_some() {

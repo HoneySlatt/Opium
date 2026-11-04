@@ -14,10 +14,10 @@ pub fn colors(palette: desktop::palette::Palette) -> Palette {
     palette.map(color)
 }
 
-/// Pull a colour into the theme's band (see `music_core::palette::fit`).
+/// Pull a colour into the theme's band (see `opium_core::palette::fit`).
 pub fn fit(c: Color32, light: bool) -> Color32 {
     let [r, g, b, _] = c.to_srgba_unmultiplied();
-    color(music_core::palette::fit([r, g, b], light))
+    color(opium_core::palette::fit([r, g, b], light))
 }
 
 /// Pull a colour into the band of a page header's wash: on a dark theme,
@@ -27,9 +27,9 @@ pub fn fit_header(c: Color32, light: bool) -> Color32 {
         return fit(c, true);
     }
     let [r, g, b, _] = c.to_srgba_unmultiplied();
-    let band = music_core::palette::Band {
+    let band = opium_core::palette::Band {
         lightness: (0.42, 0.66),
         chroma: 0.24,
     };
-    color(music_core::palette::fit_in([r, g, b], band))
+    color(opium_core::palette::fit_in([r, g, b], band))
 }

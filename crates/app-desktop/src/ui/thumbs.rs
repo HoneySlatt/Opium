@@ -162,7 +162,7 @@ mod tests {
 
     #[test]
     fn a_cover_file_is_read_no_larger_than_it_is_drawn() {
-        let dir = std::env::temp_dir().join(format!("music-covers-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("opium-covers-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("cover.png");
         let mut png = std::io::Cursor::new(Vec::new());

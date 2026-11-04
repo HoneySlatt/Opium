@@ -4,7 +4,7 @@
 //! 96 px Play; on the right the lyrics or what plays next.
 
 use egui::{Color32, CornerRadius, Id, Rect, Sense, Ui, pos2, vec2};
-use music_core::model::FavouriteKind;
+use opium_core::model::FavouriteKind;
 
 use crate::app::{App, Loaded, Page};
 use crate::color::alpha;
@@ -277,9 +277,9 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         app.toggle_shuffle();
     }
     let (repeat_icon, repeat_on) = match shown.repeat {
-        music_core::Repeat::Off => (icons::REPEAT, false),
-        music_core::Repeat::All => (icons::REPEAT, true),
-        music_core::Repeat::One => (icons::REPEAT_ONE, true),
+        opium_core::Repeat::Off => (icons::REPEAT, false),
+        opium_core::Repeat::All => (icons::REPEAT, true),
+        opium_core::Repeat::One => (icons::REPEAT_ONE, true),
     };
     let repeat = Rect::from_center_size(
         pos2(play.right() + 12.0 + 84.0 + 8.0 + 24.0, mid),
@@ -379,7 +379,7 @@ fn top_buttons(app: &mut App, ui: &mut Ui, theme: &Theme, full: Rect) {
     let open = super::fab::round(ui, theme, more, "np-more", icons::MORE, 20.0, theme.text)
         .on_hover_text("More");
     let facts = TrackFacts {
-        file: track.id.provider == music_core::model::ProviderKind::Local,
+        file: track.id.provider == opium_core::model::ProviderKind::Local,
         has_album: track.album_id.is_some(),
         favourite: app.is_favourite(FavouriteKind::Song, &track.id),
         in_library: app.track_in_library(&track),

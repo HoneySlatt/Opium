@@ -6,7 +6,7 @@ use std::cell::RefCell;
 use std::sync::Arc;
 
 use egui::{Id, Rect, Sense, Ui, pos2, vec2};
-use music_core::model::{Album, Collection, ItemId};
+use opium_core::model::{Album, Collection, ItemId};
 
 use crate::app::{App, Loaded, Page};
 use crate::fonts::{Weight, font};
@@ -109,7 +109,7 @@ fn releases(app: &mut App, id: &ItemId) -> Releases {
     }
     // Singles and EPs apart, as Apple names them; each newest first.
     let kept = gathered.map(|all| {
-        let copies = music_core::dedupe::albums(&all);
+        let copies = opium_core::dedupe::albums(&all);
         let (mut long, mut short): (Vec<Album>, Vec<Album>) = all
             .into_iter()
             .enumerate()
@@ -359,7 +359,7 @@ const EXPRESSIVE_TOP: f32 = 48.0 + 248.0 + 28.0 + 100.0;
 fn expressive_header(
     ui: &mut Ui,
     theme: &crate::theme::Theme,
-    artist: &Option<music_core::model::Artist>,
+    artist: &Option<opium_core::model::Artist>,
     top: Rect,
     pad: f32,
     counts: &str,
@@ -529,7 +529,7 @@ fn release_line(album: &Album) -> String {
 fn header(
     ui: &mut Ui,
     theme: &crate::theme::Theme,
-    artist: &Option<music_core::model::Artist>,
+    artist: &Option<opium_core::model::Artist>,
     id: &ItemId,
     left: f32,
     width: f32,

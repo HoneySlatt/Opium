@@ -4,7 +4,7 @@
 //! It sits on the window's `crust`, not in a pane.
 
 use egui::{Color32, Id, Rect, Sense, Ui, pos2, vec2};
-use music_core::model::{Collection, ProviderKind};
+use opium_core::model::{Collection, ProviderKind};
 
 use crate::app::{App, CollectionChoice, Page};
 use crate::color::alpha;
@@ -499,6 +499,6 @@ pub(super) fn logo(provider: ProviderKind) -> Option<Icon> {
         ProviderKind::SoundCloud => Some(icons::SOUNDCLOUD),
         ProviderKind::Navidrome => Some(icons::NAVIDROME),
         ProviderKind::Local => Some(icons::FILES),
-        ProviderKind::Music => None,
+        ProviderKind::Opium => None,
     }
 }

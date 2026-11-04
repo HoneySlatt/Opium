@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use egui::{Color32, Rect, Sense, Ui, pos2, vec2};
-use music_core::model::{Album, Collection, FavouriteKind, ItemId, MusicVideo, Track};
+use opium_core::model::{Album, Collection, FavouriteKind, ItemId, MusicVideo, Track};
 
 use crate::app::{App, Loaded, Page, TrackChoice};
 use crate::color::mix;
@@ -1268,7 +1268,7 @@ fn expressive_header(
                 year = Some(label.clone())
             }
             Some(i) if i == icons::CLOCK => length = Some(label.to_lowercase()),
-            // Music's own playlists have the note for a logo too.
+            // Opium's own playlists have the note for a logo too.
             Some(i) if i == icons::NOTE && !label.is_empty() => {
                 count = Some(
                     label

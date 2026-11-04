@@ -11,9 +11,9 @@ use std::time::Duration;
 use base64::Engine;
 
 use futures_util::StreamExt;
-use music_core::growing::{Growing, growing};
-use music_core::model::{AudioQuality, Codec, ItemId};
-use music_core::{Error, Result};
+use opium_core::growing::{Growing, growing};
+use opium_core::model::{AudioQuality, Codec, ItemId};
+use opium_core::{Error, Result};
 
 use crate::{SoundCloud, types};
 

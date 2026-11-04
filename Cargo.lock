@@ -304,8 +304,8 @@ dependencies = [
  "lyrics",
  "motion",
  "mpris-server",
- "music-core",
  "navidrome",
+ "opium-core",
  "player",
  "reqwest",
  "serde",
@@ -330,7 +330,7 @@ dependencies = [
  "cenc",
  "futures-util",
  "m3u8-rs",
- "music-core",
+ "opium-core",
  "player",
  "quick-xml 0.42.0",
  "regex",
@@ -1386,7 +1386,7 @@ dependencies = [
  "hmac 0.13.0",
  "iroh",
  "mdns-sd",
- "music-core",
+ "opium-core",
  "rand 0.8.8",
  "serde",
  "serde_json",
@@ -1700,8 +1700,8 @@ dependencies = [
  "lyrics",
  "motion",
  "mpris-server",
- "music-core",
  "navidrome",
+ "opium-core",
  "player",
  "reqwest",
  "serde",
@@ -1816,9 +1816,9 @@ dependencies = [
  "aes-gcm",
  "apple-music",
  "async-trait",
- "music-core",
  "navidrome",
  "oo7",
+ "opium-core",
  "rand 0.10.3",
  "serde",
  "serde_json",
@@ -3708,8 +3708,8 @@ dependencies = [
  "image",
  "lofty",
  "lyrics",
- "music-core",
  "notify",
+ "opium-core",
  "serde",
  "serde_json",
  "tokio",
@@ -3798,7 +3798,7 @@ name = "lyrics"
 version = "0.1.0"
 dependencies = [
  "base64 0.23.1",
- "music-core",
+ "opium-core",
  "reqwest",
  "serde",
  "serde_json",
@@ -3986,44 +3986,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "music-core"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "image",
- "rand 0.10.3",
- "serde",
- "thiserror 2.0.21",
- "toml",
- "uniffi",
-]
-
-[[package]]
-name = "music-ffi"
-version = "0.1.0"
-dependencies = [
- "apple-music",
- "async-compat",
- "async-trait",
- "connect",
- "downloads",
- "jni 0.22.4",
- "local",
- "lyrics",
- "music-core",
- "navidrome",
- "rustls-platform-verifier",
- "serde",
- "serde_json",
- "services",
- "soundcloud",
- "synced",
- "thiserror 2.0.21",
- "tokio",
- "uniffi",
-]
-
-[[package]]
 name = "n0-dns-resolver"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4147,7 +4109,7 @@ dependencies = [
  "async-trait",
  "getrandom 0.4.3",
  "md-5 0.11.0",
- "music-core",
+ "opium-core",
  "reqwest",
  "serde",
  "serde_json",
@@ -5059,6 +5021,44 @@ name = "openssl-probe"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7e036b411754132fd6b74e94b74e9a13c5cf606fa93d1885c35860d3060820b1"
+
+[[package]]
+name = "opium-core"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "image",
+ "rand 0.10.3",
+ "serde",
+ "thiserror 2.0.21",
+ "toml",
+ "uniffi",
+]
+
+[[package]]
+name = "opium-ffi"
+version = "0.1.0"
+dependencies = [
+ "apple-music",
+ "async-compat",
+ "async-trait",
+ "connect",
+ "downloads",
+ "jni 0.22.4",
+ "local",
+ "lyrics",
+ "navidrome",
+ "opium-core",
+ "rustls-platform-verifier",
+ "serde",
+ "serde_json",
+ "services",
+ "soundcloud",
+ "synced",
+ "thiserror 2.0.21",
+ "tokio",
+ "uniffi",
+]
 
 [[package]]
 name = "opusic-sys"
@@ -6357,8 +6357,8 @@ version = "0.1.0"
 dependencies = [
  "apple-music",
  "local",
- "music-core",
  "navidrome",
+ "opium-core",
  "soundcloud",
  "tokio",
 ]
@@ -6639,7 +6639,7 @@ dependencies = [
  "browser-signin",
  "cenc",
  "futures-util",
- "music-core",
+ "opium-core",
  "regex",
  "reqwest",
  "serde",
@@ -6978,7 +6978,7 @@ name = "synced"
 version = "0.1.0"
 dependencies = [
  "base64 0.23.1",
- "music-core",
+ "opium-core",
  "rand 0.10.3",
  "serde",
  "serde_json",

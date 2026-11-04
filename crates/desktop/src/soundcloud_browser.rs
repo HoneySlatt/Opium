@@ -8,7 +8,7 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-use music_core::{Error, Result};
+use opium_core::{Error, Result};
 use soundcloud::{Answer, Change};
 use wreq_util::Emulation;
 

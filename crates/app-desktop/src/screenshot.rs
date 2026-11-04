@@ -1,11 +1,11 @@
-//! A development aid: `MUSIC_SCREENSHOT=out.png [MUSIC_SCREENSHOT_AFTER=seconds]
-//! [MUSIC_SCREENSHOT_PLAY=row]` saves the window once it has had time to load,
-//! then quits, optionally playing a Songs row first. `MUSIC_SCREENSHOT_PAGE`
+//! A development aid: `OPIUM_SCREENSHOT=out.png [OPIUM_SCREENSHOT_AFTER=seconds]
+//! [OPIUM_SCREENSHOT_PLAY=row]` saves the window once it has had time to load,
+//! then quits, optionally playing a Songs row first. `OPIUM_SCREENSHOT_PAGE`
 //! opens a page first: `playlist:<index>`, `library-artist:<index>`, `album:<id>`, `artist:<id>` or
-//! `search:<query>`, `shelf:home|new|radio:<title>`, or `page:home|new|radio|albums|artists|recent|songs|settings|favourites`; `MUSIC_SCREENSHOT_DRAWER`
-//! opens the queue drawer; `MUSIC_SCREENSHOT_LYRICS` the lyrics page; `MUSIC_SCREENSHOT_STATION=ra.…` tunes in to a station.
-//! `MUSIC_SCREENSHOT_DOWNLOAD` downloads the album or playlist opened, once
-//! loaded; `MUSIC_SCREENSHOT_DOWNLOADED` shows Songs' downloads only.
+//! `search:<query>`, `shelf:home|new|radio:<title>`, or `page:home|new|radio|albums|artists|recent|songs|settings|favourites`; `OPIUM_SCREENSHOT_DRAWER`
+//! opens the queue drawer; `OPIUM_SCREENSHOT_LYRICS` the lyrics page; `OPIUM_SCREENSHOT_STATION=ra.…` tunes in to a station.
+//! `OPIUM_SCREENSHOT_DOWNLOAD` downloads the album or playlist opened, once
+//! loaded; `OPIUM_SCREENSHOT_DOWNLOADED` shows Songs' downloads only.
 //! Only the app's own window is captured.
 
 use std::path::PathBuf;
@@ -18,7 +18,7 @@ pub struct Screenshot {
     page: Option<String>,
     /// For an artist of the library's: Artists opened, so that they load.
     artists_asked: bool,
-    /// A station to tune in to: `MUSIC_SCREENSHOT_STATION=ra.…`.
+    /// A station to tune in to: `OPIUM_SCREENSHOT_STATION=ra.…`.
     station: Option<String>,
     /// The page's songs to download, once loaded.
     download: bool,
@@ -26,12 +26,12 @@ pub struct Screenshot {
 
 impl Screenshot {
     pub fn from_env() -> Option<Self> {
-        let path = std::env::var_os("MUSIC_SCREENSHOT")?.into();
-        let after = std::env::var("MUSIC_SCREENSHOT_AFTER")
+        let path = std::env::var_os("OPIUM_SCREENSHOT")?.into();
+        let after = std::env::var("OPIUM_SCREENSHOT_AFTER")
             .ok()
             .and_then(|s| s.parse().ok())
             .unwrap_or(8.0);
-        let play = std::env::var("MUSIC_SCREENSHOT_PLAY")
+        let play = std::env::var("OPIUM_SCREENSHOT_PLAY")
             .ok()
             .and_then(|s| s.parse().ok());
         Some(Self {
@@ -39,10 +39,10 @@ impl Screenshot {
             after,
             requested: false,
             play,
-            page: std::env::var("MUSIC_SCREENSHOT_PAGE").ok(),
+            page: std::env::var("OPIUM_SCREENSHOT_PAGE").ok(),
             artists_asked: false,
-            station: std::env::var("MUSIC_SCREENSHOT_STATION").ok(),
-            download: std::env::var_os("MUSIC_SCREENSHOT_DOWNLOAD").is_some(),
+            station: std::env::var("OPIUM_SCREENSHOT_STATION").ok(),
+            download: std::env::var_os("OPIUM_SCREENSHOT_DOWNLOAD").is_some(),
         })
     }
 
@@ -64,8 +64,8 @@ impl Screenshot {
     /// The page to open, once, when the playlists have loaded.
     pub fn page(
         &mut self,
-        playlists: &[music_core::model::Playlist],
-        artists: &[music_core::model::Artist],
+        playlists: &[opium_core::model::Playlist],
+        artists: &[opium_core::model::Artist],
     ) -> Option<crate::app::Page> {
         if playlists.is_empty() {
             return None;
@@ -98,8 +98,8 @@ impl Screenshot {
                 .ok()
                 .and_then(|i| playlists.get(i))
                 .map(|p| crate::app::Page::Playlist(p.id.clone())),
-            "album" => Some(crate::app::Page::Album(music_core::model::ItemId::new(
-                music_core::model::ProviderKind::AppleMusic,
+            "album" => Some(crate::app::Page::Album(opium_core::model::ItemId::new(
+                opium_core::model::ProviderKind::AppleMusic,
                 value,
             ))),
             "search" => Some(crate::app::Page::Search(value.to_owned())),
@@ -126,8 +126,8 @@ impl Screenshot {
                 };
                 Some(crate::app::Page::Shelf(which, title.to_owned()))
             }
-            "artist" => Some(crate::app::Page::Artist(music_core::model::ItemId::new(
-                music_core::model::ProviderKind::AppleMusic,
+            "artist" => Some(crate::app::Page::Artist(opium_core::model::ItemId::new(
+                opium_core::model::ProviderKind::AppleMusic,
                 value,
             ))),
             _ => None,

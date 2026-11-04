@@ -7,7 +7,7 @@ root="$here/.."
 out="$here/app/build/generated"
 export CARGO_TARGET_DIR="$root/target-android"
 cd "$root"
-cargo ndk -t arm64-v8a --platform 34 -o "$out/jniLibs" build --release -p music-ffi
-lib="$out/jniLibs/arm64-v8a/libmusic_ffi.so"
-cargo run --quiet -p music-ffi --bin uniffi-bindgen -- generate \
+cargo ndk -t arm64-v8a --platform 34 -o "$out/jniLibs" build --release -p opium-ffi
+lib="$out/jniLibs/arm64-v8a/libopium_ffi.so"
+cargo run --quiet -p opium-ffi --bin uniffi-bindgen -- generate \
     --library "$lib" --language kotlin --no-format --out-dir "$out/uniffi"

@@ -5,7 +5,7 @@
 
 use std::time::Duration;
 
-use music_core::model::{LyricLine, LyricWord, Lyrics};
+use opium_core::model::{LyricLine, LyricWord, Lyrics};
 use quick_xml::Reader;
 use quick_xml::events::{BytesStart, Event};
 

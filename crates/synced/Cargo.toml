@@ -6,7 +6,7 @@ license.workspace = true
 
 [dependencies]
 base64 = "0.23.1"
-music-core = { path = "../music-core" }
+opium-core = { path = "../opium-core" }
 rand = "0.10.3"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"

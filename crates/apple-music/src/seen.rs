@@ -53,7 +53,7 @@ impl Seen {
         if ids.is_empty() {
             return Vec::new();
         }
-        let now = music_core::recent::rfc3339(
+        let now = opium_core::recent::rfc3339(
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map_or(0, |d| d.as_secs() as i64),
@@ -65,7 +65,7 @@ impl Seen {
             .map(|id| {
                 let at = self.times.get(id).cloned().unwrap_or_else(|| new.clone());
                 times.insert(id.clone(), at.clone());
-                music_core::recent::seconds(&at).and_then(|s| u64::try_from(s).ok())
+                opium_core::recent::seconds(&at).and_then(|s| u64::try_from(s).ok())
             })
             .collect();
         if times != self.times || self.first {
@@ -113,7 +113,7 @@ impl Seen {
 }
 
 fn to_text(secs: u64) -> String {
-    music_core::recent::rfc3339(secs as i64)
+    opium_core::recent::rfc3339(secs as i64)
 }
 
 #[cfg(test)]

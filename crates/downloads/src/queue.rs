@@ -7,7 +7,7 @@ use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use music_core::model::{ItemId, ProviderKind, Track};
+use opium_core::model::{ItemId, ProviderKind, Track};
 use tokio::runtime::Handle;
 
 use crate::store::{Open, Pending, Song, Standing, Store};

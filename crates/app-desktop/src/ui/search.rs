@@ -3,7 +3,7 @@
 //! albums and playlists.
 
 use egui::{Id, Rect, Sense, Ui, pos2, vec2};
-use music_core::model::{
+use opium_core::model::{
     Artwork, Collection, FavouriteKind, ItemId, ProviderKind, SearchResults, Track,
 };
 

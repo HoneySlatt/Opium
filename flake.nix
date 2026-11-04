@@ -1,5 +1,5 @@
 {
-  description = "Music player for Apple Music, SoundCloud and Navidrome";
+  description = "Opium, a music player for Apple Music, SoundCloud and Navidrome";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -31,7 +31,7 @@
         in
         {
           default = pkgs.rustPlatform.buildRustPackage {
-            pname = "music";
+            pname = "opium";
             version = "0.1.0";
             src = ./.;
             cargoLock.lockFile = ./Cargo.lock;
@@ -54,9 +54,9 @@
               pipewire
             ];
             postInstall = ''
-              install -Dm644 packaging/music.desktop $out/share/applications/music.desktop
-              install -Dm644 packaging/music.svg $out/share/icons/hicolor/scalable/apps/music.svg
-              wrapProgram $out/bin/music \
+              install -Dm644 packaging/opium.desktop $out/share/applications/opium.desktop
+              install -Dm644 packaging/opium.svg $out/share/icons/hicolor/scalable/apps/opium.svg
+              wrapProgram $out/bin/opium \
                 --prefix LD_LIBRARY_PATH : ${
                   pkgs.lib.makeLibraryPath (
                     runtimeLibs pkgs
@@ -71,7 +71,7 @@
             meta = {
               description = "Apple Music, SoundCloud, Navidrome and your own files in one desktop player";
               license = pkgs.lib.licenses.gpl3Plus;
-              mainProgram = "music";
+              mainProgram = "opium";
               platforms = pkgs.lib.platforms.linux;
             };
           };

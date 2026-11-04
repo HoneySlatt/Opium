@@ -2,8 +2,8 @@
 //! with Playing Next, History and Lyrics tabs.
 
 use egui::{Color32, Id, Order, Rect, Sense, Stroke, Ui, pos2, vec2};
-use music_core::Repeat;
-use music_core::model::Track;
+use opium_core::Repeat;
+use opium_core::model::Track;
 
 use crate::app::{App, DrawerTab};
 use crate::color::{alpha, mix};

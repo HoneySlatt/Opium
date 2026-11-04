@@ -4,7 +4,7 @@
 
 use std::time::Duration;
 
-use music_core::model::{LyricLine, LyricWord, Lyrics};
+use opium_core::model::{LyricLine, LyricWord, Lyrics};
 
 /// A line's times, from its leading `[mm:ss.xx]` tags, and its text; no
 /// times for a tag such as `[ar:…]`.

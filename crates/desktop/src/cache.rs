@@ -1,4 +1,4 @@
-//! The library as it was last read, kept in `~/.cache/music/library/`: shown at
+//! The library as it was last read, kept in `~/.cache/opium/library/`: shown at
 //! once when the app starts or a playlist opens, while Apple is asked again.
 
 use std::path::PathBuf;
@@ -10,7 +10,7 @@ fn dir() -> Option<PathBuf> {
     let cache = std::env::var_os("XDG_CACHE_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")))?;
-    Some(cache.join("music").join("library"))
+    Some(cache.join("opium").join("library"))
 }
 
 /// `playlist p.AbC` → `playlist-p.AbC.json`: ids are letters, digits and dots.

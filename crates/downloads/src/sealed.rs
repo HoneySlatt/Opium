@@ -1,6 +1,6 @@
 //! A downloaded song as it is kept on disk: sealed with the app's key, in
 //! chunks of [`CHUNK`] bytes each sealed on its own, so that a reader seeks
-//! anywhere without opening the rest. Only Music, which has the key, reads
+//! anywhere without opening the rest. Only Opium, which has the key, reads
 //! them.
 //!
 //! The file is a header, then the chunks: [`MAGIC`] and a random nonce
@@ -14,7 +14,7 @@ use aes_gcm::aead::consts::U12;
 use aes_gcm::aead::generic_array::GenericArray;
 use aes_gcm::aead::{AeadInPlace, KeyInit};
 
-const MAGIC: &[u8; 8] = b"MUSICSL1";
+const MAGIC: &[u8; 8] = b"OPIUMSL1";
 const PREFIX: usize = 8;
 const HEADER: u64 = (MAGIC.len() + PREFIX) as u64;
 /// How much of the song one chunk holds.

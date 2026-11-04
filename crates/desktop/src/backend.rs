@@ -6,11 +6,11 @@ use std::sync::Arc;
 use std::sync::mpsc;
 
 use apple_music::{AppleMusic, AudioStream, LiveStream};
-use music_core::model::{
+use opium_core::model::{
     Album, Artist, ArtistDetail, Collection, Cursor, FavouriteKind, ItemId, Lyrics, Playlist,
     ProviderKind, SearchResults, Shelf, Track,
 };
-use music_core::{Error, Provider};
+use opium_core::{Error, Provider};
 use navidrome::Navidrome;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -104,14 +104,14 @@ pub enum Request {
         description: String,
         tracks: Vec<ItemId>,
     },
-    /// Make one of Music's own playlists, of songs from any service.
-    CreateMusicPlaylist {
+    /// Make one of Opium's own playlists, of songs from any service.
+    CreateOpiumPlaylist {
         name: String,
         description: String,
         tracks: Vec<Track>,
     },
-    /// Add songs to one of Music's own playlists.
-    AddToMusicPlaylist {
+    /// Add songs to one of Opium's own playlists.
+    AddToOpiumPlaylist {
         playlist: ItemId,
         tracks: Vec<Track>,
     },
@@ -122,8 +122,8 @@ pub enum Request {
         description: String,
     },
     DeletePlaylist(ItemId),
-    /// A playlist's cover `jpeg` (square, see `music_core::cover`), or the
-    /// one it had: Music's own and a Navidrome server's take one.
+    /// A playlist's cover `jpeg` (square, see `opium_core::cover`), or the
+    /// one it had: Opium's own and a Navidrome server's take one.
     SetPlaylistCover {
         id: ItemId,
         jpeg: Option<Vec<u8>>,
@@ -252,7 +252,7 @@ pub enum Reply {
         storefront: String,
     },
     /// The account's picture on Apple Music, once read.
-    ProfilePicture(music_core::model::Artwork),
+    ProfilePicture(opium_core::model::Artwork),
     /// The browser sign-in ended: the token is saved, or why not.
     SignedIn(Result<(), String>),
     /// SoundCloud is connected as this user, or isn't signed in (`None`),
@@ -268,7 +268,7 @@ pub enum Reply {
     /// A song's links, asked for its artist (`radio: false`) or its station.
     SongLinks {
         radio: bool,
-        result: Result<music_core::model::SongLinks, String>,
+        result: Result<opium_core::model::SongLinks, String>,
     },
     /// A playlist was made, or why not.
     PlaylistCreated(Result<Playlist, String>),
@@ -378,7 +378,7 @@ pub enum Reply {
     },
     AlbumExtras {
         id: ItemId,
-        result: Result<Arc<music_core::model::AlbumExtras>, String>,
+        result: Result<Arc<opium_core::model::AlbumExtras>, String>,
     },
     RecentlyAdded {
         provider: ProviderKind,
@@ -468,7 +468,7 @@ pub struct Backend {
     own: Own,
 }
 
-/// What Music keeps of its own, its playlists, answered at once rather
+/// What Opium keeps of its own, its playlists, answered at once rather
 /// than by a service, and shared with the other devices as it changes.
 pub struct Own {
     pub kept: synced::Kept,
@@ -495,7 +495,7 @@ impl Own {
     fn tell(&self, loaded: &[ItemId]) {
         let playlists = self.kept.playlists();
         self.reply(Reply::Playlists {
-            provider: ProviderKind::Music,
+            provider: ProviderKind::Opium,
             playlists: playlists.iter().map(synced::Playlist::model).collect(),
         });
         for id in loaded {
@@ -515,20 +515,20 @@ impl Own {
         self.share.share(change);
     }
 
-    /// Answer `request` if it is about Music's own; hand it back if it is a
+    /// Answer `request` if it is about Opium's own; hand it back if it is a
     /// service's.
     fn answer(&self, request: Request) -> Option<Request> {
-        let music = |id: &ItemId| id.provider == ProviderKind::Music;
+        let opium = |id: &ItemId| id.provider == ProviderKind::Opium;
         match request {
             Request::Library | Request::Playlists => {
                 self.tell(&[]);
                 Some(request)
             }
-            Request::Playlist(id) if music(&id) => {
+            Request::Playlist(id) if opium(&id) => {
                 self.tell(&[id]);
                 None
             }
-            Request::CreateMusicPlaylist {
+            Request::CreateOpiumPlaylist {
                 name,
                 description,
                 tracks,
@@ -541,7 +541,7 @@ impl Own {
                 self.tell(&[]);
                 None
             }
-            Request::AddToMusicPlaylist { playlist, tracks } => {
+            Request::AddToOpiumPlaylist { playlist, tracks } => {
                 self.share(self.kept.add_to_playlist(&playlist.id, tracks));
                 self.tell(&[playlist]);
                 None
@@ -550,7 +550,7 @@ impl Own {
                 id,
                 name,
                 description,
-            } if music(&id) => {
+            } if opium(&id) => {
                 self.share(
                     self.kept
                         .edit_playlist(&id.id, name.clone(), description.clone()),
@@ -563,20 +563,20 @@ impl Own {
                 });
                 None
             }
-            Request::SetPlaylistCover { id, jpeg } if music(&id) => {
+            Request::SetPlaylistCover { id, jpeg } if opium(&id) => {
                 self.share(self.kept.cover_playlist(&id.id, jpeg.as_deref()));
                 self.reply(Reply::CoverChanged { id: id.clone(), result: Ok(()) });
                 self.tell(&[id]);
                 None
             }
-            Request::DeletePlaylist(id) if music(&id) => {
+            Request::DeletePlaylist(id) if opium(&id) => {
                 self.share(self.kept.delete_playlist(&id.id));
                 self.reply(Reply::PlaylistDeleted { id, result: Ok(()) });
                 self.tell(&[]);
                 None
             }
             // Every entry of the song, as a service's playlist does.
-            Request::RemoveFromPlaylist { playlist, entry } if music(&playlist) => {
+            Request::RemoveFromPlaylist { playlist, entry } if opium(&playlist) => {
                 let entries = self
                     .kept
                     .playlist(&playlist.id)
@@ -591,11 +591,11 @@ impl Own {
                 None
             }
             Request::AddToPlaylists { playlists, tracks } => {
-                let playlists: Vec<ItemId> = playlists.into_iter().filter(|p| !music(p)).collect();
+                let playlists: Vec<ItemId> = playlists.into_iter().filter(|p| !opium(p)).collect();
                 (!playlists.is_empty()).then_some(Request::AddToPlaylists { playlists, tracks })
             }
-            // Nothing else is Music's to answer, nor a service's.
-            request if target(&request) == Some(ProviderKind::Music) => None,
+            // Nothing else is Opium's to answer, nor a service's.
+            request if target(&request) == Some(ProviderKind::Opium) => None,
             request => Some(request),
         }
     }
@@ -607,7 +607,7 @@ pub fn apple_music_dir() -> PathBuf {
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
         .unwrap_or_default();
-    config.join("music/apple-music")
+    config.join("opium/apple-music")
 }
 
 /// Where the SoundCloud sign-in keeps its tokens (see the `sc` example).
@@ -670,7 +670,7 @@ fn local_dir() -> PathBuf {
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")))
         .unwrap_or_default()
-        .join("music")
+        .join("opium")
         .join("local")
 }
 
@@ -804,7 +804,7 @@ fn forget_sign_in(provider: ProviderKind) {
             gone(soundcloud_dir().join("browser-profile"));
         }
         ProviderKind::Navidrome => gone(navidrome_file()),
-        ProviderKind::Music => {}
+        ProviderKind::Opium => {}
         // The files have no sign-in.
         ProviderKind::Local => return,
     }
@@ -949,7 +949,7 @@ impl Backend {
         }
     }
 
-    /// Music's own playlists changed on another device: what shows of
+    /// Opium's own playlists changed on another device: what shows of
     /// them, and the songs of those `loaded`, again.
     pub fn own_changed(&self, loaded: &[ItemId]) {
         self.own.tell(loaded);
@@ -962,7 +962,7 @@ impl Backend {
 
 /// What a sign-in needs, said as the user can act on it.
 pub const NO_BROWSER: &str =
-    "Signing in needs one of Chromium, Chrome, Brave, Vivaldi or Edge installed: Music opens the service's own page in it. None was found on this computer.";
+    "Signing in needs one of Chromium, Chrome, Brave, Vivaldi or Edge installed: Opium opens the service's own page in it. None was found on this computer.";
 
 /// The browser the sign-in opens, to call it by in the window: none when
 /// there is none to open.
@@ -979,7 +979,7 @@ pub fn browser_name() -> Option<String> {
     FOUND.clone()
 }
 
-/// The browser the sign-in opens: `MUSIC_BROWSER`, else the first
+/// The browser the sign-in opens: `OPIUM_BROWSER`, else the first
 /// Chromium-family browser on the `PATH`; none when none is installed.
 fn sign_in_browser() -> Option<std::ffi::OsString> {
     const BROWSERS: [&str; 9] = [
@@ -993,7 +993,7 @@ fn sign_in_browser() -> Option<std::ffi::OsString> {
         "vivaldi",
         "microsoft-edge",
     ];
-    if let Some(browser) = std::env::var_os("MUSIC_BROWSER") {
+    if let Some(browser) = std::env::var_os("OPIUM_BROWSER") {
         return Some(browser);
     }
     let path = std::env::var_os("PATH").unwrap_or_default();
@@ -1403,7 +1403,7 @@ async fn run(
                     (ProviderKind::Local, true) => {
                         (local, _watching) = open_local(&local_folders, &again, &replies);
                     }
-                    (ProviderKind::Music, _) => {}
+                    (ProviderKind::Opium, _) => {}
                     // Turned on: its library loads once it is connected.
                     (ProviderKind::AppleMusic, true) => {
                         let arrived_tx = arrived_tx.clone();
@@ -1444,7 +1444,7 @@ async fn run(
                         nd = None;
                         sign_covers_with(&nd);
                     }
-                    ProviderKind::Local | ProviderKind::Music => {}
+                    ProviderKind::Local | ProviderKind::Opium => {}
                 }
                 tokio::task::spawn_blocking(move || forget_sign_in(provider));
                 continue;
@@ -1751,7 +1751,7 @@ async fn run(
                     ProviderKind::SoundCloud => sc.clone().map(|s| s as Arc<dyn Provider>),
                     ProviderKind::Navidrome => nd.clone().map(|n| n as Arc<dyn Provider>),
                     // The files have no picks.
-                    ProviderKind::Local | ProviderKind::Music => None,
+                    ProviderKind::Local | ProviderKind::Opium => None,
                 };
                 let Some(provider) = provider else {
                     unanswered(request, "the service chosen", &replies);
@@ -1870,8 +1870,8 @@ async fn run(
             | Request::SongLinks { .. }
             | Request::RemoveFromLibrary(_)
             | Request::CreatePlaylist { .. }
-            | Request::CreateMusicPlaylist { .. }
-            | Request::AddToMusicPlaylist { .. }
+            | Request::CreateOpiumPlaylist { .. }
+            | Request::AddToOpiumPlaylist { .. }
             | Request::EditPlaylist { .. }
             | Request::RemoveFromPlaylist { .. }
             | Request::DeletePlaylist(_)
@@ -2088,7 +2088,7 @@ fn signed_in(provider: ProviderKind) -> bool {
         ProviderKind::AppleMusic => apple_music_dir().join("media-user-token").exists(),
         ProviderKind::SoundCloud => soundcloud_dir().join("tokens.json").exists(),
         ProviderKind::Navidrome => navidrome_file().exists(),
-        ProviderKind::Local | ProviderKind::Music => false,
+        ProviderKind::Local | ProviderKind::Opium => false,
     }
 }
 
@@ -2099,7 +2099,7 @@ fn show_kept(provider: ProviderKind, replies: Replies) {
         ProviderKind::AppleMusic => ("songs", "playlists"),
         ProviderKind::SoundCloud => ("soundcloud-songs", "soundcloud-playlists"),
         ProviderKind::Navidrome => ("navidrome-songs", "navidrome-playlists"),
-        ProviderKind::Local | ProviderKind::Music => return,
+        ProviderKind::Local | ProviderKind::Opium => return,
     };
     tokio::task::spawn_blocking(move || {
         if let Some(playlists) = cache::read::<Vec<Playlist>>(playlists) {
@@ -2200,7 +2200,7 @@ async fn playable_as(
 
 /// A list that failed part way: it ends with `done`, and the failure shows
 /// as a toast.
-fn failed(replies: &Replies, result: music_core::Result<()>, done: impl FnOnce() -> Reply) {
+fn failed(replies: &Replies, result: opium_core::Result<()>, done: impl FnOnce() -> Reply) {
     if let Err(e) = result {
         replies.send(done());
         replies.send(Reply::Failed(e.to_string()));
@@ -2749,7 +2749,7 @@ async fn soundcloud_recent(sc: Arc<SoundCloud>, replies: Replies) {
 }
 
 /// Every SoundCloud playlist of the user's: their own, then those they liked.
-async fn soundcloud_playlists(sc: &SoundCloud) -> music_core::Result<Vec<Playlist>> {
+async fn soundcloud_playlists(sc: &SoundCloud) -> opium_core::Result<Vec<Playlist>> {
     let mut playlists = Vec::new();
     let mut cursor: Option<Cursor> = None;
     loop {
@@ -3056,7 +3056,7 @@ impl<T: Clone + Serialize + DeserializeOwned + Send + 'static> Kept<T> {
     fn failed(
         &self,
         replies: &Replies,
-        result: music_core::Result<()>,
+        result: opium_core::Result<()>,
         show: &impl Fn(Vec<T>, bool, bool),
     ) {
         if let Err(e) = result {

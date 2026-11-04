@@ -10,7 +10,7 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::time::Instant;
 
 use downloads::sealed;
-use music_core::model::{ItemId, ProviderKind};
+use opium_core::model::{ItemId, ProviderKind};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -33,7 +33,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             (Box::new(stream), extension)
         }
         [service, _] if service == "navidrome" => {
-            use music_core::Provider;
+            use opium_core::Provider;
             let json = std::fs::read_to_string(config().join("navidrome/credentials.json"))?;
             let nd = navidrome::Navidrome::connect(serde_json::from_str(&json)?).await?;
             let song = nd
@@ -100,7 +100,7 @@ fn config() -> std::path::PathBuf {
         .unwrap_or_else(|| {
             std::path::PathBuf::from(std::env::var_os("HOME").expect("HOME")).join(".config")
         })
-        .join("music")
+        .join("opium")
 }
 
 /// Decode `reader` at 100 s, then from its start to its end.

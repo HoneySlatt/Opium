@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Opium's own icon, packaging/opium.svg: for its own playlists, beside the
+     services' logos. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="64dp"
+    android:height="64dp"
+    android:viewportWidth="1254"
+    android:viewportHeight="1254">
+    <path android:pathData="M220,26H1032a202,202 0 0 1 202,202V1028a202,202 0 0 1 -202,202H220a202,202 0 0 1 -202,-202V228a202,202 0 0 1 202,-202Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="627"
+                android:startY="26"
+                android:endX="627"
+                android:endY="1230"
+                android:startColor="#FF303030"
+                android:endColor="#FF101010" />
+        </aapt:attr>
+    </path>
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M526 676V330a50.5 50.5 0 0 1 101 0v490c0 87-71 157-159 157s-159-70-159-157 71-157 159-157c21 0 40 5 58 13Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M665 493a45 45 0 0 1 90 0V811a45 45 0 0 1-90 0ZM789 577a44 44 0 0 1 88 0V751a44 44 0 0 1-88 0ZM909 641a39 39 0 0 1 78 0V701a39 39 0 0 1-78 0Z" />
+</vector>

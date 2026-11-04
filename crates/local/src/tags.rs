@@ -196,7 +196,7 @@ pub fn write_tags_to(open: &mut std::fs::File, edit: &TagEdit) -> Result<(), Str
 
 /// The lyrics of the file at `path`: an `.lrc` of the same name beside it,
 /// else those in its tags. Line by line, as every source's but Apple Music's.
-pub fn lyrics_of(path: &Path, title: &str) -> Option<music_core::model::Lyrics> {
+pub fn lyrics_of(path: &Path, title: &str) -> Option<opium_core::model::Lyrics> {
     let beside = ["lrc", "LRC"]
         .iter()
         .find_map(|ext| std::fs::read_to_string(path.with_extension(ext)).ok())
@@ -207,7 +207,7 @@ pub fn lyrics_of(path: &Path, title: &str) -> Option<music_core::model::Lyrics> 
 }
 
 /// The lyrics in the tags of `file`, open: the phone's.
-pub fn lyrics_from(file: &mut std::fs::File, title: &str) -> Option<music_core::model::Lyrics> {
+pub fn lyrics_from(file: &mut std::fs::File, title: &str) -> Option<opium_core::model::Lyrics> {
     let file = lofty::read_from(file).ok()?;
     let tag = file.primary_tag().or_else(|| file.first_tag())?;
     [ItemKey::Lyrics, ItemKey::UnsyncLyrics]
@@ -217,7 +217,7 @@ pub fn lyrics_from(file: &mut std::fs::File, title: &str) -> Option<music_core::
         .map(line_by_line)
 }
 
-fn line_by_line(mut lyrics: music_core::model::Lyrics) -> music_core::model::Lyrics {
+fn line_by_line(mut lyrics: opium_core::model::Lyrics) -> opium_core::model::Lyrics {
     for line in &mut lyrics.lines {
         line.words.clear();
     }

@@ -6,7 +6,7 @@ license.workspace = true
 description = "The desktop app's own workings, apart from how it draws: the services and the player behind the window, the settings, the kept lists and covers, the media controls and the other devices"
 
 [dependencies]
-music-core = { path = "../music-core" }
+opium-core = { path = "../opium-core" }
 apple-music = { path = "../apple-music" }
 soundcloud = { path = "../soundcloud" }
 browser-signin = { path = "../browser-signin" }

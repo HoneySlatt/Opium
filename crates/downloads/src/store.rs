@@ -12,7 +12,7 @@ use std::fs::File;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
-use music_core::model::{ItemId, ProviderKind, Track};
+use opium_core::model::{ItemId, ProviderKind, Track};
 use serde::{Deserialize, Serialize};
 
 use crate::sealed::{self, Key};

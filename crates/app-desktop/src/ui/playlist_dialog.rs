@@ -5,7 +5,7 @@
 use std::collections::HashSet;
 
 use egui::{Color32, Frame, Id, Rect, Sense, Stroke, Ui, pos2, vec2};
-use music_core::model::{Collection, ItemId, Playlist};
+use opium_core::model::{Collection, ItemId, Playlist};
 
 use crate::app::App;
 use crate::fonts::{Weight, font};
@@ -145,7 +145,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 .unwrap_or_default();
             let matches =
                 |p: &Playlist| filter.is_empty() || p.name.to_lowercase().contains(&filter);
-            let staged: &[music_core::model::Track] = app
+            let staged: &[opium_core::model::Track] = app
                 .playlist_dialog
                 .as_ref()
                 .map_or(&[], |d| d.tracks.as_slice());
@@ -353,7 +353,7 @@ pub fn show_new(app: &mut App, ctx: &egui::Context) {
                 );
             }
 
-            // Its cover, for Music's own and Navidrome's: a picture picked,
+            // Its cover, for Opium's own and Navidrome's: a picture picked,
             // the one it has, or none yet.
             let provider = app
                 .new_playlist
@@ -379,7 +379,7 @@ pub fn show_new(app: &mut App, ctx: &egui::Context) {
                     crate::app::CoverChoice::Unchanged => {
                         artwork(ui, new.artwork.clone(), art, 10.0, &theme);
                         new.editing.is_some()
-                            && (provider == Some(music_core::model::ProviderKind::Navidrome)
+                            && (provider == Some(opium_core::model::ProviderKind::Navidrome)
                                 || new.artwork.as_deref().is_some_and(|a| a.starts_with("file://")))
                     }
                 };

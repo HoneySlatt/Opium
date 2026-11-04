@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1254" height="1254" viewBox="0 0 1254 1254" role="img" aria-label="Opium">
+  <title>Opium</title>
+  <defs>
+    <linearGradient id="background" x1="0" y1="26" x2="0" y2="1230" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#303030"/>
+      <stop offset="1" stop-color="#101010"/>
+    </linearGradient>
+  </defs>
+  <rect x="18" y="26" width="1216" height="1204" rx="202" fill="url(#background)"/>
+  <g fill="#fff">
+    <path d="M526 676V330a50.5 50.5 0 0 1 101 0v490c0 87-71 157-159 157s-159-70-159-157 71-157 159-157c21 0 40 5 58 13Z"/>
+    <rect x="665" y="448" width="90" height="408" rx="45"/>
+    <rect x="789" y="533" width="88" height="262" rx="44"/>
+    <rect x="909" y="602" width="78" height="138" rx="39"/>
+  </g>
+</svg>

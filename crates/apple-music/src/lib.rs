@@ -23,11 +23,11 @@ pub use playback::{ASSET_HOST, PRIMING, Protected};
 pub use radio::{LiveAsset, LiveStream, name_the_key};
 
 use async_trait::async_trait;
-use music_core::model::{
+use opium_core::model::{
     Album, AlbumExtras, Artist, ArtistDetail, Artwork, Collection, Cursor, FavouriteKind, ItemId,
     Lyrics, Page, Pick, Playlist, ProviderKind, SearchResults, Shelf, SongLinks, Track,
 };
-use music_core::{Error, Provider, Result};
+use opium_core::{Error, Provider, Result};
 use serde::de::DeserializeOwned;
 
 const API: &str = "https://amp-api.music.apple.com";
@@ -199,7 +199,7 @@ pub struct Profile {
     pub name: Option<String>,
     /// Without the `@`.
     pub handle: Option<String>,
-    pub picture: Option<music_core::model::Artwork>,
+    pub picture: Option<opium_core::model::Artwork>,
 }
 
 impl AppleMusic {
@@ -1433,7 +1433,7 @@ impl Provider for AppleMusic {
     }
 
     /// The catalogue's genres under Music, as Apple names them here.
-    async fn genres(&self) -> Result<Vec<music_core::model::Genre>> {
+    async fn genres(&self) -> Result<Vec<opium_core::model::Genre>> {
         #[derive(serde::Deserialize)]
         #[serde(rename_all = "camelCase")]
         struct Attributes {
@@ -1456,7 +1456,7 @@ impl Provider for AppleMusic {
             .into_iter()
             .filter_map(|r| {
                 let a = r.attributes?;
-                (a.parent_id.as_deref() == Some(MUSIC_GENRE)).then_some(music_core::model::Genre {
+                (a.parent_id.as_deref() == Some(MUSIC_GENRE)).then_some(opium_core::model::Genre {
                     id: r.id,
                     name: a.name,
                 })

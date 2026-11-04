@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Opium
+GenericName=Music Player
+Comment=Apple Music, SoundCloud, Navidrome and your own music files in one player
+Exec=opium %U
+Icon=opium
+Terminal=false
+Categories=AudioVideo;Audio;Player;
+Keywords=apple music;soundcloud;navidrome;subsonic;lyrics;flac;mp3;
+MimeType=audio/flac;audio/x-flac;audio/mpeg;audio/mp3;audio/wav;audio/x-wav;audio/aiff;audio/x-aiff;audio/mp4;audio/x-m4a;audio/aac;audio/ogg;audio/vorbis;audio/x-vorbis+ogg;
+StartupWMClass=opium

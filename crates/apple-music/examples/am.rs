@@ -18,8 +18,8 @@
 //!   cargo run -p apple-music --example am -- favourite song 1840800867 [on|off]
 //!   cargo run -p apple-music --example am -- suggest-less album 1840800866 [on|off]
 //!
-//! The browser defaults to `brave-origin`; set `MUSIC_BROWSER` for another one.
-//! The token is stored under `$XDG_CONFIG_HOME/music/apple-music/` and never printed.
+//! The browser defaults to `brave-origin`; set `OPIUM_BROWSER` for another one.
+//! The token is stored under `$XDG_CONFIG_HOME/opium/apple-music/` and never printed.
 
 use std::io::Write;
 use std::os::unix::fs::OpenOptionsExt;
@@ -27,13 +27,13 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use apple_music::AppleMusic;
-use music_core::Provider;
+use opium_core::Provider;
 
 fn config_dir() -> PathBuf {
     let base = std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(std::env::var_os("HOME").expect("HOME")).join(".config"));
-    base.join("music/apple-music")
+    base.join("opium/apple-music")
 }
 
 fn token_path() -> PathBuf {
@@ -80,8 +80,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Some("radio") => radio(&connect().await?).await,
         Some("links") if args.len() == 2 => {
-            let id = music_core::model::ItemId::new(
-                music_core::model::ProviderKind::AppleMusic,
+            let id = opium_core::model::ItemId::new(
+                opium_core::model::ProviderKind::AppleMusic,
                 &args[1],
             );
             println!("{:?}", connect().await?.song_links(&id).await?);
@@ -107,7 +107,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn signin() -> Result<(), Box<dyn std::error::Error>> {
-    let browser = std::env::var_os("MUSIC_BROWSER").unwrap_or("brave-origin".into());
+    let browser = std::env::var_os("OPIUM_BROWSER").unwrap_or("brave-origin".into());
     let profile = config_dir().join("browser-profile");
     std::fs::create_dir_all(&profile)?;
     println!("Sign in to Apple Music in the window that opens…");
@@ -189,16 +189,16 @@ async fn library(am: &AppleMusic) -> Result<(), Box<dyn std::error::Error>> {
     println!("\nrecently added (first page: {})", recent.items.len());
     for item in recent.items.iter().take(5) {
         match item {
-            music_core::model::Collection::Album(a) => println!("  [album] {}", a.title),
-            music_core::model::Collection::Playlist(p) => println!("  [playlist] {}", p.name),
-            music_core::model::Collection::Station(s) => println!("  [station] {}", s.name),
+            opium_core::model::Collection::Album(a) => println!("  [album] {}", a.title),
+            opium_core::model::Collection::Playlist(p) => println!("  [playlist] {}", p.name),
+            opium_core::model::Collection::Station(s) => println!("  [station] {}", s.name),
         }
     }
     Ok(())
 }
 
 async fn artist(am: &AppleMusic, id: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let id = music_core::model::ItemId::new(music_core::model::ProviderKind::AppleMusic, id);
+    let id = opium_core::model::ItemId::new(opium_core::model::ProviderKind::AppleMusic, id);
     let a = am.artist(&id).await?;
     println!("{} [{}]", a.artist.name, a.artist.id.id);
     for t in &a.top_songs {
@@ -217,7 +217,7 @@ async fn favourite(
     id: &str,
     set: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    use music_core::model::FavouriteKind;
+    use opium_core::model::FavouriteKind;
     let kind = match kind {
         "song" => FavouriteKind::Song,
         "album" => FavouriteKind::Album,
@@ -225,7 +225,7 @@ async fn favourite(
         "playlist" => FavouriteKind::Playlist,
         _ => return Err("kind is song, album, artist or playlist".into()),
     };
-    let id = music_core::model::ItemId::new(music_core::model::ProviderKind::AppleMusic, id);
+    let id = opium_core::model::ItemId::new(opium_core::model::ProviderKind::AppleMusic, id);
     if let Some(set) = set {
         am.set_favourite(kind, &id, set == "on").await?;
         println!("set {set}");
@@ -240,14 +240,14 @@ async fn suggest_less(
     id: &str,
     set: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    use music_core::model::FavouriteKind;
+    use opium_core::model::FavouriteKind;
     let kind = match kind {
         "song" => FavouriteKind::Song,
         "album" => FavouriteKind::Album,
         "playlist" => FavouriteKind::Playlist,
         _ => return Err("kind is song, album or playlist".into()),
     };
-    let id = music_core::model::ItemId::new(music_core::model::ProviderKind::AppleMusic, id);
+    let id = opium_core::model::ItemId::new(opium_core::model::ProviderKind::AppleMusic, id);
     if let Some(set) = set {
         am.suggest_less(kind, &id, set == "on").await?;
         println!("set {set}");
@@ -265,7 +265,7 @@ async fn live(
 ) -> Result<(), Box<dyn std::error::Error>> {
     use std::io::Read;
     let cdm = widevine::Cdm::open(&widevine::locate().ok_or("no Widevine module")?)?;
-    let id = music_core::model::ItemId::new(music_core::model::ProviderKind::AppleMusic, station);
+    let id = opium_core::model::ItemId::new(opium_core::model::ProviderKind::AppleMusic, station);
     let stream = am.live_station(&cdm, &id).await?;
     // 256 kbps: about 32 kB a second.
     let want = seconds as usize * 32_000;
@@ -297,14 +297,14 @@ async fn add_library(
     kind: &str,
     id: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    use music_core::model::FavouriteKind;
+    use opium_core::model::FavouriteKind;
     let kind = match kind {
         "song" => FavouriteKind::Song,
         "album" => FavouriteKind::Album,
         "playlist" => FavouriteKind::Playlist,
         _ => return Err("kind is song, album or playlist".into()),
     };
-    let id = music_core::model::ItemId::new(music_core::model::ProviderKind::AppleMusic, id);
+    let id = opium_core::model::ItemId::new(opium_core::model::ProviderKind::AppleMusic, id);
     am.add_to_library(kind, &id).await?;
     println!("added");
     Ok(())
@@ -340,7 +340,7 @@ async fn radio(am: &AppleMusic) -> Result<(), Box<dyn std::error::Error>> {
             if shelf.hero { ", on air" } else { "" }
         );
         for item in shelf.items.iter().take(3) {
-            if let music_core::model::Collection::Station(s) = item {
+            if let opium_core::model::Collection::Station(s) = item {
                 println!("  {:?} {} [{}]", s.kind, s.name, s.id.id);
             }
         }
@@ -349,7 +349,7 @@ async fn radio(am: &AppleMusic) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn station(am: &AppleMusic, id: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let id = music_core::model::ItemId::new(music_core::model::ProviderKind::AppleMusic, id);
+    let id = opium_core::model::ItemId::new(opium_core::model::ProviderKind::AppleMusic, id);
     for t in am.station_tracks(&id, 12).await? {
         println!("  {} — {} [{}]", t.title, t.artists.join(", "), t.id.id);
     }
@@ -357,7 +357,7 @@ async fn station(am: &AppleMusic, id: &str) -> Result<(), Box<dyn std::error::Er
 }
 
 async fn lyrics(am: &AppleMusic, id: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let id = music_core::model::ItemId::new(music_core::model::ProviderKind::AppleMusic, id);
+    let id = opium_core::model::ItemId::new(opium_core::model::ProviderKind::AppleMusic, id);
     let Some(lyrics) = am.lyrics(&id).await? else {
         println!("no lyrics");
         return Ok(());
@@ -442,9 +442,9 @@ async fn open_track(
 ) -> Result<apple_music::AudioStream, Box<dyn std::error::Error>> {
     let cdm_path = widevine::locate().ok_or("no Widevine CDM found")?;
     let cdm = widevine::Cdm::open(&cdm_path)?;
-    let track = music_core::model::ItemId::new(music_core::model::ProviderKind::AppleMusic, id);
-    // `MUSIC_SPATIAL=1`: Spatial Audio, for a song with a Dolby Atmos mix.
-    let spatial = std::env::var_os("MUSIC_SPATIAL").is_some();
+    let track = opium_core::model::ItemId::new(opium_core::model::ProviderKind::AppleMusic, id);
+    // `OPIUM_SPATIAL=1`: Spatial Audio, for a song with a Dolby Atmos mix.
+    let spatial = std::env::var_os("OPIUM_SPATIAL").is_some();
     let (stream, _, spatial) = am.fetch_track(&cdm, &track, spatial).await?;
     if spatial {
         println!("Spatial Audio (binaural)");

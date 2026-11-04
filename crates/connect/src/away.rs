@@ -12,8 +12,8 @@ use std::task::{Context, Poll};
 use iroh::endpoint::{Connection, Incoming, RecvStream, SendStream};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
-/// What Music Connect speaks on iroh.
-const ALPN: &[u8] = b"music-connect/1";
+/// What Opium Connect speaks on iroh.
+const ALPN: &[u8] = b"opium-connect/1";
 
 /// This device on iroh, as `secret`, through `relay` (n0's when `None`).
 pub async fn endpoint(secret: [u8; 32], relay: Option<&str>) -> Option<iroh::Endpoint> {
@@ -23,13 +23,13 @@ pub async fn endpoint(secret: [u8; 32], relay: Option<&str>) -> Option<iroh::End
     if let Some(relay) = relay {
         match relay.parse::<iroh::RelayUrl>() {
             Ok(url) => builder = builder.relay_mode(iroh::RelayMode::custom([url])),
-            Err(e) => eprintln!("music connect: the relay {relay} isn't an address: {e}"),
+            Err(e) => eprintln!("opium connect: the relay {relay} isn't an address: {e}"),
         }
     }
     builder
         .bind()
         .await
-        .map_err(|e| eprintln!("music connect: can't go on iroh: {e}"))
+        .map_err(|e| eprintln!("opium connect: can't go on iroh: {e}"))
         .ok()
 }
 

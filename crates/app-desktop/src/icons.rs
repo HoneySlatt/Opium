@@ -235,13 +235,13 @@ pub const FILES: Icon = Icon {
 };
 
 /// A service's logo.
-pub fn service(provider: music_core::model::ProviderKind) -> Icon {
+pub fn service(provider: opium_core::model::ProviderKind) -> Icon {
     match provider {
-        music_core::model::ProviderKind::AppleMusic => APPLE_MUSIC,
-        music_core::model::ProviderKind::SoundCloud => SOUNDCLOUD,
-        music_core::model::ProviderKind::Navidrome => NAVIDROME,
-        music_core::model::ProviderKind::Local => FILES,
-        music_core::model::ProviderKind::Music => NOTE,
+        opium_core::model::ProviderKind::AppleMusic => APPLE_MUSIC,
+        opium_core::model::ProviderKind::SoundCloud => SOUNDCLOUD,
+        opium_core::model::ProviderKind::Navidrome => NAVIDROME,
+        opium_core::model::ProviderKind::Local => FILES,
+        opium_core::model::ProviderKind::Opium => NOTE,
     }
 }
 

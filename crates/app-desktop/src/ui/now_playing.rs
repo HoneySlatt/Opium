@@ -5,7 +5,7 @@
 //! buttons fade away.
 
 use egui::{Color32, Id, Mesh, Rect, Sense, Stroke, Ui, pos2, vec2};
-use music_core::model::{FavouriteKind, Track};
+use opium_core::model::{FavouriteKind, Track};
 
 use crate::app::{App, Loaded};
 use crate::color::alpha;
@@ -626,7 +626,7 @@ fn controls(app: &mut App, ui: &mut Ui, theme: &Theme, track: &Track, card: Rect
             true,
         );
         let facts = TrackFacts {
-            file: track.id.provider == music_core::model::ProviderKind::Local,
+            file: track.id.provider == opium_core::model::ProviderKind::Local,
             has_album: track.album_id.is_some(),
             favourite,
             in_library: app.track_in_library(track),

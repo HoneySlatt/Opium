@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use egui::text::{LayoutJob, TextFormat, TextWrapping};
 use egui::{Id, Rect, Sense, Ui, pos2, vec2};
-use music_core::model::{ItemId, LyricLine, Lyrics};
+use opium_core::model::{ItemId, LyricLine, Lyrics};
 
 use crate::app::{App, Loaded};
 use crate::fonts::{Weight, font};

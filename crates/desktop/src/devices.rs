@@ -1,4 +1,4 @@
-//! Music Connect on the desktop: this computer on the network, for the
+//! Opium Connect on the desktop: this computer on the network, for the
 //! user's phone to see what plays here, control it, and hand music over.
 //! Its events come back to the app each frame, as MPRIS's actions do.
 

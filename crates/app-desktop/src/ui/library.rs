@@ -4,7 +4,7 @@
 //! over the albums. Collapsed, only the covers.
 
 use egui::{Color32, Id, Rect, Sense, Ui, pos2, vec2};
-use music_core::model::{Collection, ProviderKind};
+use opium_core::model::{Collection, ProviderKind};
 
 use crate::app::{App, CollectionChoice, Page};
 use crate::color::alpha;
@@ -506,7 +506,7 @@ pub(super) fn service(provider: ProviderKind) -> &'static str {
         ProviderKind::SoundCloud => "SoundCloud",
         ProviderKind::Navidrome => "Navidrome",
         ProviderKind::Local => "Files",
-        ProviderKind::Music => "Music",
+        ProviderKind::Opium => "Opium",
     }
 }
 

@@ -1,19 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The desktop icon's note, from packaging/music.svg, scaled into the
-     adaptive icon's safe zone as large as Apple Music's on the same home
-     screen, and set as far left and up as it. -->
+<!-- The desktop icon's note and its three waves, from packaging/opium.svg:
+     its tile mapped onto the 72 dp the launcher shows, so the glyph keeps
+     its size and place in it, well within the adaptive icon's safe zone. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
     <group
-        android:scaleX="0.126"
-        android:scaleY="0.126"
-        android:translateX="21.8"
-        android:translateY="21.2">
+        android:scaleX="0.0592"
+        android:scaleY="0.0592"
+        android:translateX="16.941"
+        android:translateY="16.822">
         <path
             android:fillColor="#FFFFFFFF"
-            android:pathData="M199 359V199q0-9 10-11l138-28q11-2 12 10v122q0 15-45 20c-57 9-48 105 30 79 30-11 35-40 35-69V88s0-20-17-15l-170 35s-13 2-13 18v203q0 15-45 20c-57 9-48 105 30 79 30-11 35-40 35-69" />
+            android:pathData="M526 676V330a50.5 50.5 0 0 1 101 0v490c0 87-71 157-159 157s-159-70-159-157 71-157 159-157c21 0 40 5 58 13Z" />
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M665 493a45 45 0 0 1 90 0V811a45 45 0 0 1-90 0ZM789 577a44 44 0 0 1 88 0V751a44 44 0 0 1-88 0ZM909 641a39 39 0 0 1 78 0V701a39 39 0 0 1-78 0Z" />
     </group>
 </vector>

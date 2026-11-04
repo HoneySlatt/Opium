@@ -2,7 +2,7 @@
 //! file, cut into byte ranges. The app plays one variant's file in a loop, so
 //! it is fetched whole.
 
-use music_core::{Error, Result};
+use opium_core::{Error, Result};
 
 use crate::AppleMusic;
 use crate::radio::{attribute, resolve};

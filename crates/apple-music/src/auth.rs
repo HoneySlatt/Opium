@@ -7,7 +7,7 @@
 
 use std::sync::LazyLock;
 
-use music_core::{Error, Result};
+use opium_core::{Error, Result};
 use regex::Regex;
 
 const WEB_PLAYER: &str = "https://music.apple.com";

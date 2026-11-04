@@ -12,19 +12,19 @@ use std::sync::Mutex;
 
 use async_trait::async_trait;
 use md5::{Digest, Md5};
-use music_core::growing::{Growing, growing};
-use music_core::model::{
+use opium_core::growing::{Growing, growing};
+use opium_core::model::{
     Album, Artist, ArtistDetail, Collection, Cursor, FavouriteKind, Genre, ItemId, Lyrics, Page,
     Playlist, ProviderKind, SearchResults, Shelf, SongLinks, Station, StationKind, Track,
 };
-use music_core::{Error, Provider, Result};
+use opium_core::{Error, Provider, Result};
 use serde::{Deserialize, Serialize};
 
 use convert::Urls;
 
 /// The Subsonic API version asked for, and the client's name.
 const VERSION: &str = "1.16.1";
-const CLIENT: &str = "music";
+const CLIENT: &str = "opium";
 /// Items a page of a list asks for.
 const PAGE: usize = 500;
 /// Songs named in one request's URL.
@@ -1164,7 +1164,7 @@ mod tests {
 
     #[test]
     fn a_cover_is_signed_only_as_it_is_fetched() {
-        let auth = "u=me&t=x&s=y&v=1.16.1&c=music";
+        let auth = "u=me&t=x&s=y&v=1.16.1&c=opium";
         assert_eq!(
             super::signed_cover(
                 "http://nas",
@@ -1172,7 +1172,7 @@ mod tests {
                 "http://nas/rest/getCoverArt.view?id=al-1&size=300"
             ),
             Some(
-                "http://nas/rest/getCoverArt.view?id=al-1&size=300&u=me&t=x&s=y&v=1.16.1&c=music"
+                "http://nas/rest/getCoverArt.view?id=al-1&size=300&u=me&t=x&s=y&v=1.16.1&c=opium"
                     .into()
             )
         );
@@ -1184,7 +1184,7 @@ mod tests {
                 "http://nas/rest/getCoverArt.view?id=al-1&size=300&u=old&t=o&s=o"
             ),
             Some(
-                "http://nas/rest/getCoverArt.view?id=al-1&size=300&u=me&t=x&s=y&v=1.16.1&c=music"
+                "http://nas/rest/getCoverArt.view?id=al-1&size=300&u=me&t=x&s=y&v=1.16.1&c=opium"
                     .into()
             )
         );

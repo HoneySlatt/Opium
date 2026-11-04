@@ -5,7 +5,7 @@ use std::cell::RefCell;
 
 use egui::{Id, Rect, Sense, Stroke, Ui, pos2, vec2};
 
-use music_core::model::ProviderKind;
+use opium_core::model::ProviderKind;
 
 use crate::app::{App, Connection, SoundCloudState};
 use crate::fonts::{Weight, font};
@@ -290,7 +290,7 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
                 y,
                 width,
                 "Theme",
-                "How the window is laid out and coloured. Each TOML file in ~/.config/music/themes/ is one more.",
+                "How the window is laid out and coloured. Each TOML file in ~/.config/opium/themes/ is one more.",
             );
             let card = Rect::from_min_size(
                 pos2(left, y),
@@ -307,7 +307,7 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
                 y,
                 width,
                 "Colours",
-                "Amane recolours Music along with the rest of the desktop.",
+                "Amane recolours Opium along with the rest of the desktop.",
             );
             let card = Rect::from_min_size(pos2(left, y), vec2(width, THEMES));
             panel(ui, &theme, card, 1);
@@ -394,7 +394,7 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
                 ui,
                 &theme,
                 pos2(card.left() + 16.0, card.center().y),
-                &format!("Music {}", env!("CARGO_PKG_VERSION")),
+                &format!("Opium {}", env!("CARGO_PKG_VERSION")),
                 "GPL-3.0-or-later. Widevine and CENC code adapted from Kopuz (EUPL-1.2).",
                 width - 32.0,
             );
@@ -929,7 +929,7 @@ struct Catalogue {
 thread_local! {
     /// What was read, the pass it was last wanted in, and the theme in
     /// force then. The page asked for the catalogue twice a frame and for
-    /// Amane's file once per card, so a scan of ~/.config/music/themes/ and
+    /// Amane's file once per card, so a scan of ~/.config/opium/themes/ and
     /// half a dozen TOML files went through the parser sixty times a second
     /// while anything played.
     static KEPT: RefCell<Option<(u64, Theme, Catalogue)>> = const { RefCell::new(None) };
@@ -1310,7 +1310,7 @@ fn browse_source(app: &mut App, ui: &mut Ui, theme: &Theme, sources: &[ProviderK
         ProviderKind::SoundCloud => "SoundCloud",
         ProviderKind::Navidrome => "Navidrome",
         ProviderKind::Local => "Files",
-        ProviderKind::Music => "Music",
+        ProviderKind::Opium => "Opium",
     };
     let widths: Vec<f32> = sources
         .iter()

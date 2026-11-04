@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use music_core::model::Track;
+use opium_core::model::Track;
 use serde::{Deserialize, Serialize};
 
 use crate::Stamp;

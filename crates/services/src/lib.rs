@@ -6,8 +6,8 @@ use std::sync::Arc;
 
 use apple_music::AppleMusic;
 use local::Local;
-use music_core::Provider;
-use music_core::model::{Album, ItemId, ProviderKind, SearchResults, Track};
+use opium_core::Provider;
+use opium_core::model::{Album, ItemId, ProviderKind, SearchResults, Track};
 use navidrome::Navidrome;
 use soundcloud::SoundCloud;
 
@@ -38,8 +38,8 @@ impl Services {
             ProviderKind::SoundCloud => self.soundcloud.clone().map(|p| p as Arc<dyn Provider>),
             ProviderKind::Navidrome => self.navidrome.clone().map(|p| p as Arc<dyn Provider>),
             ProviderKind::Local => self.local.clone().map(|p| p as Arc<dyn Provider>),
-            // What Music keeps of its own is the app's, not a service's.
-            ProviderKind::Music => None,
+            // What Opium keeps of its own is the app's, not a service's.
+            ProviderKind::Opium => None,
         }
     }
 
@@ -88,7 +88,7 @@ impl Services {
         let files_side = async { Some(files?.search_library(query).await) };
         let (a, b, n, f) = tokio::join!(apple_side, sc_side, nd_side, files_side);
         let mut error = None;
-        let mut ok = |side: Option<music_core::Result<SearchResults>>| match side? {
+        let mut ok = |side: Option<opium_core::Result<SearchResults>>| match side? {
             Ok(r) => Some(r),
             Err(e) => {
                 error = Some(e.to_string());
@@ -112,8 +112,8 @@ impl Services {
             .flat_map(|r| r.albums.clone())
             .collect();
         let (worse_tracks, worse_albums) = (
-            music_core::dedupe::songs(&tracks),
-            music_core::dedupe::albums(&albums),
+            opium_core::dedupe::songs(&tracks),
+            opium_core::dedupe::albums(&albums),
         );
         let (mut t, mut a) = (0, 0);
         let [files, nd, apple, sc] = sides.map(|side| {

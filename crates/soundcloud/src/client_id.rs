@@ -2,7 +2,7 @@
 //! is in the page itself (`window.__sc_hydration`, the one the web app uses)
 //! and in one of its scripts; SoundCloud changes it every few months.
 
-use music_core::{Error, Result};
+use opium_core::{Error, Result};
 use regex::Regex;
 
 const HOME: &str = "https://soundcloud.com/";

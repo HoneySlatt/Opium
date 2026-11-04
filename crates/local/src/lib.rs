@@ -11,12 +11,12 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock};
 
 use async_trait::async_trait;
-use music_core::model::{
+use opium_core::model::{
     Album, Artist, ArtistDetail, AudioQuality, Collection, Cursor, ItemId, Page, Playlist, ProviderKind,
     SearchResults, Track,
 };
-use music_core::text::fold;
-use music_core::{Error, Provider, Result};
+use opium_core::text::fold;
+use opium_core::{Error, Provider, Result};
 
 pub use scan::{EXTENSIONS, is_music};
 pub use tags::{Cover, TagEdit, Tags, lyrics_from, lyrics_of, read_tags, read_tags_from, write_tags, write_tags_to};
@@ -279,8 +279,8 @@ fn artist_id(name: &str) -> ItemId {
 }
 
 /// A cover kept at `path`, or at an address (the phone's covers).
-fn artwork(path: &str) -> music_core::model::Artwork {
-    music_core::model::Artwork {
+fn artwork(path: &str) -> opium_core::model::Artwork {
+    opium_core::model::Artwork {
         url_template: if path.contains("://") {
             path.to_owned()
         } else {
@@ -633,7 +633,7 @@ impl Provider for Local {
 
     /// An `.lrc` beside the file, else the lyrics in its tags; none for the
     /// phone's, which the app reads itself.
-    async fn lyrics(&self, track: &ItemId) -> Result<Option<music_core::model::Lyrics>> {
+    async fn lyrics(&self, track: &ItemId) -> Result<Option<opium_core::model::Lyrics>> {
         mine(track)?;
         let title = self
             .index()
@@ -676,7 +676,7 @@ mod tests {
             year: Some(2020),
             genre: None,
             duration_ms: 1000,
-            codec: music_core::model::Codec::Flac,
+            codec: opium_core::model::Codec::Flac,
             sample_rate: Some(44_100),
             bit_depth: Some(16),
             bitrate: None,
@@ -757,7 +757,7 @@ mod tests {
         library.rescan();
         assert_eq!(library.tracks()[0].title, "song");
         // A picture made a square JPEG as a picked one is.
-        let cover = music_core::cover::square(&image_png()).expect("a cover");
+        let cover = opium_core::cover::square(&image_png()).expect("a cover");
         let edit = TagEdit {
             title: Some("Renamed".into()),
             artist: Some("Someone".into()),

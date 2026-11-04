@@ -1,4 +1,4 @@
-//! The playlists made in Music itself, of songs from any service.
+//! The playlists made in Opium itself, of songs from any service.
 //!
 //! A playlist's songs are each an entry of their own, so the same song can
 //! be in it twice: added on two devices at once, both entries stay; taken
@@ -8,7 +8,7 @@
 
 use std::collections::BTreeMap;
 
-use music_core::model::{ItemId, ProviderKind, Track};
+use opium_core::model::{ItemId, ProviderKind, Track};
 use serde::{Deserialize, Serialize};
 
 use crate::{Latest, Stamp, latest, place};
@@ -71,17 +71,17 @@ pub struct PlaylistSong {
 
 impl Playlist {
     /// As the apps show a service's playlist: its cover its first song's.
-    pub fn model(&self) -> music_core::model::Playlist {
-        music_core::model::Playlist {
-            id: ItemId::new(ProviderKind::Music, self.id.clone()),
+    pub fn model(&self) -> opium_core::model::Playlist {
+        opium_core::model::Playlist {
+            id: ItemId::new(ProviderKind::Opium, self.id.clone()),
             name: self.name.clone(),
             description: Some(self.description.clone()).filter(|d| !d.is_empty()),
-            curator: Some("Music".to_owned()),
+            curator: Some("Opium".to_owned()),
             favourites: false,
             artwork: self
                 .cover
                 .as_ref()
-                .map(|url| music_core::model::Artwork {
+                .map(|url| opium_core::model::Artwork {
                     url_template: url.clone(),
                     background: None,
                 })

@@ -353,13 +353,13 @@ fn run(
     let rate = format!("1/{sample_rate}");
     let stream = pw::stream::StreamBox::new(
         &core,
-        "music",
+        "opium",
         pw::properties::properties! {
             *pw::keys::MEDIA_TYPE => "Audio",
             *pw::keys::MEDIA_CATEGORY => "Playback",
             *pw::keys::MEDIA_ROLE => "Music",
-            *pw::keys::APP_NAME => "Music",
-            *pw::keys::NODE_NAME => "music",
+            *pw::keys::APP_NAME => "Opium",
+            *pw::keys::NODE_NAME => "opium",
             *pw::keys::AUDIO_CHANNELS => channels.to_string(),
             *pw::keys::NODE_RATE => rate.as_str(),
             // 0: force the rate given in node.rate.

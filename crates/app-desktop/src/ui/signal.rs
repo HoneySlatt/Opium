@@ -2,7 +2,7 @@
 //! unchanged, and every step from the service to the card.
 
 use egui::{Color32, Id, LayerId, Order, Rect, Sense, Stroke, Ui, pos2, vec2};
-use music_core::model::{Codec, ProviderKind, Track};
+use opium_core::model::{Codec, ProviderKind, Track};
 
 use crate::app::{App, SignalAnchor};
 use crate::color::alpha;
@@ -140,8 +140,8 @@ pub(super) fn steps(app: &App, track: &Track) -> Vec<Step> {
             "stream?format=raw, original file",
         ),
         ProviderKind::Local => ("Files", icons::FILES, "the file itself, from the disk"),
-        // No song is Music's own.
-        ProviderKind::Music => ("Music", icons::NOTE, ""),
+        // No song is Opium's own.
+        ProviderKind::Opium => ("Opium", icons::NOTE, ""),
     };
     let detail = match track.quality.as_ref() {
         Some(q) if q.codec == Codec::Aac => match q.bitrate_kbps {

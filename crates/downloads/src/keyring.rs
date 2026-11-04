@@ -5,10 +5,10 @@ use std::collections::HashMap;
 
 use crate::sealed::{Key, new_key};
 
-const LABEL: &str = "Music downloads";
+const LABEL: &str = "Opium downloads";
 
 fn attributes() -> HashMap<&'static str, &'static str> {
-    HashMap::from([("application", "music"), ("purpose", "downloads")])
+    HashMap::from([("application", "opium"), ("purpose", "downloads")])
 }
 
 /// The key, made and kept the first time; why not, said for the user.
