@@ -151,7 +151,9 @@ impl Finder {
     }
 
     /// The song's lyrics from the first of `sources` that has them synced;
-    /// failing that, the first plain ones found.
+    /// failing that, the first plain ones found. Line by line: the sites'
+    /// timing of each word is too rough to follow smoothly, as Apple
+    /// Music's is.
     pub async fn find(&self, query: &Query, sources: &[Source]) -> Option<(Lyrics, Source)> {
         let mut plain = None;
         for &source in sources {
@@ -159,7 +161,8 @@ impl Finder {
                 Source::Lrclib => self.lrclib(query).await,
                 Source::NetEase => self.netease(query).await,
                 Source::KuGou => self.kugou(query).await,
-            };
+            }
+            .map(line_by_line);
             match found {
                 Some(lyrics) if lyrics.synced => return Some((lyrics, source)),
                 Some(lyrics) if plain.is_none() => plain = Some((lyrics, source)),
@@ -306,9 +309,26 @@ fn lrclib_lyrics(entry: &serde_json::Value, query: &Query) -> Option<Lyrics> {
         })
 }
 
+/// `lyrics` timed line by line only, each line's text as it is.
+fn line_by_line(mut lyrics: Lyrics) -> Lyrics {
+    for line in &mut lyrics.lines {
+        line.words.clear();
+    }
+    lyrics
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_sites_lyrics_are_timed_line_by_line() {
+        let timed = lrc::parse("[00:10.00]<00:10.00>Hello <00:10.50>world\n[00:12.00]Next\n", "Song").unwrap();
+        assert!(!timed.lines[0].words.is_empty());
+        let lines = line_by_line(timed);
+        assert_eq!(lines.lines[0].text, "Hello world");
+        assert!(lines.synced && lines.lines.iter().all(|l| l.words.is_empty()));
+    }
 
     fn query(title: &str, secs: u64) -> Query {
         Query {

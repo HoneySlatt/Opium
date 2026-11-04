@@ -16,8 +16,9 @@ Rust with [egui](https://github.com/emilk/egui).
   resampling, while other apps' sound still plays. You get Apple Music's AAC
   256, SoundCloud's original uploads when the artist allows downloads, and
   your server's files as they are.
-- **Lyrics:** synced lyrics, word by word when the source has the timing. They
-  come from the service, else from LRCLIB, NetEase Cloud Music or KuGou.
+- **Lyrics:** synced lyrics, word by word from Apple Music, line by line
+  otherwise. They come from the service, else from LRCLIB, NetEase Cloud Music
+  or KuGou.
 - **Desktop:** a Now Playing view, a queue, MPRIS (media keys and desktop
   widgets), and keyboard shortcuts.
 
