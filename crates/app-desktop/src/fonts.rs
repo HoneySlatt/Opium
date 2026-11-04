@@ -122,40 +122,13 @@ fn system_fallbacks() -> Vec<Fallback> {
         let Ok(out) = std::process::Command::new("fc-list")
             .arg(format!(":lang={lang}"))
             .arg("-f")
-            .arg("%{file}|%{index}|%{family[0]}|%{style[0]}|%{variable}\\n")
+            .arg("%{file}|%{index}|%{family[0]}|%{style[0]}|%{variable}|%{slant}\\n")
             .output()
         else {
             return found;
         };
         let list = String::from_utf8_lossy(&out.stdout);
-        let best = list
-            .lines()
-            .filter_map(|line| {
-                let mut f = line.split('|');
-                let (file, index, family, style, variable) =
-                    (f.next()?, f.next()?, f.next()?, f.next()?, f.next()?);
-                let index: u32 = index.parse().ok()?;
-                let variable = variable == "True";
-                let odd = [
-                    "Mono", "Serif", "Looped", "Kufi", "Rashi", "Unifont", "Geist",
-                ]
-                .iter()
-                .any(|w| family.contains(w))
-                    || ["Condensed", "Oblique", "Italic"]
-                        .iter()
-                        .any(|w| style.contains(w));
-                // A named instance of a variable font, or another weight.
-                let regular = variable && index >> 16 == 0
-                    || !variable && (style == "Regular" || style == "Book");
-                if odd || !regular {
-                    return None;
-                }
-                let score = 4 * u8::from(family.starts_with("Noto Sans"))
-                    + 2 * u8::from(variable)
-                    + u8::from(family.ends_with(" JP"));
-                Some((score, file, index & 0xffff, family, variable))
-            })
-            .max_by_key(|c| c.0);
+        let best = list.lines().filter_map(candidate).max_by_key(|c| c.0);
         let Some((_, file, index, family, variable)) = best else {
             continue;
         };
@@ -172,4 +145,50 @@ fn system_fallbacks() -> Vec<Fallback> {
         }
     }
     found
+}
+
+/// A line of `fc-list` as a fallback to weigh: its score, file, index,
+/// family and whether it is variable; none if it is the wrong kind of font.
+fn candidate(line: &str) -> Option<(u8, &str, u32, &str, bool)> {
+    let mut f = line.split('|');
+    let (file, index, family, style, variable, slant) =
+        (f.next()?, f.next()?, f.next()?, f.next()?, f.next()?, f.next()?);
+    let index: u32 = index.parse().ok()?;
+    let variable = variable == "True";
+    // Upright only: a variable font's own entry has no style to tell its
+    // italic by, only its slant (0 upright, 100 italic, 110 oblique).
+    let odd = [
+        "Mono", "Serif", "Looped", "Kufi", "Rashi", "Unifont", "Geist",
+    ]
+    .iter()
+    .any(|w| family.contains(w))
+        || style.contains("Condensed")
+        || slant != "0";
+    // A named instance of a variable font, or another weight.
+    let regular = variable && index >> 16 == 0
+        || !variable && (style == "Regular" || style == "Book");
+    if odd || !regular {
+        return None;
+    }
+    let score = 4 * u8::from(family.starts_with("Noto Sans"))
+        + 2 * u8::from(variable)
+        + u8::from(family.ends_with(" JP"));
+    Some((score, file, index & 0xffff, family, variable))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_variable_italic_is_no_fallback() {
+        // As fc-list gives Noto Sans: the variable roman and italic alike
+        // have no style of their own, only their slant.
+        let list = "/fonts/NotoSans.ttf|0|Noto Sans||True|0\n\
+                    /fonts/NotoSans-Italic.ttf|0|Noto Sans||True|100\n\
+                    /fonts/DejaVuSans.ttf|0|DejaVu Sans|Book|False|0";
+        let best = list.lines().filter_map(candidate).max_by_key(|c| c.0);
+        assert_eq!(best.map(|c| c.1), Some("/fonts/NotoSans.ttf"));
+        assert!(candidate("/fonts/NotoSans-Italic.ttf|0|Noto Sans||True|100").is_none());
+    }
 }
