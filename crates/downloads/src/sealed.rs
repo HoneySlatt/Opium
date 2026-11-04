@@ -155,6 +155,13 @@ impl<R: Read + Seek> Reader<R> {
         self.len
     }
 
+    /// Whether the key opens it, by reading its first chunk: a song sealed
+    /// under another key (the keyring's remade) fails here, where it can
+    /// still be played from its service, rather than halfway through.
+    pub fn opens(&mut self) -> io::Result<()> {
+        self.chunk(0).map(|_| ())
+    }
+
     pub fn is_empty(&self) -> bool {
         self.len == 0
     }

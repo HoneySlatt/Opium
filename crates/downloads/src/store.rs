@@ -113,15 +113,24 @@ impl Store {
     pub fn open(dir: &Path, key: Key) -> io::Result<Self> {
         private_dir(dir)?;
         let path = dir.join(MANIFEST);
-        let manifest = match std::fs::read(&path) {
+        // Only a manifest read whole says what is kept; one damaged, or
+        // written by a later version, leaves the songs where they are
+        // rather than have them swept as nobody's.
+        let (manifest, says_it_all) = match std::fs::read(&path) {
             Ok(bytes) => match serde_json::from_slice::<Manifest>(&bytes) {
-                Ok(m) => m,
-                Err(_) => {
+                Ok(m) if m.version <= VERSION => (m, true),
+                read => {
+                    eprintln!(
+                        "downloads: {} doesn't read ({}): kept aside, the songs left alone",
+                        path.display(),
+                        read.err()
+                            .map_or_else(|| format!("version {VERSION} at most"), |e| e.to_string())
+                    );
                     std::fs::rename(&path, dir.join("manifest.corrupt.json"))?;
-                    Manifest::default()
+                    (Manifest::default(), false)
                 }
             },
-            Err(e) if e.kind() == io::ErrorKind::NotFound => Manifest::default(),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => (Manifest::default(), true),
             Err(e) => return Err(e),
         };
         let store = Self {
@@ -134,7 +143,9 @@ impl Store {
                 .collect(),
             confirmed: manifest.confirmed,
         };
-        store.sweep();
+        if says_it_all {
+            store.sweep();
+        }
         Ok(store)
     }
 
@@ -203,13 +214,14 @@ impl Store {
         }
         Some((|| {
             let file = File::open(self.dir.join(&item.file))?;
-            let reader = sealed::Reader::new(file, &self.key)?;
+            let mut reader = sealed::Reader::new(file, &self.key)?;
             if reader.len() != item.len {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
                     "the kept song isn't whole",
                 ));
             }
+            reader.opens()?;
             Ok(Open {
                 len: reader.len(),
                 reader,
@@ -531,4 +543,52 @@ mod tests {
         let mode = std::fs::metadata(&dir.0).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o700);
     }
+    #[test]
+    fn a_manifest_that_doesnt_read_leaves_the_songs_on_disk() {
+        let dir = dir();
+        let key = sealed::new_key();
+        let id = ItemId::new(ProviderKind::Navidrome, "1");
+        {
+            let mut store = Store::open(&dir.0, key).unwrap();
+            keep(
+                &mut store,
+                song(ProviderKind::Navidrome, "1", false),
+                b"music",
+                10,
+            );
+        }
+        // As a later version's manifest would read here, or a damaged one.
+        std::fs::write(dir.0.join(MANIFEST), br#"{"version":99,"items":[]}"#).unwrap();
+        let store = Store::open(&dir.0, key).unwrap();
+        assert!(store.get(&id).is_none(), "it says nothing is kept");
+        assert!(dir.0.join("manifest.corrupt.json").exists());
+        let sealed: Vec<_> = std::fs::read_dir(&dir.0)
+            .unwrap()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().ends_with(".sealed"))
+            .collect();
+        assert_eq!(sealed.len(), 1, "the song's file is still there");
+    }
+
+    #[test]
+    fn a_song_sealed_under_another_key_doesnt_open() {
+        let dir = dir();
+        let id = ItemId::new(ProviderKind::Navidrome, "1");
+        {
+            let mut store = Store::open(&dir.0, sealed::new_key()).unwrap();
+            keep(
+                &mut store,
+                song(ProviderKind::Navidrome, "1", false),
+                &vec![7u8; 200_000],
+                10,
+            );
+        }
+        // The keyring remade: the key is another, the files the same.
+        let store = Store::open(&dir.0, sealed::new_key()).unwrap();
+        assert!(
+            store.open_song(&id, 20).is_some_and(|r| r.is_err()),
+            "it fails to open, so the song plays from its service"
+        );
+    }
+
 }
