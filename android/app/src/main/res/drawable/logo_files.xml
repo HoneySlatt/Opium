@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The files' logo, as the computer's: Lucide's folder and note, white on
+     an orange tile. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="64dp"
+    android:height="64dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFF9500"
+        android:pathData="M5.5,0h13a5.5,5.5 0,0 1,5.5 5.5v13a5.5,5.5 0,0 1,-5.5 5.5h-13a5.5,5.5 0,0 1,-5.5 -5.5v-13a5.5,5.5 0,0 1,5.5 -5.5z" />
+    <group
+        android:translateX="3.6"
+        android:translateY="3.6"
+        android:scaleX="0.7"
+        android:scaleY="0.7">
+        <path
+            android:strokeColor="#FFFFFFFF"
+            android:strokeWidth="2"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:pathData="M11,20H4a2,2 0,0 1,-2 -2V5a2,2 0,0 1,2 -2h3.9a2,2 0,0 1,1.69 0.9l0.81,1.2a2,2 0,0 0,1.67 0.9H20a2,2 0,0 1,2 2v3" />
+        <path
+            android:strokeColor="#FFFFFFFF"
+            android:strokeWidth="2"
+            android:pathData="M16,19m-2,0a2,2 0,1 0,4 0a2,2 0,1 0,-4 0" />
+        <path
+            android:strokeColor="#FFFFFFFF"
+            android:strokeWidth="2"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:pathData="M18,19v-7l4,1.5" />
+    </group>
+</vector>

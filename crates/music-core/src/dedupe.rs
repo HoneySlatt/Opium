@@ -1,8 +1,8 @@
 //! The same song, album or artist from several services shows once: the best
 //! copy stays, the others are left out of the lists. Songs and albums keep
-//! the server's own file first, then Apple Music's AAC 256, then
-//! SoundCloud's; artists keep Apple Music's, which has their photos, their
-//! page gathering their releases from everywhere.
+//! the device's own file first, then the server's, then Apple Music's AAC
+//! 256, then SoundCloud's; artists keep Apple Music's, which has their
+//! photos, their page gathering their releases from everywhere.
 //!
 //! Copies are told apart by their title and first artist, folded (case,
 //! accents, `- Single` and `- EP`, `&` or `,` between artists), and songs by
@@ -21,11 +21,12 @@ const SAME_LENGTH: Duration = Duration::from_secs(3);
 /// Which copy of a song or album wins: the lower.
 fn rank(provider: ProviderKind) -> u8 {
     match provider {
-        ProviderKind::Navidrome => 0,
-        ProviderKind::AppleMusic => 1,
-        ProviderKind::SoundCloud => 2,
+        ProviderKind::Local => 0,
+        ProviderKind::Navidrome => 1,
+        ProviderKind::AppleMusic => 2,
+        ProviderKind::SoundCloud => 3,
         // Music has no songs of its own.
-        ProviderKind::Music => 3,
+        ProviderKind::Music => 4,
     }
 }
 
@@ -34,8 +35,9 @@ fn artist_rank(provider: ProviderKind) -> u8 {
     match provider {
         ProviderKind::AppleMusic => 0,
         ProviderKind::Navidrome => 1,
-        ProviderKind::SoundCloud => 2,
-        ProviderKind::Music => 3,
+        ProviderKind::Local => 2,
+        ProviderKind::SoundCloud => 3,
+        ProviderKind::Music => 4,
     }
 }
 

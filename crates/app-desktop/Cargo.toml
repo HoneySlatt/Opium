@@ -18,6 +18,7 @@ async-trait = "0.1.92"
 # these are sent as Chrome sends them.
 wreq = "0.16.3"
 wreq-util = "0.2.0"
+local = { path = "../local" }
 navidrome = { path = "../navidrome" }
 lyrics = { path = "../lyrics" }
 services = { path = "../services" }

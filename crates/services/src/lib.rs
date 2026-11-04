@@ -1,9 +1,11 @@
-//! The three services as one: an item goes to its own service, a search to
-//! all of them, and what several have shows once, as the best copy.
+//! The services and the device's own files as one: an item goes to its own
+//! service, a search to all of them, and what several have shows once, as
+//! the best copy.
 
 use std::sync::Arc;
 
 use apple_music::AppleMusic;
+use local::Local;
 use music_core::Provider;
 use music_core::model::{Album, ItemId, ProviderKind, SearchResults, Track};
 use navidrome::Navidrome;
@@ -12,9 +14,9 @@ use soundcloud::SoundCloud;
 /// Where a search looks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Scope {
-    /// Apple Music's and SoundCloud's catalogues, and the server.
+    /// Apple Music's and SoundCloud's catalogues, the server and the files.
     Catalog,
-    /// The library: Apple Music's, and the server.
+    /// The library: Apple Music's, the server and the files.
     Library,
 }
 
@@ -24,6 +26,8 @@ pub struct Services {
     pub apple: Option<Arc<AppleMusic>>,
     pub soundcloud: Option<Arc<SoundCloud>>,
     pub navidrome: Option<Arc<Navidrome>>,
+    /// The music files of the folders chosen.
+    pub local: Option<Arc<Local>>,
 }
 
 impl Services {
@@ -33,6 +37,7 @@ impl Services {
             ProviderKind::AppleMusic => self.apple.clone().map(|p| p as Arc<dyn Provider>),
             ProviderKind::SoundCloud => self.soundcloud.clone().map(|p| p as Arc<dyn Provider>),
             ProviderKind::Navidrome => self.navidrome.clone().map(|p| p as Arc<dyn Provider>),
+            ProviderKind::Local => self.local.clone().map(|p| p as Arc<dyn Provider>),
             // What Music keeps of its own is the app's, not a service's.
             ProviderKind::Music => None,
         }
@@ -44,8 +49,8 @@ impl Services {
     }
 
     /// A search of every service: the catalog's in Apple Music and SoundCloud,
-    /// the library's in Apple Music's; the server's either way, as it is the
-    /// library. One that fails leaves the others' results. `only` asks that
+    /// the library's in Apple Music's; the server's and the files' either
+    /// way, as they are the library. One that fails leaves the others' results. `only` asks that
     /// service alone, with all of its results, the copies others have too.
     pub async fn search(
         &self,
@@ -54,6 +59,7 @@ impl Services {
         only: Option<ProviderKind>,
     ) -> Result<SearchResults, String> {
         let asked = |kind| only.is_none_or(|k| k == kind);
+        let files = self.local.clone().filter(|_| asked(ProviderKind::Local));
         let (apple, sc, nd) = (
             self.apple
                 .clone()
@@ -79,7 +85,8 @@ impl Services {
             }
         };
         let nd_side = async { Some(nd?.search(query).await) };
-        let (a, b, n) = tokio::join!(apple_side, sc_side, nd_side);
+        let files_side = async { Some(files?.search_library(query).await) };
+        let (a, b, n, f) = tokio::join!(apple_side, sc_side, nd_side, files_side);
         let mut error = None;
         let mut ok = |side: Option<music_core::Result<SearchResults>>| match side? {
             Ok(r) => Some(r),
@@ -88,11 +95,12 @@ impl Services {
                 None
             }
         };
-        let (apple, sc, nd) = (ok(a), ok(b), ok(n));
-        let any = apple.is_some() || sc.is_some() || nd.is_some();
+        let (apple, sc, nd, files) = (ok(a), ok(b), ok(n), ok(f));
+        let any = apple.is_some() || sc.is_some() || nd.is_some() || files.is_some();
         // What several have is the best copy's, as in the library: the
-        // server's own file, then Apple Music's AAC 256, then SoundCloud's.
-        let sides = [nd, apple, sc];
+        // device's own file, the server's, then Apple Music's AAC 256, then
+        // SoundCloud's.
+        let sides = [files, nd, apple, sc];
         let tracks: Vec<Track> = sides
             .iter()
             .flatten()
@@ -108,7 +116,7 @@ impl Services {
             music_core::dedupe::albums(&albums),
         );
         let (mut t, mut a) = (0, 0);
-        let [nd, apple, sc] = sides.map(|side| {
+        let [files, nd, apple, sc] = sides.map(|side| {
             side.map(|mut r| {
                 r.tracks.retain(|_| {
                     t += 1;
@@ -123,7 +131,7 @@ impl Services {
         });
         // Taken in turns, Apple Music's first: the first rows show them all.
         let mut merged = SearchResults::default();
-        for side in [apple, nd, sc].into_iter().flatten() {
+        for side in [apple, files, nd, sc].into_iter().flatten() {
             merged.tracks = in_turns(merged.tracks, side.tracks);
             merged.albums = in_turns(merged.albums, side.albums);
             merged.artists = in_turns(merged.artists, side.artists);

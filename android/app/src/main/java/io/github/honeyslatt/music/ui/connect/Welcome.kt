@@ -83,7 +83,7 @@ fun Welcome(core: Core, connecting: Connecting, onContinue: () -> Unit) {
                                     ProviderKind.APPLE_MUSIC -> "Main service · AAC 256"
                                     ProviderKind.SOUND_CLOUD -> "Optional · your likes and the uploaders’ files"
                                     ProviderKind.NAVIDROME -> "Optional · lossless, from your server"
-                                    ProviderKind.MUSIC -> ""
+                                    ProviderKind.MUSIC, ProviderKind.LOCAL -> ""
                                 },
                                 style = geist(13.sp).copy(color = roles.sub),
                             )

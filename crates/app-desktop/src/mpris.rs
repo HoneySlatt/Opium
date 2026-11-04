@@ -30,6 +30,8 @@ pub enum Action {
     Repeat(Repeat),
     Raise,
     Quit,
+    /// A music file to play, or a folder of them, opened from elsewhere.
+    Open(std::path::PathBuf),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -88,6 +90,81 @@ pub struct Mpris {
     shared: Arc<Mutex<Shared>>,
     changes: tokio::sync::mpsc::UnboundedSender<Change>,
     actions: Receiver<Action>,
+}
+
+/// The audio files opened here, as the desktop entry says too.
+const MIME_TYPES: [&str; 14] = [
+    "audio/flac",
+    "audio/x-flac",
+    "audio/mpeg",
+    "audio/mp3",
+    "audio/wav",
+    "audio/x-wav",
+    "audio/aiff",
+    "audio/x-aiff",
+    "audio/mp4",
+    "audio/x-m4a",
+    "audio/aac",
+    "audio/ogg",
+    "audio/vorbis",
+    "audio/x-vorbis+ogg",
+];
+
+/// The files the command line names (paths, or `file://` addresses).
+pub fn files_from_args() -> Vec<std::path::PathBuf> {
+    std::env::args_os()
+        .skip(1)
+        .filter_map(|arg| match arg.to_str() {
+            Some(uri) if uri.starts_with("file://") => crate::app::file_path(uri),
+            _ => std::path::absolute(arg).ok(),
+        })
+        .collect()
+}
+
+/// Hand `files` to the Music already running, through its media controls,
+/// and bring it forward; whether one was there to take them.
+pub fn open_in_running(files: &[std::path::PathBuf]) -> bool {
+    let Ok(runtime) = tokio::runtime::Builder::new_current_thread().enable_all().build() else {
+        return false;
+    };
+    runtime.block_on(async {
+        let Ok(bus) = mpris_server::zbus::Connection::session().await else {
+            return false;
+        };
+        let call = |interface: &'static str, method: &'static str, uri: Option<String>| {
+            let bus = bus.clone();
+            async move {
+                let path = "/org/mpris/MediaPlayer2";
+                let to = Some("org.mpris.MediaPlayer2.music");
+                match uri {
+                    Some(uri) => bus.call_method(to, path, Some(interface), method, &(uri,)).await,
+                    None => bus.call_method(to, path, Some(interface), method, &()).await,
+                }
+                .is_ok()
+            }
+        };
+        for file in files {
+            if !call("org.mpris.MediaPlayer2.Player", "OpenUri", Some(file_uri(file))).await {
+                return false;
+            }
+        }
+        call("org.mpris.MediaPlayer2", "Raise", None).await;
+        true
+    })
+}
+
+/// `path` as a `file://` address, its bytes escaped but the slashes.
+fn file_uri(path: &std::path::Path) -> String {
+    use std::os::unix::ffi::OsStrExt;
+    let mut uri = String::from("file://");
+    for &b in path.as_os_str().as_bytes() {
+        if b.is_ascii_alphanumeric() || b"/-_.~".contains(&b) {
+            uri.push(b as char);
+        } else {
+            uri.push_str(&format!("%{b:02X}"));
+        }
+    }
+    uri
 }
 
 impl Mpris {
@@ -328,11 +405,11 @@ impl RootInterface for Imp {
     }
 
     async fn supported_uri_schemes(&self) -> fdo::Result<Vec<String>> {
-        Ok(Vec::new())
+        Ok(vec!["file".into()])
     }
 
     async fn supported_mime_types(&self) -> fdo::Result<Vec<String>> {
-        Ok(Vec::new())
+        Ok(MIME_TYPES.iter().map(|&t| t.to_owned()).collect())
     }
 }
 
@@ -407,8 +484,11 @@ impl PlayerInterface for Imp {
         Ok(())
     }
 
-    async fn open_uri(&self, _: String) -> fdo::Result<()> {
-        Err(fdo::Error::NotSupported("no URIs are opened".into()))
+    async fn open_uri(&self, uri: String) -> fdo::Result<()> {
+        let path = crate::app::file_path(&uri)
+            .ok_or_else(|| fdo::Error::NotSupported("only files are opened".into()))?;
+        self.act(Action::Open(path));
+        Ok(())
     }
 
     async fn playback_status(&self) -> fdo::Result<PlaybackStatus> {

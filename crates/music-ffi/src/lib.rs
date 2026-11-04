@@ -349,6 +349,7 @@ impl Session {
             ProviderKind::AppleMusic => s.apple = None,
             ProviderKind::SoundCloud => s.soundcloud = None,
             ProviderKind::Navidrome => s.navidrome = None,
+            ProviderKind::Local => s.local = None,
             ProviderKind::Music => {}
         });
     }

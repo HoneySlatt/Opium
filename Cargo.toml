@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/music-core", "crates/browser-signin", "crates/cenc", "crates/apple-music", "crates/soundcloud", "crates/navidrome", "crates/lyrics", "crates/widevine", "crates/player", "crates/motion", "crates/app-desktop", "crates/music-ffi", "crates/services", "crates/connect", "crates/synced", "crates/downloads"]
+members = ["crates/music-core", "crates/browser-signin", "crates/cenc", "crates/apple-music", "crates/soundcloud", "crates/navidrome", "crates/local", "crates/lyrics", "crates/widevine", "crates/player", "crates/motion", "crates/app-desktop", "crates/music-ffi", "crates/services", "crates/connect", "crates/synced", "crates/downloads"]
 
 [workspace.package]
 version = "0.1.0"

@@ -1061,6 +1061,8 @@ class Playback(private val context: Context, private val core: Core, private val
             ProviderKind.NAVIDROME -> navidromeSource(core.session.navidromeStreamUrl(track.id), item)
             // Its playlists' songs are the services'.
             ProviderKind.MUSIC -> error("no song is Music's own")
+            // Another device's file: not on this phone.
+            ProviderKind.LOCAL -> error("this song's file is on another device")
         }
     }
 }

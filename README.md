@@ -1,13 +1,17 @@
 # Music
 
-A desktop music player that puts Apple Music, SoundCloud and Navidrome in one
-library, in the spirit of Apple Music and [Cider](https://cider.sh). Written in
+A desktop music player that puts Apple Music, SoundCloud, Navidrome and your
+own music files in one library, in the spirit of Apple Music and [Cider](https://cider.sh). Written in
 Rust with [egui](https://github.com/emilk/egui).
 
 - **One library, one search:** albums, songs, artists and playlists from every
   service share the same pages. A song or album you have on several services
-  shows once, and plays from the best copy: your Navidrome server's file, then
-  Apple Music, then SoundCloud.
+  shows once, and plays from the best copy: your own file, then your Navidrome
+  server's, then Apple Music, then SoundCloud.
+- **Your files:** choose music folders in Settings and their FLAC, ALAC, WAV,
+  AIFF, MP3, AAC and Ogg Vorbis files join the library, with their tags and
+  covers, watched as they change. A file opened from the file manager, the
+  command line or dropped on the window plays.
 - **Sound:** each track plays at its own sample rate through PipeWire, without
   resampling, while other apps' sound still plays. You get Apple Music's AAC
   256, SoundCloud's original uploads when the artist allows downloads, and

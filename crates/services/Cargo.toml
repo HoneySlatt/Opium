@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 apple-music = { path = "../apple-music" }
+local = { path = "../local" }
 music-core = { path = "../music-core" }
 navidrome = { path = "../navidrome" }
 soundcloud = { path = "../soundcloud" }

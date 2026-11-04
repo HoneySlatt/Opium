@@ -1,0 +1,17 @@
+[package]
+name = "local"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+async-trait = "0.1.92"
+lofty = "0.25.5"
+music-core = { path = "../music-core" }
+notify = "8"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+tokio = { version = "1.54.1", features = ["rt", "sync"] }
+
+[dev-dependencies]
+tokio = { version = "1.54.1", features = ["rt", "macros"] }

@@ -1,4 +1,5 @@
-//! Music: Apple Music, SoundCloud and Navidrome in one desktop player.
+//! Music: Apple Music, SoundCloud, Navidrome and your own files in one
+//! desktop player.
 
 mod app;
 mod backend;
@@ -17,6 +18,11 @@ mod theme;
 mod ui;
 
 fn main() -> eframe::Result {
+    // Files opened while Music runs go to it, rather than to a second one.
+    let files = mpris::files_from_args();
+    if !files.is_empty() && mpris::open_in_running(&files) {
+        return Ok(());
+    }
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("Music")

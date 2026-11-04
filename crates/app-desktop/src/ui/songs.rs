@@ -206,6 +206,7 @@ fn banner_header(app: &mut App, ui: &mut Ui, theme: &Theme, content: Rect, pad: 
         Some(ProviderKind::AppleMusic) => "Apple Music",
         Some(ProviderKind::SoundCloud) => "SoundCloud",
         Some(ProviderKind::Navidrome) => "Navidrome",
+        Some(ProviderKind::Local) => "Files",
         Some(ProviderKind::Music) => "Music",
     };
     let f = font(14.0, Weight::Regular);

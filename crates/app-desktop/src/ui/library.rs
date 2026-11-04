@@ -505,6 +505,7 @@ pub(super) fn service(provider: ProviderKind) -> &'static str {
         ProviderKind::AppleMusic => "Apple Music",
         ProviderKind::SoundCloud => "SoundCloud",
         ProviderKind::Navidrome => "Navidrome",
+        ProviderKind::Local => "Files",
         ProviderKind::Music => "Music",
     }
 }

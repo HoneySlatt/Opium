@@ -177,6 +177,7 @@ impl Fetcher for Phone {
             }
             ProviderKind::AppleMusic => self.borrow(track, original).await,
             ProviderKind::Music => Err("Music has no songs of its own".into()),
+            ProviderKind::Local => Err("this song's file is on this phone already".into()),
         }
     }
 }

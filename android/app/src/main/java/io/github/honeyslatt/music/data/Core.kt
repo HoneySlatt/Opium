@@ -250,6 +250,7 @@ class Core(context: Context) {
                     session.connectSoundcloud(json.getString("oauth"), json.optString("refresh").takeIf { !json.isNull("refresh") && it.isNotEmpty() }, keeper, soundCloudWeb)
                 }
                 ProviderKind.MUSIC -> error("Music's playlists need no sign-in")
+                ProviderKind.LOCAL -> error("the files need no sign-in")
             }
         }
     }
@@ -278,6 +279,7 @@ class Core(context: Context) {
             ProviderKind.SOUND_CLOUD -> SOUNDCLOUD
             ProviderKind.NAVIDROME -> "navidrome"
             ProviderKind.MUSIC -> "music"
+            ProviderKind.LOCAL -> "local"
         }
 
     private companion object {

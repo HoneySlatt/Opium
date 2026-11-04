@@ -195,6 +195,13 @@ pub enum Request {
     },
     /// Downloads no longer kept, or no longer to come.
     RemoveDownloads(Vec<ItemId>),
+    /// The folders whose music files make the library's own; none, no files.
+    SetLocalFolders(Vec<PathBuf>),
+    /// Read the folders again: something in them changed.
+    RescanLocal,
+    /// Files opened from elsewhere (the file manager, the command line, a
+    /// drop on the window), a folder for its music files: to play now.
+    OpenFiles(Vec<PathBuf>),
     /// Every service's library songs as they were added, the last first.
     NewestSongs,
     /// An album and its tracks.
@@ -266,6 +273,13 @@ pub enum Reply {
     },
     /// Whether Navidrome opened a session for the password given.
     NavidromeSession(Result<bool, String>),
+    /// The files: how many songs, and whether the folders are being read;
+    /// `None` without folders.
+    Files(Option<(usize, bool)>),
+    /// The files changed: their albums, artists and recent additions to read again.
+    FilesChanged,
+    /// Files opened from elsewhere, as songs, to play.
+    Opened(Vec<Track>),
     PlaylistEdited {
         id: ItemId,
         name: String,
@@ -434,6 +448,8 @@ pub enum Playable {
     SoundCloud(soundcloud::Audio),
     /// A Navidrome file, as it is on the server, still downloading.
     Navidrome(navidrome::Audio),
+    /// A music file of this computer.
+    Local(local::Audio),
     Live(LiveStream),
     /// A song downloaded, played from the disk.
     Stored(Box<downloads::store::Open>),
@@ -640,6 +656,105 @@ fn kept_soundcloud_tokens() -> Option<soundcloud::Tokens> {
     })
 }
 
+/// Where the files' index and covers are kept: a cache, read again from the
+/// files if it goes.
+fn local_dir() -> PathBuf {
+    std::env::var_os("XDG_CACHE_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")))
+        .unwrap_or_default()
+        .join("music")
+        .join("local")
+}
+
+/// The files of `folders`, as indexed last, then read again and watched.
+fn open_local(
+    folders: &[PathBuf],
+    again: &UnboundedSender<Request>,
+    replies: &Replies,
+) -> (Option<Arc<local::Local>>, Option<local::Watching>) {
+    if folders.is_empty() {
+        replies.send(Reply::Files(None));
+        return (None, None);
+    }
+    let files = Arc::new(local::Local::open(folders.to_vec(), &local_dir()));
+    show_local(&files, true, replies);
+    let changed = again.clone();
+    let watching = files.watch(move || {
+        let _ = changed.send(Request::RescanLocal);
+    });
+    let _ = again.send(Request::RescanLocal);
+    (Some(files), watching)
+}
+
+/// The files' songs, and how many, `scanning` or not.
+fn show_local(files: &local::Local, scanning: bool, replies: &Replies) {
+    replies.send(Reply::Songs {
+        provider: ProviderKind::Local,
+        tracks: files.tracks(),
+        done: true,
+        whole: true,
+    });
+    replies.send(Reply::Files(Some((files.count(), scanning))));
+}
+
+/// The files' albums, artists or recent additions.
+async fn local_lists(files: Arc<local::Local>, request: Request, replies: Replies) {
+    let provider = ProviderKind::Local;
+    let reply = match request {
+        Request::LibraryAlbums => files.library_albums(None).await.map(|page| Reply::LibraryAlbums {
+            provider,
+            albums: page.items,
+            done: true,
+            whole: true,
+        }),
+        Request::LibraryArtists => files.library_artists(None).await.map(|page| Reply::LibraryArtists {
+            provider,
+            artists: page.items,
+            done: true,
+            whole: true,
+        }),
+        _ => files.recently_added(None).await.map(|page| Reply::RecentlyAdded {
+            provider,
+            items: page.items,
+            done: true,
+        }),
+    };
+    if let Ok(reply) = reply {
+        replies.send(reply);
+    }
+}
+
+/// A request about a music file: played from the disk, whether or not it
+/// is in the folders; the rest asked of the files' library.
+fn local_request(
+    files: Option<Arc<local::Local>>,
+    request: Request,
+    replies: Replies,
+    warming: &mut Option<tokio::task::JoinHandle<()>>,
+) {
+    let kept = files.clone();
+    let fetch = |track: ItemId, _original: bool| async move {
+        let audio = match &kept {
+            Some(files) => files.audio(&track),
+            None => local::file_audio(&track),
+        };
+        audio.map(Playable::Local).map_err(|e| e.to_string())
+    };
+    let Some(request) = fetch_with(request, replies.clone(), warming, fetch) else {
+        return;
+    };
+    let Some(files) = files else {
+        return unanswered(request, "Files", &replies);
+    };
+    let Some(request) = shared_request(files.clone(), request, replies.clone()) else {
+        return;
+    };
+    if item_request(files, request, replies.clone()).is_some() {
+        replies.send(Reply::Changed(Err("That isn't something files do".into())));
+    }
+}
+
 /// Where the Navidrome sign-in keeps the server, the user and the token.
 fn navidrome_file() -> PathBuf {
     apple_music_dir()
@@ -675,6 +790,8 @@ fn forget_sign_in(provider: ProviderKind) {
         }
         ProviderKind::Navidrome => gone(navidrome_file()),
         ProviderKind::Music => {}
+        // The files have no sign-in.
+        ProviderKind::Local => return,
     }
     cache::clear();
 }
@@ -980,6 +1097,11 @@ async fn run(
     let mut signed_out = std::collections::HashSet::new();
     // Out of reach, their libraries shown as kept: once, not at each try.
     let mut kept_shown = std::collections::HashSet::new();
+    // The music files of the folders chosen, and their watching (the app
+    // says which folders as it starts).
+    let mut local: Option<Arc<local::Local>> = None;
+    let mut local_folders: Vec<PathBuf> = Vec::new();
+    let mut _watching: Option<local::Watching> = None;
     let cdm = widevine::locate()
         .ok_or_else(|| "no Widevine module found: install Brave, Chrome or Firefox".to_owned())
         .and_then(|path| widevine::Cdm::open(&path).map_err(|e| e.to_string()));
@@ -1065,6 +1187,21 @@ async fn run(
             },
         };
         let replies = replies.clone();
+        // The files' lists, beside the services'.
+        if let (Some(files), true) = (
+            local.clone(),
+            matches!(
+                request,
+                Request::LibraryAlbums | Request::LibraryArtists | Request::RecentlyAdded
+            ),
+        ) {
+            let kind = match request {
+                Request::LibraryAlbums => Request::LibraryAlbums,
+                Request::LibraryArtists => Request::LibraryArtists,
+                _ => Request::RecentlyAdded,
+            };
+            tokio::spawn(local_lists(files, kind, replies.clone()));
+        }
         // Apple signed in and on, but out of reach: its lists as kept.
         let apple_kept = !turned_off.contains(&ProviderKind::AppleMusic)
             && !signed_out.contains(&ProviderKind::AppleMusic)
@@ -1136,6 +1273,47 @@ async fn run(
                 });
                 continue;
             }
+            Request::SetLocalFolders(folders) => {
+                local_folders = folders;
+                (local, _watching) = if turned_off.contains(&ProviderKind::Local) {
+                    (None, None)
+                } else {
+                    open_local(&local_folders, &again, &replies)
+                };
+                continue;
+            }
+            Request::RescanLocal => {
+                if let Some(files) = local.clone() {
+                    tokio::spawn(async move {
+                        let scanned = files.clone();
+                        let Ok(changed) = tokio::task::spawn_blocking(move || scanned.rescan()).await else {
+                            return;
+                        };
+                        if changed {
+                            show_local(&files, false, &replies);
+                            replies.send(Reply::FilesChanged);
+                        } else {
+                            replies.send(Reply::Files(Some((files.count(), false))));
+                        }
+                    });
+                }
+                continue;
+            }
+            Request::OpenFiles(paths) => {
+                let covers = local_dir().join("covers");
+                tokio::spawn(async move {
+                    let opened = tokio::task::spawn_blocking(move || {
+                        local::files_in(&paths)
+                            .iter()
+                            .filter_map(|path| local::file_track(path, &covers))
+                            .collect::<Vec<Track>>()
+                    })
+                    .await
+                    .unwrap_or_default();
+                    replies.send(Reply::Opened(opened));
+                });
+                continue;
+            }
             Request::SetService { provider, on } => {
                 if on {
                     turned_off.remove(&provider);
@@ -1155,6 +1333,12 @@ async fn run(
                         nd = None;
                         sign_covers_with(&nd);
                         loading.stop(provider);
+                    }
+                    (ProviderKind::Local, false) => {
+                        (local, _watching) = (None, None);
+                    }
+                    (ProviderKind::Local, true) => {
+                        (local, _watching) = open_local(&local_folders, &again, &replies);
                     }
                     (ProviderKind::Music, _) => {}
                     // Turned on: its library loads once it is connected.
@@ -1197,7 +1381,7 @@ async fn run(
                         nd = None;
                         sign_covers_with(&nd);
                     }
-                    ProviderKind::Music => {}
+                    ProviderKind::Local | ProviderKind::Music => {}
                 }
                 tokio::task::spawn_blocking(move || forget_sign_in(provider));
                 continue;
@@ -1277,6 +1461,9 @@ async fn run(
             // Every service at once.
             Request::Library => {
                 library_wanted = true;
+                if let Some(files) = local.clone() {
+                    show_local(&files, false, &replies);
+                }
                 if let Some(am) = apple.clone() {
                     loading.start(ProviderKind::AppleMusic, load_library(am, replies.clone()));
                 }
@@ -1315,6 +1502,7 @@ async fn run(
                     (ProviderKind::AppleMusic, apple.is_some()),
                     (ProviderKind::SoundCloud, sc.is_some()),
                     (ProviderKind::Navidrome, nd.is_some()),
+                    (ProviderKind::Local, local.is_some()),
                 ] {
                     if on && let Some(ids) = cache::read::<Vec<ItemId>>(&newest_kept(provider)) {
                         replies.send(Reply::NewestSongs { provider, ids });
@@ -1334,7 +1522,7 @@ async fn run(
                         }
                     });
                 }
-                let others: [(ProviderKind, Option<Arc<dyn Provider>>); 2] = [
+                let others: [(ProviderKind, Option<Arc<dyn Provider>>); 3] = [
                     (
                         ProviderKind::SoundCloud,
                         sc.clone().map(|p| p as Arc<dyn Provider>),
@@ -1342,6 +1530,10 @@ async fn run(
                     (
                         ProviderKind::Navidrome,
                         nd.clone().map(|p| p as Arc<dyn Provider>),
+                    ),
+                    (
+                        ProviderKind::Local,
+                        local.clone().map(|p| p as Arc<dyn Provider>),
                     ),
                 ];
                 for (provider, p) in others {
@@ -1483,7 +1675,8 @@ async fn run(
                     ProviderKind::AppleMusic => apple.clone().map(|a| a as Arc<dyn Provider>),
                     ProviderKind::SoundCloud => sc.clone().map(|s| s as Arc<dyn Provider>),
                     ProviderKind::Navidrome => nd.clone().map(|n| n as Arc<dyn Provider>),
-                    ProviderKind::Music => None,
+                    // The files have no picks.
+                    ProviderKind::Local | ProviderKind::Music => None,
                 };
                 let Some(provider) = provider else {
                     unanswered(request, "the service chosen", &replies);
@@ -1556,6 +1749,7 @@ async fn run(
                     apple: apple.clone(),
                     soundcloud: sc.clone(),
                     navidrome: nd.clone(),
+                    local: local.clone(),
                 };
                 tokio::spawn(search(services, scope, source, query, replies));
                 continue;
@@ -1563,6 +1757,11 @@ async fn run(
             _ => {}
         }
         // What is the server's goes there.
+        // A file plays from the disk, whether or not its folder is chosen.
+        if target(&request) == Some(ProviderKind::Local) {
+            local_request(local.clone(), request, replies, &mut warming);
+            continue;
+        }
         if target(&request) == Some(ProviderKind::Navidrome) {
             match nd.clone() {
                 Some(nd) => navidrome_request(nd, request, replies, &mut warming),
@@ -1614,6 +1813,9 @@ async fn run(
             | Request::StationTracks(_) => {}
             Request::SignIn
             | Request::Reconnect
+            | Request::SetLocalFolders(_)
+            | Request::RescanLocal
+            | Request::OpenFiles(_)
             | Request::SignOut(_)
             | Request::SignInSoundCloud
             | Request::ReconnectSoundCloud
@@ -1810,7 +2012,7 @@ fn signed_in(provider: ProviderKind) -> bool {
         ProviderKind::AppleMusic => apple_music_dir().join("media-user-token").exists(),
         ProviderKind::SoundCloud => soundcloud_dir().join("tokens.json").exists(),
         ProviderKind::Navidrome => navidrome_file().exists(),
-        ProviderKind::Music => false,
+        ProviderKind::Local | ProviderKind::Music => false,
     }
 }
 
@@ -1821,7 +2023,7 @@ fn show_kept(provider: ProviderKind, replies: Replies) {
         ProviderKind::AppleMusic => ("songs", "playlists"),
         ProviderKind::SoundCloud => ("soundcloud-songs", "soundcloud-playlists"),
         ProviderKind::Navidrome => ("navidrome-songs", "navidrome-playlists"),
-        ProviderKind::Music => return,
+        ProviderKind::Local | ProviderKind::Music => return,
     };
     tokio::task::spawn_blocking(move || {
         if let Some(playlists) = cache::read::<Vec<Playlist>>(playlists) {
@@ -2589,6 +2791,7 @@ fn newest_kept(provider: ProviderKind) -> String {
     let name = match provider {
         ProviderKind::AppleMusic => "apple",
         ProviderKind::SoundCloud => "soundcloud",
+        ProviderKind::Local => "local",
         _ => "navidrome",
     };
     format!("{name}-newest")

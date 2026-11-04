@@ -31,8 +31,11 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
     // Where Home, New and Radio come from, when there is a choice.
     let sources = app.browse_sources();
     let choosing = sources.len() > 1;
+    let folders = app.local_folders().len();
     let total = BODY_TOP
         + if choosing { GROUP_HEAD + GROUP_GAP + ROW } else { 0.0 }
+        + ROW
+        + if folders > 0 { GROUP_HEAD + GROUP_GAP + folders as f32 * ROW } else { 0.0 }
         + 11.0 * (GROUP_HEAD + GROUP_GAP)
         + 3.0 * ROW
         + THEMES * (1 + theme_rows()) as f32
@@ -70,10 +73,26 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
                 "Services",
                 "Each service keeps its own sign-in, on this computer only.",
             );
-            let card = Rect::from_min_size(pos2(left, y), vec2(width, 3.0 * ROW));
-            panel(ui, &theme, card, 3);
+            let card = Rect::from_min_size(pos2(left, y), vec2(width, 4.0 * ROW));
+            panel(ui, &theme, card, 4);
             services(app, ui, &theme, card);
             y = card.bottom() + GROUP_GAP;
+
+            if folders > 0 {
+                y = group(
+                    ui,
+                    &theme,
+                    left,
+                    y,
+                    width,
+                    "Music Folders",
+                    "Their music files are your library's, watched as they change.",
+                );
+                let card = Rect::from_min_size(pos2(left, y), vec2(width, folders as f32 * ROW));
+                panel(ui, &theme, card, folders);
+                local_folders(app, ui, &theme, card);
+                y = card.bottom() + GROUP_GAP;
+            }
 
             if choosing {
                 y = group(
@@ -542,7 +561,7 @@ fn devices(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect) {
 }
 
 fn services(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect) {
-    let names = ["Apple Music", "SoundCloud", "Navidrome"];
+    let names = ["Apple Music", "SoundCloud", "Navidrome", "Files"];
     for (i, name) in names.into_iter().enumerate() {
         let y = card.top() + i as f32 * ROW + ROW / 2.0;
         let tile = Rect::from_center_size(pos2(card.left() + 16.0 + 20.0, y), vec2(40.0, 40.0));
@@ -552,6 +571,7 @@ fn services(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect) {
             ProviderKind::AppleMusic,
             ProviderKind::SoundCloud,
             ProviderKind::Navidrome,
+            ProviderKind::Local,
         ][i];
         let on = app.service_on(provider);
         if switch(
@@ -571,7 +591,11 @@ fn services(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect) {
                 theme,
                 pos2(x, y),
                 name,
-                "Off: still signed in, and used again once turned on.",
+                if provider == ProviderKind::Local {
+                    "Off: the folders are kept, and read again once turned on."
+                } else {
+                    "Off: still signed in, and used again once turned on."
+                },
                 right - x - 12.0,
             );
             continue;
@@ -620,6 +644,24 @@ fn services(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect) {
                 };
                 (detail, button, connected)
             }
+            3 => {
+                let folders = app.local_folders().len();
+                let detail = match &app.local {
+                    _ if folders == 0 => {
+                        "Choose the folders your music is in: its files play as they are.".to_owned()
+                    }
+                    SoundCloudState::Connected(songs) if app.local_scanning => {
+                        format!("{songs} · reading the folders…")
+                    }
+                    SoundCloudState::Connected(songs) => format!(
+                        "{songs} in {folders} folder{} · the files themselves, as they are",
+                        if folders == 1 { "" } else { "s" }
+                    ),
+                    _ => "Reading the folders…".to_owned(),
+                };
+                let connected = folders > 0 && matches!(app.local, SoundCloudState::Connected(_));
+                (detail, ("Add Folder…", true), connected)
+            }
             _ => {
                 let connected = matches!(app.navidrome, SoundCloudState::Connected(_));
                 if !connected || app.navidrome_editing {
@@ -649,10 +691,12 @@ fn services(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect) {
             match i {
                 0 => app.sign_in(),
                 1 => app.sign_in_soundcloud(),
+                3 => app.pick_local_folders(ui.ctx()),
                 _ => app.navidrome_editing = true,
             }
         }
-        if connected {
+        // The files have no sign-in to leave.
+        if connected && provider != ProviderKind::Local {
             let now = ui.input(|i| i.time);
             let out = if app.sign_out_asked(provider, now) {
                 // Asked once: shown till the moment passes.
@@ -670,7 +714,7 @@ fn services(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect) {
             button_left = out_right - g.size().x - 28.0;
         }
         let mut state_right = button_left - 14.0;
-        if connected {
+        if connected && provider != ProviderKind::Local {
             let g = text(
                 ui,
                 "Connected",
@@ -685,6 +729,31 @@ fn services(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect) {
             state_right -= w + 20.0;
         }
         labels(ui, theme, pos2(x, y), name, &detail, state_right - x - 12.0);
+    }
+}
+
+/// The music folders, each on its row with its path and Remove.
+fn local_folders(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect) {
+    let folders: Vec<std::path::PathBuf> = app.local_folders().to_vec();
+    let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+    for (i, folder) in folders.iter().enumerate() {
+        let y = card.top() + i as f32 * ROW + ROW / 2.0;
+        let right = card.right() - 16.0;
+        let g = text(ui, "Remove", font(12.5, Weight::Medium), theme.text, 300.0);
+        let button_left = right - g.size().x - 28.0;
+        if button(ui, theme, right, y, "Remove", true) {
+            app.remove_local_folder(i);
+        }
+        let name = folder
+            .file_name()
+            .map_or_else(|| folder.display().to_string(), |n| n.to_string_lossy().into_owned());
+        // Under the home folder, as `~/…`.
+        let path = match home.as_ref().and_then(|h| folder.strip_prefix(h).ok()) {
+            Some(rest) => format!("~/{}", rest.display()),
+            None => folder.display().to_string(),
+        };
+        let x = card.left() + 16.0;
+        labels(ui, theme, pos2(x, y), &name, &path, button_left - x - 12.0);
     }
 }
 
@@ -1162,6 +1231,7 @@ fn browse_source(app: &mut App, ui: &mut Ui, theme: &Theme, sources: &[ProviderK
         ProviderKind::AppleMusic => "Apple Music",
         ProviderKind::SoundCloud => "SoundCloud",
         ProviderKind::Navidrome => "Navidrome",
+        ProviderKind::Local => "Files",
         ProviderKind::Music => "Music",
     };
     let widths: Vec<f32> = sources

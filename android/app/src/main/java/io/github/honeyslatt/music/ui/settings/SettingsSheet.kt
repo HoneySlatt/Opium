@@ -443,7 +443,7 @@ private fun Service(core: Core, settings: Settings, kind: ProviderKind, onSignIn
                 ProviderKind.APPLE_MUSIC -> connected?.let { "Storefront ${it.name} · up to AAC 256 kb/s" } ?: "Your library, playlists and the catalogue, at AAC 256 kb/s."
                 ProviderKind.SOUND_CLOUD -> connected?.let { "${it.name} · AAC 160 kb/s, 256 with Go+" } ?: "Your likes and playlists, and the uploaders’ own files where they allow downloads."
                 ProviderKind.NAVIDROME -> connected?.let { "${it.name} · files as they are" } ?: "Your server’s files, as they are."
-                ProviderKind.MUSIC -> ""
+                ProviderKind.MUSIC, ProviderKind.LOCAL -> ""
             },
             Modifier.padding(top = 2.dp, start = 20.dp, end = 20.dp),
             style = geist(14.sp).copy(color = roles.sub, textAlign = TextAlign.Center),
@@ -456,7 +456,7 @@ private fun Service(core: Core, settings: Settings, kind: ProviderKind, onSignIn
         ProviderKind.APPLE_MUSIC -> "Apple Music stops at AAC 256 kb/s for apps other than Apple’s: ALAC is FairPlay-only."
         ProviderKind.SOUND_CLOUD -> "Where the artist allows downloads, Music plays the uploader’s own file instead of the stream."
         ProviderKind.NAVIDROME -> "Files play as they are, up to 24-bit, with no transcoding (format=raw)."
-        ProviderKind.MUSIC -> ""
+        ProviderKind.MUSIC, ProviderKind.LOCAL -> ""
     }
     val signedIn = core.signedIn(kind)
     if (signedIn) {

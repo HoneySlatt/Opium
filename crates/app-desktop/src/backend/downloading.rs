@@ -192,6 +192,7 @@ async fn fetch(services: Services, track: Track, original: bool) -> Result<Fetch
             Playable::Navidrome(nd.audio(id).await.map_err(|e| e.to_string())?)
         }
         ProviderKind::Music => return Err("Music has no songs of its own".into()),
+        ProviderKind::Local => return Err("this song's file is on this computer already".into()),
     };
     Ok(match playable {
         Playable::Track {
@@ -237,5 +238,6 @@ async fn fetch(services: Services, track: Track, original: bool) -> Result<Fetch
         },
         Playable::Live(_) => return Err("a station can't be downloaded".into()),
         Playable::Stored(_) => return Err("already downloaded".into()),
+        Playable::Local(_) => return Err("this song's file is on this computer already".into()),
     })
 }

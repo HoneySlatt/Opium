@@ -304,7 +304,7 @@ impl NewPlaylist {
 }
 
 /// The file a `file://` address names, its escapes undone.
-fn file_path(uri: &str) -> Option<std::path::PathBuf> {
+pub(crate) fn file_path(uri: &str) -> Option<std::path::PathBuf> {
     let escaped = uri.strip_prefix("file://")?.as_bytes();
     let mut path = Vec::with_capacity(escaped.len());
     let mut i = 0;
@@ -574,6 +574,15 @@ pub struct App {
     pub soundcloud_signing_in: bool,
     /// Navidrome's connection, as SoundCloud's.
     pub navidrome: SoundCloudState,
+    /// The music files of the folders chosen: none, being read, or how many.
+    pub local: SoundCloudState,
+    /// The folders being read now.
+    pub local_scanning: bool,
+    /// Folders chosen in the desktop's window, to add.
+    local_picked: Arc<std::sync::Mutex<Option<Vec<std::path::PathBuf>>>>,
+    /// Files opened from elsewhere, one call each, played together once
+    /// they stop coming: when.
+    opening: (Vec<std::path::PathBuf>, f64),
     pub navidrome_form: NavidromeForm,
     /// Settings → Devices: the relay as typed, kept once left.
     pub relay_field: String,
@@ -831,7 +840,13 @@ impl App {
         );
         let own = crate::backend::Own::new(kept.clone(), devices.node.sharer());
         let backend = Backend::start(cc.egui_ctx.clone(), settings.services_off.clone(), own);
+        backend.send(Request::SetLocalFolders(settings.local_folders.clone()));
         backend.send(Request::Library);
+        // Started on files (the file manager's Open With): they play.
+        let opened = crate::mpris::files_from_args();
+        if !opened.is_empty() {
+            backend.send(Request::OpenFiles(opened));
+        }
         let mut app = Self {
             theme,
             backend,
@@ -853,6 +868,14 @@ impl App {
             soundcloud: SoundCloudState::Connecting,
             soundcloud_signing_in: false,
             navidrome: SoundCloudState::Connecting,
+            local: if settings.local_folders.is_empty() {
+                SoundCloudState::NotSignedIn
+            } else {
+                SoundCloudState::Connecting
+            },
+            local_scanning: false,
+            local_picked: Default::default(),
+            opening: (Vec::new(), 0.0),
             navidrome_form: NavidromeForm {
                 url: "0.0.0.0:4533".into(),
                 ..NavidromeForm::default()
@@ -1240,12 +1263,14 @@ impl App {
             ProviderKind::AppleMusic => !matches!(self.connection, Connection::NotSignedIn),
             ProviderKind::SoundCloud => !matches!(self.soundcloud, SoundCloudState::NotSignedIn),
             ProviderKind::Navidrome => !matches!(self.navidrome, SoundCloudState::NotSignedIn),
+            ProviderKind::Local => !matches!(self.local, SoundCloudState::NotSignedIn),
             ProviderKind::Music => false,
         };
         [
             ProviderKind::AppleMusic,
             ProviderKind::SoundCloud,
             ProviderKind::Navidrome,
+            ProviderKind::Local,
         ]
         .into_iter()
         .filter(|&p| self.service_on(p) && signed_in(p))
@@ -1282,7 +1307,119 @@ impl App {
         {
             listing.push(ProviderKind::Navidrome);
         }
+        if self.service_on(ProviderKind::Local)
+            && matches!(
+                self.local,
+                SoundCloudState::Connecting | SoundCloudState::Connected(_)
+            )
+        {
+            listing.push(ProviderKind::Local);
+        }
         listing
+    }
+
+    /// The folders the library's files come from.
+    pub fn local_folders(&self) -> &[std::path::PathBuf] {
+        &self.settings.local_folders
+    }
+
+    /// Choose folders in the desktop's own window, to add once chosen.
+    pub fn pick_local_folders(&self, ctx: &egui::Context) {
+        let picked = self.local_picked.clone();
+        let ctx = ctx.clone();
+        std::thread::spawn(move || {
+            use ashpd::desktop::file_chooser::SelectedFiles;
+            let Ok(rt) = tokio::runtime::Builder::new_current_thread().enable_all().build() else {
+                return;
+            };
+            let chosen = rt.block_on(async {
+                SelectedFiles::open_file()
+                    .title("Add Music Folders")
+                    .accept_label("Add")
+                    .modal(true)
+                    .multiple(true)
+                    .directory(true)
+                    .send()
+                    .await?
+                    .response()
+            });
+            let Ok(chosen) = chosen else { return };
+            let folders: Vec<std::path::PathBuf> = chosen
+                .uris()
+                .iter()
+                .filter_map(|u| file_path(&u.to_string()))
+                .collect();
+            *picked.lock().unwrap_or_else(|e| e.into_inner()) = Some(folders);
+            ctx.request_repaint();
+        });
+    }
+
+    /// The folders chosen in the desktop's window, added.
+    fn add_picked_folders(&mut self) {
+        let Some(folders) = self.local_picked.lock().unwrap_or_else(|e| e.into_inner()).take() else {
+            return;
+        };
+        let mut changed = false;
+        for folder in folders {
+            if !self.settings.local_folders.contains(&folder) {
+                self.settings.local_folders.push(folder);
+                changed = true;
+            }
+        }
+        if changed {
+            self.local_folders_changed();
+        }
+    }
+
+    /// The folder at `i` no longer read: its files leave the library.
+    pub fn remove_local_folder(&mut self, i: usize) {
+        if i < self.settings.local_folders.len() {
+            self.settings.local_folders.remove(i);
+            self.local_folders_changed();
+        }
+    }
+
+    fn local_folders_changed(&mut self) {
+        self.settings.save();
+        self.local = if self.settings.local_folders.is_empty() {
+            SoundCloudState::NotSignedIn
+        } else {
+            SoundCloudState::Connecting
+        };
+        self.backend
+            .send(Request::SetLocalFolders(self.settings.local_folders.clone()));
+        if self.settings.local_folders.is_empty() {
+            self.leave_library(ProviderKind::Local);
+        }
+        self.files_changed();
+    }
+
+    /// The files changed: their albums, artists and recent additions are
+    /// read again, those shown now at once.
+    fn files_changed(&mut self) {
+        self.library_albums = Streamed::default();
+        self.library_artists = Streamed::default();
+        self.recently_added = Streamed::default();
+        match self.page {
+            Page::Albums if self.library_albums.first_ask() => {
+                self.backend.send(Request::LibraryAlbums);
+            }
+            Page::Artists if self.library_artists.first_ask() => {
+                self.backend.send(Request::LibraryArtists);
+            }
+            Page::RecentlyAdded if self.recently_added.first_ask() => {
+                self.backend.send(Request::RecentlyAdded);
+            }
+            _ => {}
+        }
+    }
+
+    /// Play the music files `paths` name (a folder, those under it), from
+    /// the file manager, the command line or a drop on the window.
+    pub fn open_files(&mut self, paths: Vec<std::path::PathBuf>) {
+        if !paths.is_empty() {
+            self.backend.send(Request::OpenFiles(paths));
+        }
     }
 
     /// Turn a service on, loading its library again, or off: its songs,
@@ -1316,6 +1453,10 @@ impl App {
             }
             ProviderKind::SoundCloud => self.soundcloud = SoundCloudState::Connecting,
             ProviderKind::Navidrome => self.navidrome = SoundCloudState::Connecting,
+            ProviderKind::Local if on && !self.settings.local_folders.is_empty() => {
+                self.local = SoundCloudState::Connecting
+            }
+            ProviderKind::Local => self.local = SoundCloudState::NotSignedIn,
             ProviderKind::Music => {}
         }
         if on {
@@ -1346,13 +1487,14 @@ impl App {
             ProviderKind::AppleMusic => self.connection = Connection::NotSignedIn,
             ProviderKind::SoundCloud => self.soundcloud = SoundCloudState::NotSignedIn,
             ProviderKind::Navidrome => self.navidrome = SoundCloudState::NotSignedIn,
-            ProviderKind::Music => {}
+            ProviderKind::Local | ProviderKind::Music => {}
         }
         self.leave_library(provider);
         let name = match provider {
             ProviderKind::AppleMusic => "Apple Music",
             ProviderKind::SoundCloud => "SoundCloud",
             ProviderKind::Navidrome => "Navidrome",
+            ProviderKind::Local => "Files",
             ProviderKind::Music => "Music",
         };
         self.notify(format!("Signed out of {name}"), now);
@@ -1659,7 +1801,8 @@ impl App {
             ProviderKind::AppleMusic => matches!(self.connection, Connection::Connected),
             ProviderKind::SoundCloud => matches!(self.soundcloud, SoundCloudState::Connected(_)),
             ProviderKind::Navidrome => matches!(self.navidrome, SoundCloudState::Connected(_)),
-            ProviderKind::Music => false,
+            // The files have no picks.
+            ProviderKind::Local | ProviderKind::Music => false,
         };
         [ProviderKind::AppleMusic, ProviderKind::SoundCloud, ProviderKind::Navidrome]
             .into_iter()
@@ -1939,7 +2082,8 @@ impl App {
                 ProviderKind::AppleMusic => 0,
                 ProviderKind::SoundCloud => 1,
                 ProviderKind::Navidrome => 2,
-                ProviderKind::Music => 3,
+                ProviderKind::Local => 3,
+                ProviderKind::Music => 4,
             }
         });
         if self.recent_by_date() {
@@ -2907,7 +3051,7 @@ impl App {
             ProviderKind::AppleMusic => self.connection == Connection::Connected,
             ProviderKind::SoundCloud => matches!(self.soundcloud, SoundCloudState::Connected(_)),
             ProviderKind::Navidrome => matches!(self.navidrome, SoundCloudState::Connected(_)),
-            ProviderKind::Music => true,
+            ProviderKind::Local | ProviderKind::Music => true,
         };
         !reached
             && !matches!(
@@ -2918,9 +3062,10 @@ impl App {
             )
     }
 
-    /// Whether `id` can be downloaded: a service's song, not a station.
+    /// Whether `id` can be downloaded: a service's song, not a station, nor
+    /// a file here already.
     pub fn downloadable(&self, id: &ItemId) -> bool {
-        id.provider != ProviderKind::Music && !id.id.starts_with("ra.")
+        !matches!(id.provider, ProviderKind::Music | ProviderKind::Local) && !id.id.starts_with("ra.")
     }
 
     /// What a song's menu offers of downloads: Download, or Remove
@@ -4359,6 +4504,7 @@ impl App {
 
     fn source(playable: Playable) -> player::Source {
         match playable {
+            Playable::Local(audio) => player::Source::new(audio.file, audio.len, Some(&audio.extension)),
             Playable::Track { stream, .. } => {
                 let len = stream.len();
                 let hint = stream.seek_hint();
@@ -4867,6 +5013,25 @@ impl App {
                         self.notify(format!("Couldn't reach Navidrome: {e}"), now);
                     }
                 },
+                Reply::Files(state) => {
+                    self.local_scanning = state.is_some_and(|(_, scanning)| scanning);
+                    self.local = match state {
+                        None => SoundCloudState::NotSignedIn,
+                        Some((0, true)) => SoundCloudState::Connecting,
+                        Some((songs, _)) => SoundCloudState::Connected(format!(
+                            "{songs} song{}",
+                            if songs == 1 { "" } else { "s" }
+                        )),
+                    };
+                }
+                Reply::FilesChanged => self.files_changed(),
+                Reply::Opened(tracks) => {
+                    if tracks.is_empty() {
+                        self.notify("Nothing there plays here", now);
+                    } else {
+                        self.play_shuffled_or_not(tracks, false, now);
+                    }
+                }
                 Reply::PlaylistEdited {
                     id,
                     name,
@@ -5246,6 +5411,8 @@ impl App {
     fn media_controls(&mut self, ctx: &egui::Context) {
         use crate::mpris::Action;
         let mut acted = false;
+        // Files opened one by one (a file manager's selection): played together.
+        let mut opened = Vec::new();
         while let Some(action) = self.mpris.next_action() {
             acted = true;
             match action {
@@ -5270,11 +5437,25 @@ impl App {
                 Action::Repeat(repeat) => self.set_repeat(repeat),
                 Action::Raise => ctx.send_viewport_cmd(egui::ViewportCommand::Focus),
                 Action::Quit => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+                Action::Open(path) => opened.push(path),
             }
         }
         // The player takes it in a moment: look again then, to show it.
         if acted {
             ctx.request_repaint_after(Duration::from_millis(50));
+        }
+        let now = ctx.input(|i| i.time);
+        if !opened.is_empty() {
+            self.opening.0.extend(opened);
+            self.opening.1 = now + 0.25;
+        }
+        if !self.opening.0.is_empty() {
+            if now >= self.opening.1 {
+                let files = std::mem::take(&mut self.opening.0);
+                self.open_files(files);
+            } else {
+                ctx.request_repaint_after(Duration::from_secs_f64(self.opening.1 - now));
+            }
         }
     }
 
@@ -5718,6 +5899,11 @@ impl eframe::App for App {
             ctx.copy_text(link);
         }
         self.media_controls(ctx);
+        self.add_picked_folders();
+        // Files dropped on the window play, as opened.
+        let dropped: Vec<std::path::PathBuf> =
+            ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_owned()).collect());
+        self.open_files(dropped);
         self.other_devices(now);
         if let Some(edited) = self.search_edited {
             if now - edited >= SEARCH_PAUSE {

@@ -139,6 +139,7 @@ pub(super) fn steps(app: &App, track: &Track) -> Vec<Step> {
             icons::NAVIDROME,
             "stream?format=raw, original file",
         ),
+        ProviderKind::Local => ("Files", icons::FILES, "the file itself, from the disk"),
         // No song is Music's own.
         ProviderKind::Music => ("Music", icons::NOTE, ""),
     };

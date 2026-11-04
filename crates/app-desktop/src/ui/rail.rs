@@ -498,6 +498,7 @@ pub(super) fn logo(provider: ProviderKind) -> Option<Icon> {
         ProviderKind::AppleMusic => Some(icons::APPLE_MUSIC),
         ProviderKind::SoundCloud => Some(icons::SOUNDCLOUD),
         ProviderKind::Navidrome => Some(icons::NAVIDROME),
+        ProviderKind::Local => Some(icons::FILES),
         ProviderKind::Music => None,
     }
 }
