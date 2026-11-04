@@ -1,17 +1,19 @@
-//! The window's state, as the egui window's `app.rs` keeps it, the part this
-//! slice draws: the library's songs and playlists as the backend sends them,
-//! the Songs page's order and sort, the last session's song; and the glue
-//! to the backend. Its names and shapes are egui's `App`'s, for the screens
-//! still to come to slot in.
+//! The window's state, as the egui window's `app.rs` keeps it, the part
+//! drawn so far: the library's songs and playlists as the backend sends
+//! them, the Songs page's order and sort; the player, the queue and the
+//! last session, the media controls; and the glue to the backend. Its names
+//! and shapes are egui's `App`'s, for the screens still to come to slot in.
 
 use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use desktop::backend::{Backend, Downloading, Own, Reply, Request};
-use gpui::{Context, IntoElement, Render, ScrollHandle, Window};
+use desktop::backend::{Backend, Downloading, Own, Playable, Reply, Request};
+use gpui::{Context, FocusHandle, IntoElement, Render, ScrollHandle, Window};
 use music_core::model::{FavouriteKind, ItemId, Playlist, ProviderKind, Track};
 use music_core::{Queue, Repeat};
+use player::{Event, Player, Status, Token};
 
 pub use desktop::Side;
 pub use music_core::text::fold;
@@ -111,6 +113,30 @@ pub type OrderKey = (
     bool,
 );
 
+/// A station's songs are topped up when fewer than this are left to come.
+const STATION_REFILL: usize = 5;
+
+/// Songs skipped one after the other, failing, before the queue stops.
+const MAX_SKIPS: usize = 5;
+
+/// How often the window looks at the player while it plays, as egui's
+/// repaint four times a second: the position moves on, an end is seen.
+const TICK: Duration = Duration::from_millis(250);
+
+/// A bar of the dock held down and dragged: where it lies in the window,
+/// in points.
+#[derive(Debug, Clone, Copy)]
+pub enum Drag {
+    /// The position, its preview following the pointer until let go.
+    Seek {
+        left: f32,
+        width: f32,
+        total: Duration,
+    },
+    /// The volume, set as it goes.
+    Volume { left: f32, width: f32 },
+}
+
 /// What plays, as shown: on this computer (another device's comes later).
 pub struct Shown {
     pub track: Option<Track>,
@@ -134,9 +160,15 @@ pub struct Shown {
 pub struct Music {
     pub theme: Theme,
     backend: Backend,
-    _devices: desktop::devices::Devices,
-    _mpris: desktop::mpris::Mpris,
+    pub player: Player,
+    /// The desktop's media controls.
+    mpris: desktop::mpris::Mpris,
+    /// The user's other devices, on the network.
+    devices: desktop::devices::Devices,
     pub kept: synced::Kept,
+    /// The last stop on another device shown here, so that it is taken up
+    /// once.
+    followed: Option<synced::Stamp>,
     settings: desktop::settings::Settings,
     pub connection: Connection,
     /// The account's picture on Apple Music, once read.
@@ -151,6 +183,9 @@ pub struct Music {
     back: Vec<Page>,
     forward: Vec<Page>,
     pub sidebar_collapsed: bool,
+    /// Files opened from elsewhere, one call each, played together once
+    /// they stop coming: when.
+    opening: (Vec<PathBuf>, Instant),
     pub songs: Vec<Track>,
     pub songs_done: bool,
     pub songs_view: SongsView,
@@ -182,15 +217,51 @@ pub struct Music {
     pub lyrics_page: bool,
     pub now_playing: bool,
     pub queue: Queue,
-    /// The track that is audible, or was last.
-    pub now: Option<Track>,
+    tracks: HashMap<Token, Track>,
+    /// The listed track each token plays the server's copy of, when it does.
+    stands_for: HashMap<Token, ItemId>,
+    /// What the track playing stands for, when it is the server's copy.
+    now_stands_for: Option<ItemId>,
+    /// The server's songs by title and artist, and how many songs the
+    /// library had when they were indexed.
+    server_songs: Option<(usize, music_core::dedupe::Copies)>,
+    /// Every library song by what copies share, as it was at so many songs:
+    /// another device's file plays from one here.
+    library_copies: Option<(usize, music_core::dedupe::Copies)>,
+    next_token: Token,
+    /// Fetching, to play as soon as it arrives.
+    pending_play: Option<Token>,
+    /// Where a track goes on from once it plays: the last session's song.
+    start_at: Option<(Token, Duration)>,
     /// The song that played when the app last closed, shown paused, and
-    /// where it was.
+    /// where it was: it goes on from there once played.
     resume: Option<(ItemId, Duration)>,
+    /// Fetching or fetched, to follow the current track.
+    queued_next: Option<Token>,
+    /// The player has `queued_next` as its next track, fetched.
+    next_ready: bool,
+    /// Paused while the song was still loading: it starts paused.
+    hold_paused: bool,
+    /// Tracks that failed to start one after the other, skipped.
+    failed_in_row: usize,
+    /// The track handed to the player to play at once, until it starts: an
+    /// error before then means it can't play at all.
+    playing: Option<Token>,
+    /// The station of songs playing, which the queue keeps topping up.
+    station: Option<ItemId>,
+    /// More of its songs are on their way.
+    station_loading: bool,
     /// The page the queue was played from.
     playing_from: Option<Page>,
+    /// The track that is audible, or was last.
+    pub now: Option<Track>,
+    pub status: Status,
     pub volume: f32,
     pub muted: bool,
+    /// When the volume last changed, until it is kept in the settings.
+    volume_changed: Option<Instant>,
+    /// What the toast says, and since when: drawn with the screens to come.
+    pub toast: Option<(String, Instant)>,
     // What only this window keeps, of egui's `ui::data`.
     pub library_filter: LibraryFilter,
     /// The pointer is over Your Library: its fold button shows.
@@ -198,24 +269,44 @@ pub struct Music {
     /// Each chip's list keeps its own place, as egui's scroll areas by id.
     pub library_scroll: [ScrollHandle; 3],
     pub songs_scroll: ScrollHandle,
+    // What GPUI asks for besides.
+    /// Takes the keys: the window's own, as egui's input is.
+    pub focus: FocusHandle,
+    /// A look at the player is on its way, while it plays.
+    ticking: bool,
+    /// A bar of the dock being dragged.
+    pub dragging: Option<Drag>,
+    /// Where a drag along the position would go, shown while it lasts.
+    pub seek_preview: Option<Duration>,
+    /// What closing keeps is kept: once.
+    exited: bool,
 }
 
 impl Music {
-    pub fn new(cx: &mut Context<Self>) -> Self {
+    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         // The workings wake the window from their own threads: one wake
         // waiting is enough, the window then reads all that came.
         let (woken, wakes) = async_channel::bounded::<()>(1);
         let wake: desktop::Wake = Arc::new(move || {
             let _ = woken.try_send(());
         });
-        cx.spawn(async move |this, cx| {
+        cx.spawn_in(window, async move |this, cx| {
             while wakes.recv().await.is_ok() {
-                if this.update(cx, |this, cx| this.pump(cx)).is_err() {
+                if this
+                    .update_in(cx, |this, window, cx| this.logic(window, cx))
+                    .is_err()
+                {
                     break;
                 }
             }
         })
         .detach();
+        // Closing keeps where the music stopped, as egui's `on_exit`.
+        let this = cx.weak_entity();
+        window.on_window_should_close(cx, move |_, cx| {
+            this.update(cx, |this, _| this.on_exit()).ok();
+            true
+        });
 
         std::thread::spawn(desktop::covers::trim);
         let settings = desktop::settings::Settings::load();
@@ -232,12 +323,19 @@ impl Music {
         let backend = Backend::start(wake.clone(), settings.services_off.clone(), own);
         backend.send(Request::SetLocalFolders(settings.local_folders.clone()));
         backend.send(Request::Library);
+        // Started on files (the file manager's Open With): they play.
+        let opened = desktop::mpris::files_from_args();
+        if !opened.is_empty() {
+            backend.send(Request::OpenFiles(opened));
+        }
         let mut app = Self {
             theme,
             backend,
-            _devices: devices,
-            _mpris: desktop::mpris::Mpris::start(wake),
+            player: Player::new(),
+            mpris: desktop::mpris::Mpris::start(wake),
+            devices,
             kept,
+            followed: None,
             connection: if settings.services_off.contains(&ProviderKind::AppleMusic) {
                 Connection::NotSignedIn
             } else {
@@ -257,6 +355,7 @@ impl Music {
             back: Vec::new(),
             forward: Vec::new(),
             sidebar_collapsed: settings.sidebar_collapsed.unwrap_or(false),
+            opening: (Vec::new(), Instant::now()),
             songs: Vec::new(),
             songs_done: false,
             // Apple returns the library in no useful order; the Music app sorts by title.
@@ -286,18 +385,44 @@ impl Music {
             lyrics_page: false,
             now_playing: false,
             queue: Queue::new(),
-            now: None,
+            tracks: HashMap::new(),
+            stands_for: HashMap::new(),
+            now_stands_for: None,
+            server_songs: None,
+            library_copies: None,
+            next_token: 0,
+            pending_play: None,
+            start_at: None,
             resume: None,
+            queued_next: None,
+            next_ready: false,
+            hold_paused: false,
+            failed_in_row: 0,
+            playing: None,
+            station: None,
+            station_loading: false,
             playing_from: None,
+            now: None,
+            status: Status::default(),
             volume: settings.volume.unwrap_or(1.0).clamp(0.0, 1.0),
             muted: settings.muted.unwrap_or(false),
+            volume_changed: None,
+            toast: None,
             library_filter: LibraryFilter::default(),
             library_hovered: false,
             library_scroll: Default::default(),
             songs_scroll: ScrollHandle::new(),
+            focus: cx.focus_handle(),
+            ticking: false,
+            dragging: None,
+            seek_preview: None,
+            exited: false,
             settings,
         };
-        // Shuffle and repeat as they were left.
+        app.focus.focus(window, cx);
+        // The volume, shuffle and repeat as they were left.
+        app.player
+            .set_volume(if app.muted { 0.0 } else { app.volume });
         app.queue.set_shuffle(app.settings.shuffle.unwrap_or(false));
         if let Some(repeat) = app.settings.repeat {
             app.queue.set_repeat(repeat.into());
@@ -315,19 +440,51 @@ impl Music {
             .clamp(0.7, 2.5)
     }
 
-    /// The song the last session left, shown paused where it was. Read
-    /// only: the session kept before devices shared it is shown, not taken
-    /// over into what they share, as the egui window does on its start.
+    /// Show where the music last stopped, here or on another device,
+    /// paused; it is fetched only once played, the services being still on
+    /// their way. The session kept here before the devices shared it is
+    /// taken in first, if none is shared yet.
     fn resume_session(&mut self) {
-        let session = match self.kept.session() {
-            Some((session, _)) => Some(session),
-            None => std::fs::read_to_string(desktop::settings::dir().join("session.json"))
+        if self.kept.session().is_none() {
+            let path = desktop::settings::dir().join("session.json");
+            let at = std::fs::metadata(&path)
+                .and_then(|m| m.modified())
                 .ok()
-                .and_then(|text| serde_json::from_str(&navidrome::scrub_kept(&text)).ok()),
-        };
-        if let Some(session) = session {
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok());
+            let session = std::fs::read_to_string(&path).ok().and_then(|text| {
+                serde_json::from_str::<music_core::Handoff>(&navidrome::scrub_kept(&text)).ok()
+            });
+            if let (Some(session), Some(at)) = (session, at) {
+                self.kept.take_old_session(session, at.as_millis() as u64);
+            }
+        }
+        if let Some((session, stamp)) = self.kept.session() {
+            self.followed = Some(stamp);
             self.show_session(session);
         }
+    }
+
+    /// Another device stopped later than this one did, or moved on: what
+    /// shows here follows, paused, unless music plays or loads here.
+    fn follow_session(&mut self) {
+        let Some((session, stamp)) = self.kept.session() else {
+            return;
+        };
+        if stamp.device == self.kept.me()
+            || self.followed.as_ref() == Some(&stamp)
+            || self.is_playing()
+            || self.pending_play.is_some()
+        {
+            return;
+        }
+        self.followed = Some(stamp);
+        if self.status.token.is_some() {
+            self.player.stop();
+        }
+        self.queued_next = None;
+        self.next_ready = false;
+        self.now_stands_for = None;
+        self.show_session(session);
     }
 
     fn show_session(&mut self, session: music_core::Handoff) {
@@ -335,11 +492,61 @@ impl Music {
         self.queue
             .restore(session.tracks, order, session.at as usize, session.shuffle);
         self.queue.set_repeat(session.repeat);
+        self.station = session.station;
+        self.station_loading = false;
         self.now = self.queue.current().cloned();
         self.resume = self
             .now
             .as_ref()
             .map(|t| (t.id.clone(), Duration::from_millis(session.position_ms)));
+    }
+
+    /// Keep what plays for the next time the app opens, here or on another
+    /// device: the queue and where it is; written off the interface's
+    /// thread, but at once when the app closes.
+    fn keep_session(&self, closing: bool) {
+        self.devices.node.share(self.kept.left(self.handoff()));
+        if closing {
+            self.kept.flush();
+        }
+    }
+
+    /// The queue as it stands, for another device to play on from here.
+    fn handoff(&self) -> music_core::Handoff {
+        let (tracks, order, at) = self.queue.snapshot();
+        music_core::Handoff {
+            tracks,
+            order: order.into_iter().map(|i| i as u32).collect(),
+            at: at as u32,
+            shuffle: self.queue.shuffle(),
+            repeat: self.queue.repeat(),
+            position_ms: self.shown_here_position().as_millis() as u64,
+            playing: self.is_playing(),
+            station: self.station.clone(),
+        }
+    }
+
+    /// Where the song is here: as far as it played, or where the one shown
+    /// since the app opened will go on from.
+    fn shown_here_position(&self) -> Duration {
+        match &self.resume {
+            Some((_, at)) if self.status.token.is_none() => *at,
+            _ => self.status.position,
+        }
+    }
+
+    /// As the app closes, as egui's `on_exit`: where the music stopped is
+    /// kept at once, and a volume still settling as it is.
+    fn on_exit(&mut self) {
+        if std::mem::replace(&mut self.exited, true) {
+            return;
+        }
+        self.keep_session(true);
+        if self.volume_changed.is_some() {
+            self.settings.volume = Some(self.volume);
+            self.settings.muted = Some(self.muted);
+            self.settings.save();
+        }
     }
 
     pub fn service_on(&self, provider: ProviderKind) -> bool {
@@ -439,9 +646,14 @@ impl Music {
             ProviderKind::AppleMusic => self.connection == Connection::Connected,
             ProviderKind::SoundCloud => matches!(self.soundcloud, SoundCloudState::Connected(_)),
             ProviderKind::Navidrome => matches!(self.navidrome, SoundCloudState::Connected(_)),
-            // Another device's file plays from a copy here, if there is one:
-            // which copies there are comes with the player.
-            ProviderKind::Local => true,
+            // Another device's file plays from a copy here, if there is one.
+            ProviderKind::Local => {
+                !Self::elsewhere(track)
+                    || self
+                        .library_copies
+                        .as_ref()
+                        .is_none_or(|(_, copies)| copies.best(track).is_some())
+            }
             ProviderKind::Music => true,
         };
         !reached
@@ -479,28 +691,39 @@ impl Music {
         !self.forward.is_empty()
     }
 
-    /// Nothing plays in this slice: the player comes later.
+    /// The track being fetched to play now, until it starts.
+    pub fn loading(&self) -> Option<&Track> {
+        self.pending_play.and_then(|token| self.tracks.get(&token))
+    }
+
     pub fn is_playing(&self) -> bool {
-        false
+        self.status.token.is_some() && !self.status.paused
     }
 
-    /// Whether `track` is the one the player has: none, until it plays.
-    pub fn is_current(&self, _track: &Track) -> bool {
-        false
+    /// Whether `track` is the one the player has.
+    pub fn is_current(&self, track: &Track) -> bool {
+        self.status.token.is_some()
+            && (self.now.as_ref().is_some_and(|n| n.id == track.id)
+                || self.now_stands_for.as_ref() == Some(&track.id))
     }
 
+    /// The track's duration from its metadata, else from the decoder.
     pub fn duration(&self) -> Option<Duration> {
-        self.now.as_ref().and_then(|t| t.duration)
+        self.now
+            .as_ref()
+            .and_then(|t| t.duration)
+            .or_else(|| self.status.source.as_ref().and_then(|s| s.duration))
     }
 
-    /// What plays, as shown: the last session's song, paused where it was.
+    /// What the player bar shows: this computer's player (the device
+    /// played on, when it isn't, comes with Music Connect).
     pub fn shown(&self) -> Shown {
         Shown {
             track: self.now.clone(),
             has_track: self.queue.current().is_some(),
-            loading: None,
+            loading: self.loading().cloned(),
             playing: self.is_playing(),
-            position: self.resume.as_ref().map(|(_, at)| *at).unwrap_or_default(),
+            position: self.shown_here_position(),
             duration: self.duration(),
             shuffle: self.queue.shuffle(),
             repeat: self.queue.repeat(),
@@ -618,8 +841,619 @@ impl Music {
         view.order = order;
     }
 
-    /// What the workings have said since last time.
-    fn pump(&mut self, cx: &mut Context<Self>) {
+    pub fn soundcloud_originals(&self) -> bool {
+        self.settings.soundcloud_originals.unwrap_or(true)
+    }
+
+    pub fn spatial_audio(&self) -> bool {
+        self.settings.spatial_audio.unwrap_or(true)
+    }
+
+    /// Say `message` for a while (its toast is drawn with the screens to
+    /// come; until then it goes to the log).
+    pub fn notify(&mut self, message: impl Into<String>) {
+        let message = message.into();
+        eprintln!("music: {message}");
+        self.toast = Some((message, Instant::now()));
+    }
+
+    /// Play the music files `paths` name (a folder, those under it), from
+    /// the file manager or the command line.
+    pub fn open_files(&mut self, paths: Vec<PathBuf>) {
+        if !paths.is_empty() {
+            self.backend.send(Request::OpenFiles(paths));
+        }
+    }
+
+    // ---- Playback ----
+
+    /// Play the page's songs, or pause or go on with them if they are what
+    /// plays: its Play button.
+    pub fn play_page(&mut self, tracks: Vec<Track>) {
+        if self.playing_from.as_ref() == Some(&self.page) && self.shown().track.is_some() {
+            self.toggle_play();
+        } else {
+            let shuffle = self.shown().shuffle;
+            self.play_shuffled_or_not(tracks, shuffle, seed());
+        }
+    }
+
+    /// Whether `token` plays `id`, or the server's copy of it.
+    fn token_plays(&self, token: Token, id: &ItemId) -> bool {
+        self.tracks.get(&token).is_some_and(|t| t.id == *id)
+            || self.stands_for.get(&token) == Some(id)
+    }
+
+    /// The server's copy of `track`, when it has one: it plays in its place,
+    /// being the file itself.
+    fn server_copy(&mut self, track: &Track) -> Option<Track> {
+        // A file here plays as it is.
+        if matches!(
+            track.id.provider,
+            ProviderKind::Navidrome | ProviderKind::Local
+        ) || !matches!(self.navidrome, SoundCloudState::Connected(_))
+        {
+            return None;
+        }
+        if self
+            .server_songs
+            .as_ref()
+            .is_none_or(|(n, _)| *n != self.songs.len())
+        {
+            let index = music_core::dedupe::Copies::of(
+                self.songs
+                    .iter()
+                    .filter(|t| t.id.provider == ProviderKind::Navidrome),
+            );
+            self.server_songs = Some((self.songs.len(), index));
+        }
+        let (_, index) = self.server_songs.as_ref()?;
+        index.find(track).cloned()
+    }
+
+    /// Whether `track` is another device's file (a phone's, in a playlist of
+    /// Music's): not here to play.
+    fn elsewhere(track: &Track) -> bool {
+        track.id.provider == ProviderKind::Local && !std::path::Path::new(&track.id.id).is_file()
+    }
+
+    /// The copy this computer has of another device's file: its own file,
+    /// the server's, a service's.
+    fn copy_here(&mut self, track: &Track) -> Option<Track> {
+        if !Self::elsewhere(track) {
+            return None;
+        }
+        if self
+            .library_copies
+            .as_ref()
+            .is_none_or(|(n, _)| *n != self.songs.len())
+        {
+            let index = music_core::dedupe::Copies::of(&self.songs);
+            self.library_copies = Some((self.songs.len(), index));
+        }
+        let (_, index) = self.library_copies.as_ref()?;
+        index.best(track).cloned()
+    }
+
+    /// What `token` is to play for `track`: the server's copy if it has
+    /// one, kept as standing for the track listed.
+    fn plays_as(&mut self, token: Token, track: Track) -> Track {
+        let copy = self.server_copy(&track).or_else(|| self.copy_here(&track));
+        let playing = match copy {
+            Some(copy) => {
+                self.stands_for.insert(token, track.id.clone());
+                copy
+            }
+            None => track,
+        };
+        self.tracks.insert(token, playing.clone());
+        playing
+    }
+
+    /// Play `tracks` from the top, or shuffled from a random one.
+    pub fn play_shuffled_or_not(&mut self, tracks: Vec<Track>, shuffle: bool, seed: f64) {
+        if tracks.is_empty() {
+            return;
+        }
+        if self.queue.shuffle() != shuffle {
+            self.queue.set_shuffle(shuffle);
+        }
+        let start = if shuffle {
+            (seed * 1000.0) as usize % tracks.len()
+        } else {
+            0
+        };
+        self.play_list(tracks, start);
+    }
+
+    /// Replace the queue with `tracks` and play from `start`.
+    pub fn play_list(&mut self, tracks: Vec<Track>, start: usize) {
+        self.failed_in_row = 0;
+        // Whatever plays now is no longer a station of songs.
+        self.station = None;
+        self.station_loading = false;
+        self.queue.replace(tracks, start);
+        self.start_current();
+        // A song picked plays, even with the music paused: once what played
+        // has stopped, so none of it is heard again.
+        self.player.resume();
+        // Played from a list of songs; elsewhere the song's album will do.
+        self.playing_from = match &self.page {
+            Page::Playlist(_)
+            | Page::Album(_)
+            | Page::Artist(_)
+            | Page::LibraryArtist(_)
+            | Page::Songs
+            | Page::Favourites => Some(self.page.clone()),
+            _ => None,
+        };
+    }
+
+    fn issue(&mut self, track: Track) -> Token {
+        let token = self.next_token;
+        self.next_token += 1;
+        let track = self.plays_as(token, track);
+        self.fetch(token, &track);
+        token
+    }
+
+    /// Fetch `track` itself, not the server's copy of it.
+    fn fetch_as_is(&mut self, track: Track) -> Token {
+        let token = self.next_token;
+        self.next_token += 1;
+        self.fetch(token, &track);
+        self.tracks.insert(token, track);
+        token
+    }
+
+    fn fetch(&self, token: Token, track: &Track) {
+        self.backend.send(Request::Fetch {
+            token,
+            track: track.id.clone(),
+            fallback: track.library_id.clone(),
+            original: self.soundcloud_originals(),
+            spatial: self.spatial_audio(),
+        });
+    }
+
+    /// Show the track of `token` as Dolby Atmos when `stream` is Spatial
+    /// Audio.
+    fn says_if_atmos(&mut self, token: Token, stream: &Playable) {
+        if let Playable::Track { spatial: true, .. } = stream
+            && let Some(track) = self.tracks.get_mut(&token)
+        {
+            track.quality = Some(music_core::model::AudioQuality {
+                codec: music_core::model::Codec::Other("Dolby Atmos".into()),
+                sample_rate: Some(48_000),
+                bit_depth: None,
+                bitrate_kbps: None,
+            });
+        }
+    }
+
+    fn play_now(&mut self, token: Token, stream: Playable) {
+        self.playing = Some(token);
+        self.player.play(token, source(stream));
+        if let Some((_, at)) = self.start_at.take_if(|(t, _)| *t == token) {
+            self.player.seek(at);
+        }
+        if std::mem::take(&mut self.hold_paused) {
+            self.player.pause();
+        }
+    }
+
+    fn now_title(&self, token: Option<Token>) -> String {
+        token
+            .and_then(|t| self.tracks.get(&t))
+            .map(|t| t.title.clone())
+            .unwrap_or_default()
+    }
+
+    /// A track that couldn't play is skipped (gone from the catalog, not in
+    /// this country, a broken file), as Apple Music does; a run of failures
+    /// stops, in case nothing plays.
+    fn skip_failed(&mut self, title: &str, error: &str) {
+        // Offline, every song would fail the same: the queue waits on this
+        // one, for Play to try again.
+        if error.starts_with("network error") {
+            self.notify(format!("Couldn't play “{title}”: no connection"));
+            return;
+        }
+        // Nor is there any point skipping on when it is the sound itself
+        // that can't be opened: every song would go the same way, and the
+        // queue would be run through in silence.
+        if let Some(why) = error.strip_prefix("audio output: ") {
+            self.notify(format!(
+                "Music found no sound card to play through: {why}. It plays through PipeWire, which doesn't seem to be running."
+            ));
+            return;
+        }
+        self.failed_in_row += 1;
+        if self.failed_in_row <= MAX_SKIPS && self.queue.skip_next().is_some() {
+            self.notify(format!("Skipped “{title}”: {error}"));
+            self.start_current();
+        } else {
+            self.notify(format!("Couldn't play “{title}”: {error}"));
+        }
+    }
+
+    /// The player ran out with nothing lined up behind the track: the next
+    /// one follows as soon as it can.
+    fn played_out(&mut self) {
+        if self.pending_play.is_some() {
+            return;
+        }
+        match self.queued_next {
+            // Ready, but too late to join the track: it starts now, and its
+            // Started moves the queue on.
+            Some(_) if self.next_ready => self.player.skip_to_next(),
+            // Still on its way: it plays when it comes.
+            Some(token) => {
+                self.queued_next = None;
+                self.queue.track_finished();
+                self.pending_play = Some(token);
+            }
+            None => {
+                if self.queue.track_finished().is_some() {
+                    self.start_current();
+                }
+            }
+        }
+    }
+
+    fn start_current(&mut self) {
+        // Another song asked for: it plays.
+        self.hold_paused = false;
+        self.queued_next = None;
+        self.next_ready = false;
+        let resume = self.resume.take();
+        if let Some(track) = self.queue.current().cloned() {
+            let resume = resume.filter(|(id, _)| *id == track.id).map(|(_, at)| at);
+            // What played stops at once, as in Apple Music, rather than go on
+            // over the wait.
+            self.player.stop();
+            // The song the pointer rested on, fetched ahead, comes later.
+            let token = self.issue(track);
+            self.pending_play = Some(token);
+            if let Some(at) = resume {
+                self.start_at = Some((token, at));
+            }
+        }
+    }
+
+    /// Have the track after the current one fetched, so it follows without a gap.
+    fn prefetch_next(&mut self) {
+        // Already lined up (shuffle or repeat changed, and not what follows).
+        if let (Some(token), Some(next)) = (self.queued_next, self.queue.peek_finished())
+            && self.token_plays(token, &next.id)
+        {
+            return;
+        }
+        // The player may have the old one already: it mustn't play.
+        if self.queued_next.is_some() {
+            self.player.clear_next();
+        }
+        self.queued_next = self.queue.peek_finished().cloned().map(|t| self.issue(t));
+        self.next_ready = false;
+    }
+
+    pub fn toggle_play(&mut self) {
+        if self.status.token.is_none() {
+            if self.pending_play.is_none() {
+                self.start_current();
+            } else {
+                // Still loading: it starts as asked last, playing or paused.
+                self.hold_paused = !self.hold_paused;
+            }
+        } else if self.status.paused {
+            self.player.resume();
+        } else {
+            self.player.pause();
+            self.keep_session(false);
+        }
+    }
+
+    pub fn next(&mut self) {
+        self.failed_in_row = 0;
+        // The track lined up to follow is the one Next moves to, unless the
+        // current one repeats: play what was fetched for it rather than fetch
+        // it again.
+        let lined_up = self.queued_next.filter(|&token| {
+            self.queue.repeat() != Repeat::One
+                && self
+                    .queue
+                    .peek_finished()
+                    .is_some_and(|t| self.token_plays(token, &t.id))
+        });
+        match lined_up {
+            // The player stuck on a read (the network gone): it would wait
+            // to switch; the next song is fetched anew instead.
+            Some(_) if self.next_ready && self.player.stalled() => {
+                if self.queue.skip_next().is_some() {
+                    self.start_current();
+                }
+            }
+            // It starts at once; its Started moves the queue on.
+            Some(_) if self.next_ready => self.player.skip_to_next(),
+            // Still on its way: it plays when it comes.
+            Some(token) => {
+                self.queue.skip_next();
+                self.queued_next = None;
+                self.player.stop();
+                self.pending_play = Some(token);
+            }
+            None => {
+                if self.queue.skip_next().is_some() {
+                    self.start_current();
+                }
+            }
+        }
+    }
+
+    /// Back to the start of the track, or to the previous one when already there.
+    pub fn previous(&mut self) {
+        self.failed_in_row = 0;
+        // The player stuck on a read: the song starts again afresh.
+        if self.status.position > Duration::from_secs(3) && self.player.stalled() {
+            self.start_current();
+        } else if self.status.position > Duration::from_secs(3) {
+            self.player.seek(Duration::ZERO);
+        } else {
+            self.queue.skip_previous();
+            self.start_current();
+        }
+    }
+
+    pub fn seek(&mut self, to: Duration) {
+        // Not fetched yet: it will go on from there.
+        if self.status.token.is_none()
+            && let Some((_, at)) = &mut self.resume
+        {
+            *at = to;
+            return;
+        }
+        self.player.seek(to);
+    }
+
+    pub fn set_volume(&mut self, volume: f32) {
+        if !volume.is_finite() {
+            return;
+        }
+        // Next to full is full: the samples then go out untouched.
+        self.volume = if volume >= 0.99 { 1.0 } else { volume.max(0.0) };
+        self.muted = false;
+        self.player.set_volume(self.volume);
+        self.volume_changed = Some(Instant::now());
+    }
+
+    pub fn toggle_mute(&mut self) {
+        self.muted = !self.muted;
+        self.player
+            .set_volume(if self.muted { 0.0 } else { self.volume });
+        self.volume_changed = Some(Instant::now());
+    }
+
+    /// Keep the volume for next time, once it has stopped moving: a drag of
+    /// the slider changes it at every move.
+    fn keep_volume(&mut self) {
+        const SETTLED: Duration = Duration::from_millis(500);
+        let Some(changed) = self.volume_changed else {
+            return;
+        };
+        if changed.elapsed() < SETTLED {
+            return;
+        }
+        self.volume_changed = None;
+        self.settings.volume = Some(self.volume);
+        self.settings.muted = Some(self.muted);
+        self.settings.save();
+    }
+
+    pub fn toggle_shuffle(&mut self) {
+        self.queue.set_shuffle(!self.queue.shuffle());
+        self.prefetch_next();
+        self.settings.shuffle = Some(self.queue.shuffle());
+        self.settings.save();
+    }
+
+    pub fn cycle_repeat(&mut self) {
+        self.set_repeat(match self.shown().repeat {
+            Repeat::Off => Repeat::All,
+            Repeat::All => Repeat::One,
+            Repeat::One => Repeat::Off,
+        });
+    }
+
+    pub fn set_repeat(&mut self, repeat: Repeat) {
+        self.queue.set_repeat(repeat);
+        self.prefetch_next();
+        self.settings.repeat = Some(self.queue.repeat().into());
+        self.settings.save();
+    }
+
+    /// A bar of the dock held down at `x` (points from the window's left):
+    /// as egui's click and drag, the volume follows at once, the position
+    /// shows where it would go until let go.
+    pub fn start_drag(&mut self, drag: Drag, x: f32, window: &mut Window, cx: &mut Context<Self>) {
+        self.dragging = Some(drag);
+        self.drag_to(x, window, cx);
+    }
+
+    pub fn drag_to(&mut self, x: f32, window: &mut Window, cx: &mut Context<Self>) {
+        match self.dragging {
+            Some(Drag::Seek { left, width, total }) => {
+                self.seek_preview = Some(total.mul_f32(((x - left) / width).clamp(0.0, 1.0)));
+                cx.notify();
+            }
+            Some(Drag::Volume { left, width }) => {
+                self.set_volume((x - left) / width);
+                self.acted(window, cx);
+            }
+            None => {}
+        }
+    }
+
+    /// Let go at `x`: the position goes where it was dragged to.
+    pub fn end_drag(&mut self, x: f32, window: &mut Window, cx: &mut Context<Self>) {
+        self.drag_to(x, window, cx);
+        if let (Some(Drag::Seek { .. }), Some(to)) = (self.dragging, self.seek_preview.take()) {
+            self.seek(to);
+        }
+        self.dragging = None;
+        self.acted(window, cx);
+    }
+
+    // ---- What goes on, drawn or not ----
+
+    /// What goes on whether the window is drawn or not, as egui's `logic`:
+    /// the workings' replies and the player's events taken in, the media
+    /// controls obeyed and told what plays; while the music plays, again
+    /// in a moment.
+    pub fn logic(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.keep_volume();
+        self.pump();
+        self.media_controls(window, cx);
+        self.other_devices();
+        self.mpris.update(self.media_state());
+        self.keep_ticking(window, cx);
+        cx.notify();
+    }
+
+    /// Something was asked of the player from the window: shown at once,
+    /// and again once the player has taken it in, as egui looks again 50 ms
+    /// after a media key.
+    pub fn acted(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.logic(window, cx);
+        self.look_again(Duration::from_millis(50), window, cx);
+    }
+
+    fn look_again(&self, after: Duration, window: &mut Window, cx: &mut Context<Self>) {
+        cx.spawn_in(window, async move |this, cx| {
+            cx.background_executor().timer(after).await;
+            this.update_in(cx, |this, window, cx| this.logic(window, cx))
+                .ok();
+        })
+        .detach();
+    }
+
+    /// Whether the player is to be looked at again soon: it plays, or a
+    /// song is on its way, or something waits on time passing.
+    fn wants_tick(&self) -> bool {
+        self.is_playing()
+            || self.pending_play.is_some()
+            || self.playing.is_some()
+            || self.volume_changed.is_some()
+            || !self.opening.0.is_empty()
+    }
+
+    fn keep_ticking(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.ticking || !self.wants_tick() {
+            return;
+        }
+        self.ticking = true;
+        cx.spawn_in(window, async move |this, cx| {
+            cx.background_executor().timer(TICK).await;
+            this.update_in(cx, |this, window, cx| {
+                this.ticking = false;
+                this.logic(window, cx);
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// Carry out what the desktop's media controls asked for.
+    fn media_controls(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        use desktop::mpris::Action;
+        let mut acted = false;
+        // Files opened one by one (a file manager's selection): played together.
+        let mut opened = Vec::new();
+        while let Some(action) = self.mpris.next_action() {
+            acted = true;
+            match action {
+                Action::PlayPause => self.toggle_play(),
+                Action::Play if !self.shown().playing => self.toggle_play(),
+                Action::Pause if self.shown().playing => self.toggle_play(),
+                Action::Play | Action::Pause => {}
+                // Paused at the start: Play goes on from there.
+                Action::Stop => {
+                    self.player.pause();
+                    self.player.seek(Duration::ZERO);
+                }
+                Action::Next => self.next(),
+                Action::Previous => self.previous(),
+                Action::SeekTo(to) => self.seek(to),
+                Action::Volume(volume) => self.set_volume(volume),
+                Action::Shuffle(on) => {
+                    if on != self.queue.shuffle() {
+                        self.toggle_shuffle();
+                    }
+                }
+                Action::Repeat(repeat) => self.set_repeat(repeat),
+                Action::Raise => window.activate_window(),
+                Action::Quit => {
+                    self.on_exit();
+                    window.remove_window();
+                }
+                Action::Open(path) => opened.push(path),
+            }
+        }
+        // The player takes it in a moment: look again then, to show it.
+        if acted {
+            self.look_again(Duration::from_millis(50), window, cx);
+        }
+        let now = Instant::now();
+        if !opened.is_empty() {
+            self.opening.0.extend(opened);
+            self.opening.1 = now + Duration::from_millis(250);
+        }
+        if !self.opening.0.is_empty() && now >= self.opening.1 {
+            let files = std::mem::take(&mut self.opening.0);
+            self.open_files(files);
+        }
+    }
+
+    /// What the other devices said, of what this window takes up so far:
+    /// where the music stopped on them, as egui's `other_devices` follows
+    /// it once synced. Their pairing, handoffs and remote control come with
+    /// Music Connect's screens.
+    fn other_devices(&mut self) {
+        while let Some(event) = self.devices.next_event() {
+            if let connect::Event::Synced = event {
+                self.follow_session();
+            }
+        }
+    }
+
+    /// What the desktop's media controls show: this computer's player
+    /// (another device's, while it is the one played on, comes with Music
+    /// Connect).
+    fn media_state(&self) -> desktop::mpris::State {
+        self.here_state()
+    }
+
+    /// What this computer's player plays.
+    fn here_state(&self) -> desktop::mpris::State {
+        use desktop::mpris::Playback;
+        desktop::mpris::State {
+            track: self.now.clone(),
+            length: self.duration(),
+            playback: if self.is_playing() || self.pending_play.is_some() {
+                Playback::Playing
+            } else if self.status.token.is_some() {
+                Playback::Paused
+            } else {
+                Playback::Stopped
+            },
+            position: self.status.position,
+            volume: if self.muted { 0.0 } else { self.volume },
+            shuffle: self.queue.shuffle(),
+            repeat: self.queue.repeat(),
+        }
+    }
+
+    /// What the workings and the player have said since last time.
+    fn pump(&mut self) {
         while let Some(reply) = self.backend.try_recv() {
             match reply {
                 Reply::Downloads(mut kept) => {
@@ -781,11 +1615,164 @@ impl Music {
                         }
                     }
                 }
+                Reply::Failed(e) => self.notify(e),
+                Reply::Opened(tracks) => {
+                    if tracks.is_empty() {
+                        self.notify("Nothing there plays here");
+                    } else {
+                        self.play_shuffled_or_not(tracks, false, seed());
+                    }
+                }
+                Reply::StationTracks { id, result } => {
+                    if self.station.as_ref() == Some(&id) {
+                        self.station_loading = false;
+                        match result {
+                            // The first songs start it; later ones go on the end.
+                            Ok(tracks) if self.queue.current().is_none() => {
+                                self.queue.replace(tracks, 0);
+                                self.start_current();
+                            }
+                            Ok(tracks) => {
+                                let was_last = self.queue.upcoming_len() == 0;
+                                for track in tracks {
+                                    self.queue.add_last(track);
+                                }
+                                if was_last {
+                                    self.prefetch_next();
+                                }
+                            }
+                            Err(e) => self.notify(format!("The station stopped: {e}")),
+                        }
+                    }
+                }
+                Reply::Fetched { token, result } => {
+                    // Spatial Audio says so where the encode shows.
+                    if let Ok(stream) = &result {
+                        self.says_if_atmos(token, stream);
+                    }
+                    // An encode below Apple's usual 256 kbps shows as it is,
+                    // and is told of when it is to play.
+                    if let Ok(Playable::Track {
+                        kbps: Some(kbps), ..
+                    }) = &result
+                        && *kbps < 240
+                        && let Some(track) = self.tracks.get_mut(&token)
+                    {
+                        if let Some(q) = &mut track.quality {
+                            q.bitrate_kbps = Some(*kbps);
+                        }
+                        if self.pending_play == Some(token) || self.queued_next == Some(token) {
+                            let title = track.title.clone();
+                            self.notify(format!(
+                                "“{title}” plays at {kbps} kbps: Apple has no better of it here"
+                            ));
+                        }
+                    }
+                    match result {
+                        Ok(stream) if self.pending_play == Some(token) => {
+                            self.pending_play = None;
+                            self.play_now(token, stream);
+                        }
+                        Ok(stream) if self.queued_next == Some(token) => {
+                            self.player.set_next(token, source(stream));
+                            self.next_ready = true;
+                        }
+                        // Superseded while it was fetching.
+                        Ok(_) => {}
+                        Err(e) => {
+                            let title = self
+                                .tracks
+                                .get(&token)
+                                .map(|t| t.title.clone())
+                                .unwrap_or_default();
+                            // A track Apple has no stream for (gone from the catalog,
+                            // or not in this country) is skipped, as Apple Music
+                            // does; a run of failures stops, in case nothing plays.
+                            if self.pending_play == Some(token) {
+                                self.pending_play = None;
+                                // The server's copy out of reach: the song as listed.
+                                if let Some(listed) = self.stands_for.remove(&token)
+                                    && let Some(track) = self.queue.current().cloned()
+                                    && track.id == listed
+                                {
+                                    self.pending_play = Some(self.fetch_as_is(track));
+                                } else {
+                                    self.skip_failed(&title, &e);
+                                }
+                            } else if self.queued_next == Some(token) {
+                                // The next track can't follow: it is tried again,
+                                // and skipped if need be, when its turn comes.
+                                self.queued_next = None;
+                            }
+                        }
+                    }
+                }
                 // The rest is for screens still to come.
                 _ => {}
             }
         }
-        cx.notify();
+
+        while let Ok(event) = self.player.events().try_recv() {
+            match event {
+                Event::Started { token, .. } => {
+                    if self.playing == Some(token) {
+                        self.playing = None;
+                    }
+                    if self.queued_next == Some(token) {
+                        self.queue.track_finished();
+                        self.queued_next = None;
+                    }
+                    let started = self.tracks.get(&token).cloned();
+                    if let Some(previous) = self.now.take()
+                        && started.as_ref().is_none_or(|s| s.id != previous.id)
+                    {
+                        self.devices.node.share(self.kept.played(previous));
+                    }
+                    self.now = started;
+                    self.now_stands_for = self.stands_for.get(&token).cloned();
+                    self.keep_session(false);
+                    let (pending, queued) = (self.pending_play, self.queued_next);
+                    let wanted =
+                        |t: &Token| *t == token || Some(*t) == pending || Some(*t) == queued;
+                    self.tracks.retain(|t, _| wanted(t));
+                    self.stands_for.retain(|t, _| wanted(t));
+                    self.prefetch_next();
+                    self.failed_in_row = 0;
+                    // A station of songs is topped up before it runs dry.
+                    if let Some(station) = &self.station
+                        && !self.station_loading
+                        && self.queue.upcoming_len() < STATION_REFILL
+                    {
+                        self.station_loading = true;
+                        self.backend.send(Request::StationTracks(station.clone()));
+                    }
+                }
+                Event::Finished => self.played_out(),
+                Event::Error { token, message } => {
+                    // A next track the player couldn't open: Next fetches anew.
+                    if token.is_some() && token == self.queued_next {
+                        self.queued_next = None;
+                        self.next_ready = false;
+                        // The track before it had already ended, waiting on it:
+                        // the queue moves on to it anyway, to fetch it anew.
+                        if self.player.status().token.is_none() && self.pending_play.is_none() {
+                            self.queue.track_finished();
+                            self.start_current();
+                        } else {
+                            self.notify(message);
+                        }
+                    } else if token.is_some() && token == self.playing {
+                        // What was to play now can't: the queue goes on.
+                        self.playing = None;
+                        let title = self.now_title(token);
+                        self.skip_failed(&title, &message);
+                    } else {
+                        self.notify(message);
+                    }
+                }
+            }
+        }
+        self.status = self.player.status();
     }
 }
 
@@ -795,6 +1782,55 @@ impl Render for Music {
         crate::covers::forget_unseen(window, cx);
         crate::ui::show(self, window, cx)
     }
+}
+
+/// What the player plays of what was fetched.
+fn source(playable: Playable) -> player::Source {
+    match playable {
+        Playable::Local(audio) => {
+            player::Source::new(audio.file, audio.len, Some(&audio.extension))
+        }
+        Playable::Track { stream, .. } => {
+            let len = stream.len();
+            let hint = stream.seek_hint();
+            let extension = stream.extension();
+            // Apple's encoder primes each song with 2112 frames, which
+            // its streams don't say.
+            player::Source::new(stream, len, Some(extension))
+                .with_seek_hint(hint)
+                .with_priming(apple_music::PRIMING)
+        }
+        // A station's stream is ADTS, forward only.
+        Playable::Live(stream) => player::Source::stream(stream, Some("aac")),
+        Playable::Navidrome(audio) => {
+            player::Source::new(audio.reader, audio.len, Some(audio.extension))
+        }
+        Playable::Stored(song) => {
+            let song = *song;
+            let source = player::Source::new(song.reader, song.len, Some(&song.extension));
+            match song.priming {
+                0 => source,
+                frames => source.with_priming(frames),
+            }
+        }
+        Playable::SoundCloud(audio) => {
+            let hint = audio.reader.seek_hint();
+            let source = player::Source::new(audio.reader, audio.len, Some(audio.extension));
+            match hint {
+                // An encrypted track decrypts from where a seek lands.
+                Some(hint) => source.with_seek_hint(hint),
+                None => source,
+            }
+        }
+    }
+}
+
+/// What picks the song a shuffled list starts from, as egui's clock: the
+/// seconds since 1970.
+fn seed() -> f64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0.0, |d| d.as_secs_f64())
 }
 
 /// The history as it was kept before devices shared it.

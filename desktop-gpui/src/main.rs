@@ -17,7 +17,15 @@ use gpui_platform::application;
 fn main() {
     // One Music at a time, whichever toolkit draws it: two would share the
     // settings, the playlists and the downloads and undo each other's writes.
-    if desktop::mpris::raise_running() {
+    // Files opened while Music runs go to it; started again with none, the
+    // one running comes forward.
+    let files = desktop::mpris::files_from_args();
+    let running = if files.is_empty() {
+        desktop::mpris::raise_running()
+    } else {
+        desktop::mpris::open_in_running(&files)
+    };
+    if running {
         return;
     }
     application().run(|cx: &mut App| {
@@ -36,9 +44,12 @@ fn main() {
                 }),
                 ..Default::default()
             },
-            |_, cx| cx.new(app::Music::new),
+            |window, cx| cx.new(|cx| app::Music::new(window, cx)),
         )
         .expect("the window opens");
         cx.activate(true);
     });
+    // Decryption threads may still be finishing: keep them out of the CDM
+    // while it is torn down.
+    widevine::shutdown();
 }

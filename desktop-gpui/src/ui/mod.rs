@@ -485,7 +485,108 @@ pub fn show(app: &mut Music, window: &mut Window, cx: &mut gpui::Context<Music>)
     if layout.player_bar == PlayerBar::Docked {
         root = root.child(dock::show(app, window, cx, w));
     }
-    root
+    if app.dragging.is_some() {
+        root = root.child(drag_listeners(cx));
+    }
+    root.track_focus(&app.focus).on_key_down(cx.listener(
+        |this, e: &gpui::KeyDownEvent, window, cx| {
+            keys(this, &e.keystroke, window, cx);
+        },
+    ))
+}
+
+/// While a bar of the dock is dragged, the pointer is followed wherever it
+/// goes in the window, and let go of anywhere, as egui's drags are.
+fn drag_listeners(cx: &mut gpui::Context<Music>) -> impl IntoElement {
+    let entity = cx.entity();
+    gpui::canvas(
+        |_, _, _| {},
+        move |_, _, window, _| {
+            let moved = entity.clone();
+            window.on_mouse_event(move |e: &gpui::MouseMoveEvent, phase, window, cx| {
+                if phase == gpui::DispatchPhase::Bubble {
+                    let x = f32::from(e.position.x) / zoom();
+                    moved.update(cx, |this, cx| this.drag_to(x, window, cx));
+                }
+            });
+            let up = entity.clone();
+            window.on_mouse_event(move |e: &gpui::MouseUpEvent, phase, window, cx| {
+                if phase == gpui::DispatchPhase::Bubble && e.button == gpui::MouseButton::Left {
+                    let x = f32::from(e.position.x) / zoom();
+                    up.update(cx, |this, cx| this.end_drag(x, window, cx));
+                }
+            });
+        },
+    )
+    .absolute()
+    .size_full()
+}
+
+/// How far the volume keys move it.
+const VOLUME_STEP: f32 = 0.05;
+/// How far Shift with the arrows moves in the song.
+const SEEK_STEP: Duration = Duration::from_secs(10);
+
+/// The keys, as egui's `shortcuts` and `player_shortcuts`: Space plays or
+/// pauses; as Apple Music's, Ctrl with the arrows for the next or previous
+/// song and the volume, Shift with them to move in the song; then the
+/// page's own.
+fn keys(
+    app: &mut Music,
+    key: &gpui::Keystroke,
+    window: &mut Window,
+    cx: &mut gpui::Context<Music>,
+) {
+    let m = key.modifiers;
+    let ctrl = m.control && !m.shift && !m.alt && !m.platform;
+    let shift = m.shift && !m.control && !m.alt && !m.platform;
+    match key.key.as_str() {
+        "space" => app.toggle_play(),
+        "right" if ctrl => app.next(),
+        "left" if ctrl => app.previous(),
+        "up" | "down" if ctrl => {
+            let step = if key.key == "up" {
+                VOLUME_STEP
+            } else {
+                -VOLUME_STEP
+            };
+            let shown = app.shown();
+            let from = if shown.muted {
+                0.0
+            } else {
+                shown.volume.unwrap_or(app.volume)
+            };
+            app.set_volume(from + step);
+        }
+        "m" if ctrl => app.toggle_mute(),
+        "s" if ctrl => app.toggle_shuffle(),
+        "r" if ctrl => app.cycle_repeat(),
+        // A live stream has no length, and doesn't move.
+        "right" | "left" if shift => {
+            let Some(length) = app.shown().duration else {
+                return;
+            };
+            let at = app.shown().position;
+            let to = if key.key == "right" {
+                at + SEEK_STEP
+            } else {
+                at.saturating_sub(SEEK_STEP)
+            };
+            if to < length {
+                app.seek(to);
+            } else {
+                app.next();
+            }
+        }
+        _ if !m.modified() && app.page == crate::app::Page::Songs => {
+            if !songs::keyboard(app, &key.key) {
+                return;
+            }
+        }
+        _ => return,
+    }
+    cx.stop_propagation();
+    app.acted(window, cx);
 }
 
 /// The side column's widths, as the egui window's `ui/side.rs` has them.

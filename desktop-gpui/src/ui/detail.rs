@@ -4,7 +4,10 @@
 //! will use the rest.
 
 use gpui::prelude::FluentBuilder;
-use gpui::{Context, Div, InteractiveElement, ParentElement, Rgba, Styled, Window, div};
+use gpui::{
+    ClickEvent, Context, Div, InteractiveElement, ParentElement, Rgba, StatefulInteractiveElement,
+    Styled, Window, div,
+};
 
 use crate::app::Music;
 use crate::color::{BLACK, WHITE, black_alpha, mix, white_alpha};
@@ -77,7 +80,7 @@ pub fn songs_banner(
 #[allow(clippy::too_many_arguments)]
 fn banner_header(
     window: &mut Window,
-    _cx: &mut Context<Music>,
+    cx: &mut Context<Music>,
     theme: &Theme,
     width: f32,
     pad: f32,
@@ -177,13 +180,17 @@ fn banner_header(
     let mid = BANNER + ACTIONS / 2.0;
     let (px, py) = (pad + 28.0, mid);
     let lit = mix(theme.accent, WHITE, 0.85);
-    // Play grows by two points and lightens under the pointer; its click
-    // would play the page, which this slice doesn't.
+    // Play grows by two points and lightens under the pointer; it plays
+    // the page, or pauses it.
     out = out.child(
         disc(px, py, 28.0, theme.accent)
             .id("banner-play")
             .cursor_pointer()
             .hover(move |s| s.bg(lit).left(z(px - 30.0)).top(z(py - 30.0)).size(z(60.0)))
+            .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
+                this.play_page(super::songs::shown_tracks(this));
+                this.acted(window, cx);
+            }))
             .child(
                 div()
                     .size_full()
@@ -207,15 +214,23 @@ fn banner_header(
     } else {
         theme.subtext0
     };
-    out = out.child(place(bx, mid - 20.0, 40.0, 40.0).child(icon_button(
-        "banner-shuffle",
-        theme,
-        icons::SHUFFLE,
-        40.0,
-        26.0,
-        color,
-        true,
-    )));
+    out = out.child(
+        place(bx, mid - 20.0, 40.0, 40.0).child(
+            icon_button(
+                "banner-shuffle",
+                theme,
+                icons::SHUFFLE,
+                40.0,
+                26.0,
+                color,
+                true,
+            )
+            .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
+                this.toggle_shuffle();
+                this.acted(window, cx);
+            })),
+        ),
+    );
     out.when(shuffle, |out| {
         out.child(disc(bx + 20.0, mid + 17.0, 2.0, theme.accent))
     })

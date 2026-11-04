@@ -1,16 +1,21 @@
 //! The player along the window's bottom, as Spotify's and the egui window's
 //! `ui/dock.rs`: the song on the left with its quality and favourite, the
 //! controls over the position in the middle, the panels, the devices and
-//! the volume on the right. Here it shows what the last session left; its
-//! buttons are drawn and lit under the pointer, but play nothing yet.
+//! the volume on the right. The transport, the position and the volume
+//! play; the song's links, its favourite and the panels' buttons are drawn
+//! and lit under the pointer, for the screens still to come.
+
+use std::time::Duration;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    AnyElement, Context, Div, InteractiveElement, IntoElement, ParentElement, Styled, Window, div,
+    Animation, AnimationExt, AnyElement, ClickEvent, Context, Div, InteractiveElement, IntoElement,
+    MouseButton, MouseDownEvent, ParentElement, StatefulInteractiveElement, Styled, Transformation,
+    Window, div, percentage,
 };
 use music_core::model::FavouriteKind;
 
-use crate::app::{Music, Side};
+use crate::app::{Drag, Music, Side};
 use crate::color::{WHITE, black_alpha};
 use crate::fonts::Weight;
 use crate::icons::{self, Icon};
@@ -50,12 +55,14 @@ pub fn show(app: &Music, window: &mut Window, cx: &mut Context<Music>, width: f3
         .child(now_playing(app, window, cx, &theme, 8.0, third - 8.0, h))
         .child(controls(
             app,
+            cx,
             &theme,
             width / 2.0 - middle_width / 2.0,
             middle_width,
         ))
         .child(right_side(
             app,
+            cx,
             &theme,
             width - third,
             third - 8.0,
@@ -241,9 +248,20 @@ fn link(
     )
 }
 
+/// What a button of the dock does, clicked.
+type Act = fn(&mut Music);
+
+/// `button`, doing `act` when clicked; the player is looked at again after.
+fn acting(button: gpui::Stateful<Div>, cx: &mut Context<Music>, act: Act) -> gpui::Stateful<Div> {
+    button.on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+        act(this);
+        this.acted(window, cx);
+    }))
+}
+
 /// Shuffle, previous, play, next and repeat over the position, in an area
 /// from `x`, `w` wide.
-fn controls(app: &Music, theme: &Theme, x: f32, w: f32) -> Div {
+fn controls(app: &Music, cx: &mut Context<Music>, theme: &Theme, x: f32, w: f32) -> Div {
     let shown = app.shown();
     let has_track = shown.has_track;
     let dim = theme.subtext0;
@@ -251,10 +269,15 @@ fn controls(app: &Music, theme: &Theme, x: f32, w: f32) -> Div {
     let mid = w / 2.0;
     let mut out = place(x, 0.0, w, HEIGHT);
     let mut buttons: Vec<AnyElement> = Vec::new();
-    let mut button = |id: &'static str, dx: f32, icon: Icon, color, enabled: bool| {
+    let mut button = |id: &'static str, dx: f32, icon: Icon, color, enabled: bool, act: Act| {
+        let button = icon_button(id, theme, icon, 32.0, 16.0, color, enabled);
         buttons.push(
             place(mid + dx - 16.0, y - 16.0, 32.0, 32.0)
-                .child(icon_button(id, theme, icon, 32.0, 16.0, color, enabled))
+                .child(if enabled {
+                    acting(button, cx, act)
+                } else {
+                    button
+                })
                 .into_any_element(),
         );
         if color == theme.accent {
@@ -263,48 +286,101 @@ fn controls(app: &Music, theme: &Theme, x: f32, w: f32) -> Div {
         }
     };
     let shuffle = if shown.shuffle { theme.accent } else { dim };
-    button("dock-shuffle", -88.0, icons::SHUFFLE, shuffle, true);
-    button("dock-previous", -44.0, icons::SKIP_BACK, dim, has_track);
-    button("dock-next", 44.0, icons::SKIP_FORWARD, dim, has_track);
+    button(
+        "dock-shuffle",
+        -88.0,
+        icons::SHUFFLE,
+        shuffle,
+        true,
+        Music::toggle_shuffle,
+    );
+    button(
+        "dock-previous",
+        -44.0,
+        icons::SKIP_BACK,
+        dim,
+        has_track,
+        Music::previous,
+    );
+    button(
+        "dock-next",
+        44.0,
+        icons::SKIP_FORWARD,
+        dim,
+        has_track,
+        Music::next,
+    );
     let (repeat_icon, repeat) = match shown.repeat {
         music_core::Repeat::Off => (icons::REPEAT, dim),
         music_core::Repeat::All => (icons::REPEAT, theme.accent),
         music_core::Repeat::One => (icons::REPEAT_ONE, theme.accent),
     };
-    button("dock-repeat", 88.0, repeat_icon, repeat, true);
+    button(
+        "dock-repeat",
+        88.0,
+        repeat_icon,
+        repeat,
+        true,
+        Music::cycle_repeat,
+    );
     out = out.children(buttons);
 
-    // Play: a round button in the text's colour, a point larger under the
-    // pointer.
-    let fill = if has_track {
-        theme.text
+    if shown.loading.is_some() {
+        // The song picked on its way: egui's spinner, an arc going round.
+        out = out.child(
+            place(mid - 9.0, y - 9.0, 18.0, 18.0).child(
+                gpui::svg()
+                    .data(SPINNER.as_bytes())
+                    .size(z(18.0))
+                    .text_color(theme.text)
+                    .with_animation(
+                        "dock-loading",
+                        Animation::new(Duration::from_secs(1)).repeat(),
+                        |svg, delta| {
+                            svg.with_transformation(Transformation::rotate(percentage(delta)))
+                        },
+                    ),
+            ),
+        );
     } else {
-        theme.text_a(0.4)
-    };
-    let icon = if shown.playing {
-        icons::PAUSE_FILL
-    } else {
-        icons::PLAY_FILL
-    };
-    out = out.child(
-        disc(mid, y, 16.0, fill)
+        // Play: a round button in the text's colour, a point larger under
+        // the pointer.
+        let fill = if has_track {
+            theme.text
+        } else {
+            theme.text_a(0.4)
+        };
+        let icon = if shown.playing {
+            icons::PAUSE_FILL
+        } else {
+            icons::PLAY_FILL
+        };
+        let play = disc(mid, y, 16.0, fill)
             .id("dock-play")
-            .when(has_track, |d| {
-                d.cursor_pointer()
-                    .hover(move |s| s.left(z(mid - 17.0)).top(z(y - 17.0)).size(z(34.0)))
-            })
             .flex()
             .items_center()
             .justify_center()
-            .child(icon.element(16.0, theme.base)),
-    );
+            .child(icon.element(16.0, theme.base));
+        out = out.child(if has_track {
+            acting(
+                play.cursor_pointer()
+                    .hover(move |s| s.left(z(mid - 17.0)).top(z(y - 17.0)).size(z(34.0))),
+                cx,
+                Music::toggle_play,
+            )
+        } else {
+            play
+        });
+    }
 
-    // The position: the time played, the bar, the length.
+    // The position: the time played, the bar, the length; while its bar is
+    // dragged, where it would go.
     let y = 52.0;
     let small = 11.5;
+    let position = app.seek_preview.unwrap_or(shown.position);
     let (played, length) = match shown.duration {
-        Some(total) if shown.track.is_some() => (format_time(shown.position), format_time(total)),
-        None if shown.playing => (format_time(shown.position), "LIVE".into()),
+        Some(total) if shown.track.is_some() => (format_time(position), format_time(total)),
+        None if shown.playing => (format_time(position), "LIVE".into()),
         _ => ("-:--".into(), "-:--".into()),
     };
     out = out
@@ -323,31 +399,43 @@ fn controls(app: &Music, theme: &Theme, x: f32, w: f32) -> Div {
             label_cut(length, small, Weight::Regular, theme.subtext0, 60.0),
         ));
     let rail_w = w - 80.0;
-    let fraction = match shown.duration.filter(|d| !d.is_zero()) {
-        Some(total) => (shown.position.as_secs_f32() / total.as_secs_f32()).clamp(0.0, 1.0),
+    let total = shown.duration.filter(|d| !d.is_zero());
+    let fraction = match total {
+        Some(total) => (position.as_secs_f32() / total.as_secs_f32()).clamp(0.0, 1.0),
         None => 0.0,
     };
+    // Click or drag to seek; the dock is along the window's left edge.
+    let drag = total.map(|total| Drag::Seek {
+        left: x + 40.0,
+        width: rail_w,
+        total,
+    });
+    let dragged = matches!(app.dragging, Some(Drag::Seek { .. }));
     out.child(bar(
         "dock-seek",
+        cx,
         theme,
-        40.0,
-        y,
-        rail_w,
+        (40.0, y, rail_w),
         fraction,
-        shown.duration.is_some_and(|d| !d.is_zero()),
+        drag,
+        dragged,
     ))
 }
 
-/// A 4 point bar `w` wide from `x`, centred on `y`, filled `fraction` of
-/// the way: in the accent with a knob under the pointer, when `live`.
+/// The arc of egui's spinner.
+const SPINNER: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"><path d="M12 3a9 9 0 1 1-9 9"/></svg>"##;
+
+/// A 4 point bar `w` wide from `x`, centred on `y` (`at`), filled
+/// `fraction` of the way: in the accent with a knob under the pointer or
+/// while `dragged`, and held and dragged as `drag` says, when it says.
 fn bar(
     id: &'static str,
+    cx: &mut Context<Music>,
     theme: &Theme,
-    x: f32,
-    y: f32,
-    w: f32,
+    (x, y, w): (f32, f32, f32),
     fraction: f32,
-    live: bool,
+    drag: Option<Drag>,
+    dragged: bool,
 ) -> AnyElement {
     let (accent, text) = (theme.accent, theme.text);
     let rail = place(x, y - 6.0, w, 12.0).child(
@@ -355,9 +443,9 @@ fn bar(
             .rounded(z(2.0))
             .bg(theme.text_a(0.3)),
     );
-    if !live {
+    let Some(drag) = drag else {
         return rail.into_any_element();
-    }
+    };
     let group = format!("{id}-bar");
     let fill = w * fraction;
     rail.id(id)
@@ -366,20 +454,36 @@ fn bar(
         .child(
             place(0.0, 4.0, fill, 4.0)
                 .rounded(z(2.0))
-                .bg(text)
+                .bg(if dragged { accent } else { text })
                 .group_hover(group.clone(), move |s| s.bg(accent)),
         )
         .child(
             disc(fill, 6.0, 6.0, text)
-                .invisible()
+                .when(!dragged, |d| d.invisible())
                 .group_hover(group, |s| s.visible()),
+        )
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(move |this, e: &MouseDownEvent, window, cx| {
+                cx.stop_propagation();
+                this.start_drag(drag, f32::from(e.position.x) / super::zoom(), window, cx);
+            }),
         )
         .into_any_element()
 }
 
 /// The panels' buttons, the devices, the volume, and Now Playing, ending at
 /// the area's right, `w` wide from `x`.
-fn right_side(app: &Music, theme: &Theme, x: f32, w: f32, h: f32, narrow: bool) -> Div {
+#[allow(clippy::too_many_arguments)]
+fn right_side(
+    app: &Music,
+    cx: &mut Context<Music>,
+    theme: &Theme,
+    x: f32,
+    w: f32,
+    h: f32,
+    narrow: bool,
+) -> Div {
     let layout = theme.layout;
     let side = layout.panel == Panel::Side && !narrow;
     let dim = theme.subtext0;
@@ -407,6 +511,12 @@ fn right_side(app: &Music, theme: &Theme, x: f32, w: f32, h: f32, narrow: bool) 
     } else {
         shown.volume.unwrap_or(0.0)
     };
+    let can_set = shown.volume.is_some();
+    let row_left = x + w - width;
+    // After the lyrics', the queue's, the devices' and the mute buttons.
+    let volume_left = row_left + 32.0 + 32.0 + 30.0 + 32.0 + 6.0;
+    let dragged = matches!(app.dragging, Some(Drag::Volume { .. }));
+    let mute = icon_button("dock-mute", theme, mute_icon, 32.0, 16.0, dim, can_set);
     let dot = |yes: bool| {
         div()
             .size(z(32.0))
@@ -415,7 +525,7 @@ fn right_side(app: &Music, theme: &Theme, x: f32, w: f32, h: f32, narrow: bool) 
     };
     div()
         .absolute()
-        .left(z(x + w - width))
+        .left(z(row_left))
         .top(z(h / 2.0 - 16.0))
         .w(z(width))
         .h(z(32.0))
@@ -448,15 +558,11 @@ fn right_side(app: &Music, theme: &Theme, x: f32, w: f32, h: f32, narrow: bool) 
             devices,
             true,
         ))
-        .child(icon_button(
-            "dock-mute",
-            theme,
-            mute_icon,
-            32.0,
-            16.0,
-            dim,
-            shown.volume.is_some(),
-        ))
+        .child(if can_set {
+            acting(mute, cx, Music::toggle_mute)
+        } else {
+            mute
+        })
         .child(div().flex_none().w(z(6.0)))
         .child(
             div()
@@ -466,12 +572,15 @@ fn right_side(app: &Music, theme: &Theme, x: f32, w: f32, h: f32, narrow: bool) 
                 .h(z(16.0))
                 .child(bar(
                     "dock-volume",
+                    cx,
                     theme,
-                    0.0,
-                    8.0,
-                    84.0,
+                    (0.0, 8.0, 84.0),
                     level,
-                    shown.volume.is_some(),
+                    can_set.then_some(Drag::Volume {
+                        left: volume_left,
+                        width: 84.0,
+                    }),
+                    dragged,
                 )),
         )
         .child(div().flex_none().w(z(8.0)))

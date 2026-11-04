@@ -20,7 +20,11 @@ desktop = { path = "../crates/desktop" }
 music-core = { path = "../crates/music-core" }
 navidrome = { path = "../crates/navidrome" }
 synced = { path = "../crates/synced" }
+connect = { path = "../crates/connect" }
 downloads = { path = "../crates/downloads" }
+player = { path = "../crates/player" }
+apple-music = { path = "../crates/apple-music" }
+widevine = { path = "../crates/widevine" }
 serde_json = "1.0.154"
 async-channel = "2.5"
 toml = "1.1.8"

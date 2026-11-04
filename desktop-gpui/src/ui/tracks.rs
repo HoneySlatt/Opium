@@ -248,9 +248,13 @@ pub fn row(
         .rounded(z(8.0))
         .when(state.selected, |d| d.bg(alpha(theme.accent, 0.16)))
         .when(!state.selected, |d| d.hover(move |s| s.bg(hover)))
-        .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
-            // A double click would play it: not in this slice.
+        // A click chooses it, a double click plays the page from it.
+        .on_click(cx.listener(move |this, e: &ClickEvent, window, cx| {
             this.songs_view.selected = Some(position);
+            if e.click_count() == 2 {
+                this.play_list(super::songs::shown_tracks(this), position);
+                this.acted(window, cx);
+            }
             cx.notify();
         }));
 
@@ -264,7 +268,13 @@ pub fn row(
             .invisible()
             .group_hover(group, |s| s.visible())
             .hover(move |s| s.bg(hover))
-            .child(icon_at(icons::PLAY_FILL, 14.0, 14.0, 13.0, text)),
+            .child(icon_at(icons::PLAY_FILL, 14.0, 14.0, 13.0, text))
+            .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+                cx.stop_propagation();
+                this.songs_view.selected = Some(position);
+                this.play_list(super::songs::shown_tracks(this), position);
+                this.acted(window, cx);
+            })),
     );
     if state.now {
         out = out

@@ -8,7 +8,7 @@ use gpui::{
     ClickEvent, Context, Div, InteractiveElement, IntoElement, ParentElement,
     StatefulInteractiveElement, Styled, Window, div,
 };
-use music_core::model::{FavouriteKind, ProviderKind};
+use music_core::model::{FavouriteKind, ProviderKind, Track};
 
 use crate::app::{Connection, Music};
 use crate::color::{BLACK, WHITE, mix};
@@ -43,7 +43,7 @@ pub fn show(
     if newest_only {
         app.want_newest_songs();
     }
-    let table_offset = if banner { BANNER + ACTIONS } else { TABLE_TOP };
+    let table_offset = table_offset(&theme);
     let rows = app.songs_view.order.len();
     let foot = 18.0 + 16.0 + 18.0;
     let total = table_offset + tracks::HEAD_SPACE + rows as f32 * tracks::ROW + foot + 104.0;
@@ -146,6 +146,7 @@ pub fn show(
         let shown = ((offset - (BANNER - 2.0 * bar)) / 48.0).clamp(0.0, 1.0);
         if shown > 0.0 {
             let mut layer = banner_bar(
+                cx,
                 &theme,
                 width,
                 SONGS_BAND,
@@ -175,6 +176,7 @@ pub fn show(
 /// Spotify's bar over a page scrolled past its banner, `shown` of the way
 /// in: the page's colour, a round Play and the title, over the page.
 fn banner_bar(
+    cx: &mut Context<Music>,
     theme: &Theme,
     width: f32,
     color: gpui::Rgba,
@@ -203,6 +205,10 @@ fn banner_bar(
                 .id("banner-bar-play")
                 .cursor_pointer()
                 .hover(move |s| s.bg(lit))
+                .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
+                    this.play_page(shown_tracks(this));
+                    this.acted(window, cx);
+                }))
                 .child(icon_at(
                     if playing {
                         icons::PAUSE_FILL
@@ -344,6 +350,66 @@ fn downloaded_chip(
             cx.notify();
         }));
     (chip, x)
+}
+
+/// Where the table starts on the page: under the banner, or the title.
+fn table_offset(theme: &Theme) -> f32 {
+    if theme.layout.header == Header::Banner {
+        BANNER + ACTIONS
+    } else {
+        TABLE_TOP
+    }
+}
+
+/// The songs as the page shows them, in its order.
+pub fn shown_tracks(app: &Music) -> Vec<Track> {
+    app.songs_view
+        .order
+        .iter()
+        .map(|&i| app.listed()[i].clone())
+        .collect()
+}
+
+/// Arrow keys move the selection, Enter plays it, as egui's
+/// `tracks::keyboard`: whether `key` was one of them.
+pub fn keyboard(app: &mut Music, key: &str) -> bool {
+    let rows = app.songs_view.order.len();
+    if rows == 0 {
+        return false;
+    }
+    let selected = app.songs_view.selected;
+    app.songs_view.selected = match key {
+        "down" => Some(selected.map_or(0, |s| (s + 1).min(rows - 1))),
+        "up" => Some(selected.map_or(0, |s| s.saturating_sub(1))),
+        "enter" => {
+            if let Some(position) = selected {
+                app.play_list(shown_tracks(app), position);
+            }
+            return true;
+        }
+        _ => return false,
+    };
+    if let Some(row) = app.songs_view.selected {
+        scroll_to_row(app, row);
+    }
+    true
+}
+
+/// Bring the row the arrow keys moved to into view, scrolling no more than
+/// that, as egui's `scroll_to_rect`.
+fn scroll_to_row(app: &Music, row: usize) {
+    let top = table_offset(&app.theme) + tracks::HEAD_SPACE + row as f32 * tracks::ROW;
+    let height = f32::from(app.songs_scroll.bounds().size.height) / super::zoom();
+    let offset = -f32::from(app.songs_scroll.offset().y) / super::zoom();
+    let to = if top < offset {
+        top
+    } else if top + tracks::ROW > offset + height {
+        top + tracks::ROW - height
+    } else {
+        return;
+    };
+    app.songs_scroll
+        .set_offset(gpui::point(gpui::px(0.0), -z(to.max(0.0))));
 }
 
 fn empty(app: &Music, theme: &Theme, top: f32, left: f32, width: f32) -> Div {

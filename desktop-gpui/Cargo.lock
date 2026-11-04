@@ -4278,7 +4278,9 @@ dependencies = [
 name = "music-gpui"
 version = "0.1.0"
 dependencies = [
+ "apple-music",
  "async-channel",
+ "connect",
  "desktop",
  "downloads",
  "ehttp",
@@ -4287,9 +4289,11 @@ dependencies = [
  "image",
  "music-core",
  "navidrome",
+ "player",
  "serde_json",
  "synced",
  "toml 1.2.0+spec-1.1.0",
+ "widevine",
 ]
 
 [[package]]
