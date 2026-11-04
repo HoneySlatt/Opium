@@ -610,9 +610,12 @@ fn services(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect) {
                         app.storefront.as_deref().unwrap_or("?").to_uppercase()
                     ),
                     Connection::Connecting => "Connecting…".to_owned(),
-                    Connection::NotSignedIn => {
-                        "Not signed in. Signing in opens Apple's page in Brave Origin.".to_owned()
-                    }
+                    Connection::NotSignedIn => match crate::backend::browser_name() {
+                        Some(browser) => {
+                            format!("Not signed in. Signing in opens Apple's page in {browser}.")
+                        }
+                        None => format!("Not signed in. {}", crate::backend::NO_BROWSER),
+                    },
                     Connection::Failed(e) => e.clone(),
                 };
                 let connected = app.connection == Connection::Connected;
@@ -631,7 +634,12 @@ fn services(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect) {
                         "{user} · AAC 160 kbps (256 with Go+), the uploader's own file when they allow it"
                     ),
                     SoundCloudState::Connecting => "Connecting…".to_owned(),
-                    SoundCloudState::NotSignedIn => "Not signed in. Signing in opens SoundCloud in Brave Origin: close it once you're in.".to_owned(),
+                    SoundCloudState::NotSignedIn => match crate::backend::browser_name() {
+                        Some(browser) => format!(
+                            "Not signed in. Signing in opens SoundCloud in {browser}: close it once you're in."
+                        ),
+                        None => format!("Not signed in. {}", crate::backend::NO_BROWSER),
+                    },
                     SoundCloudState::Failed(e) => e.clone(),
                 };
                 let connected = matches!(app.soundcloud, SoundCloudState::Connected(_));

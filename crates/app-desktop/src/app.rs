@@ -4032,6 +4032,16 @@ impl App {
             self.notify(format!("Couldn't play “{title}”: no connection"), now);
             return;
         }
+        // Nor is there any point skipping on when it is the sound itself
+        // that can't be opened: every song would go the same way, and the
+        // queue would be run through in silence.
+        if let Some(why) = error.strip_prefix("audio output: ") {
+            self.notify(
+                format!("Music found no sound card to play through: {why}. It plays through PipeWire, which doesn't seem to be running."),
+                now,
+            );
+            return;
+        }
         self.failed_in_row += 1;
         if self.failed_in_row <= MAX_SKIPS && self.queue.skip_next().is_some() {
             self.notify(format!("Skipped “{title}”: {error}"), now);

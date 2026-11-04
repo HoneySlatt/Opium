@@ -279,7 +279,24 @@ impl Navidrome {
             stations: Mutex::default(),
             session,
         };
-        nd.call("ping", &[]).await?;
+        // The one address the user types: what went wrong with it is said
+        // in a way they can act on, rather than as the request's own words.
+        nd.call("ping", &[]).await.map_err(|e| match e {
+            Error::NotSignedIn => Error::NotSignedIn,
+            Error::Network(_) => Error::Network(format!(
+                "Nothing answered at {}: check the address, and that the server is on",
+                nd.credentials.url
+            )),
+            Error::Protocol(said) if said.contains("HTTP 404") => Error::Protocol(format!(
+                "{} answered, but not as a Navidrome server: give its address alone, without /rest",
+                nd.credentials.url
+            )),
+            Error::Protocol(_) => Error::Protocol(format!(
+                "{} answered, but not as a Navidrome server: check the address",
+                nd.credentials.url
+            )),
+            other => other,
+        })?;
         // Used, the session is renewed: kept alive while the app is.
         if lock(&nd.session).is_some() {
             let _ = nd
