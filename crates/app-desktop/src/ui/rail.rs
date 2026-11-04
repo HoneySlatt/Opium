@@ -35,7 +35,7 @@ pub fn show(app: &mut App, ui: &mut Ui, collapsed: bool) {
         }
         y += if collapsed { 64.0 } else { 60.0 };
     }
-    let settings_y = full.bottom() - if collapsed { 68.0 } else { 68.0 };
+    let settings_y = full.bottom() - 68.0;
     if destination(
         app,
         ui,
@@ -385,7 +385,7 @@ fn pinned(app: &App) -> Vec<Row> {
 fn row_ui(app: &App, ui: &mut Ui, theme: &Theme, row: &Row, collapsed: bool) -> egui::Response {
     let (outer, response) =
         ui.allocate_exact_size(vec2(ui.available_width(), 60.0), Sense::click());
-    let rect = outer.shrink2(vec2(if collapsed { 12.0 } else { 12.0 }, 2.0));
+    let rect = outer.shrink2(vec2(12.0, 2.0));
     let active = app.page == row.page && !app.lyrics_page;
     if active {
         ui.painter()

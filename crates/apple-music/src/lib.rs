@@ -1279,7 +1279,7 @@ impl Provider for AppleMusic {
                     .post(format!("{API}{path}"))
                     .header("Media-User-Token", &self.user_token)
                     .json(&body),
-                &path,
+                path,
             )
             .await?;
         let status = resp.status();
@@ -1437,7 +1437,7 @@ impl Provider for AppleMusic {
             .into_iter()
             .filter_map(|r| {
                 let a = r.attributes?;
-                (a.parent_id.as_deref() == Some(MUSIC_GENRE)).then(|| music_core::model::Genre {
+                (a.parent_id.as_deref() == Some(MUSIC_GENRE)).then_some(music_core::model::Genre {
                     id: r.id,
                     name: a.name,
                 })

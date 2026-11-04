@@ -955,7 +955,7 @@ impl Provider for Navidrome {
         let body = self.call("getGenres", &[]).await?;
         let mut genres = body.genres.unwrap_or_default().genre;
         genres.retain(|g| !g.value.trim().is_empty() && g.album_count > 0);
-        genres.sort_by(|a, b| b.album_count.cmp(&a.album_count));
+        genres.sort_by_key(|g| std::cmp::Reverse(g.album_count));
         Ok(genres
             .into_iter()
             .map(|g| Genre {
