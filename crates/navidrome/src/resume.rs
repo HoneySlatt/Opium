@@ -8,6 +8,21 @@ use std::time::Duration;
 /// How many times in a row a broken download is asked again.
 const TRIES: u64 = 3;
 
+/// Whether `resp` begins at byte `from`, as the Range asked: a `Content-Range`
+/// saying so, or none at all (a server that answers 206 without one).
+fn starts_at(resp: &reqwest::Response, from: u64) -> bool {
+    let Some(range) = resp.headers().get(reqwest::header::CONTENT_RANGE) else {
+        return true;
+    };
+    range
+        .to_str()
+        .ok()
+        .and_then(|r| r.trim().strip_prefix("bytes "))
+        .and_then(|r| r.split('-').next())
+        .and_then(|start| start.trim().parse::<u64>().ok())
+        .is_some_and(|start| start == from)
+}
+
 /// Push the rest of `resp`'s body, `received` bytes in already, through
 /// `push` (false once nobody reads); broken off, `reopen` asks from where it
 /// stopped. Why it ended short, if it did.
@@ -21,7 +36,9 @@ where
     F: Fn(u64) -> Fut,
     Fut: Future<Output = Option<reqwest::Response>>,
 {
+    let mut carried_nothing = 0u64;
     loop {
+        let before = received;
         let e = match resp.chunk().await {
             Ok(Some(bytes)) => {
                 if !push(&bytes) {
@@ -36,13 +53,29 @@ where
         let mut again = None;
         for k in 1..=TRIES {
             tokio::time::sleep(Duration::from_secs(k)).await;
-            // Only the rest, as asked: anything else would be pushed twice.
+            // Only the rest, as asked, and from the byte asked for: a
+            // server that answers 206 from somewhere else — another
+            // encode, another node of a CDN — would have its bytes put
+            // after the ones already in, and the song would read as whole
+            // while playing as noise from there on.
             if let Some(r) = reopen(received).await
                 && r.status() == reqwest::StatusCode::PARTIAL_CONTENT
+                && starts_at(&r, received)
             {
                 again = Some(r);
                 break;
             }
+        }
+        // Each break has its own tries, but a reopen that brings nothing
+        // mustn't be tried for ever: once they are spent on a body that
+        // gave no byte, it ends there.
+        if again.is_some() && received == before {
+            carried_nothing += 1;
+            if carried_nothing > TRIES {
+                return Err(e);
+            }
+        } else {
+            carried_nothing = 0;
         }
         resp = again.ok_or(e)?;
     }
@@ -122,4 +155,51 @@ mod tests {
         assert_eq!(ended, Ok(()));
         assert_eq!(got, body);
     }
+    #[tokio::test]
+    async fn a_server_answering_from_somewhere_else_isnt_carried_on_from() {
+        // 206, but from byte 0 again: its bytes would be put after the
+        // ones already in and the song read as whole.
+        let body: &'static [u8] = b"0123456789abcdefghijklmnopqrstuvwxyz";
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            for first in [true, false, false, false] {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut asked = vec![0; 2048];
+                let _ = socket.read(&mut asked).await.unwrap();
+                if first {
+                    let head = format!("HTTP/1.1 200 OK\r\ncontent-length: {}\r\n\r\n", body.len());
+                    socket.write_all(head.as_bytes()).await.unwrap();
+                    socket.write_all(&body[..body.len() / 2]).await.unwrap();
+                } else {
+                    let head = format!(
+                        "HTTP/1.1 206 Partial Content\r\ncontent-length: {}\r\ncontent-range: bytes 0-{}/{}\r\n\r\n",
+                        body.len(),
+                        body.len() - 1,
+                        body.len()
+                    );
+                    socket.write_all(head.as_bytes()).await.unwrap();
+                    socket.write_all(body).await.unwrap();
+                }
+            }
+        });
+        let url = format!("http://{addr}/file");
+        let http = reqwest::Client::new();
+        let resp = http.get(&url).send().await.unwrap();
+        let again = http.get(&url);
+        let mut got = Vec::new();
+        let ended = super::carry_on(
+            resp,
+            0,
+            |from| super::rest_of(&again, from),
+            |bytes| {
+                got.extend_from_slice(bytes);
+                true
+            },
+        )
+        .await;
+        assert!(ended.is_err(), "it says the download broke off");
+        assert_eq!(got, &body[..body.len() / 2], "and pushed nothing twice");
+    }
+
 }

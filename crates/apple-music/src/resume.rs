@@ -8,6 +8,21 @@ use std::time::Duration;
 /// How many times in a row a broken download is asked again.
 const TRIES: u64 = 3;
 
+/// Whether `resp` begins at byte `from`, as the Range asked: a `Content-Range`
+/// saying so, or none at all (a server that answers 206 without one).
+fn starts_at(resp: &reqwest::Response, from: u64) -> bool {
+    let Some(range) = resp.headers().get(reqwest::header::CONTENT_RANGE) else {
+        return true;
+    };
+    range
+        .to_str()
+        .ok()
+        .and_then(|r| r.trim().strip_prefix("bytes "))
+        .and_then(|r| r.split('-').next())
+        .and_then(|start| start.trim().parse::<u64>().ok())
+        .is_some_and(|start| start == from)
+}
+
 /// Push the rest of `resp`'s body, `received` bytes in already, through
 /// `push` (false once nobody reads); broken off, `reopen` asks from where it
 /// stopped. Why it ended short, if it did.
@@ -21,7 +36,9 @@ where
     F: Fn(u64) -> Fut,
     Fut: Future<Output = Option<reqwest::Response>>,
 {
+    let mut carried_nothing = 0u64;
     loop {
+        let before = received;
         let e = match resp.chunk().await {
             Ok(Some(bytes)) => {
                 if !push(&bytes) {
@@ -36,13 +53,29 @@ where
         let mut again = None;
         for k in 1..=TRIES {
             tokio::time::sleep(Duration::from_secs(k)).await;
-            // Only the rest, as asked: anything else would be pushed twice.
+            // Only the rest, as asked, and from the byte asked for: a
+            // server that answers 206 from somewhere else — another
+            // encode, another node of a CDN — would have its bytes put
+            // after the ones already in, and the song would read as whole
+            // while playing as noise from there on.
             if let Some(r) = reopen(received).await
                 && r.status() == reqwest::StatusCode::PARTIAL_CONTENT
+                && starts_at(&r, received)
             {
                 again = Some(r);
                 break;
             }
+        }
+        // Each break has its own tries, but a reopen that brings nothing
+        // mustn't be tried for ever: once they are spent on a body that
+        // gave no byte, it ends there.
+        if again.is_some() && received == before {
+            carried_nothing += 1;
+            if carried_nothing > TRIES {
+                return Err(e);
+            }
+        } else {
+            carried_nothing = 0;
         }
         resp = again.ok_or(e)?;
     }
