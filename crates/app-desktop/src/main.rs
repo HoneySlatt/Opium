@@ -18,9 +18,15 @@ mod theme;
 mod ui;
 
 fn main() -> eframe::Result {
-    // Files opened while Music runs go to it, rather than to a second one.
+    // Files opened while Music runs go to it, rather than to a second one;
+    // started again with none, the one running comes forward.
     let files = mpris::files_from_args();
-    if !files.is_empty() && mpris::open_in_running(&files) {
+    let running = if files.is_empty() {
+        mpris::raise_running()
+    } else {
+        mpris::open_in_running(&files)
+    };
+    if running {
         return Ok(());
     }
     let options = eframe::NativeOptions {

@@ -121,6 +121,32 @@ pub fn files_from_args() -> Vec<std::path::PathBuf> {
         .collect()
 }
 
+/// Bring the Music already running forward; whether one was there. Two of
+/// them would share the settings, the downloads and the library kept on
+/// disk, each undoing the other's writes.
+pub fn raise_running() -> bool {
+    let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    else {
+        return false;
+    };
+    runtime.block_on(async {
+        let Ok(bus) = mpris_server::zbus::Connection::session().await else {
+            return false;
+        };
+        bus.call_method(
+            Some("org.mpris.MediaPlayer2.music"),
+            "/org/mpris/MediaPlayer2",
+            Some("org.mpris.MediaPlayer2"),
+            "Raise",
+            &(),
+        )
+        .await
+        .is_ok()
+    })
+}
+
 /// Hand `files` to the Music already running, through its media controls,
 /// and bring it forward; whether one was there to take them.
 pub fn open_in_running(files: &[std::path::PathBuf]) -> bool {
