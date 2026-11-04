@@ -1,0 +1,42 @@
+# Runs the automated checks of the definition of done (AGENTS.md) on each push to main and on each
+# pull request, in the same Nix shell that the agents use. Actions are pinned to commit SHAs, with
+# the release they correspond to in a comment, as SlimeEngine's CI does.
+name: CI
+
+# A new push to the same branch supersedes the run in progress.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  # Every check of scripts/check.sh, on Linux, the one platform the desktop app ships on.
+  check:
+    runs-on: ubuntu-24.04
+    # A cold build compiles BoringSSL, FFmpeg's bindings, iroh and wgpu: about 11 minutes of the
+    # script's work on a 16-core desktop, so several times that on a runner. To be measured on the
+    # first runs (docs/PLAN.md).
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+      # Cargo's downloads and the build, kept from one run to the next while the packages that
+      # Cargo.lock pins and the toolchain that flake.lock pins are unchanged.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'flake.lock') }}
+      # Without the flag, an incomplete flake.lock would be completed with an unpinned revision.
+      - run: nix develop --no-update-lock-file --command scripts/check.sh
+  # The phone's core (`scripts/check.sh android`) joins as a second job once the Android shell
+  # builds from an empty store again (docs/PLAN.md, known debt).
