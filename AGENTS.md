@@ -401,8 +401,11 @@ A reviewing agent checks the milestone against this file and the ADRs before it 
 
 - **Closing the app sometimes hung**, the window gone and the process left, which then kept a new
   start from opening. The cause is not found. The exit watch ends the process five seconds after
-  everything is saved and appends where the teardown stood to `exit.log` in the cache folder
-  ([ADR-0021](docs/adr/0021-the-exit-watch.md)): read it before guessing.
+  everything is saved, appends where the teardown stood to `exit.log` in the cache folder and
+  aborts, which leaves a core dump of every thread
+  ([ADR-0021](docs/adr/0021-the-exit-watch.md), [ADR-0024](docs/adr/0024-the-exit-watch-aborts-for-a-core-dump.md)):
+  read `exit.log`, then `coredumpctl list opium` and `coredumpctl gdb`, before guessing. One hang
+  seen was still inside eframe's teardown, with the Mesa OpenGL driver's threads alive.
 - **The owner's display runs at a fractional scale (1.5).** Feathered edges and the covers' sizes
   are computed in physical pixels: check a visual change at 1.5 as well as at 1.
 - **Exclusive audio breaks WirePlumber.** A program that takes the card through ALSA `hw:` once left

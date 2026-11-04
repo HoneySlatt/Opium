@@ -23,7 +23,6 @@ player = { path = "../player" }
 widevine = { path = "../widevine" }
 motion = { path = "../motion" }
 ehttp = "0.7.2"
-libc = "0.2"
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "sync"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"

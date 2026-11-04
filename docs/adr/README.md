@@ -34,6 +34,7 @@ call the app "Music" ([ADR-0023](0023-the-rename-to-opium.md)).
 | [0018](0018-one-instance-through-the-session-bus.md) | One instance, found through its MPRIS name on the session bus | Accepted |
 | [0019](0019-the-workings-apart-from-the-drawing.md) | The desktop's workings apart from its drawing, waking it through `Wake` | Accepted |
 | [0020](0020-d-bus-over-async-io.md) | D-Bus spoken over async-io, not tokio | Accepted |
-| [0021](0021-the-exit-watch.md) | The exit watch | Accepted |
+| [0021](0021-the-exit-watch.md) | The exit watch | Accepted; amended by 0024 |
 | [0022](0022-gpui-tried-and-abandoned.md) | GPUI tried and abandoned; egui stays until SlimeEngine's UI framework runs applications | Accepted; amends 0006 (until the move) |
 | [0023](0023-the-rename-to-opium.md) | The app is named Opium, everywhere, with no compatibility kept | Accepted |
+| [0024](0024-the-exit-watch-aborts-for-a-core-dump.md) | The exit watch aborts, for a core dump | Accepted; amends 0021 |

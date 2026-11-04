@@ -9,20 +9,19 @@ Every milestone ends with the definition of done in [`AGENTS.md`](../AGENTS.md#d
 
 ## Current
 
-- Stage 1 — Under the method: started on 2026-11-04. The rules, the documents, the check script and
-  CI are drafted and wait for the owner's review (M1.1). Measured on the commit before the rename
-  (`b2dbd14`), in a worktree of its own: formatting, clippy and the documentation fail, and one test
-  fails now and then; the fixes were tried in that worktree and make `scripts/check.sh` pass (M1.2).
-  The rename to Opium is committed (`8e8784d`) and the remote is `HoneySlatt/Opium`; the same
-  failures stand there (M1.4). Next: the owner's review of the ROADMAP and the ADRs, then M1.2.
+- Stage 1 — Under the method: started on 2026-11-04. The owner approved the ROADMAP, the ADRs and
+  the rules; they are committed (M1.1). The four fixes are committed and `scripts/check.sh` passes
+  (M1.2). CI is committed; its first runs on GitHub are to be checked and timed (M1.3). The rename to
+  Opium is committed (`8e8784d`), the remote is `HoneySlatt/Opium` and the owner's computer runs
+  Opium on its moved data; the repository's folder and the phone remain (M1.4). Next: M1.3.
 
 ## Status
 
 | Milestone | Goal | Status |
 |---|---|---|
-| [M1.1](#m11--the-projects-memory-in-the-repository) | A session arriving in the repository finds the rules, the decisions, the direction and the plan | Drafted, for the owner's review |
-| [M1.2](#m12--the-checks-green) | `scripts/check.sh` passes on `main` | Planned; fixes verified in a worktree |
-| [M1.3](#m13--ci-green) | Every push to `main` and every pull request is checked by CI | Planned |
+| [M1.1](#m11--the-projects-memory-in-the-repository) | A session arriving in the repository finds the rules, the decisions, the direction and the plan | Done |
+| [M1.2](#m12--the-checks-green) | `scripts/check.sh` passes on `main` | Done |
+| [M1.3](#m13--ci-green) | Every push to `main` and every pull request is checked by CI | In progress |
 | [M1.4](#m14--the-rename-landed) | The owner's computer and phone run Opium under its new names, with their data | In progress: committed, data to confirm |
 | [M1.5](#m15--the-phones-core-checked) | The Android shell builds from an empty store and the phone's core is checked | Planned |
 | [M1.6](#m16--what-the-window-needs-from-a-ui-framework) | SlimeEngine's Stage 6d can read, in this repository, what Opium's window needs | Planned |
@@ -64,9 +63,7 @@ day ([ADR-0023](adr/0023-the-rename-to-opium.md)) lands. No feature is built in 
 - **Done when.** `scripts/check.sh` passes; the test passes 30 runs in a row.
 - **How to test.** `scripts/check.sh`;
   `for i in $(seq 30); do cargo test -q -p synced --lib kept_on_disk; done`.
-- **Verified beforehand.** On `b2dbd14`, in a worktree of its own, these four changes made
-  `scripts/check.sh` pass (223 tests) and the test pass 30 runs in 30. They are to be made again on
-  the renamed tree.
+- **Verified.** On the renamed tree, `scripts/check.sh` passes and the test passed 30 runs in 30.
 
 ### M1.3 — CI green
 
@@ -133,10 +130,11 @@ day ([ADR-0023](adr/0023-the-rename-to-opium.md)) lands. No feature is built in 
   anywhere); there is no focus ring and no Tab order of its own.
 - **Nothing is measured in the repository**: no figures for start-up time, CPU at rest, memory or
   power of the whole app; the figures in ADRs were taken once.
-- **The exit hang's cause is unknown** ([ADR-0021](adr/0021-the-exit-watch.md)): `exit.log` is to be
-  read when it happens again.
+- **The exit hang's cause is unknown** ([ADR-0021](adr/0021-the-exit-watch.md)): one was caught
+  inside eframe's teardown, with the Mesa OpenGL driver's threads alive; the next leaves a core dump
+  ([ADR-0024](adr/0024-the-exit-watch-aborts-for-a-core-dump.md)) to read with `coredumpctl gdb`.
 - **`unsafe` without `// SAFETY:`**: the calls into the CDM shim (`widevine/src/native.rs`),
-  `libc::_exit` (`desktop/src/exit.rs`), `File::from_raw_fd` (`opium-ffi/src/lib.rs`).
+  `File::from_raw_fd` (`opium-ffi/src/lib.rs`).
 - **Public items without documentation**: not counted yet; the method asks for every one.
 - **The interface's state and logic are mixed with egui** in `app-desktop/src/app.rs` (about 6 300
   lines), to move out before the window moves to another toolkit (ROADMAP, Stage 5).

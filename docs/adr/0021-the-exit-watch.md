@@ -1,6 +1,7 @@
 # 0021. The exit watch
 
-- Status: Accepted
+- Status: Accepted; amended by [0024](0024-the-exit-watch-aborts-for-a-core-dump.md) (the process
+  ends by an abort, for a core dump)
 - Date: 2026-11-04
 
 ## Context

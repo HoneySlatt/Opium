@@ -2,7 +2,8 @@
 //! open: its teardown (the window's, the player's, the other devices', the
 //! CDM's at exit) has now and then been seen never to end, the window gone
 //! and the process left behind, to be killed by hand. A watch then ends it,
-//! after noting where it stood, so that the cause can be found.
+//! after noting where it stood, by aborting: the system keeps a core dump
+//! of every thread (`coredumpctl`), so that the cause can be found.
 
 use std::io::Write;
 use std::sync::{Mutex, Once};
@@ -25,9 +26,9 @@ pub fn leaving() {
             .spawn(|| {
                 std::thread::sleep(GRACE);
                 report();
-                // Not `exit`: whatever held the teardown may be what it
-                // would run again.
-                unsafe { libc::_exit(0) }
+                // Not `exit`, which would run again whatever held the
+                // teardown; an abort leaves the core dump to read it from.
+                std::process::abort()
             });
     });
 }
