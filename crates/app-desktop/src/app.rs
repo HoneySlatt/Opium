@@ -2371,16 +2371,6 @@ impl App {
         });
     }
 
-    /// Whether `playlist` has every one of `tracks`: `None` while its songs
-    /// are still loading.
-    pub fn playlist_has(&self, playlist: &ItemId, tracks: &[Track]) -> Option<bool> {
-        let entry = self.playlist_tracks.get(playlist)?;
-        let has = tracks
-            .iter()
-            .all(|t| entry.tracks.iter().any(|p| p.id == t.id));
-        (has || entry.done).then_some(has)
-    }
-
     /// Open the New Playlist window, the playlist to start with `tracks`.
     pub fn open_new_playlist(&mut self, tracks: Vec<Track>) {
         self.playlist_dialog = None;

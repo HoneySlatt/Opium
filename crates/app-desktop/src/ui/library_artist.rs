@@ -2,6 +2,9 @@
 //! photo and name, Play and Shuffle over their songs in the library, then
 //! their albums and their singles and EPs there, newest first.
 
+use std::cell::RefCell;
+use std::sync::Arc;
+
 use egui::{Id, Rect, Sense, Ui, pos2, vec2};
 use music_core::model::{Album, Collection, ItemId};
 
@@ -20,46 +23,126 @@ const BODY_TOP: f32 = PHOTO_TOP + PHOTO + 48.0;
 const SECTION_HEAD: f32 = 40.0;
 const SECTION_GAP: f32 = 36.0;
 
-pub fn show(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
-    let theme = app.theme.clone();
-    // Their releases on every service the library has them on, one copy
-    // of each: what has come, while the rest comes.
+/// Their releases in the two sections the page shows, each newest first.
+#[derive(Clone)]
+struct Shelves {
+    albums: Arc<Vec<Album>>,
+    singles: Arc<Vec<Album>>,
+}
+
+/// Their releases as the page shows them, none while nothing has come, and
+/// what went wrong when nothing did.
+#[derive(Clone, Default)]
+struct Releases {
+    kept: Option<Shelves>,
+    error: Option<String>,
+}
+
+/// What a twin of theirs had when the page was last built.
+enum Had {
+    Coming,
+    /// The very list, kept so that a list freed since can't be taken for it.
+    Albums(Arc<Vec<Album>>),
+    Failed(String),
+}
+
+impl PartialEq for Had {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Coming, Self::Coming) => true,
+            (Self::Albums(a), Self::Albums(b)) => Arc::ptr_eq(a, b),
+            (Self::Failed(a), Self::Failed(b)) => a == b,
+            _ => false,
+        }
+    }
+}
+
+/// The page's releases and what they were built from: the artist, and the
+/// list each of their twins had.
+struct Kept {
+    id: ItemId,
+    from: Vec<(ItemId, Had)>,
+    releases: Releases,
+}
+
+thread_local! {
+    /// What the page built last. Gathering a whole discography, dropping its
+    /// copies and sorting it is work for a list that changed, not for every
+    /// frame of a page standing still.
+    static KEPT: RefCell<Option<Kept>> = const { RefCell::new(None) };
+}
+
+/// Their releases on every service the library has them on, one copy of
+/// each, built again only once one of those lists is another.
+fn releases(app: &mut App, id: &ItemId) -> Releases {
+    let from: Vec<(ItemId, Had)> = app
+        .artist_twins(id)
+        .into_iter()
+        .map(|twin| {
+            let had = match app.artist_albums.get(&twin) {
+                Some(Loaded::Ready(albums)) => Had::Albums(albums.clone()),
+                Some(Loaded::Failed(e)) => Had::Failed(e.clone()),
+                _ => Had::Coming,
+            };
+            (twin, had)
+        })
+        .collect();
+    let kept = KEPT.with_borrow(|kept| match kept {
+        Some(kept) if kept.id == *id && kept.from == from => Some(kept.releases.clone()),
+        _ => None,
+    });
+    if let Some(releases) = kept {
+        return releases;
+    }
     let mut gathered: Option<Vec<Album>> = None;
     let mut error = None;
-    for twin in app.artist_twins(id) {
-        match app.artist_albums.get(&twin) {
-            Some(Loaded::Ready(albums)) => {
+    for (_, had) in &from {
+        match had {
+            Had::Albums(albums) => {
                 gathered
                     .get_or_insert_with(Vec::new)
                     .extend(albums.iter().cloned());
             }
-            Some(Loaded::Failed(e)) => error = Some(e.clone()),
-            _ => {}
+            Had::Failed(e) => error = Some(e.clone()),
+            Had::Coming => {}
         }
     }
-    let albums = gathered.map(|all| {
+    // Singles and EPs apart, as Apple names them; each newest first.
+    let kept = gathered.map(|all| {
         let copies = music_core::dedupe::albums(&all);
-        let kept: Vec<Album> = all
+        let (mut long, mut short): (Vec<Album>, Vec<Album>) = all
             .into_iter()
             .enumerate()
             .filter(|(i, _)| !copies.contains(i))
             .map(|(_, a)| a)
-            .collect();
-        std::sync::Arc::new(kept)
+            .partition(|a| !(a.title.ends_with(" - Single") || a.title.ends_with(" - EP")));
+        let newest = |a: &Album, b: &Album| b.released.cmp(&a.released);
+        long.sort_by(newest);
+        short.sort_by(newest);
+        Shelves {
+            albums: Arc::new(long),
+            singles: Arc::new(short),
+        }
     });
-    // A failure shows only when nothing came.
-    let error = error.filter(|_| albums.is_none());
+    let releases = Releases {
+        // A failure shows only when nothing came.
+        error: error.filter(|_| kept.is_none()),
+        kept,
+    };
+    KEPT.set(Some(Kept {
+        id: id.clone(),
+        from,
+        releases: releases.clone(),
+    }));
+    releases
+}
+
+pub fn show(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
+    let theme = app.theme.clone();
+    // Their releases on every service the library has them on, one copy
+    // of each: what has come, while the rest comes.
+    let releases = releases(app, id);
     let artist = app.library_artist(id).cloned();
-    // Singles and EPs apart, as Apple names them; each newest first.
-    let (mut long, mut short): (Vec<Album>, Vec<Album>) = albums
-        .as_deref()
-        .map(|a| a.to_vec())
-        .unwrap_or_default()
-        .into_iter()
-        .partition(|a| !(a.title.ends_with(" - Single") || a.title.ends_with(" - EP")));
-    let newest = |a: &Album, b: &Album| b.released.cmp(&a.released);
-    long.sort_by(newest);
-    short.sort_by(newest);
     // Spotify's: their picture across the top under their name, Play,
     // Shuffle and a pill to their page under it.
     let spotify = theme.layout.header == crate::theme::Header::Banner;
@@ -70,10 +153,16 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
     } else {
         "Singles & EPs"
     };
-    let sections: Vec<(&str, Vec<Album>)> = [("Albums", long), (singles, short)]
+    let sections: Vec<(&str, &[Album])> = match &releases.kept {
+        Some(shelves) => [
+            ("Albums", shelves.albums.as_slice()),
+            (singles, shelves.singles.as_slice()),
+        ]
         .into_iter()
         .filter(|(_, a)| !a.is_empty())
-        .collect();
+        .collect(),
+        None => Vec::new(),
+    };
 
     let width = ui.available_width() - 2.0 * pad;
     let grid = Grid::new(width);
@@ -89,7 +178,7 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
     for (_, albums) in &sections {
         total += SECTION_HEAD + grid.height(albums.len()) + SECTION_GAP;
     }
-    if albums.is_none() {
+    if releases.kept.is_none() {
         total += SECTION_HEAD + grid.height(grid.columns());
     }
 
@@ -180,11 +269,11 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
                 );
             }
             let mut y = content.top() + body_top;
-            if let Some(e) = &error {
+            if let Some(e) = &releases.error {
                 message(ui, &theme, left, y, width, "Couldn't load this artist", e);
                 return;
             }
-            if albums.is_none() {
+            if releases.kept.is_none() {
                 section_head(ui, &theme, left, y, "Albums");
                 let top = y + SECTION_HEAD;
                 for i in 0..grid.columns() {
@@ -232,7 +321,7 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32, id: &ItemId) -> f32 {
     let now = ui.input(|i| i.time);
     if play_page || play.is_some() {
         // Every song of theirs in the library, album by album.
-        let all: Vec<Album> = sections.iter().flat_map(|(_, a)| a.clone()).collect();
+        let all: Vec<Album> = sections.iter().flat_map(|(_, a)| a.to_vec()).collect();
         let songs = app.songs_of(&all);
         if songs.is_empty() {
             app.notify("Their songs come with the library, still loading", now);

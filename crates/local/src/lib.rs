@@ -35,11 +35,58 @@ pub struct Local {
     folders: Vec<PathBuf>,
     index_path: PathBuf,
     covers: PathBuf,
-    index: RwLock<Arc<Index>>,
+    catalog: RwLock<Arc<Catalog>>,
     /// Held while reading the folders, so that two reads at once (a change
     /// watched while tags are written) go one after the other: the later
     /// one then sees what the earlier wrote rather than undoing it.
     reading: Mutex<()>,
+}
+
+/// What the pages ask of the library beyond the files themselves: the albums
+/// the tags make, each with its songs, the artists, and each album's cover.
+/// Built once for a reading of the folders, as a page opened or a letter
+/// typed into search would otherwise build all of it again — a quarter of a
+/// second, on a library of a hundred thousand songs.
+struct Catalog {
+    index: Arc<Index>,
+    /// Each album's cover, by album key.
+    covers: HashMap<String, String>,
+    /// The albums in order, each with its songs as places in `index.entries`.
+    albums: Vec<(Album, Vec<usize>)>,
+    /// Where in `albums` the album of an id is.
+    by_id: HashMap<String, usize>,
+    artists: Vec<Artist>,
+}
+
+impl Catalog {
+    fn of(index: Arc<Index>) -> Arc<Self> {
+        let albums = albums(&index);
+        let by_id = albums
+            .iter()
+            .enumerate()
+            .map(|(at, (album, _))| (album.id.id.clone(), at))
+            .collect();
+        Arc::new(Self {
+            covers: album_covers(&index.entries),
+            artists: artists(&index),
+            albums,
+            by_id,
+            index,
+        })
+    }
+
+    /// The album of `id` with its songs, found without walking them all.
+    fn album(&self, id: &ItemId) -> Option<&(Album, Vec<usize>)> {
+        self.by_id.get(&id.id).map(|at| &self.albums[*at])
+    }
+
+    /// The songs at those places, as songs.
+    fn tracks(&self, songs: &[usize]) -> Vec<Track> {
+        songs
+            .iter()
+            .map(|at| track(&self.index.entries[*at], &self.covers))
+            .collect()
+    }
 }
 
 /// A file to play.
@@ -61,7 +108,7 @@ impl Local {
             folders,
             covers: dir.join("covers"),
             index_path,
-            index: RwLock::new(Arc::new(index)),
+            catalog: RwLock::new(Catalog::of(Arc::new(index))),
             reading: Mutex::new(()),
         }
     }
@@ -73,10 +120,10 @@ impl Local {
             folders: Vec::new(),
             index_path: PathBuf::new(),
             covers: PathBuf::new(),
-            index: RwLock::new(Arc::new(Index {
+            catalog: RwLock::new(Catalog::of(Arc::new(Index {
                 entries,
                 skipped: Vec::new(),
-            })),
+            }))),
             reading: Mutex::new(()),
         }
     }
@@ -85,8 +132,17 @@ impl Local {
         &self.folders
     }
 
+    /// The library as it was read last: its files, and the albums and
+    /// artists they make.
+    fn catalog(&self) -> Arc<Catalog> {
+        self.catalog
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    }
+
     fn index(&self) -> Arc<Index> {
-        self.index.read().unwrap_or_else(|e| e.into_inner()).clone()
+        self.catalog().index.clone()
     }
 
     /// Read the folders again, the files unchanged as they were kept;
@@ -101,7 +157,10 @@ impl Local {
         let (index, changed) = scan::scan(&self.folders, &before, &self.covers);
         if changed || index.skipped != before.skipped {
             let _ = index.write(&self.index_path);
-            *self.index.write().unwrap_or_else(|e| e.into_inner()) = Arc::new(index);
+            // The albums and artists are built here, with the files they
+            // come from, and the two are put in place together.
+            let catalog = Catalog::of(Arc::new(index));
+            *self.catalog.write().unwrap_or_else(|e| e.into_inner()) = catalog;
         }
         changed
     }
@@ -118,9 +177,13 @@ impl Local {
 
     /// Every song, in the folders' order.
     pub fn tracks(&self) -> Vec<Track> {
-        let index = self.index();
-        let covers = album_covers(&index.entries);
-        index.entries.iter().map(|e| track(e, &covers)).collect()
+        let catalog = self.catalog();
+        catalog
+            .index
+            .entries
+            .iter()
+            .map(|e| track(e, &catalog.covers))
+            .collect()
     }
 
     /// The file `id` names, to play.
@@ -290,22 +353,24 @@ fn rfc3339(secs: u64) -> String {
     )
 }
 
-/// The albums, each with its songs in order.
-fn albums(index: &Index) -> Vec<(Album, Vec<&Entry>)> {
-    let mut by_key: HashMap<String, Vec<&Entry>> = HashMap::new();
-    for e in &index.entries {
+/// The albums, each with its songs in order, as places in `index.entries`.
+fn albums(index: &Index) -> Vec<(Album, Vec<usize>)> {
+    let mut by_key: HashMap<String, Vec<usize>> = HashMap::new();
+    for (at, e) in index.entries.iter().enumerate() {
         if let Some(key) = album_key(e) {
-            by_key.entry(key).or_default().push(e);
+            by_key.entry(key).or_default().push(at);
         }
     }
-    let mut albums: Vec<(Album, Vec<&Entry>)> = by_key
+    let mut albums: Vec<(Album, Vec<usize>)> = by_key
         .into_iter()
         .map(|(key, mut songs)| {
             songs.sort_by(|a, b| {
+                let (a, b) = (&index.entries[*a], &index.entries[*b]);
                 (a.disc.unwrap_or(1), a.track.unwrap_or(u32::MAX), &a.title)
                     .cmp(&(b.disc.unwrap_or(1), b.track.unwrap_or(u32::MAX), &b.title))
             });
-            let first = songs[0];
+            let songs_of = || songs.iter().map(|at| &index.entries[*at]);
+            let first = &index.entries[songs[0]];
             let artist = album_artist(first).to_owned();
             let album = Album {
                 id: ItemId::new(ProviderKind::Local, key),
@@ -314,15 +379,15 @@ fn albums(index: &Index) -> Vec<(Album, Vec<&Entry>)> {
                 artists: vec![artist],
                 artist_artwork: None,
                 released: None,
-                genre: songs.iter().find_map(|s| s.genre.clone()),
+                genre: songs_of().find_map(|s| s.genre.clone()),
                 description: None,
                 catalog_id: None,
                 in_favourites: None,
-                year: songs.iter().filter_map(|s| s.year).max(),
-                artwork: songs.iter().find_map(|s| s.cover.as_deref()).map(artwork),
+                year: songs_of().filter_map(|s| s.year).max(),
+                artwork: songs_of().find_map(|s| s.cover.as_deref()).map(artwork),
                 track_count: Some(songs.len() as u32),
                 explicit: false,
-                added: songs.iter().map(|s| s.added).min().map(rfc3339),
+                added: songs_of().map(|s| s.added).min().map(rfc3339),
                 motion: None,
                 copyright: None,
                 mastered: false,
@@ -375,6 +440,28 @@ fn matches(words: &[String], text: &str) -> bool {
     words.iter().all(|w| text.contains(w.as_str()))
 }
 
+/// How well `text` answers `query` (both folded): the whole of it, then its
+/// start, then anywhere in it. Matches are ranked before they are cut to
+/// `FOUND`, so that a song titled exactly what was typed is found however
+/// late its file comes in the folders.
+fn rank(query: &str, text: &str) -> u8 {
+    let text = fold(text);
+    if text == query {
+        0
+    } else if text.starts_with(query) {
+        1
+    } else {
+        2
+    }
+}
+
+/// The best `FOUND` of what matched, each kept as it was found within its
+/// rank.
+fn best<T>(mut found: Vec<(u8, T)>) -> impl Iterator<Item = T> {
+    found.sort_by_key(|(rank, _)| *rank);
+    found.into_iter().take(FOUND).map(|(_, item)| item)
+}
+
 #[async_trait]
 impl Provider for Local {
     fn kind(&self) -> ProviderKind {
@@ -390,29 +477,43 @@ impl Provider for Local {
         if words.is_empty() {
             return Ok(SearchResults::default());
         }
-        let index = self.index();
-        let covers = album_covers(&index.entries);
-        let tracks = index
-            .entries
-            .iter()
-            .filter(|e| {
-                let album = e.album.as_deref().unwrap_or_default();
-                matches(&words, &format!("{} {} {album}", e.title, e.artists.join(" ")))
-            })
-            .take(FOUND)
-            .map(|e| track(e, &covers))
-            .collect();
-        let albums = albums(&index)
-            .into_iter()
-            .map(|(a, _)| a)
-            .filter(|a| matches(&words, &format!("{} {}", a.title, a.artists.join(" "))))
-            .take(FOUND)
-            .collect();
-        let artists = artists(&index)
-            .into_iter()
-            .filter(|a| matches(&words, &a.name))
-            .take(FOUND)
-            .collect();
+        let whole = words.join(" ");
+        let catalog = self.catalog();
+        let tracks = best(
+            catalog
+                .index
+                .entries
+                .iter()
+                .filter(|e| {
+                    let album = e.album.as_deref().unwrap_or_default();
+                    matches(&words, &format!("{} {} {album}", e.title, e.artists.join(" ")))
+                })
+                .map(|e| (rank(&whole, &e.title), e))
+                .collect(),
+        )
+        .map(|e| track(e, &catalog.covers))
+        .collect();
+        let albums = best(
+            catalog
+                .albums
+                .iter()
+                .map(|(a, _)| a)
+                .filter(|a| matches(&words, &format!("{} {}", a.title, a.artists.join(" "))))
+                .map(|a| (rank(&whole, &a.title), a))
+                .collect(),
+        )
+        .cloned()
+        .collect();
+        let artists = best(
+            catalog
+                .artists
+                .iter()
+                .filter(|a| matches(&words, &a.name))
+                .map(|a| (rank(&whole, &a.name), a))
+                .collect(),
+        )
+        .cloned()
+        .collect();
         Ok(SearchResults {
             tracks,
             albums,
@@ -426,15 +527,21 @@ impl Provider for Local {
     }
 
     async fn library_tracks_newest(&self, _cursor: Option<&Cursor>) -> Result<Page<Track>> {
-        let index = self.index();
-        let covers = album_covers(&index.entries);
-        let mut entries: Vec<&Entry> = index.entries.iter().collect();
+        let catalog = self.catalog();
+        let mut entries: Vec<&Entry> = catalog.index.entries.iter().collect();
         entries.sort_by_key(|e| std::cmp::Reverse(e.added));
-        Ok(page(entries.into_iter().map(|e| track(e, &covers)).collect()))
+        Ok(page(
+            entries
+                .into_iter()
+                .map(|e| track(e, &catalog.covers))
+                .collect(),
+        ))
     }
 
     async fn library_albums(&self, _cursor: Option<&Cursor>) -> Result<Page<Album>> {
-        Ok(page(albums(&self.index()).into_iter().map(|(a, _)| a).collect()))
+        Ok(page(
+            self.catalog().albums.iter().map(|(a, _)| a.clone()).collect(),
+        ))
     }
 
     async fn library_playlists(&self, _cursor: Option<&Cursor>) -> Result<Page<Playlist>> {
@@ -442,55 +549,59 @@ impl Provider for Local {
     }
 
     async fn library_artists(&self, _cursor: Option<&Cursor>) -> Result<Page<Artist>> {
-        Ok(page(artists(&self.index())))
+        Ok(page(self.catalog().artists.clone()))
     }
 
     async fn recently_added(&self, _cursor: Option<&Cursor>) -> Result<Page<Collection>> {
-        let mut albums: Vec<Album> = albums(&self.index()).into_iter().map(|(a, _)| a).collect();
+        let mut albums: Vec<Album> = self.catalog().albums.iter().map(|(a, _)| a.clone()).collect();
         albums.sort_by(|a, b| b.added.cmp(&a.added));
         Ok(page(albums.into_iter().map(Collection::Album).collect()))
     }
 
     async fn album(&self, album: &ItemId) -> Result<Album> {
         mine(album)?;
-        albums(&self.index())
-            .into_iter()
-            .find(|(a, _)| a.id == *album)
-            .map(|(a, _)| a)
+        self.catalog()
+            .album(album)
+            .map(|(a, _)| a.clone())
             .ok_or_else(|| Error::Protocol("this album's files are gone".into()))
     }
 
     async fn album_tracks(&self, album: &ItemId) -> Result<Vec<Track>> {
         mine(album)?;
-        let index = self.index();
-        let covers = album_covers(&index.entries);
-        albums(&index)
-            .into_iter()
-            .find(|(a, _)| a.id == *album)
-            .map(|(_, songs)| songs.into_iter().map(|e| track(e, &covers)).collect())
+        let catalog = self.catalog();
+        catalog
+            .album(album)
+            .map(|(_, songs)| catalog.tracks(songs))
             .ok_or_else(|| Error::Protocol("this album's files are gone".into()))
     }
 
     async fn artist(&self, artist: &ItemId) -> Result<ArtistDetail> {
         mine(artist)?;
-        let index = self.index();
-        let name = artists(&index)
-            .into_iter()
+        let catalog = self.catalog();
+        let name = catalog
+            .artists
+            .iter()
             .find(|a| a.id == *artist)
+            .cloned()
             .ok_or_else(|| Error::Protocol("this artist's files are gone".into()))?;
         let key = fold(&name.name);
-        let covers = album_covers(&index.entries);
         let (mut own, mut appears_on) = (Vec::new(), Vec::new());
-        for (album, songs) in albums(&index) {
+        for (album, songs) in &catalog.albums {
             if fold(&album.artists[0]) == key {
-                own.push(album);
-            } else if songs.iter().any(|s| s.artists.iter().any(|a| fold(a) == key)) {
-                appears_on.push(album);
+                own.push(album.clone());
+            } else if songs.iter().any(|at| {
+                catalog.index.entries[*at]
+                    .artists
+                    .iter()
+                    .any(|a| fold(a) == key)
+            }) {
+                appears_on.push(album.clone());
             }
         }
         own.sort_by_key(|a| std::cmp::Reverse(a.year));
         // The newest songs first, as no plays are counted here.
-        let mut songs: Vec<&Entry> = index
+        let mut songs: Vec<&Entry> = catalog
+            .index
             .entries
             .iter()
             .filter(|e| fold(album_artist(e)) == key || e.artists.iter().any(|a| fold(a) == key))
@@ -501,7 +612,11 @@ impl Provider for Local {
             own.into_iter().partition(|a| a.track_count.is_some_and(|n| n <= 3));
         Ok(ArtistDetail {
             artist: Artist { artwork, ..name },
-            top_songs: songs.into_iter().take(10).map(|e| track(e, &covers)).collect(),
+            top_songs: songs
+                .into_iter()
+                .take(10)
+                .map(|e| track(e, &catalog.covers))
+                .collect(),
             latest: None,
             albums,
             singles,
@@ -574,10 +689,10 @@ mod tests {
             folders: Vec::new(),
             index_path: PathBuf::new(),
             covers: PathBuf::new(),
-            index: RwLock::new(Arc::new(Index {
+            catalog: RwLock::new(Catalog::of(Arc::new(Index {
                 entries,
                 skipped: Vec::new(),
-            })),
+            }))),
             reading: Mutex::new(()),
         }
     }
@@ -608,6 +723,27 @@ mod tests {
         assert!(page.artist.artwork.is_some(), "their album's cover");
         let newest = library.library_tracks_newest(None).await.unwrap().items;
         assert_eq!(newest[0].title, "Second");
+    }
+
+    #[tokio::test]
+    async fn a_title_matching_exactly_is_found_in_a_library_too_large_to_show_whole() {
+        // More matches than search shows, the exact one last in the folders.
+        let mut entries: Vec<Entry> = (0..2 * FOUND)
+            .map(|i| {
+                entry(
+                    &format!("/a/{i:03}.flac"),
+                    &format!("Tempest Rising {i}"),
+                    "Someone",
+                    None,
+                    1,
+                )
+            })
+            .collect();
+        entries.push(entry("/z/last.flac", "Tempest", "Someone", None, 1));
+        let library = local(entries);
+        let found = library.search_library("tempest").await.unwrap();
+        assert_eq!(found.tracks.len(), FOUND);
+        assert_eq!(found.tracks[0].title, "Tempest");
     }
 
     #[test]

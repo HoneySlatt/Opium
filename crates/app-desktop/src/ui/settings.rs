@@ -1,6 +1,8 @@
 //! Settings: the services and their sign-in, the colours, the interface scale,
 //! and what the app is. Only settings that do something are here.
 
+use std::cell::RefCell;
+
 use egui::{Id, Rect, Sense, Stroke, Ui, pos2, vec2};
 
 use music_core::model::ProviderKind;
@@ -32,13 +34,15 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
     let sources = app.browse_sources();
     let choosing = sources.len() > 1;
     let folders = app.local_folders().len();
+    let catalogue = catalogue(app, ui.ctx());
+    let colours = app.appearance();
     let total = BODY_TOP
         + if choosing { GROUP_HEAD + GROUP_GAP + ROW } else { 0.0 }
         + ROW
         + if folders > 0 { GROUP_HEAD + GROUP_GAP + folders as f32 * ROW } else { 0.0 }
         + 11.0 * (GROUP_HEAD + GROUP_GAP)
         + 3.0 * ROW
-        + THEMES * (1 + theme_rows()) as f32
+        + THEMES * (1 + theme_rows(&catalogue)) as f32
         + (14 + paired) as f32 * ROW
         + 104.0;
     let output = egui::ScrollArea::vertical()
@@ -290,10 +294,10 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
             );
             let card = Rect::from_min_size(
                 pos2(left, y),
-                vec2(width, THEMES * theme_rows() as f32),
+                vec2(width, THEMES * theme_rows(&catalogue) as f32),
             );
             panel(ui, &theme, card, 1);
-            themes(app, ui, &theme, card);
+            themes(app, ui, &theme, card, &catalogue, colours);
             y = card.bottom() + GROUP_GAP;
 
             y = group(
@@ -307,7 +311,7 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
             );
             let card = Rect::from_min_size(pos2(left, y), vec2(width, THEMES));
             panel(ui, &theme, card, 1);
-            appearance(app, ui, &theme, card);
+            appearance(app, ui, &theme, card, &catalogue, colours);
             y = card.bottom() + GROUP_GAP;
 
             y = group(
@@ -911,20 +915,70 @@ fn lyrics_sites(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect) {
 /// The theme cards side by side.
 const THEMES_PER_ROW: usize = 3;
 
+/// A theme to choose from: its id, its name, and the theme or what is wrong
+/// with its file.
+type Choice = (String, String, Result<Theme, String>);
+
+/// The themes to choose from and Amane's colours, as the page read them.
+#[derive(Clone)]
+struct Catalogue {
+    themes: std::rc::Rc<Vec<Choice>>,
+    amane: Option<Theme>,
+}
+
+thread_local! {
+    /// What was read, the pass it was last wanted in, and the theme in
+    /// force then. The page asked for the catalogue twice a frame and for
+    /// Amane's file once per card, so a scan of ~/.config/music/themes/ and
+    /// half a dozen TOML files went through the parser sixty times a second
+    /// while anything played.
+    static KEPT: RefCell<Option<(u64, Theme, Catalogue)>> = const { RefCell::new(None) };
+}
+
+/// The themes to choose from, read from disk when the page is arrived at and
+/// when the theme in force changes under it — a theme file edited while the
+/// page is open is the one in force, which the app reloads.
+fn catalogue(app: &App, ctx: &egui::Context) -> Catalogue {
+    let pass = ctx.cumulative_pass_nr();
+    KEPT.with_borrow_mut(|kept| {
+        // A pass that doesn't follow the last says the page was left since.
+        if let Some((last, theme, catalogue)) = kept.as_mut()
+            && *last + 1 >= pass
+            && *theme == app.theme
+        {
+            *last = pass;
+            return catalogue.clone();
+        }
+        let catalogue = Catalogue {
+            themes: std::rc::Rc::new(Theme::catalogue()),
+            amane: Theme::amane(),
+        };
+        *kept = Some((pass, app.theme.clone(), catalogue.clone()));
+        catalogue
+    })
+}
+
 /// How many rows of theme cards there are.
-fn theme_rows() -> usize {
-    Theme::catalogue().len().div_ceil(THEMES_PER_ROW)
+fn theme_rows(catalogue: &Catalogue) -> usize {
+    catalogue.themes.len().div_ceil(THEMES_PER_ROW)
 }
 
 /// The themes to choose from, three to a row.
-fn themes(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect) {
+fn themes(
+    app: &mut App,
+    ui: &mut Ui,
+    theme: &Theme,
+    card: Rect,
+    catalogue: &Catalogue,
+    colours: Appearance,
+) {
     let chosen = app.theme_id().to_string();
     let inner = card.shrink(14.0);
     let gap = 12.0;
     let n = THEMES_PER_ROW as f32;
     let w = (inner.width() - (n - 1.0) * gap) / n;
     let h = THEMES - 28.0;
-    for (i, (id, name, file)) in Theme::catalogue().into_iter().enumerate() {
+    for (i, (id, name, file)) in catalogue.themes.iter().enumerate() {
         let (row, col) = (i / THEMES_PER_ROW, i % THEMES_PER_ROW);
         let rect = Rect::from_min_size(
             pos2(
@@ -934,8 +988,11 @@ fn themes(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect) {
             vec2(w, h),
         );
         // In the colours chosen, as it would show.
-        let shown = file.as_ref().ok().map(|t| match app.appearance() {
-            Appearance::Amane => Theme::amane().map_or(t.clone(), |c| t.recoloured(&c)),
+        let shown = file.as_ref().ok().map(|t| match colours {
+            Appearance::Amane => catalogue
+                .amane
+                .as_ref()
+                .map_or(t.clone(), |c| t.recoloured(c)),
             Appearance::Stock => t.clone(),
         });
         let detail = match &file {
@@ -946,13 +1003,13 @@ fn themes(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect) {
             ui,
             theme,
             rect,
-            &id,
-            &name,
+            id,
+            name,
             &detail,
             shown.as_ref(),
-            chosen == id,
+            chosen == *id,
         ) {
-            app.set_theme(&id, ui.ctx());
+            app.set_theme(id, ui.ctx());
         }
     }
 }
@@ -980,10 +1037,23 @@ fn layout_line(t: &Theme) -> String {
     parts.join(", ")
 }
 
-fn appearance(app: &mut App, ui: &mut Ui, theme: &Theme, card: Rect) {
-    let amane = Theme::amane();
-    let chosen = app.appearance();
-    let own = Theme::named(app.theme_id()).unwrap_or(Theme::STOCK);
+fn appearance(
+    app: &mut App,
+    ui: &mut Ui,
+    theme: &Theme,
+    card: Rect,
+    catalogue: &Catalogue,
+    chosen: Appearance,
+) {
+    let amane = catalogue.amane.clone();
+    // The chosen theme as the catalogue read it, rather than its file again.
+    let own = catalogue
+        .themes
+        .iter()
+        .find(|(id, _, _)| id == app.theme_id())
+        .and_then(|(_, _, file)| file.as_ref().ok())
+        .cloned()
+        .unwrap_or(Theme::STOCK);
     let options = [
         (
             Appearance::Stock,

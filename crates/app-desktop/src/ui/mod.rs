@@ -30,6 +30,7 @@ mod side;
 mod sidebar;
 mod signal;
 mod songs;
+mod thumbs;
 mod toolbar;
 pub(crate) mod tracks;
 mod window_bar;
@@ -1375,6 +1376,9 @@ pub fn format_date(iso: &str) -> Option<String> {
 pub fn artwork(ui: &Ui, url: Option<String>, rect: Rect, radius: f32, theme: &Theme) {
     ui.painter().rect_filled(rect, radius, theme.surface0);
     if let Some(url) = url {
+        // A cover of this device's asked for at the size it is drawn: its
+        // file is as large as the user's folder has it.
+        let url = thumbs::sized(ui.ctx(), &url, rect.size());
         crate::covers::seen(ui.ctx(), &url);
         egui::Image::new(url)
             .corner_radius(CornerRadius::same(radius as u8))
@@ -1413,6 +1417,7 @@ pub fn fading_artwork(
         return artwork(ui, url, rect, radius, theme);
     }
     artwork(ui, Some(before), rect, radius, theme);
+    let new = thumbs::sized(ui.ctx(), &new, rect.size());
     crate::covers::seen(ui.ctx(), &new);
     egui::Image::new(new)
         .corner_radius(CornerRadius::same(radius as u8))

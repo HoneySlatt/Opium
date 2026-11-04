@@ -28,8 +28,9 @@ pub fn show(app: &mut App, ui: &mut Ui, collapsed: bool) {
     egui::ScrollArea::vertical()
         .id_salt("sidebar-scroll")
         .auto_shrink(false)
-        .show(&mut list, |ui| {
+        .show_viewport(&mut list, |ui, viewport| {
             ui.spacing_mut().item_spacing.y = 0.0;
+            let scrolled = ui.cursor().top();
             ui.add_space(0.0);
             let mut row = |ui: &mut Ui, page: Page, icon: Icon, label: &str| {
                 let active = app.page == page;
@@ -75,11 +76,18 @@ pub fn show(app: &mut App, ui: &mut Ui, collapsed: bool) {
             {
                 app.go(favourites);
             }
-            for i in 0..app.playlists.len() {
+            // The rows on screen only, the rest left as room above and below
+            // them: what each row asks of the app — whether its playlist can
+            // be deleted, what of it is downloaded, the menu it offers — is a
+            // walk of the playlists and of the songs kept, and five hundred
+            // playlists did all of that on every frame of every page.
+            let shown: Vec<usize> = (0..app.playlists.len())
+                .filter(|i| !app.playlists[*i].favourites)
+                .collect();
+            let rows = visible(viewport, ui.cursor().top() - scrolled, shown.len());
+            ui.add_space(rows.start as f32 * PLAYLIST.height);
+            for i in shown[rows.clone()].iter().copied() {
                 let playlist = &app.playlists[i];
-                if playlist.favourites {
-                    continue;
-                }
                 let art = playlist.artwork.as_ref().map(|a| a.url(120));
                 let id = playlist.id.clone();
                 let active = app.page == Page::Playlist(id.clone());
@@ -102,6 +110,7 @@ pub fn show(app: &mut App, ui: &mut Ui, collapsed: bool) {
                     app.go(Page::Playlist(id));
                 }
             }
+            ui.add_space((shown.len() - rows.end) as f32 * PLAYLIST.height);
             ui.add_space(12.0);
         });
 
@@ -221,6 +230,14 @@ fn section(
     icon_button(&mut child, theme, icon, 22.0, 14.0, theme.muted(), true)
         .on_hover_text(tip)
         .clicked()
+}
+
+/// Which of `count` playlist rows the viewport shows, the first of them
+/// `top` below the top of what is scrolled.
+fn visible(viewport: Rect, top: f32, count: usize) -> std::ops::Range<usize> {
+    let first = ((viewport.top() - top) / PLAYLIST.height).floor().max(0.0) as usize;
+    let last = (((viewport.bottom() - top) / PLAYLIST.height).ceil().max(0.0) as usize).min(count);
+    first.min(last)..last
 }
 
 /// The sizes of a sidebar row.

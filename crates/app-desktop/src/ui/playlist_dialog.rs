@@ -2,8 +2,10 @@
 //! playlists used last, then every playlist of the user's with a box to tick,
 //! each saying whether it has the song already.
 
+use std::collections::HashSet;
+
 use egui::{Color32, Frame, Id, Rect, Sense, Stroke, Ui, pos2, vec2};
-use music_core::model::{Collection, Playlist};
+use music_core::model::{Collection, ItemId, Playlist};
 
 use crate::app::App;
 use crate::fonts::{Weight, font};
@@ -22,7 +24,19 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
         return;
     };
     let theme = app.theme.clone();
-    let tracks = dialog.tracks.clone();
+    // Only what the top of the window shows: a copy of the staged songs
+    // themselves, a thousand of them when a whole album list is added, cost
+    // more every frame than the window had to spare.
+    let count = dialog.tracks.len();
+    let cover = dialog
+        .tracks
+        .first()
+        .and_then(|t| t.artwork.as_ref())
+        .map(|a| a.url(120));
+    let sub = match dialog.tracks.as_slice() {
+        [one] => one.title.clone(),
+        many => format!("{} songs", many.len()),
+    };
     let frame = Frame::new()
         .fill(theme.mantle)
         .stroke(Stroke::new(1.0, theme.line()))
@@ -46,18 +60,9 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
             // The song, or how many.
             let (head, _) = ui.allocate_exact_size(vec2(WIDTH, 88.0), Sense::hover());
             let art = Rect::from_min_size(head.min + vec2(24.0, 18.0), vec2(52.0, 52.0));
-            artwork(
-                ui,
-                tracks
-                    .first()
-                    .and_then(|t| t.artwork.as_ref())
-                    .map(|a| a.url(120)),
-                art,
-                8.0,
-                &theme,
-            );
+            artwork(ui, cover.clone(), art, 8.0, &theme);
             let x = art.right() + 16.0;
-            let title = if tracks.len() > 1 {
+            let title = if count > 1 {
                 "Add to Playlists"
             } else {
                 "Add to Playlist"
@@ -71,10 +76,6 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 egui::Align::Min,
                 theme.text,
             );
-            let sub = match tracks.as_slice() {
-                [one] => one.title.clone(),
-                many => format!("{} songs", many.len()),
-            };
             let g = text(
                 ui,
                 &sub,
@@ -144,31 +145,38 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 .unwrap_or_default();
             let matches =
                 |p: &Playlist| filter.is_empty() || p.name.to_lowercase().contains(&filter);
-            let tracks = app
+            let staged: &[music_core::model::Track] = app
                 .playlist_dialog
                 .as_ref()
-                .map(|d| d.tracks.clone())
-                .unwrap_or_default();
+                .map_or(&[], |d| d.tracks.as_slice());
+            // The staged songs by id, made once: a playlist then says whether
+            // it has them all in one walk of its own songs, rather than one
+            // walk of the staged list for each song it holds.
+            let ids: HashSet<&ItemId> = staged.iter().map(|t| &t.id).collect();
             let recent: Vec<Playlist> = if filter.is_empty() {
-                app.recent_playlists(&tracks)
+                app.recent_playlists(staged)
             } else {
                 Vec::new()
             };
             let all: Vec<Playlist> = app
-                .editable_playlists(&tracks)
+                .editable_playlists(staged)
                 .into_iter()
                 .filter(matches)
                 .collect();
+            let mut ticked: Option<ItemId> = None;
             egui::ScrollArea::vertical()
                 .id_salt("playlist-dialog-list")
                 .max_height(LIST_HEIGHT)
                 .auto_shrink([false, true])
-                .show(ui, |ui| {
+                .show_viewport(ui, |ui, viewport| {
                     ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
+                    let top = ui.cursor().top();
                     if !recent.is_empty() {
                         heading(ui, &theme, "RECENT");
                         for playlist in &recent {
-                            row(app, ui, &theme, playlist, "recent");
+                            if row(app, ui, &theme, playlist, "recent", &ids, count) {
+                                ticked = Some(playlist.id.clone());
+                            }
                         }
                         ui.add_space(8.0);
                         let (line, _) = ui.allocate_exact_size(vec2(WIDTH, 1.0), Sense::hover());
@@ -201,11 +209,29 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                             muted,
                         );
                     }
-                    for playlist in &all {
-                        row(app, ui, &theme, playlist, "all");
+                    // The rows on screen only, the rest left as room above and
+                    // below them: every editable playlist was asked whether it
+                    // had the songs, however far down the list it was.
+                    let shown = visible(viewport, ui.cursor().top() - top, all.len());
+                    ui.add_space(shown.start as f32 * (ROW + ROW_GAP));
+                    for playlist in &all[shown.clone()] {
+                        if row(app, ui, &theme, playlist, "all", &ids, count) {
+                            ticked = Some(playlist.id.clone());
+                        }
                     }
+                    ui.add_space((all.len() - shown.end) as f32 * (ROW + ROW_GAP));
                     ui.add_space(8.0);
                 });
+            // Once the rows that read the staged songs are drawn.
+            if let Some(id) = ticked
+                && let Some(dialog) = &mut app.playlist_dialog
+            {
+                if dialog.chosen.contains(&id) {
+                    dialog.chosen.retain(|chosen| *chosen != id);
+                } else {
+                    dialog.chosen.push(id);
+                }
+            }
 
             // Cancel and Add.
             ui.add_space(8.0);
@@ -233,6 +259,11 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
             }
         });
     if new {
+        let tracks = app
+            .playlist_dialog
+            .as_ref()
+            .map(|d| d.tracks.clone())
+            .unwrap_or_default();
         app.open_new_playlist(tracks);
     } else if add {
         app.add_to_chosen_playlists();
@@ -755,9 +786,42 @@ fn heading(ui: &mut Ui, theme: &Theme, label: &str) {
     );
 }
 
+/// Which of `count` rows the viewport shows, the first of them `top` below
+/// the top of the list.
+fn visible(viewport: Rect, top: f32, count: usize) -> std::ops::Range<usize> {
+    let row = ROW + ROW_GAP;
+    let first = ((viewport.top() - top) / row).floor().max(0.0) as usize;
+    let last = (((viewport.bottom() - top) / row).ceil().max(0.0) as usize).min(count);
+    first.min(last)..last
+}
+
+/// Whether `playlist` has every song staged, `None` while its songs are
+/// still loading: its own songs are looked up in `ids` rather than the
+/// other way about, so the cost is the playlist's, not the staging's.
+fn has_staged(app: &App, playlist: &ItemId, ids: &HashSet<&ItemId>) -> Option<bool> {
+    let entry = app.playlist_tracks.get(playlist)?;
+    let mut found: HashSet<&ItemId> = HashSet::new();
+    for track in entry.tracks.iter() {
+        if ids.contains(&track.id) {
+            found.insert(&track.id);
+        }
+    }
+    let has = found.len() == ids.len();
+    (has || entry.done).then_some(has)
+}
+
 /// A playlist with its box: ticked if chosen; under the name, whether it has
-/// the songs already.
-fn row(app: &mut App, ui: &mut Ui, theme: &Theme, playlist: &Playlist, salt: &str) {
+/// the songs already. Whether it was clicked, to tick or untick.
+#[allow(clippy::too_many_arguments)]
+fn row(
+    app: &App,
+    ui: &mut Ui,
+    theme: &Theme,
+    playlist: &Playlist,
+    salt: &str,
+    ids: &HashSet<&ItemId>,
+    count: usize,
+) -> bool {
     let (outer, _) = ui.allocate_exact_size(vec2(WIDTH, ROW + ROW_GAP), Sense::hover());
     let rect = Rect::from_min_max(
         pos2(outer.left() + 24.0, outer.top()),
@@ -811,13 +875,8 @@ fn row(app: &mut App, ui: &mut Ui, theme: &Theme, playlist: &Playlist, salt: &st
     );
     let x = art.right() + 14.0;
     let room = rect.right() - 16.0 - x;
-    let tracks = app
-        .playlist_dialog
-        .as_ref()
-        .map(|d| d.tracks.clone())
-        .unwrap_or_default();
-    let state = match app.playlist_has(&playlist.id, &tracks) {
-        Some(true) => Some(if tracks.len() > 1 {
+    let state = match has_staged(app, &playlist.id, ids) {
+        Some(true) => Some(if count > 1 {
             "Has them already"
         } else {
             "Already in playlist"
@@ -843,17 +902,9 @@ fn row(app: &mut App, ui: &mut Ui, theme: &Theme, playlist: &Playlist, salt: &st
         let g = text(ui, state, font(12.0, Weight::Regular), muted, room);
         paint_text(ui, g, x, rect.center().y + 11.0, egui::Align::Min, muted);
     }
-    if response
+    response
         .on_hover_cursor(egui::CursorIcon::PointingHand)
         .clicked()
-        && let Some(dialog) = &mut app.playlist_dialog
-    {
-        if chosen {
-            dialog.chosen.retain(|id| *id != playlist.id);
-        } else {
-            dialog.chosen.push(playlist.id.clone());
-        }
-    }
 }
 
 /// A 40 px rounded button: the accent for the action, a faint fill otherwise.
