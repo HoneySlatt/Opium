@@ -98,16 +98,8 @@
               perl
             ];
             # Animated cover art is decoded with FFmpeg's libraries; Opus
-            # with libopus, which Symphonia has no decoder of. The window
-            # drawn by GPUI links fontconfig, FreeType and xkbcommon too.
-            buildInputs = with pkgs; [
-              ffmpeg
-              libopus
-              fontconfig
-              freetype
-              libxkbcommon
-              wayland
-            ];
+            # with libopus, which Symphonia has no decoder of.
+            buildInputs = with pkgs; [ ffmpeg libopus ];
             LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath (runtimeLibs pkgs);
           };
         }
