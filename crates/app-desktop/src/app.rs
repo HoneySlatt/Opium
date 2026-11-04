@@ -1967,9 +1967,16 @@ impl App {
         }
     }
 
-    /// The interface scale, 1.0 for 100 %.
+    /// The interface scale, 1.0 for 100 %. A number typed into the file by
+    /// hand is held to what the window itself allows, so that a 125 there
+    /// (for 125 %) doesn't leave a window a few points across, and a scale
+    /// that isn't a number at all doesn't make every frame ask again.
     pub fn scale(&self) -> f32 {
-        self.settings.ui_scale.unwrap_or(1.0)
+        self.settings
+            .ui_scale
+            .filter(|s| s.is_finite())
+            .unwrap_or(1.0)
+            .clamp(0.7, 2.5)
     }
 
     /// Choose the interface scale, or go back to 100 %.
@@ -2025,6 +2032,15 @@ impl App {
         }
     }
 
+    /// Whether a service that could fill Home, New or Radio is still
+    /// connecting, so that the pages wait on it.
+    fn browse_connecting(&self) -> bool {
+        [&self.soundcloud, &self.navidrome]
+            .iter()
+            .any(|s| matches!(s, SoundCloudState::Connecting))
+            || matches!(self.connection, Connection::Connecting)
+    }
+
     /// On Home, New or Radio, their service another now (chosen, or just
     /// connected): asked of it. Whether it was.
     fn browse_page(&mut self) -> bool {
@@ -2036,7 +2052,15 @@ impl App {
             _ => None,
         };
         let Some(which) = shelves else { return false };
-        if self.browse_source() == self.browse_from {
+        // Asked while every service was still connecting, the page was left
+        // waiting on one: once none is connecting any more, it is asked
+        // again, so that a first run says to connect a service in Settings
+        // rather than turning for ever.
+        let waiting_on_nothing = self.browse_from.is_none()
+            && self.browse_source().is_none()
+            && !self.browse_connecting()
+            && !matches!(self.shelves(which), Some(Loaded::Ready(_)) | Some(Loaded::Failed(_)));
+        if self.browse_source() == self.browse_from && !waiting_on_nothing {
             return false;
         }
         self.browse_changed();
@@ -2053,13 +2077,7 @@ impl App {
                 Loaded::Loading
             }
             // One connecting: asked once it has (see `browse_page`).
-            None if [&self.soundcloud, &self.navidrome]
-                .iter()
-                .any(|s| matches!(s, SoundCloudState::Connecting))
-                || matches!(self.connection, Connection::Connecting) =>
-            {
-                Loaded::Loading
-            }
+            None if self.browse_connecting() => Loaded::Loading,
             None => Loaded::Failed("Connect a service in Settings to see its picks here.".into()),
         }
     }
