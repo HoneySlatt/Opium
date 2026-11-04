@@ -82,11 +82,12 @@ fn worse_copies<T>(
     for mut group in groups.into_values().filter(|g| g.len() > 1) {
         group.sort_by_key(|&i| rank(provider(&items[i])));
         for (n, &i) in group.iter().enumerate() {
-            let better = group[..n].iter().any(|&j| {
-                provider(&items[j]) != provider(&items[i])
-                    && !out.contains(&j)
-                    && same(&items[j], &items[i])
-            });
+            // A copy left out is still that song, shown as a better copy
+            // of it: one matching it is left out too, so that three copies
+            // a second apart each don't show twice.
+            let better = group[..n]
+                .iter()
+                .any(|&j| provider(&items[j]) != provider(&items[i]) && same(&items[j], &items[i]));
             if better {
                 out.insert(i);
             }
@@ -102,10 +103,7 @@ pub fn songs(songs: &[Track]) -> HashSet<usize> {
         |t| (title_key(&t.title), artist_key(&t.artists)),
         |t| t.id.provider,
         rank,
-        |a, b| match (a.duration, b.duration) {
-            (Some(x), Some(y)) => x.abs_diff(y) <= SAME_LENGTH,
-            _ => true,
-        },
+        |a, b| same_length(a, b),
     )
 }
 
@@ -134,10 +132,18 @@ pub fn song_key(track: &Track) -> (String, String) {
 pub fn same_song(a: &Track, b: &Track) -> bool {
     title_key(&a.title) == title_key(&b.title)
         && artist_key(&a.artists) == artist_key(&b.artists)
-        && match (a.duration, b.duration) {
-            (Some(x), Some(y)) => x.abs_diff(y) <= SAME_LENGTH,
-            _ => true,
-        }
+        && same_length(a, b)
+}
+
+/// Whether two copies' lengths say they are one song. A length neither of
+/// them says leaves them apart: taken as one, a single copy without one
+/// would stand for every other version of the title — the extended mix and
+/// the radio edit alike — and hide them all.
+fn same_length(a: &Track, b: &Track) -> bool {
+    match (a.duration, b.duration) {
+        (Some(x), Some(y)) => x.abs_diff(y) <= SAME_LENGTH,
+        _ => false,
+    }
 }
 
 /// An album whole from its copies on several services: each song from the
@@ -319,4 +325,33 @@ mod tests {
             artist_key(&["Future & Metro Boomin".into()])
         );
     }
+    #[test]
+    fn copies_a_second_apart_each_show_once() {
+        // Local 3:20, the server 3:22, Apple 3:24: the file alone shows,
+        // though the file and Apple's are more than three seconds apart.
+        let songs = [
+            track(ProviderKind::Local, "Song", "Artist", 200),
+            track(ProviderKind::Navidrome, "Song", "Artist", 202),
+            track(ProviderKind::AppleMusic, "Song", "Artist", 204),
+        ];
+        let mut left_out: Vec<usize> = super::songs(&songs).into_iter().collect();
+        left_out.sort_unstable();
+        assert_eq!(left_out, [1, 2]);
+    }
+
+    #[test]
+    fn a_copy_without_a_length_hides_no_other_version() {
+        let mut no_length = track(ProviderKind::Navidrome, "Song", "Artist", 0);
+        no_length.duration = None;
+        let songs = [
+            no_length,
+            track(ProviderKind::AppleMusic, "Song", "Artist", 200),
+            track(ProviderKind::SoundCloud, "Song", "Artist", 600),
+        ];
+        assert!(
+            super::songs(&songs).is_empty(),
+            "the ten-minute version stays reachable"
+        );
+    }
+
 }

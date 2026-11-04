@@ -8,7 +8,7 @@ mod watch;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
 use async_trait::async_trait;
 use music_core::model::{
@@ -36,6 +36,10 @@ pub struct Local {
     index_path: PathBuf,
     covers: PathBuf,
     index: RwLock<Arc<Index>>,
+    /// Held while reading the folders, so that two reads at once (a change
+    /// watched while tags are written) go one after the other: the later
+    /// one then sees what the earlier wrote rather than undoing it.
+    reading: Mutex<()>,
 }
 
 /// A file to play.
@@ -58,6 +62,7 @@ impl Local {
             covers: dir.join("covers"),
             index_path,
             index: RwLock::new(Arc::new(index)),
+            reading: Mutex::new(()),
         }
     }
 
@@ -72,6 +77,7 @@ impl Local {
                 entries,
                 skipped: Vec::new(),
             })),
+            reading: Mutex::new(()),
         }
     }
 
@@ -90,6 +96,7 @@ impl Local {
         if self.folders.is_empty() {
             return false;
         }
+        let _reading = self.reading.lock().unwrap_or_else(|e| e.into_inner());
         let before = self.index();
         let (index, changed) = scan::scan(&self.folders, &before, &self.covers);
         if changed || index.skipped != before.skipped {
@@ -247,7 +254,10 @@ fn track(e: &Entry, covers: &HashMap<String, String>) -> Track {
         },
         album: e.album.clone(),
         album_id: key.map(|k| ItemId::new(ProviderKind::Local, k)),
-        duration: Some(std::time::Duration::from_millis(e.duration_ms)),
+        // Android's index says 0 for a file it couldn't read the length
+        // of: unknown rather than a song of no length, which would match
+        // no copy of itself anywhere.
+        duration: (e.duration_ms > 0).then(|| std::time::Duration::from_millis(e.duration_ms)),
         track_number: e.track,
         disc_number: e.disc,
         artwork: cover.map(|c| artwork(c)),
@@ -568,6 +578,7 @@ mod tests {
                 entries,
                 skipped: Vec::new(),
             })),
+            reading: Mutex::new(()),
         }
     }
 
@@ -695,4 +706,46 @@ mod tests {
         assert_eq!(audio.len, std::fs::metadata(&path).unwrap().len());
         std::fs::remove_dir_all(dir).unwrap();
     }
+    #[test]
+    fn a_tag_of_another_kind_isnt_lost_when_one_field_is_written() {
+        // An MP3 whose only tag is an ID3v1: editing the album used to
+        // leave an ID3v2 holding the album alone, read as untitled.
+        use lofty::config::WriteOptions;
+        use lofty::file::TaggedFileExt;
+        use lofty::tag::{Accessor, TagExt};
+        let dir = std::env::temp_dir().join(format!("local-v1-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("song.mp3");
+        std::fs::write(&path, scan::tests::mp3()).unwrap();
+        {
+            let mut v1 = lofty::id3::v1::Id3v1Tag::default();
+            v1.title = Some("Real Title".into());
+            v1.artist = Some("Real Artist".into());
+            v1.album = Some("Real Album".into());
+            let mut file = std::fs::OpenOptions::new().read(true).write(true).open(&path).unwrap();
+            v1.save_to(&mut file, WriteOptions::default()).unwrap();
+        }
+        assert_eq!(read_tags(&path).unwrap().title, "Real Title", "read before");
+
+        write_tags(&path, &TagEdit { album: Some("Edited Album".into()), ..TagEdit::default() }).unwrap();
+        let tags = read_tags(&path).unwrap();
+        assert_eq!(
+            (tags.title.as_str(), tags.artist.as_str(), tags.album.as_str()),
+            ("Real Title", "Real Artist", "Edited Album")
+        );
+        // The file's own kind of tag now holds it all, so that another
+        // player reading only that one shows the song as it is.
+        let read = lofty::read_from_path(&path).unwrap();
+        let primary = read.primary_tag().expect("an ID3v2 of its own");
+        assert_eq!(
+            (
+                primary.title().as_deref(),
+                primary.artist().as_deref(),
+                primary.album().as_deref()
+            ),
+            (Some("Real Title"), Some("Real Artist"), Some("Edited Album"))
+        );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
 }
