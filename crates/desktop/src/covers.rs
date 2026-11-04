@@ -15,7 +15,7 @@ fn dir() -> Option<PathBuf> {
     cache_dir("covers")
 }
 
-fn cache_dir(name: &str) -> Option<PathBuf> {
+pub(crate) fn cache_dir(name: &str) -> Option<PathBuf> {
     let cache = std::env::var_os("XDG_CACHE_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")))?;

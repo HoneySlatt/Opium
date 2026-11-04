@@ -8,6 +8,7 @@ pub mod backend;
 pub mod cache;
 pub mod covers;
 pub mod devices;
+pub mod exit;
 pub mod mpris;
 pub mod palette;
 pub mod settings;

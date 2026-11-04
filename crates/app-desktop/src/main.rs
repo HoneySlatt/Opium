@@ -44,8 +44,10 @@ fn main() -> eframe::Result {
         options,
         Box::new(|cc| Ok(Box::new(app::App::new(cc)))),
     );
+    desktop::exit::reached("the window closed");
     // Decryption threads may still be finishing: keep them out of the CDM
     // while it is torn down.
     widevine::shutdown();
+    desktop::exit::reached("exiting, the CDM's teardown and the libraries'");
     result
 }

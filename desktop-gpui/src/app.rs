@@ -745,6 +745,8 @@ impl Music {
             self.settings.muted = Some(self.muted);
             self.settings.save();
         }
+        // All is kept: the app ends now, whether its teardown does or not.
+        desktop::exit::leaving();
     }
 
     pub fn service_on(&self, provider: ProviderKind) -> bool {
