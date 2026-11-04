@@ -46,6 +46,9 @@ sealed interface SheetSpec {
 
     /** Navidrome asks for the password again, for `then` (a cover changed). */
     data class NavidromePassword(val then: () -> Unit) : SheetSpec
+
+    /** The phone's music files' tags, one song's or an album's at once. */
+    data class Info(val tracks: List<Track>) : SheetSpec
 }
 
 val LocalActions = staticCompositionLocalOf<Actions?> { null }
@@ -204,6 +207,27 @@ class Actions(
     fun trackMenu(track: Track, anchor: Rect, inPlaylist: Playlist? = null, onRemoved: () -> Unit = {}, nowPlaying: Boolean = false) {
         if (playback.isStation(track)) return
         val head = MenuHead(track.artwork, track.title, track.artists.joinToString(", "))
+        // The phone's own file: no library, favourite nor station of a service, its tags to change.
+        if (track.id.provider == ProviderKind.LOCAL) {
+            val here = track.id.id.startsWith("content://")
+            menus.show(
+                MenuSpec(anchor, head) {
+                    listOf(
+                        listOf(
+                            MenuItem("Play Next", Icons.Next) { playNext(listOf(track)) },
+                            MenuItem("Add to Queue", Icons.Later) { addToQueue(listOf(track)) },
+                        ),
+                        listOf(MenuItem("Add to a Playlist…", Icons.Listplus) { addToPlaylists(listOf(track)) }),
+                        listOfNotNull(
+                            track.albumId?.let { id -> MenuItem("Go to Album", Icons.Album) { go(Route.Album(id)) } },
+                            MenuItem("Go to Artist", Icons.Mic) { goToArtist(track) },
+                        ),
+                        listOfNotNull(if (here) MenuItem("Get Info", Icons.Info) { sheet = SheetSpec.Info(listOf(track)) } else null),
+                    )
+                },
+            )
+            return
+        }
         menus.show(
             MenuSpec(anchor, head) {
                 val favourite = isFavourite(FavouriteKind.SONG, track.id)
@@ -284,6 +308,12 @@ class Actions(
                         },
                         MenuItem("Add to a Playlist…", Icons.Listplus) {
                             withAlbum(album) { sheet = SheetSpec.AddToPlaylists(it, songsCount(it.size), album.title, album.artwork) }
+                        },
+                        // The phone's files' album: their tags at once.
+                        if (album.id.provider == ProviderKind.LOCAL) {
+                            MenuItem("Edit Info", Icons.Pencil) { withAlbum(album) { sheet = SheetSpec.Info(it) } }
+                        } else {
+                            null
                         },
                         if (downloadable(album.id.provider)) {
                             MenuItem("Download", io.github.honeyslatt.music.ui.MoreIcons.ArrowDown) { withAlbum(album) { download(it) } }
@@ -457,7 +487,7 @@ class Actions(
     // ---- Downloads ----
 
     /** Songs of `provider` can be downloaded: Music's playlists have none of their own. */
-    private fun downloadable(provider: ProviderKind) = provider != ProviderKind.MUSIC
+    private fun downloadable(provider: ProviderKind) = provider != ProviderKind.MUSIC && provider != ProviderKind.LOCAL
 
     /** A song's Download, or its Remove Download once kept or coming. */
     private fun downloadItem(tracks: List<Track>, title: String): MenuItem? {

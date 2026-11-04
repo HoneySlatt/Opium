@@ -19,7 +19,7 @@ use music_core::text::fold;
 use music_core::{Error, Provider, Result};
 
 pub use scan::{EXTENSIONS, is_music};
-pub use tags::{Cover, TagEdit, Tags, read_tags, write_tags};
+pub use tags::{Cover, TagEdit, Tags, read_tags, read_tags_from, write_tags, write_tags_to};
 pub use watch::Watching;
 
 pub use scan::Entry;

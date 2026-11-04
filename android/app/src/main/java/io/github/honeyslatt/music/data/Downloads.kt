@@ -200,5 +200,5 @@ class Downloads(private val context: Context, private val core: Core, private va
     }
 }
 
-/** Whether `track` can be downloaded: every service's songs, Music's playlists having none of their own. */
-fun downloadable(track: Track) = track.id.provider != ProviderKind.MUSIC
+/** Whether `track` can be downloaded: every service's songs, Music's playlists having none of their own, a file being here already. */
+fun downloadable(track: Track) = track.id.provider != ProviderKind.MUSIC && track.id.provider != ProviderKind.LOCAL

@@ -181,6 +181,29 @@ class LocalFiles(private val context: Context, private val core: Core, private v
         return files to counts.map { it.key to it.value }
     }
 
+    /** The tags written in a file of the phone's, as the Info sheet shows them. */
+    suspend fun tags(track: io.github.honeyslatt.music.core.model.Track): io.github.honeyslatt.music.core.FileTags? = withContext(Dispatchers.IO) {
+        runCatching {
+            context.contentResolver.openFileDescriptor(Uri.parse(track.id.id), "r")?.let { io.github.honeyslatt.music.core.readFileTags(it.detachFd()) }
+        }.getOrNull()
+    }
+
+    /** Android's leave to change the files of `tracks`, asked of the user: their window. */
+    fun writeRequest(tracks: List<io.github.honeyslatt.music.core.model.Track>): android.content.IntentSender =
+        MediaStore.createWriteRequest(context.contentResolver, tracks.map { Uri.parse(it.id.id) }).intentSender
+
+    /** Write `edit` into the files of `tracks`, leave given; why some couldn't be, if any. */
+    suspend fun write(tracks: List<io.github.honeyslatt.music.core.model.Track>, edit: io.github.honeyslatt.music.core.FileTagEdit): String? = withContext(Dispatchers.IO) {
+        val failed = tracks.mapNotNull { track ->
+            runCatching {
+                val fd = context.contentResolver.openFileDescriptor(Uri.parse(track.id.id), "rw") ?: error("the file couldn't be opened")
+                io.github.honeyslatt.music.core.writeFileTags(fd.detachFd(), edit)
+            }.exceptionOrNull()?.let { "${track.title}: ${it.message}" }
+        }
+        // Android reads a file written again as it is closed: the library follows.
+        failed.takeIf { it.isNotEmpty() }?.joinToString("; ")
+    }
+
     /** A file opened from another app, as a song: its tags as Android reads them. */
     suspend fun opened(uri: Uri): io.github.honeyslatt.music.core.model.Track = withContext(Dispatchers.IO) {
         val name = runCatching {

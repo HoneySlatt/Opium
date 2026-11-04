@@ -53,7 +53,12 @@ impl TagEdit {
 
 /// The tags of the file at `path`, as written in it.
 pub fn read_tags(path: &Path) -> Option<Tags> {
-    let file = lofty::read_from_path(path).ok()?;
+    read_tags_from(&mut std::fs::File::open(path).ok()?)
+}
+
+/// The tags of `file`, open: the phone's, from Android's media index.
+pub fn read_tags_from(file: &mut std::fs::File) -> Option<Tags> {
+    let file = lofty::read_from(file).ok()?;
     let Some(tag) = file.primary_tag().or_else(|| file.first_tag()) else {
         return Some(Tags::default());
     };
@@ -72,7 +77,18 @@ pub fn read_tags(path: &Path) -> Option<Tags> {
 
 /// Write `edit` into the file at `path`, in its own kind of tag.
 pub fn write_tags(path: &Path, edit: &TagEdit) -> Result<(), String> {
-    let mut file = lofty::read_from_path(path).map_err(|e| e.to_string())?;
+    let mut file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(path)
+        .map_err(|e| e.to_string())?;
+    write_tags_to(&mut file, edit)
+}
+
+/// Write `edit` into `file`, open to read and write: the phone's.
+pub fn write_tags_to(open: &mut std::fs::File, edit: &TagEdit) -> Result<(), String> {
+    use std::io::Seek;
+    let mut file = lofty::read_from(open).map_err(|e| e.to_string())?;
     if file.primary_tag().is_none() {
         file.insert_tag(Tag::new(file.primary_tag_type()));
     }
@@ -133,6 +149,7 @@ pub fn write_tags(path: &Path, edit: &TagEdit) -> Result<(), String> {
             );
         }
     }
-    file.save_to_path(path, WriteOptions::default())
+    open.rewind().map_err(|e| e.to_string())?;
+    file.save_to(open, WriteOptions::default())
         .map_err(|e| e.to_string())
 }

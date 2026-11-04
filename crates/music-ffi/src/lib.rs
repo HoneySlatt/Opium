@@ -1944,3 +1944,92 @@ pub fn tonal(palette: music_core::theme::Palette) -> music_core::theme::Tonal {
 pub fn parse_theme(source: String) -> Result<music_core::theme::ThemeFile, MusicError> {
     music_core::theme::parse(&source).map_err(|reason| MusicError::Failed { reason })
 }
+
+/// A music file's tags as the Info sheet shows them, an empty text for none.
+#[derive(uniffi::Record)]
+pub struct FileTags {
+    pub title: String,
+    pub artist: String,
+    pub album: String,
+    pub album_artist: String,
+    pub genre: String,
+    pub track: Option<u32>,
+    pub disc: Option<u32>,
+    pub year: Option<u16>,
+}
+
+/// What a file's cover becomes.
+#[derive(uniffi::Enum)]
+pub enum FileCover {
+    Kept,
+    Removed,
+    /// A JPEG, the front cover from now on.
+    Set { jpeg: Vec<u8> },
+}
+
+/// What to change in a file's tags: each text given is written (empty
+/// clears it), each number with `set_` true (none clears it).
+#[derive(uniffi::Record)]
+pub struct FileTagEdit {
+    pub title: Option<String>,
+    pub artist: Option<String>,
+    pub album: Option<String>,
+    pub album_artist: Option<String>,
+    pub genre: Option<String>,
+    pub set_track: bool,
+    pub track: Option<u32>,
+    pub set_disc: bool,
+    pub disc: Option<u32>,
+    pub set_year: bool,
+    pub year: Option<u16>,
+    pub cover: FileCover,
+}
+
+/// The file `fd` is open on (read), handed over, then closed: its tags.
+#[uniffi::export]
+pub fn read_file_tags(fd: i32) -> Option<FileTags> {
+    let mut file = owned_file(fd)?;
+    let tags = local::read_tags_from(&mut file)?;
+    Some(FileTags {
+        title: tags.title,
+        artist: tags.artist,
+        album: tags.album,
+        album_artist: tags.album_artist,
+        genre: tags.genre,
+        track: tags.track,
+        disc: tags.disc,
+        year: tags.year,
+    })
+}
+
+/// Write `edit` into the file `fd` is open on (read and write), handed
+/// over, then closed.
+#[uniffi::export]
+pub fn write_file_tags(fd: i32, edit: FileTagEdit) -> Result<(), MusicError> {
+    let mut file = owned_file(fd).ok_or_else(|| MusicError::Failed {
+        reason: "the file couldn't be opened".into(),
+    })?;
+    let edit = local::TagEdit {
+        title: edit.title,
+        artist: edit.artist,
+        album: edit.album,
+        album_artist: edit.album_artist,
+        genre: edit.genre,
+        track: edit.set_track.then_some(edit.track),
+        disc: edit.set_disc.then_some(edit.disc),
+        year: edit.set_year.then_some(edit.year),
+        cover: match edit.cover {
+            FileCover::Kept => local::Cover::Kept,
+            FileCover::Removed => local::Cover::Removed,
+            FileCover::Set { jpeg } => local::Cover::Set(jpeg),
+        },
+    };
+    local::write_tags_to(&mut file, &edit).map_err(|reason| MusicError::Failed { reason })
+}
+
+/// The file `fd` names, owned from now on: closed once dropped.
+fn owned_file(fd: i32) -> Option<std::fs::File> {
+    use std::os::fd::FromRawFd;
+    // Kotlin hands it over (`detachFd`) and keeps no copy of it.
+    (fd >= 0).then(|| unsafe { std::fs::File::from_raw_fd(fd) })
+}

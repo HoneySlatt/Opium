@@ -63,6 +63,7 @@ fun ActionSheets(actions: Actions) {
         is SheetSpec.PlaylistForm -> PlaylistForm(actions, s, open = spec === s, close)
         is SheetSpec.NavidromePassword -> NavidromePassword(actions, s, open = spec === s, close)
         is SheetSpec.Confirm -> Confirm(s, open = spec === s, close)
+        is SheetSpec.Info -> Info(actions, s, open = spec === s, close)
         null -> {}
     }
 }
@@ -188,6 +189,142 @@ private fun Field(value: String, placeholder: String, modifier: Modifier = Modif
             }
         },
     )
+}
+
+/** A file's tags as the Info sheet edits them, in the order shown. */
+private val TAGS = listOf("Title", "Artist", "Album", "Album Artist", "Genre", "Track", "Disc", "Year")
+
+private fun io.github.honeyslatt.music.core.FileTags.values() = listOf(
+    title, artist, album, albumArtist, genre,
+    track?.toString().orEmpty(), disc?.toString().orEmpty(), year?.toString().orEmpty(),
+)
+
+/**
+ * Get Info, as on the computer: a file's title, artist, album and the rest,
+ * and its cover, written back into the file once Android allows it. An
+ * album's songs at once: what they differ in shows as Mixed, left as it is
+ * unless typed.
+ */
+@androidx.annotation.OptIn(UnstableApi::class)
+@Composable
+private fun Info(actions: Actions, spec: SheetSpec.Info, open: Boolean, close: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val local = (context.applicationContext as io.github.honeyslatt.music.MusicApp).localFiles
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val several = spec.tracks.size > 1
+    // As the files say; for several, empty where they differ.
+    var before by remember(spec) { mutableStateOf<List<String>?>(null) }
+    var mixed by remember(spec) { mutableStateOf(List(TAGS.size) { false }) }
+    val typed = remember(spec) { mutableStateListOf<String>() }
+    var cover by remember(spec) { mutableStateOf<CoverChoice>(CoverChoice.Unchanged) }
+    var saving by remember(spec) { mutableStateOf(false) }
+    var error by remember(spec) { mutableStateOf<String?>(null) }
+    LaunchedEffect(spec) {
+        val all = spec.tracks.map { local.tags(it)?.values() ?: List(TAGS.size) { "" } }
+        val first = all.first()
+        val differs = TAGS.indices.map { i -> all.any { it[i] != first[i] } }
+        val shown = first.mapIndexed { i, v -> if (differs[i]) "" else v }
+        mixed = differs
+        before = shown
+        typed.clear()
+        typed.addAll(shown)
+    }
+    val edit = {
+        val was = before.orEmpty()
+        val text = { i: Int -> typed[i].trim().takeIf { it != was[i].trim() } }
+        val number = { i: Int -> typed[i].trim() != was[i].trim() }
+        io.github.honeyslatt.music.core.FileTagEdit(
+            title = text(0), artist = text(1), album = text(2), albumArtist = text(3), genre = text(4),
+            setTrack = number(5), track = typed[5].trim().toUIntOrNull(),
+            setDisc = number(6), disc = typed[6].trim().toUIntOrNull(),
+            setYear = number(7), year = typed[7].trim().toUShortOrNull(),
+            cover = when (val c = cover) {
+                is CoverChoice.Chosen -> io.github.honeyslatt.music.core.FileCover.Set(c.jpeg)
+                CoverChoice.Removed -> io.github.honeyslatt.music.core.FileCover.Removed
+                CoverChoice.Unchanged -> io.github.honeyslatt.music.core.FileCover.Kept
+            },
+        )
+    }
+    // Android's window asks the user's leave to change the files; once given, written.
+    val allow = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.StartIntentSenderForResult()) { result ->
+        if (result.resultCode != android.app.Activity.RESULT_OK) {
+            saving = false
+            return@rememberLauncherForActivityResult
+        }
+        scope.launch {
+            error = local.write(spec.tracks, edit())
+            saving = false
+            if (error == null) close()
+        }
+    }
+    val pick = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        scope.launch {
+            val jpeg = io.github.honeyslatt.music.data.CoverImage.square(context, uri) ?: return@launch
+            val shown = android.graphics.BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size)?.asImageBitmap() ?: return@launch
+            cover = CoverChoice.Chosen(jpeg, shown)
+        }
+    }
+    val numbersOk = (5..7).all { i -> typed.getOrNull(i)?.trim()?.let { it.isEmpty() || it.toUIntOrNull() != null } ?: true }
+    Sheet(
+        open,
+        if (several) "Album Info" else "Info",
+        close,
+        left = { SheetButton("Cancel", onClick = close) },
+        right = {
+            SheetButton(if (saving) "Saving…" else "Save", primary = true, enabled = before != null && !saving && numbersOk) {
+                val changed = edit()
+                val nothing = listOf(changed.title, changed.artist, changed.album, changed.albumArtist, changed.genre).all { it == null } &&
+                    !changed.setTrack && !changed.setDisc && !changed.setYear && changed.cover is io.github.honeyslatt.music.core.FileCover.Kept
+                if (nothing) {
+                    close()
+                } else {
+                    saving = true
+                    error = null
+                    allow.launch(androidx.activity.result.IntentSenderRequest.Builder(local.writeRequest(spec.tracks)).build())
+                }
+            }
+        },
+    ) {
+        val choose = { pick.launch(androidx.activity.result.PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly)) }
+        val artwork = spec.tracks.firstNotNullOfOrNull { it.artwork }
+        Column(Modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            val shape = RoundedCornerShape(14.dp)
+            Box(
+                Modifier.size(168.dp).clip(shape).background(roles.surface, shape).press(shape, onClick = choose),
+                contentAlignment = Alignment.Center,
+            ) {
+                when (val c = cover) {
+                    is CoverChoice.Chosen -> androidx.compose.foundation.Image(c.shown, null, Modifier.size(168.dp), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+                    CoverChoice.Removed -> Glyph(Icons.Image, roles.muted, 44.dp)
+                    CoverChoice.Unchanged -> if (artwork != null) Cover(artwork, 168.dp, shape, Modifier.size(168.dp)) else Glyph(Icons.Image, roles.muted, 44.dp)
+                }
+            }
+            Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(22.dp)) {
+                Box(Modifier.press(RoundedCornerShape(8.dp), onClick = choose).padding(6.dp)) {
+                    BasicText(if (cover is CoverChoice.Chosen || artwork != null) "Change Cover" else "Choose Cover", style = geist(15.sp, FontWeight.Medium).copy(color = roles.accent))
+                }
+                if (cover is CoverChoice.Chosen || (cover == CoverChoice.Unchanged && artwork != null)) {
+                    Box(Modifier.press(RoundedCornerShape(8.dp)) { cover = CoverChoice.Removed }.padding(6.dp)) {
+                        BasicText("Remove", style = geist(15.sp, FontWeight.Medium).copy(color = roles.red))
+                    }
+                }
+            }
+            if (several) BasicText("${spec.tracks.size} songs: what is typed goes in each.", Modifier.padding(top = 6.dp), style = geist(13.sp).copy(color = roles.sub))
+        }
+        if (typed.size == TAGS.size) {
+            Group(footer = error) {
+                TAGS.forEachIndexed { i, label ->
+                    // A song's own title and number only for one song.
+                    if (several && (i == 0 || i == 5)) return@forEachIndexed
+                    GroupRow(first = i == 0 || (several && i == 1)) {
+                        BasicText(label, Modifier.size(width = 104.dp, height = 22.dp), style = geist(15.sp).copy(color = roles.sub))
+                        Field(typed[i], if (mixed[i]) "Mixed" else "", Modifier.weight(1f)) { typed[i] = if (i >= 5) it.filter(Char::isDigit).take(4) else it }
+                    }
+                }
+            }
+        }
+    }
 }
 
 /** What becomes of a playlist's cover as the form is saved. */
