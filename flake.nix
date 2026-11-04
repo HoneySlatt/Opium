@@ -42,12 +42,15 @@
               pkg-config
               rustPlatform.bindgenHook
               makeWrapper
-              # BoringSSL, for SoundCloud's changes sent as Chrome does.
+              # BoringSSL, for SoundCloud's changes sent as Chrome does: its
+              # build patches the sources with git.
               cmake
+              git
               perl
             ];
             buildInputs = with pkgs; [
               ffmpeg
+              libopus
               pipewire
             ];
             postInstall = ''
@@ -66,7 +69,7 @@
                 }
             '';
             meta = {
-              description = "Apple Music, SoundCloud and Navidrome in one desktop player";
+              description = "Apple Music, SoundCloud, Navidrome and your own files in one desktop player";
               license = pkgs.lib.licenses.gpl3Plus;
               mainProgram = "music";
               platforms = pkgs.lib.platforms.linux;
@@ -94,8 +97,9 @@
               cmake
               perl
             ];
-            # Animated cover art is decoded with FFmpeg's libraries.
-            buildInputs = with pkgs; [ ffmpeg ];
+            # Animated cover art is decoded with FFmpeg's libraries; Opus
+            # with libopus, which Symphonia has no decoder of.
+            buildInputs = with pkgs; [ ffmpeg libopus ];
             LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath (runtimeLibs pkgs);
           };
         }

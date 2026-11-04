@@ -9,4 +9,5 @@ pipewire = { version = "0.10.1", features = ["v1_0_0"] }
 rtrb = "0.4.1"
 # AAC in MP4 for Apple Music; MP3 and ALAC for the songs users put in their library themselves.
 symphonia = { version = "0.6.1", default-features = false, features = ["isomp4", "aac", "alac", "mp3", "flac", "wav", "aiff", "pcm", "ogg", "vorbis", "id3v2"] }
+symphonia-adapter-libopus = { version = "0.3.0", default-features = false }
 thiserror = "2.0.21"

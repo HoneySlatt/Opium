@@ -123,6 +123,8 @@ class LocalFiles(private val context: Context, private val core: Core, private v
             MediaStore.Audio.Media.DATE_MODIFIED,
             MediaStore.Audio.Media.MIME_TYPE,
             MediaStore.Audio.Media.BITRATE,
+            SAMPLE_RATE,
+            BITS,
         )
         context.contentResolver.query(
             MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
@@ -149,6 +151,9 @@ class LocalFiles(private val context: Context, private val core: Core, private v
             val modified = col(MediaStore.Audio.Media.DATE_MODIFIED)
             val mime = col(MediaStore.Audio.Media.MIME_TYPE)
             val bitrate = col(MediaStore.Audio.Media.BITRATE)
+            // Not in every index: read when there.
+            val rate = c.getColumnIndex(SAMPLE_RATE)
+            val bits = c.getColumnIndex(BITS)
             val text = { i: Int -> c.getString(i)?.trim()?.takeIf { it.isNotEmpty() && it != MediaStore.UNKNOWN_STRING } }
             while (c.moveToNext()) {
                 val relative = c.getString(path) ?: continue
@@ -174,6 +179,8 @@ class LocalFiles(private val context: Context, private val core: Core, private v
                     durationMs = c.getLong(duration).toULong(),
                     mime = c.getString(mime).orEmpty(),
                     bitrateKbps = c.getLong(bitrate).takeIf { it > 0 }?.let { (it / 1000).toUInt() },
+                    sampleRate = if (rate >= 0) c.getInt(rate).takeIf { it > 0 }?.toUInt() else null,
+                    bitDepth = if (bits >= 0) c.getInt(bits).takeIf { it in 1..64 }?.toUByte() else null,
                     cover = "$COVER$uri",
                 )
             }
@@ -237,6 +244,10 @@ class LocalFiles(private val context: Context, private val core: Core, private v
 
     companion object {
         private const val FOLDERS = "local-folders"
+
+        /** The index's sample rate and bit depth, as Android 14 names them. */
+        private const val SAMPLE_RATE = "samplerate"
+        private const val BITS = "bits_per_sample"
 
         /** A file's cover, as the covers fetch it: this, then its address. */
         const val COVER = "music-cover:"

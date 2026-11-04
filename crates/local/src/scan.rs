@@ -15,8 +15,8 @@ use music_core::model::Codec;
 use serde::{Deserialize, Serialize};
 
 /// The files read as music: what the player decodes.
-pub const EXTENSIONS: [&str; 10] = [
-    "mp3", "flac", "wav", "aif", "aiff", "aifc", "m4a", "mp4", "aac", "ogg",
+pub const EXTENSIONS: [&str; 12] = [
+    "mp3", "flac", "wav", "aif", "aiff", "aifc", "m4a", "mp4", "aac", "ogg", "oga", "opus",
 ];
 
 /// Pictures in an album's folder taken as its cover, the first found.
@@ -179,11 +179,12 @@ pub fn read_file(path: &Path, size: u64, modified: u64, added: u64, covers: &Pat
         FileType::Mpeg => Codec::Mp3,
         FileType::Wav | FileType::Aiff => Codec::Wav,
         FileType::Vorbis => Codec::Vorbis,
+        FileType::Opus => Codec::Opus,
         FileType::Aac => Codec::Aac,
         // Apple Lossless keeps its bit depth; AAC has none.
         FileType::Mp4 if props.bit_depth().is_some() => Codec::Alac,
         FileType::Mp4 => Codec::Aac,
-        // Opus and the rest: the player doesn't decode them.
+        // The rest: the player doesn't decode them.
         _ => return None,
     };
     let tag = file.primary_tag().or_else(|| file.first_tag());

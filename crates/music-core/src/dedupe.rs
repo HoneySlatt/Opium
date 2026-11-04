@@ -183,6 +183,16 @@ impl Copies {
             .iter()
             .find(|copy| same_song(copy, track))
     }
+
+    /// The best copy of `track` among them, as the library keeps it: a file
+    /// first, then the server's, Apple Music's, SoundCloud's.
+    pub fn best(&self, track: &Track) -> Option<&Track> {
+        self.0
+            .get(&song_key(track))?
+            .iter()
+            .filter(|copy| copy.id != track.id && same_song(copy, track))
+            .min_by_key(|copy| rank(copy.id.provider))
+    }
 }
 
 /// The artists to leave out of `artists`.
@@ -217,6 +227,21 @@ mod tests {
             in_library: true,
             library_id: None,
         }
+    }
+
+    #[test]
+    fn another_devices_file_plays_from_the_best_copy_here() {
+        let mut theirs = track(ProviderKind::Local, "Song", "Artist", 200);
+        theirs.id = ItemId::new(ProviderKind::Local, "content://media/external/audio/media/1");
+        let here = [
+            track(ProviderKind::SoundCloud, "Song", "Artist", 201),
+            track(ProviderKind::AppleMusic, "Song", "Artist", 200),
+            track(ProviderKind::Navidrome, "Song (Live)", "Artist", 260),
+        ];
+        let copies = Copies::of(&here);
+        assert_eq!(copies.best(&theirs).unwrap().id.provider, ProviderKind::AppleMusic);
+        let alone = Copies::of(std::slice::from_ref(&theirs));
+        assert!(alone.best(&theirs).is_none(), "not its own copy");
     }
 
     #[test]

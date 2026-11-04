@@ -86,7 +86,7 @@ impl Decoder {
         let sample_rate = params
             .sample_rate
             .ok_or_else(|| Error::Decode("unknown sample rate".into()))?;
-        let decoder = symphonia::default::get_codecs()
+        let decoder = codecs()
             .make_audio_decoder(&params, &AudioDecoderOptions::default())
             .map_err(decode_error)?;
 
@@ -213,5 +213,36 @@ impl Decoder {
             .and_then(|tb| tb.calc_time(seeked.actual_ts))
             .map(|t| Duration::from_secs_f64(t.as_secs_f64().max(0.0)));
         Ok(actual.unwrap_or(to))
+    }
+}
+
+/// Symphonia's decoders, and libopus's for Opus, which it has none of.
+fn codecs() -> &'static symphonia::core::codecs::registry::CodecRegistry {
+    static CODECS: std::sync::LazyLock<symphonia::core::codecs::registry::CodecRegistry> =
+        std::sync::LazyLock::new(|| {
+            let mut codecs = symphonia::core::codecs::registry::CodecRegistry::new();
+            symphonia::default::register_enabled_codecs(&mut codecs);
+            codecs.register_audio_decoder::<symphonia_adapter_libopus::OpusDecoder>();
+            codecs
+        });
+    &CODECS
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_opus_file_decodes_through_libopus() {
+        let bytes = include_bytes!("../tests/data/tone.opus").to_vec();
+        let len = bytes.len() as u64;
+        let mut decoder = Decoder::open(Source::new(std::io::Cursor::new(bytes), len, Some("opus"))).unwrap();
+        assert_eq!(decoder.info.sample_rate, 48_000);
+        let mut frames = 0;
+        while let Some(samples) = decoder.next().unwrap() {
+            frames += samples.len();
+        }
+        // About a second of mono sound.
+        assert!((40_000..=56_000).contains(&frames), "{frames} samples");
     }
 }

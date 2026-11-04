@@ -1023,6 +1023,13 @@ class Playback(private val context: Context, private val core: Core, private val
                     .build(),
             )
         if (track.id.id in stations) return liveSource(core.session.liveStation(track.id), item)
+        // Another device's file (in a playlist of Music's): a copy the phone has plays.
+        if (track.id.provider == ProviderKind.LOCAL && !track.id.id.startsWith("content://")) {
+            val songs = (context.applicationContext as io.github.honeyslatt.music.MusicApp).library.lists.value.songs.items
+                .filter { !(it.id.provider == ProviderKind.LOCAL && !it.id.id.startsWith("content://")) }
+            val copy = io.github.honeyslatt.music.core.copyOf(track, songs) ?: error("this song's file is on another device")
+            return playable(copy, generation)
+        }
         // Downloaded: from the phone, before any service is asked.
         val id = "${track.id.provider}:${track.id.id}"
         (context.applicationContext as io.github.honeyslatt.music.MusicApp).downloads.song(track)?.let {

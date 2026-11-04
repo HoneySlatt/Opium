@@ -37,6 +37,9 @@ pub struct LocalFile {
     /// `audio/flac`…
     pub mime: String,
     pub bitrate_kbps: Option<u32>,
+    /// As Android's index reads them, when it does.
+    pub sample_rate: Option<u32>,
+    pub bit_depth: Option<u8>,
     /// Its cover's address.
     pub cover: Option<String>,
 }
@@ -50,9 +53,10 @@ impl From<LocalFile> for local::Entry {
             "audio/wav" | "audio/x-wav" | "audio/aiff" | "audio/x-aiff" => Codec::Wav,
             "audio/ogg" | "audio/vorbis" | "application/ogg" => Codec::Vorbis,
             "audio/opus" => Codec::Opus,
-            // Apple Lossless says no more than AAC does: told by its rate.
+            // Apple Lossless has the same type as AAC: told by its rate, or
+            // a depth no AAC has.
             "audio/mp4" | "audio/x-m4a" | "audio/m4a" | "audio/aac" | "audio/mp4a-latm"
-                if f.bitrate_kbps.is_some_and(|k| k > 500) =>
+                if f.bitrate_kbps.is_some_and(|k| k > 500) || f.bit_depth.is_some_and(|b| b > 16) =>
             {
                 Codec::Alac
             }
@@ -74,8 +78,8 @@ impl From<LocalFile> for local::Entry {
             genre: f.genre,
             duration_ms: f.duration_ms,
             codec,
-            sample_rate: None,
-            bit_depth: None,
+            sample_rate: f.sample_rate,
+            bit_depth: f.bit_depth,
             bitrate: f.bitrate_kbps,
             cover: f.cover,
         }
@@ -1226,6 +1230,13 @@ impl LiveStation {
         })
         .await
     }
+}
+
+/// The best copy among `songs` of `track`, another device's file: the
+/// phone's own file, the server's, a service's.
+#[uniffi::export]
+pub fn copy_of(track: Track, songs: Vec<Track>) -> Option<Track> {
+    music_core::dedupe::Copies::of(&songs).best(&track).cloned()
 }
 
 /// The positions of `songs` to leave out of a list of every service's: the

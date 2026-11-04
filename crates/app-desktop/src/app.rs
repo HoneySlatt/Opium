@@ -684,6 +684,9 @@ pub struct App {
     pub new_playlist: Option<NewPlaylist>,
     /// The Info window of music files, when open.
     pub song_info: Option<SongInfo>,
+    /// The files whose tags were written last: an album renamed from its
+    /// page follows them to its new name.
+    tags_written: Vec<ItemId>,
     /// The playlist the Delete window asks about, when open.
     pub deleting: Option<Collection>,
     /// A playlist being made from the sidebar, to open once it exists.
@@ -795,6 +798,9 @@ pub struct App {
     /// The server's songs by title and artist, and how many songs the
     /// library had when they were indexed.
     server_songs: Option<(usize, music_core::dedupe::Copies)>,
+    /// Every library song by what copies share, as it was at so many songs:
+    /// another device's file plays from one here.
+    library_copies: Option<(usize, music_core::dedupe::Copies)>,
     next_token: Token,
     /// Fetching, to play as soon as it arrives.
     pending_play: Option<Token>,
@@ -973,6 +979,7 @@ impl App {
             radio_from: None,
             new_playlist: None,
             song_info: None,
+            tags_written: Vec::new(),
             deleting: None,
             open_created: false,
             playlist_dialog: None,
@@ -1028,6 +1035,7 @@ impl App {
             stands_for: HashMap::new(),
             now_stands_for: None,
             server_songs: None,
+            library_copies: None,
             next_token: 0,
             pending_play: None,
             start_at: None,
@@ -1447,6 +1455,18 @@ impl App {
         // The files' album and artist pages, as they were read, go.
         self.albums.retain(|id, _| id.provider != ProviderKind::Local);
         self.artists.retain(|id, _| id.provider != ProviderKind::Local);
+        // The album shown renamed (its title or artist): it shows as it is now.
+        if let Page::Album(id) = &self.page
+            && id.provider == ProviderKind::Local
+            && !self.songs.iter().any(|t| t.album_id.as_ref() == Some(id))
+            && let Some(now) = self
+                .songs
+                .iter()
+                .find(|t| self.tags_written.contains(&t.id))
+                .and_then(|t| t.album_id.clone())
+        {
+            self.page = Page::Album(now);
+        }
         if let Page::Album(id) | Page::Artist(id) = &self.page
             && id.provider == ProviderKind::Local
         {
@@ -1574,6 +1594,7 @@ impl App {
         info.saving = true;
         info.error = None;
         let paths = info.tracks.iter().map(|t| std::path::PathBuf::from(&t.id.id)).collect();
+        self.tags_written = info.tracks.iter().map(|t| t.id.clone()).collect();
         self.backend.send(Request::WriteTags { paths, edit });
     }
 
@@ -1702,6 +1723,7 @@ impl App {
         );
         self.searches.clear();
         self.server_songs = None;
+        self.library_copies = None;
         self.whole_albums.clear();
     }
 
@@ -3229,7 +3251,15 @@ impl App {
             ProviderKind::AppleMusic => self.connection == Connection::Connected,
             ProviderKind::SoundCloud => matches!(self.soundcloud, SoundCloudState::Connected(_)),
             ProviderKind::Navidrome => matches!(self.navidrome, SoundCloudState::Connected(_)),
-            ProviderKind::Local | ProviderKind::Music => true,
+            // Another device's file plays from a copy here, if there is one.
+            ProviderKind::Local => {
+                !Self::elsewhere(track)
+                    || self
+                        .library_copies
+                        .as_ref()
+                        .is_none_or(|(_, copies)| copies.best(track).is_some())
+            }
+            ProviderKind::Music => true,
         };
         !reached
             && !matches!(
@@ -3732,7 +3762,8 @@ impl App {
     /// The server's copy of `track`, when it has one: it plays in its place,
     /// being the file itself.
     fn server_copy(&mut self, track: &Track) -> Option<Track> {
-        if track.id.provider == ProviderKind::Navidrome
+        // A file here plays as it is.
+        if matches!(track.id.provider, ProviderKind::Navidrome | ProviderKind::Local)
             || !matches!(self.navidrome, SoundCloudState::Connected(_))
         {
             return None;
@@ -3753,10 +3784,35 @@ impl App {
         index.find(track).cloned()
     }
 
+    /// Whether `track` is another device's file (a phone's, in a playlist of
+    /// Music's): not here to play.
+    fn elsewhere(track: &Track) -> bool {
+        track.id.provider == ProviderKind::Local && !std::path::Path::new(&track.id.id).is_file()
+    }
+
+    /// The copy this computer has of another device's file: its own file,
+    /// the server's, a service's.
+    fn copy_here(&mut self, track: &Track) -> Option<Track> {
+        if !Self::elsewhere(track) {
+            return None;
+        }
+        if self
+            .library_copies
+            .as_ref()
+            .is_none_or(|(n, _)| *n != self.songs.len())
+        {
+            let index = music_core::dedupe::Copies::of(&self.songs);
+            self.library_copies = Some((self.songs.len(), index));
+        }
+        let (_, index) = self.library_copies.as_ref()?;
+        index.best(track).cloned()
+    }
+
     /// What `token` is to play for `track`: the server's copy if it has
     /// one, kept as standing for the track listed.
     fn plays_as(&mut self, token: Token, track: Track) -> Track {
-        let playing = match self.server_copy(&track) {
+        let copy = self.server_copy(&track).or_else(|| self.copy_here(&track));
+        let playing = match copy {
             Some(copy) => {
                 self.stands_for.insert(token, track.id.clone());
                 copy
