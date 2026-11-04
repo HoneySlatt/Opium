@@ -1494,31 +1494,38 @@ async fn run(
                         continue;
                     }
                 };
-                let connected = Navidrome::connect(credentials.clone()).await;
-                // A session on its own API too, for a cover changed; the
-                // password goes no further.
-                if let Ok(server) = &connected {
-                    let _ = server.open_session(&password).await;
-                }
-                drop(password);
-                match connected {
-                    Ok(server) => {
-                        let kept = keep_navidrome(&server.credentials());
-                        replies.send(Reply::SignedInNavidrome(kept));
-                        replies.send(Reply::Navidrome(Ok(Some(server.user().to_owned()))));
-                        let server = Arc::new(server);
-                        nd = Some(server.clone());
-                        sign_covers_with(&nd);
-                        loading.start(
-                            ProviderKind::Navidrome,
-                            load_navidrome_library(server, replies),
-                        );
+                // On its own thread: reaching a server that isn't there
+                // takes tens of seconds, and nothing else — no page, no
+                // search, no song starting — would be answered meanwhile.
+                let (arrived_tx, replies) = (arrived_tx.clone(), replies.clone());
+                tokio::spawn(async move {
+                    let connected = Navidrome::connect(credentials).await;
+                    // A session on its own API too, for a cover changed;
+                    // the password goes no further.
+                    if let Ok(server) = &connected {
+                        let _ = server.open_session(&password).await;
                     }
-                    Err(Error::NotSignedIn) => replies.send(Reply::SignedInNavidrome(Err(
-                        "the server didn't take this user and password".into(),
-                    ))),
-                    Err(e) => replies.send(Reply::SignedInNavidrome(Err(e.to_string()))),
-                }
+                    drop(password);
+                    let server = match connected {
+                        Ok(server) => {
+                            let kept = keep_navidrome(&server.credentials());
+                            replies.send(Reply::SignedInNavidrome(kept));
+                            replies.send(Reply::Navidrome(Ok(Some(server.user().to_owned()))));
+                            Some(Arc::new(server))
+                        }
+                        Err(Error::NotSignedIn) => {
+                            replies.send(Reply::SignedInNavidrome(Err(
+                                "the server didn't take this user and password".into(),
+                            )));
+                            None
+                        }
+                        Err(e) => {
+                            replies.send(Reply::SignedInNavidrome(Err(e.to_string())));
+                            None
+                        }
+                    };
+                    let _ = arrived_tx.send(Arrived::Navidrome(server, true));
+                });
                 continue;
             }
             // Every service at once.
