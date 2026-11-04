@@ -23,6 +23,7 @@ downloads = { path = "../downloads" }
 synced = { path = "../synced" }
 music-core = { path = "../music-core", features = ["ffi"] }
 services = { path = "../services" }
+local = { path = "../local" }
 navidrome = { path = "../navidrome" }
 soundcloud = { path = "../soundcloud" }
 lyrics = { path = "../lyrics" }

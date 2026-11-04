@@ -16,6 +16,72 @@ uniffi::setup_scaffolding!();
 
 mod downloading;
 
+/// A music file of the phone, as its media index tells of it.
+#[derive(uniffi::Record)]
+pub struct LocalFile {
+    /// Its address in the index: the song's id.
+    pub uri: String,
+    pub size: u64,
+    /// When it last changed, and joined the library, in seconds.
+    pub modified: u64,
+    pub added: u64,
+    pub title: String,
+    pub artists: Vec<String>,
+    pub album_artist: Option<String>,
+    pub album: Option<String>,
+    pub track: Option<u32>,
+    pub disc: Option<u32>,
+    pub year: Option<u16>,
+    pub genre: Option<String>,
+    pub duration_ms: u64,
+    /// `audio/flac`…
+    pub mime: String,
+    pub bitrate_kbps: Option<u32>,
+    /// Its cover's address.
+    pub cover: Option<String>,
+}
+
+impl From<LocalFile> for local::Entry {
+    fn from(f: LocalFile) -> Self {
+        use music_core::model::Codec;
+        let codec = match f.mime.as_str() {
+            "audio/flac" | "audio/x-flac" => Codec::Flac,
+            "audio/mpeg" | "audio/mp3" => Codec::Mp3,
+            "audio/wav" | "audio/x-wav" | "audio/aiff" | "audio/x-aiff" => Codec::Wav,
+            "audio/ogg" | "audio/vorbis" | "application/ogg" => Codec::Vorbis,
+            "audio/opus" => Codec::Opus,
+            // Apple Lossless says no more than AAC does: told by its rate.
+            "audio/mp4" | "audio/x-m4a" | "audio/m4a" | "audio/aac" | "audio/mp4a-latm"
+                if f.bitrate_kbps.is_some_and(|k| k > 500) =>
+            {
+                Codec::Alac
+            }
+            "audio/mp4" | "audio/x-m4a" | "audio/m4a" | "audio/aac" | "audio/mp4a-latm" => Codec::Aac,
+            other => Codec::Other(other.to_owned()),
+        };
+        local::Entry {
+            path: f.uri,
+            size: f.size,
+            modified: f.modified,
+            added: f.added,
+            title: f.title,
+            artists: f.artists,
+            album_artist: f.album_artist,
+            album: f.album,
+            track: f.track,
+            disc: f.disc,
+            year: f.year,
+            genre: f.genre,
+            duration_ms: f.duration_ms,
+            codec,
+            sample_rate: None,
+            bit_depth: None,
+            bitrate: f.bitrate_kbps,
+            cover: f.cover,
+        }
+    }
+}
+
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum MusicError {
     #[error("not signed in")]
@@ -341,6 +407,15 @@ impl Session {
                 reason: "Navidrome isn't connected".into(),
             })?;
         Ok(server.stream_url(&track))
+    }
+
+    /// The phone's music files, as its media index has them in the folders
+    /// chosen: the library's files from now on; none, no files.
+    pub fn set_local_files(&self, files: Vec<LocalFile>) {
+        let files: Vec<local::Entry> = files.into_iter().map(Into::into).collect();
+        self.update(|s| {
+            s.local = (!files.is_empty()).then(|| Arc::new(local::Local::from_entries(files)))
+        });
     }
 
     /// Stop using a service; its sign-in stays where the app keeps it.

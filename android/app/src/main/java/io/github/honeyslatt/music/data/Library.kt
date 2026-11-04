@@ -101,6 +101,12 @@ class Library(private val core: Core, private val scope: CoroutineScope) {
     private val loaded = mutableSetOf<String>()
 
     /** A service turned off or signed out of: its items go from the lists. */
+    /** `provider`'s lists read again whole: the phone's files changed. */
+    fun reload(provider: ProviderKind) {
+        forget(provider)
+        load(provider, again = true)
+    }
+
     fun forget(provider: ProviderKind) {
         providers -= provider
         showing -= provider

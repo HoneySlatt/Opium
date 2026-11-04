@@ -21,6 +21,10 @@ class MusicApp : Application(), coil3.SingletonImageLoader.Factory {
         private set
     lateinit var library: Library
         private set
+
+    /** The phone's own music files. */
+    lateinit var localFiles: io.github.honeyslatt.music.data.LocalFiles
+        private set
     lateinit var settings: io.github.honeyslatt.music.data.Settings
         private set
 
@@ -44,7 +48,10 @@ class MusicApp : Application(), coil3.SingletonImageLoader.Factory {
     override fun newImageLoader(context: coil3.PlatformContext): coil3.ImageLoader =
         coil3.ImageLoader.Builder(context)
             .crossfade(220)
-            .components { add(io.github.honeyslatt.music.data.Covers.Signing()) }
+            .components {
+                add(io.github.honeyslatt.music.data.Covers.Signing())
+                add(io.github.honeyslatt.music.data.LocalFiles.CoverFetcher.Factory(context))
+            }
             .build()
 
     override fun onCreate() {
@@ -56,6 +63,7 @@ class MusicApp : Application(), coil3.SingletonImageLoader.Factory {
         settings = io.github.honeyslatt.music.data.Settings(this)
         themes = io.github.honeyslatt.music.data.Themes(this)
         library = Library(core, scope)
+        localFiles = io.github.honeyslatt.music.data.LocalFiles(this, core, library, scope)
         downloads = io.github.honeyslatt.music.data.Downloads(this, core, scope)
         core.signedOut = downloads::forget
         devices = io.github.honeyslatt.music.data.Devices(this)
@@ -105,7 +113,8 @@ class MusicApp : Application(), coil3.SingletonImageLoader.Factory {
         if (started) return
         started = true
         scope.launch { core.start() }
-        io.github.honeyslatt.music.data.SERVICES.forEach { kind ->
+        localFiles.start()
+        io.github.honeyslatt.music.data.SOURCES.forEach { kind ->
             scope.launch {
                 core.connection(kind).map { (it is Connection.Connected) to (it == Connection.Off) }.distinctUntilChanged().collect {
                     when (core.connection(kind).value) {

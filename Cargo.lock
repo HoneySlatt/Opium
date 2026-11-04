@@ -3964,6 +3964,7 @@ dependencies = [
  "connect",
  "downloads",
  "jni 0.22.4",
+ "local",
  "lyrics",
  "music-core",
  "navidrome",

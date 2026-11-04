@@ -84,7 +84,7 @@ fun App(core: Core, library: Library, playback: io.github.honeyslatt.music.playb
     val nav = remember { Navigator() }
     val lists by library.lists.collectAsStateWithLifecycle()
     // The services connected, for the source chips.
-    val services = io.github.honeyslatt.music.data.SERVICES.filter { core.connection(it).collectAsStateWithLifecycle().value is Connection.Connected }
+    val services = io.github.honeyslatt.music.data.SOURCES.filter { core.connection(it).collectAsStateWithLifecycle().value is Connection.Connected }
     var settingsOpen by remember { mutableStateOf(false) }
     // The devices to play on, from the mini player in Spotify's layout.
     var devicesOpen by remember { mutableStateOf(false) }
@@ -111,7 +111,7 @@ fun App(core: Core, library: Library, playback: io.github.honeyslatt.music.playb
     val downloads = (appContext as io.github.honeyslatt.music.MusicApp).downloads
     val downloadStates by downloads.states.collectAsStateWithLifecycle()
     // A service signed in to but out of reach: its songs not downloaded can't play.
-    val connections = io.github.honeyslatt.music.data.SERVICES.associateWith { core.connection(it).collectAsStateWithLifecycle().value }
+    val connections = io.github.honeyslatt.music.data.SOURCES.associateWith { core.connection(it).collectAsStateWithLifecycle().value }
     val unreachable = connections.filterValues { it is io.github.honeyslatt.music.data.Connection.Failed }.keys
     val offline = unreachable.isNotEmpty() && connections.values.none { it is io.github.honeyslatt.music.data.Connection.Connected }
     LaunchedEffect(Unit) {

@@ -68,6 +68,7 @@ private sealed interface SettingsPage {
     data class Service(val kind: ProviderKind) : SettingsPage
     data object LyricsSites : SettingsPage
     data object Motion : SettingsPage
+    data object Files : SettingsPage
 }
 
 /** Settings, from the avatar: the services, then how the app behaves. */
@@ -93,6 +94,7 @@ fun SettingsSheet(open: Boolean, core: Core, settings: Settings, onSignIn: (Prov
         is SettingsPage.Service -> Sheet(open, p.kind.label(), close, left = backButton) { Service(core, settings, p.kind, onSignIn, close) }
         SettingsPage.LyricsSites -> Sheet(open, "Lyrics Sites", close, left = backButton) { LyricsSites(settings) }
         SettingsPage.Motion -> Sheet(open, "Animated Artwork", close, left = backButton) { Motion(settings) }
+        SettingsPage.Files -> Sheet(open, "Files", close, left = backButton) { Files() }
     }
     // Back from a page of Settings goes to its root.
     androidx.activity.compose.BackHandler(open && page != SettingsPage.Root, back)
@@ -179,6 +181,13 @@ private fun Root(core: Core, settings: Settings, go: (SettingsPage) -> Unit) {
                 Words(kind.label(), status)
                 Glyph(Icons.Right, roles.muted, 18.dp)
             }
+        }
+        // The phone's own files, by folder.
+        val files by core.connection(ProviderKind.LOCAL).collectAsStateWithLifecycle()
+        GroupRow(first = false, inset = 58.dp, onClick = { go(SettingsPage.Files) }) {
+            Box(Modifier.alpha(if (files is Connection.Connected) 1f else 0.5f)) { ServiceLogo(ProviderKind.LOCAL, 30.dp) }
+            Words("Files", (files as? Connection.Connected)?.name ?: "Your own music files")
+            Glyph(Icons.Right, roles.muted, 18.dp)
         }
     }
 
@@ -504,6 +513,39 @@ private fun Service(core: Core, settings: Settings, kind: ProviderKind, onSignIn
                     io.github.honeyslatt.music.ui.connect.forgetCookies(kind)
                 }
             }) { Words("Sign Out", colour = roles.red) }
+        }
+    }
+}
+
+/** The phone's music files: Android's leave to read them, then the folders they come from. */
+@Composable
+private fun Files() {
+    val local = (androidx.compose.ui.platform.LocalContext.current.applicationContext as io.github.honeyslatt.music.MusicApp).localFiles
+    var allowed by remember { mutableStateOf(local.allowed()) }
+    val ask = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { granted ->
+        allowed = granted
+        if (granted) local.start()
+    }
+    if (!allowed) {
+        Group("Music reads the songs Android keeps in the folders you choose, and plays them as they are.") {
+            GroupRow(first = true, onClick = { ask.launch(android.Manifest.permission.READ_MEDIA_AUDIO) }) {
+                Words("Allow Access to Music", colour = roles.tint)
+            }
+        }
+        return
+    }
+    val found by local.found.collectAsStateWithLifecycle()
+    val chosen by local.folders.collectAsStateWithLifecycle()
+    if (found.isEmpty()) {
+        Group("No music files on this phone yet: copy some into Music or Download, and they show here.") {}
+        return
+    }
+    Group("The songs of the folders chosen join your library, and follow as files come and go. A song you also have on a service plays from the file.") {
+        found.forEachIndexed { i, (folder, count) ->
+            GroupRow(first = i == 0) {
+                Words(folder.removeSuffix("/"), "$count song${if (count == 1) "" else "s"}")
+                Switch(folder in chosen) { on -> local.choose(folder, on) }
+            }
         }
     }
 }

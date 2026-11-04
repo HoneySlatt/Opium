@@ -91,6 +91,21 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        playOpened(intent)
+    }
+
+    /** A music file opened from another app (Files, a chat): it plays. */
+    private fun playOpened(intent: android.content.Intent?) {
+        val uri = intent?.data?.takeIf { intent.action == android.content.Intent.ACTION_VIEW } ?: return
+        val app = application as MusicApp
+        app.scope.launch {
+            val track = app.localFiles.opened(uri)
+            app.playback.play(listOf(track), 0)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
@@ -98,6 +113,7 @@ class MainActivity : ComponentActivity() {
             notifications.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
         val app = application as MusicApp
+        playOpened(intent)
         setContent {
             val appearance by app.core.appearance.collectAsStateWithLifecycle()
             val themes by app.themes.all.collectAsStateWithLifecycle()

@@ -22,7 +22,8 @@ pub const EXTENSIONS: [&str; 10] = [
 /// Pictures in an album's folder taken as its cover, the first found.
 const FOLDER_COVERS: [&str; 4] = ["cover", "folder", "front", "album"];
 
-/// One music file, as its tags say.
+/// One music file, as its tags say. `path` names it: a path, or the
+/// phone's address of it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Entry {
     pub path: String,
@@ -44,7 +45,7 @@ pub struct Entry {
     pub sample_rate: Option<u32>,
     pub bit_depth: Option<u8>,
     pub bitrate: Option<u32>,
-    /// Its cover, made square in the covers' folder.
+    /// Its cover, made square in the covers' folder; or an address.
     pub cover: Option<String>,
 }
 

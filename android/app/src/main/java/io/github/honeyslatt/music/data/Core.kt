@@ -23,8 +23,11 @@ sealed interface Connection {
     data class Failed(val reason: String) : Connection
 }
 
-/** The services one signs in to: Music's own playlists are none. */
-val SERVICES = ProviderKind.entries - ProviderKind.MUSIC
+/** The services one signs in to: Music's own playlists are none, nor the phone's files. */
+val SERVICES = ProviderKind.entries - ProviderKind.MUSIC - ProviderKind.LOCAL
+
+/** Where the library's songs come from: the services and the phone's files. */
+val SOURCES = SERVICES + ProviderKind.LOCAL
 
 /**
  * The Rust core's session, and what the app keeps between launches: the
@@ -49,6 +52,11 @@ class Core(context: Context) {
 
     /** The same flow each time: collected anew at each recomposition otherwise. */
     fun connection(kind: ProviderKind): StateFlow<Connection> = shown.getValue(kind)
+
+    /** The phone's files, as [LocalFiles] reads them: their count, or Off. */
+    fun filesRead(state: Connection) {
+        connections.getValue(ProviderKind.LOCAL).value = state
+    }
 
     val apple: StateFlow<Connection> = connection(ProviderKind.APPLE_MUSIC)
 

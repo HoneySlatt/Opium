@@ -22,7 +22,8 @@ pub use scan::{EXTENSIONS, is_music};
 pub use tags::{Cover, TagEdit, Tags, read_tags, write_tags};
 pub use watch::Watching;
 
-use scan::{Entry, Index};
+pub use scan::Entry;
+use scan::Index;
 
 const ALBUM: &str = "album:";
 const ARTIST: &str = "artist:";
@@ -60,6 +61,20 @@ impl Local {
         }
     }
 
+    /// A library of the files `entries` tell of, read elsewhere: the phone's,
+    /// from its media index.
+    pub fn from_entries(entries: Vec<Entry>) -> Self {
+        Self {
+            folders: Vec::new(),
+            index_path: PathBuf::new(),
+            covers: PathBuf::new(),
+            index: RwLock::new(Arc::new(Index {
+                entries,
+                skipped: Vec::new(),
+            })),
+        }
+    }
+
     pub fn folders(&self) -> &[PathBuf] {
         &self.folders
     }
@@ -71,6 +86,10 @@ impl Local {
     /// Read the folders again, the files unchanged as they were kept;
     /// whether the library changed. Waits on the disk: off the async threads.
     pub fn rescan(&self) -> bool {
+        // The phone's come read already.
+        if self.folders.is_empty() {
+            return false;
+        }
         let before = self.index();
         let (index, changed) = scan::scan(&self.folders, &before, &self.covers);
         if changed || index.skipped != before.skipped {
@@ -189,9 +208,14 @@ fn artist_id(name: &str) -> ItemId {
     ItemId::new(ProviderKind::Local, format!("{ARTIST}{}", fold(name)))
 }
 
+/// A cover kept at `path`, or at an address (the phone's covers).
 fn artwork(path: &str) -> music_core::model::Artwork {
     music_core::model::Artwork {
-        url_template: format!("file://{path}"),
+        url_template: if path.contains("://") {
+            path.to_owned()
+        } else {
+            format!("file://{path}")
+        },
         background: None,
     }
 }

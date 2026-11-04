@@ -43,6 +43,12 @@ fun soundCloudSource(stream: SoundCloudStream, item: MediaItem.Builder): MediaSo
     return factory.createMediaSource(item.setUri(stream.url()).setMimeType(MimeTypes.APPLICATION_M3U8).build())
 }
 
+/** A music file of the phone, as it is, from its address in the media index. */
+@UnstableApi
+fun localSource(context: android.content.Context, uri: String, item: MediaItem.Builder): MediaSource =
+    ProgressiveMediaSource.Factory(androidx.media3.datasource.DefaultDataSource.Factory(context))
+        .createMediaSource(item.setUri(uri).build())
+
 /** A song on the user's server: its file as it is (`format=raw`), with no transcoding. */
 @UnstableApi
 fun navidromeSource(url: String, item: MediaItem.Builder): MediaSource =
