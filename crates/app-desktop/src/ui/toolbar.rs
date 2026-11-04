@@ -356,10 +356,16 @@ pub(super) fn wavy(
     let dt = (now - then).min(0.1) as f32;
     let target = if playing { 1.0 } else { 0.0 };
     amp += (target - amp) * (dt * 6.0).min(1.0);
-    if playing {
+    // The wave travels while the window is the one in use. In the
+    // background it holds still, as the playing row's bars do: travelling,
+    // it would have the whole window drawn again at the display's rate for
+    // as long as the music plays, hours on end, for it alone. The position
+    // still moves on with the four-a-second tick that playing keeps.
+    let travelling = playing && ui.input(|i| i.focused);
+    if travelling {
         phase = (phase - dt * 4.2) % TAU;
     }
-    if playing || (amp - target).abs() > 0.002 {
+    if travelling || (amp - target).abs() > 0.002 {
         ui.ctx().request_repaint();
     }
     ui.data_mut(|d| d.insert_temp(id, (amp, phase, now)));
