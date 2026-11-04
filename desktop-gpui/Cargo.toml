@@ -20,8 +20,12 @@ desktop = { path = "../crates/desktop" }
 music-core = { path = "../crates/music-core" }
 navidrome = { path = "../crates/navidrome" }
 synced = { path = "../crates/synced" }
+downloads = { path = "../crates/downloads" }
 serde_json = "1.0.154"
 async-channel = "2.5"
+toml = "1.1.8"
+ehttp = "0.7.2"
+image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "webp"] }
 # GPUI from Music's fork of Zed, beside this repository for now (branch
 # `music`): published as its own repository once it carries patches.
 gpui = { path = "../../gpui/crates/gpui" }
