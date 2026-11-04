@@ -17,7 +17,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use symphonia::core::io::MediaSource;
 
@@ -357,8 +357,7 @@ impl Player {
 
     pub fn status(&self) -> Status {
         let status = self.engine().status.clone();
-        let status = status.lock().unwrap_or_else(|e| e.into_inner()).clone();
-        status
+        status.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     pub fn events(&self) -> &Receiver<Event> {
@@ -394,8 +393,21 @@ impl Drop for Player {
     fn drop(&mut self) {
         let mut engine = self.engine();
         let _ = engine.commands.send(Command::Quit);
-        if let Some(thread) = engine.thread.take() {
+        let Some(thread) = engine.thread.take() else {
+            return;
+        };
+        // Waited for, but not for long: an engine parked on a read that the
+        // network dropped would hold the window open until the read gives
+        // up, a minute later. It is let go of instead, silenced, and ends
+        // on its own once the read does.
+        let until = Instant::now() + Duration::from_millis(500);
+        while !thread.is_finished() && Instant::now() < until {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        if thread.is_finished() {
             let _ = thread.join();
+        } else {
+            engine.shared.retire();
         }
     }
 }

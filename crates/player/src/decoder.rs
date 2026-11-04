@@ -83,8 +83,11 @@ impl Decoder {
             .and_then(|p| p.audio())
             .cloned()
             .ok_or_else(|| Error::Decode("no audio parameters".into()))?;
+        // A file saying nothing, or zero: refused here rather than divided
+        // by further down, where it would bring the engine down with it.
         let sample_rate = params
             .sample_rate
+            .filter(|&rate| rate > 0)
             .ok_or_else(|| Error::Decode("unknown sample rate".into()))?;
         let decoder = codecs()
             .make_audio_decoder(&params, &AudioDecoderOptions::default())
@@ -245,4 +248,39 @@ mod tests {
         // About a second of mono sound.
         assert!((40_000..=56_000).contains(&frames), "{frames} samples");
     }
+    #[test]
+    fn a_file_saying_it_runs_at_no_rate_is_refused_rather_than_divided_by() {
+        // A WAV header saying 0 Hz: it used to reach a division and bring
+        // the engine down for the rest of the session.
+        let data = vec![0u8; 200];
+        let fmt = [
+            1u16.to_le_bytes().as_slice(),
+            1u16.to_le_bytes().as_slice(),
+            0u32.to_le_bytes().as_slice(),
+            0u32.to_le_bytes().as_slice(),
+            2u16.to_le_bytes().as_slice(),
+            16u16.to_le_bytes().as_slice(),
+        ]
+        .concat();
+        let chunks = [
+            b"fmt ".as_slice(),
+            &(fmt.len() as u32).to_le_bytes(),
+            &fmt,
+            b"data",
+            &(data.len() as u32).to_le_bytes(),
+            &data,
+        ]
+        .concat();
+        let bytes = [
+            b"RIFF".as_slice(),
+            &(4 + chunks.len() as u32).to_le_bytes(),
+            b"WAVE",
+            &chunks,
+        ]
+        .concat();
+        let len = bytes.len() as u64;
+        let opened = Decoder::open(Source::new(std::io::Cursor::new(bytes), len, Some("wav")));
+        assert!(opened.is_err(), "it must not open");
+    }
+
 }
