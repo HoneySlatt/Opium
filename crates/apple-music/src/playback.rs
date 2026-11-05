@@ -121,13 +121,17 @@ fn select_asset(song: &serde_json::Value) -> Result<Asset> {
         .ok_or_else(|| playback_error("no Widevine asset (only FairPlay's)"))
 }
 
-/// A sample's `(clear, encrypted)` byte runs, as the CDM takes them.
-fn subsamples(sample: &cenc::EncryptedSample) -> Vec<(u32, u32)> {
-    sample
-        .subs
-        .iter()
-        .map(|&(c, e)| (u32::from(c), e))
-        .collect()
+/// Puts the CDM's cleartext of a sample in place of its ciphertext, `bytes`.
+fn put_in_place(bytes: &mut [u8], clear: Vec<u8>) -> std::result::Result<(), String> {
+    if clear.len() != bytes.len() {
+        return Err(format!(
+            "the CDM returned {} bytes for a {}-byte sample",
+            clear.len(),
+            bytes.len()
+        ));
+    }
+    bytes.copy_from_slice(&clear);
+    Ok(())
 }
 
 /// The fragmented MP4 `resp` brings, readable from its first fragment on
@@ -172,10 +176,9 @@ async fn as_it_downloads(
     Ok(stream)
 }
 
-/// The audio's bit rate, from its samples: each one AAC frame.
-fn audio_kbps(samples: &[cenc::EncryptedSample]) -> Option<u32> {
-    let seconds = samples.len() as f64 * AAC_FRAME.as_secs_f64();
-    let bytes: usize = samples.iter().map(|s| s.len).sum();
+/// The audio's bit rate, from its `samples` and their `bytes`: each sample one AAC frame.
+fn audio_kbps(samples: usize, bytes: usize) -> Option<u32> {
+    let seconds = samples as f64 * AAC_FRAME.as_secs_f64();
     (seconds > 0.0).then(|| (bytes as f64 * 8.0 / seconds / 1000.0).round() as u32)
 }
 
@@ -303,28 +306,6 @@ fn map_range(body: &str) -> Option<(u64, u64)> {
     Some((offset.parse().ok()?, length.parse().ok()?))
 }
 
-/// Write `ids` into the zero key ids of `init`'s `tenc` boxes, in their
-/// order: the sample entries', one key each.
-fn name_keys(init: &mut [u8], ids: &[&[u8]]) {
-    let mut from = 0;
-    let mut entry = 0;
-    while let Some(at) = init
-        .get(from..)
-        .and_then(|rest| rest.windows(4).position(|w| w == b"tenc"))
-    {
-        let at = from + at;
-        // The key id sits 8 bytes into the box's body, after its type.
-        if let (Some(slot), Some(id)) = (init.get_mut(at + 12..at + 28), ids.get(entry))
-            && slot.iter().all(|&b| b == 0)
-            && id.len() == 16
-        {
-            slot.copy_from_slice(id);
-        }
-        entry += 1;
-        from = at + 4;
-    }
-}
-
 /// The sample rate an AAC `AudioSpecificConfig` says.
 fn aac_rate(asc: &[u8]) -> Option<u32> {
     const RATES: [u32; 13] = [
@@ -419,8 +400,14 @@ impl AppleMusic {
             && let Some(range) = map_range(&body)
             && let Ok(mut init) = self.range(&file.url, range).await
         {
-            let ids: Vec<&[u8]> = file.keys.iter().map(|k| k.id.as_slice()).collect();
-            name_keys(&mut init, &ids);
+            // The sample entries' key ids are zero; the playlist names them, in order. An id of
+            // the wrong length names nothing: its entry stays zero.
+            let ids: Vec<[u8; 16]> = file
+                .keys
+                .iter()
+                .map(|k| k.id.as_slice().try_into().unwrap_or([0; 16]))
+                .collect();
+            cenc::write_key_ids(&mut init, &ids);
             let first = &file.keys[0];
             return Ok(Some(Protected {
                 url: file.url.clone(),
@@ -564,8 +551,8 @@ impl AppleMusic {
             .await
             .ok()?;
         let head = resp.bytes().await.ok()?;
-        let samples = cenc::index_fmp4(&head).ok()?.samples;
-        let audio: usize = samples.iter().map(|s| s.len).sum();
+        let (_, samples) = cenc::index(&head).ok()?;
+        let audio: usize = samples.iter().map(|s| s.size).sum();
         let boxes = first.length.checked_sub(audio as u64)? as f64 / samples.len() as f64;
         let bytes: u64 = playlist
             .segments
@@ -631,7 +618,9 @@ impl AppleMusic {
         let licensed_as = song_id(&song).unwrap_or_else(|| adam_id.to_owned());
         if let Some((url, body)) = binaural
             && let Some(file) = read_enhanced_playlist(&url, &body)
-            && let Ok(stream) = self.fetch_enhanced(cdm, &licensed_as, &file).await
+            && let Ok(stream) = self
+                .fetch_enhanced(cdm, &licensed_as, &file, map_range(&body))
+                .await
         {
             return Ok((stream, None, true));
         }
@@ -664,25 +653,30 @@ impl AppleMusic {
                 &key.uri,
             ),
         )?;
-        let decrypt = Box::new(move |ciphertext: &[u8], sample: &cenc::EncryptedSample| {
-            session
-                .decrypt(ciphertext, &key.id, &sample.iv, &subsamples(sample))
-                .map_err(|e| e.to_string())
+        let decrypt = Box::new(move |bytes: &mut [u8], sample: &cenc::Sample<'_>| {
+            let clear = session
+                .decrypt(bytes, &key.id, &sample.iv, sample.subsamples)
+                .map_err(|e| e.to_string())?;
+            put_in_place(bytes, clear)
         });
         let again = self.asset_request(&file.url);
         let stream = as_it_downloads(resp, again, AAC_FRAME, decrypt).await?;
-        let kbps = stream.with_samples(audio_kbps);
+        let kbps = stream
+            .with_samples(|samples| audio_kbps(samples.len(), samples.iter().map(|s| s.size).sum()))
+            .flatten();
         Ok((stream, kbps, false))
     }
 
     /// An enhanced file (Spatial Audio's), licensed and downloading: its
-    /// sample entries each name their key and constant IV, which its start
-    /// says, and its frames are 48 kHz ones.
+    /// sample entries each name their key and constant IV, which its init
+    /// segment says (at `init`, `(offset, length)`, as its playlist gives it),
+    /// and its frames are 48 kHz ones.
     async fn fetch_enhanced(
         &self,
         cdm: &Cdm,
         adam_id: &str,
         file: &EncryptedFile,
+        init: Option<(u64, u64)>,
     ) -> Result<AudioStream> {
         let license = |key: &Key| {
             let key = key.clone();
@@ -695,30 +689,36 @@ impl AppleMusic {
                 Ok::<_, Error>((session, key.id))
             }
         };
-        // The movie box is in the first few kilobytes.
-        let head = self.range(&file.url, (0, 16 * 1024));
+        // Without the playlist's range, the movie box is in the first few kilobytes.
+        let head = self.range(&file.url, init.unwrap_or((0, 16 * 1024)));
         let (keys, head, resp) = tokio::try_join!(
             futures_util::future::try_join_all(file.keys.iter().map(license)),
             head,
             self.start_download(&file.url),
         )?;
-        let tencs = cenc::tencs(&head);
-        if tencs.is_empty() {
+        let movie = cenc::Movie::read(&head)
+            .map_err(|e| playback_error(format!("enhanced file: {e}")))?
+            .ok_or_else(|| {
+                playback_error("enhanced file: its init segment has no whole movie box")
+            })?;
+        let entries = movie.tracks.first().map_or(&[][..], |t| &t.entries);
+        if !entries.iter().any(|e| e.protection.is_some()) {
             return Err(playback_error("enhanced file without its keys' IVs"));
         }
-        let rate = cenc::audio_specific_config(&head)
-            .and_then(|asc| aac_rate(&asc))
+        let rate = entries
+            .first()
+            .and_then(|e| e.audio_config.as_deref())
+            .and_then(aac_rate)
             .unwrap_or(48_000);
         let frame = std::time::Duration::from_nanos(
             u64::from(AAC_FRAMES) * 1_000_000_000 / u64::from(rate),
         );
-        let decrypt = Box::new(move |ciphertext: &[u8], sample: &cenc::EncryptedSample| {
-            let entry = sample.description as usize;
-            let tenc = &tencs[entry.min(tencs.len() - 1)];
-            let iv: &[u8] = match &tenc.constant_iv {
-                Some(iv) if sample.iv == [0; 16] => iv,
-                _ => &sample.iv,
-            };
+        let decrypt = Box::new(move |bytes: &mut [u8], sample: &cenc::Sample<'_>| {
+            let entry = sample.entry as usize;
+            let pattern = (
+                u32::from(sample.pattern.crypt),
+                u32::from(sample.pattern.skip),
+            );
             // Each sample entry's key, in the playlist's order; another of
             // them should that not be it.
             let order = keys
@@ -727,14 +727,8 @@ impl AppleMusic {
                 .chain(keys.iter().take(entry.min(keys.len())));
             let mut last = String::from("no key");
             for (session, key_id) in order {
-                match session.decrypt_cbcs(
-                    ciphertext,
-                    key_id,
-                    iv,
-                    tenc.pattern,
-                    &subsamples(sample),
-                ) {
-                    Ok(clear) => return Ok(clear),
+                match session.decrypt_cbcs(bytes, key_id, &sample.iv, pattern, sample.subsamples) {
+                    Ok(clear) => return put_in_place(bytes, clear),
                     Err(e) => last = e.to_string(),
                 }
             }
@@ -980,18 +974,9 @@ mod tests {
 
     #[test]
     fn the_bit_rate_is_read_from_the_samples() {
-        let sample = |len| cenc::EncryptedSample {
-            fragment: 0,
-            start: 0,
-            len,
-            iv: [0; 16],
-            subs: Vec::new(),
-            description: 0,
-        };
         // 744 bytes a frame of 1024 at 44.1 kHz: 256 kbps.
-        let samples: Vec<_> = (0..430).map(|_| sample(744)).collect();
-        assert_eq!(audio_kbps(&samples), Some(256));
-        assert_eq!(audio_kbps(&[]), None);
+        assert_eq!(audio_kbps(430, 430 * 744), Some(256));
+        assert_eq!(audio_kbps(0, 0), None);
     }
 
     #[test]
@@ -1082,23 +1067,6 @@ mod tests {
             variant(base, master, "audio-stereo-256").as_deref(),
             Some("https://aod.itunes.apple.com/x/P1_m.m3u8")
         );
-    }
-
-    #[test]
-    fn each_sample_entry_gets_its_key_id() {
-        let tenc = |kid: u8| {
-            let mut body = vec![1, 0, 0, 0, 0, 0, 1, 0];
-            body.extend_from_slice(&[kid; 16]);
-            let mut out = ((body.len() + 8) as u32).to_be_bytes().to_vec();
-            out.extend_from_slice(b"tenc");
-            out.extend_from_slice(&body);
-            out
-        };
-        let mut init = [tenc(0), tenc(0), tenc(7)].concat();
-        name_keys(&mut init, &[&[1; 16], &[2; 16], &[3; 16]]);
-        let ids: Vec<u8> = cenc::tencs(&init).iter().map(|t| t.key_id[0]).collect();
-        // A key id already there stays.
-        assert_eq!(ids, [1, 2, 7]);
     }
 
     #[test]

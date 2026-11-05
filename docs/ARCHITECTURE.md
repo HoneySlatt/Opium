@@ -35,8 +35,11 @@ app in Kotlin with Jetpack Compose, which calls the core through UniFFI
   ([ADR-0008](adr/0008-the-lyrics-sources.md)).
 - **`crates/services`**: the services and files as one: an item goes to its own service, a search
   to all, and what several have shows once.
-- **`crates/cenc`**: encrypted fragmented MP4: where its encrypted samples are, and
-  `AudioStream`, which reads as the plain MP4 while a CDM decrypts ahead in the background.
+- **`crates/cenc`**: encrypted fragmented MP4 (ISO BMFF and CENC), written from
+  [its specification](specs/fmp4-cenc.md): the movie box (`Movie`), every sample's place and
+  decryption inputs in a compact table (`Indexer`, `SampleTable`), the file made to read as a plain
+  MP4 (`make_clear`); and `AudioStream`, which reads as the plain MP4 while a CDM decrypts ahead in
+  the background. Fuzzed by mutation tests and by `cargo fuzz` (`crates/cenc/fuzz`).
 - **`crates/widevine`**: a browser's Widevine CDM loaded and driven through a C++ shim
   (`shim/widevine_shim.cc`); a stub on Android
   ([ADR-0004](adr/0004-the-widevine-cdm-borrowed-from-the-browser.md)).

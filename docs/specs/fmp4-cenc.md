@@ -185,8 +185,8 @@ Nothing else is rewritten; the bytes of samples are only changed by decryption.
 A file that downloads is made clear piece by piece: the same call again, each time with the table
 grown by the fragments just indexed (§7). So making clear:
 
-- changes the movie box, and only the fragments that the table's samples name: never a fragment
-  not yet indexed, whose boxes the indexer has still to read;
+- changes the movie box, and only the fragments indexed, those without samples too: never a
+  fragment not yet indexed, whose boxes the indexer has still to read;
 - leaves as it is what an earlier call changed, and takes no harm from it (a `free` stays `free`,
   an entry already `mp4a` stays so);
 - costs time in proportion to the boxes it visits, not to the bytes of the samples.
@@ -200,6 +200,8 @@ A file is indexed as it downloads:
 - indexing resumes from where it stopped, never re-reading earlier fragments, nor the movie box:
   the caller may have made them clear meanwhile (§6), and what the indexer needs of the movie it
   took from the `Movie` it was made from;
+- a step that meets a malformed fragment keeps the whole fragments it indexed before it, and
+  reports the error;
 - each step says how far the file is whole: every byte before that offset belongs to the movie
   box, to a fragment indexed, or to another whole top-level box (`ftyp`, `sidx`, `free`, …); the
   first box not yet whole, or a `moof` whose samples have not all arrived, starts there;
@@ -218,6 +220,10 @@ A file is indexed as it downloads:
 
 - No input makes the code panic, loop forever, recurse without bound or allocate more than the
   input justifies (a count is checked against the bytes left before anything is reserved).
+- The samples, every `trun` of every fragment together, are justified by bytes of the file, each
+  byte once: a sample with bytes owns them, and two samples sharing a byte of an `mdat`, in one
+  fragment or two, are malformed; samples of size 0 are no more than the bytes of their `moof`. So the table never grows faster
+  than the file, whatever the `trun`s declare.
 - Errors say which box was wrong and at which offset: "the `trun` at 0x1a2b runs past its `traf`",
   not "parse error".
 - Malformed parts are reported, never silently skipped in a way that would hand undecrypted bytes
@@ -231,6 +237,11 @@ A file is indexed as it downloads:
   9 000 samples, 7 MB, subsamples present): the time to index the whole file (0.37 ms on
   2026-11-05, [the licence audit](../audits/2026-11-05-licence.md#5-measured)) and the memory of the
   table (632 KiB, plus 140 KiB in 9 000 allocations of subsample runs). Neither may get worse.
+- The figures to compare are those of
+  [`crates/cenc/examples/index_cost.rs`](../../crates/cenc/examples/index_cost.rs), which builds
+  that file and counts what the heap keeps: before the rewrite, on the owner's desktop (AMD Ryzen 7
+  5800X), indexing took 0.445 to 0.461 ms at best of 50 runs (ten runs, alternating with the new
+  code), and the table kept 139.1 bytes a sample, capacity included.
 - **Budget**: at most 48 bytes a sample in the table, subsample runs included, measured on the same
   file; a four-hour track (a DJ set: about 460 MB, 540 000 samples) then takes under 26 MB, and
   indexes in time proportional to its size.
@@ -295,6 +306,9 @@ An export with no history, built by the dirty side:
 - `flake.nix` and `flake.lock`, for the nightly shell of `cargo fuzz` (`nix develop .#fuzz`),
   built beforehand, and `libfuzzer-sys` 0.4.13 already in Cargo's cache: the clean side works
   without the network.
+
+For a second round, the export also holds `crates/cenc/examples/index_cost.rs`, Opium's own
+measuring program (§10), and the clean side's code of the first round.
 
 `stream.rs`'s tests build their files with the boxes of §2 to §5, so they run only once the new
 code is in.

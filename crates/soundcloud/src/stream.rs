@@ -309,29 +309,32 @@ impl SoundCloud {
         session
             .update(&license)
             .map_err(|e| Error::Playback(e.to_string()))?;
-        let key_id = cenc::tenc(&data)
-            .ok_or_else(|| Error::Playback("SoundCloud: no key id in the stream".into()))?
-            .key_id;
-        let layout = cenc::index_fmp4(&data).map_err(Error::Playback)?;
-        if layout.samples.is_empty() {
+        let (movie, samples) = cenc::index(&data)
+            .map_err(|e| Error::Playback(format!("SoundCloud: the stream: {e}")))?;
+        if !samples.iter().any(|s| s.protected) {
             return Err(Error::Playback(
                 "SoundCloud: no encrypted samples in the stream".into(),
             ));
         }
-        cenc::patch_init(&mut data, &layout);
-        // The content key never leaves the CDM: it decrypts each sample.
-        let decrypt = Box::new(move |ciphertext: &[u8], sample: &cenc::EncryptedSample| {
-            let subsamples: Vec<(u32, u32)> = sample
-                .subs
-                .iter()
-                .map(|&(c, e)| (u32::from(c), e))
-                .collect();
-            session
-                .decrypt(ciphertext, &key_id, &sample.iv, &subsamples)
-                .map_err(|e| e.to_string())
+        cenc::make_clear(&mut data, &movie, &samples);
+        // The content key never leaves the CDM: it decrypts each sample, by the key id its
+        // sample entry names.
+        let decrypt = Box::new(move |bytes: &mut [u8], sample: &cenc::Sample<'_>| {
+            let clear = session
+                .decrypt(bytes, &sample.key_id, &sample.iv, sample.subsamples)
+                .map_err(|e| e.to_string())?;
+            if clear.len() != bytes.len() {
+                return Err(format!(
+                    "the CDM returned {} bytes for a {}-byte sample",
+                    clear.len(),
+                    bytes.len()
+                ));
+            }
+            bytes.copy_from_slice(&clear);
+            Ok(())
         });
         let len = data.len() as u64;
-        let stream = cenc::AudioStream::decrypting(data, layout.samples, AAC_FRAME, decrypt);
+        let stream = cenc::AudioStream::decrypting(data, samples, AAC_FRAME, decrypt);
         Ok(Audio {
             reader: Reader::Decrypting(stream),
             len,

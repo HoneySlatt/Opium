@@ -289,18 +289,22 @@ pub fn name_the_key(init: &mut [u8], key_uri: &str) -> bool {
     let Some(key_id) = pssh_key_id(key_uri) else {
         return false;
     };
-    if cenc::tenc(init).is_none_or(|t| t.key_id != [0; 16]) {
+    if init_key_id(init) != Some([0; 16]) {
         return false;
     }
-    // The key id sits 8 bytes into the box's body, after its type.
-    let Some(at) = init.windows(4).position(|w| w == b"tenc") else {
-        return false;
-    };
-    let Some(slot) = init.get_mut(at + 12..at + 28) else {
-        return false;
-    };
-    slot.copy_from_slice(&key_id);
+    cenc::write_key_ids(init, &[key_id]);
     true
+}
+
+/// The key id of the first encrypted sample entry of `init`, an init segment.
+fn init_key_id(init: &[u8]) -> Option<[u8; 16]> {
+    let movie = cenc::Movie::read(init).ok()??;
+    movie
+        .tracks
+        .iter()
+        .flat_map(|t| &t.entries)
+        .find_map(|e| e.protection.as_ref())
+        .map(|p| p.key_id)
 }
 
 /// How a station's segments become AAC frames.
@@ -310,7 +314,8 @@ enum Segments {
     Cmaf {
         init: Vec<u8>,
         asc: Vec<u8>,
-        protection: Option<(cenc::Tenc, Session)>,
+        /// The key id the samples are decrypted with, and its session.
+        protection: Option<([u8; 16], Session)>,
     },
     /// MPEG-TS carrying ADTS, in the clear (the broadcasters' own streams).
     Ts,
@@ -328,30 +333,29 @@ impl Segments {
                 let mut data = Vec::with_capacity(init.len() + segment.len());
                 data.extend_from_slice(init);
                 data.extend_from_slice(segment);
-                let layout = cenc::index_fmp4(&data).map_err(Error::Playback)?;
-                let mut out = Vec::with_capacity(segment.len() + layout.samples.len() * 7);
-                for sample in &layout.samples {
-                    let bytes = &data[sample.start..sample.end()];
+                let (_, samples) =
+                    cenc::index(&data).map_err(|e| Error::Playback(e.to_string()))?;
+                let mut out = Vec::with_capacity(segment.len() + samples.len() * 7);
+                // A sample of no bytes is no frame.
+                for sample in samples.iter().filter(|s| s.size > 0) {
+                    let bytes = &data[sample.offset..sample.offset + sample.size];
                     let clear = match protection {
-                        Some((tenc, session)) => {
+                        Some((key_id, session)) if sample.protected => {
+                            // The segment's own IV, else the playlist's.
                             let iv: &[u8] = if sample.iv != [0; 16] {
                                 &sample.iv
                             } else {
-                                tenc.constant_iv
-                                    .as_deref()
-                                    .or(playlist_iv)
-                                    .unwrap_or(&sample.iv)
+                                playlist_iv.unwrap_or(&sample.iv)
                             };
-                            let subs: Vec<(u32, u32)> = sample
-                                .subs
-                                .iter()
-                                .map(|&(c, e)| (u32::from(c), e))
-                                .collect();
+                            let pattern = (
+                                u32::from(sample.pattern.crypt),
+                                u32::from(sample.pattern.skip),
+                            );
                             session
-                                .decrypt_cbcs(bytes, &tenc.key_id, iv, tenc.pattern, &subs)
+                                .decrypt_cbcs(bytes, key_id, iv, pattern, sample.subsamples)
                                 .map_err(|e| Error::Playback(e.to_string()))?
                         }
-                        None => bytes.to_vec(),
+                        _ => bytes.to_vec(),
                     };
                     out.extend_from_slice(&adts_header(asc, clear.len()));
                     out.extend_from_slice(&clear);
@@ -576,23 +580,32 @@ impl AppleMusic {
         let segments = match playlist.map.as_deref() {
             Some(map) => {
                 let init = self.download(&resolve(&variant, map)).await?;
-                let asc = cenc::audio_specific_config(&init).ok_or_else(|| {
+                let movie = cenc::Movie::read(&init)
+                    .map_err(|e| Error::Playback(format!("the station's stream: {e}")))?
+                    .ok_or_else(|| {
+                        Error::Playback("the station's stream has no movie box".into())
+                    })?;
+                let entry = movie.tracks.iter().flat_map(|t| &t.entries).next();
+                let asc = entry.and_then(|e| e.audio_config.clone()).ok_or_else(|| {
                     Error::Playback("the station's stream says no AAC config".into())
                 })?;
                 let protection = match (&playlist.key, &licensing) {
                     (Some((uri, _)), Some(licensing)) => {
                         let session = licensing.license(cdm, uri).await?;
-                        let mut tenc = cenc::tenc(&init).ok_or_else(|| {
-                            Error::Playback("the station's stream says no key id".into())
-                        })?;
+                        let mut key_id = entry
+                            .and_then(|e| e.protection.as_ref())
+                            .map(|p| p.key_id)
+                            .ok_or_else(|| {
+                                Error::Playback("the station's stream says no key id".into())
+                            })?;
                         // Episodes leave the key id zero in the init segment;
                         // the playlist's PSSH names it.
-                        if tenc.key_id == [0; 16]
-                            && let Some(key_id) = pssh_key_id(uri)
+                        if key_id == [0; 16]
+                            && let Some(named) = pssh_key_id(uri)
                         {
-                            tenc.key_id = key_id;
+                            key_id = named;
                         }
-                        Some((tenc, session))
+                        Some((key_id, session))
                     }
                     (Some(_), None) => {
                         return Err(Error::Playback(
@@ -745,21 +758,63 @@ https://a.example/index_2.m3u8\n";
         assert_eq!(kid[..4], [0xb2, 0xeb, 0xac, 0x9e]);
     }
 
+    /// A box: its size, its type, its body.
+    fn boxed(kind: &[u8; 4], body: &[u8]) -> Vec<u8> {
+        [&((body.len() + 8) as u32).to_be_bytes()[..], kind, body].concat()
+    }
+
+    /// An episode's init segment: one AAC track, scheme `cbcs`, a constant IV, its key id zero.
+    fn episode_init() -> Vec<u8> {
+        // tenc, version 1: crypt 1 and skip 9 blocks, protected, IV size 0, the key id, then
+        // a 16-byte constant IV.
+        let mut tenc = vec![1, 0, 0, 0, 0, 0x19, 1, 0];
+        tenc.extend([0; 16]);
+        tenc.push(16);
+        tenc.extend([0x42; 16]);
+        let sinf = boxed(
+            b"sinf",
+            &[
+                boxed(b"frma", b"mp4a"),
+                boxed(b"schm", b"\0\0\0\0cbcs\0\x01\0\0"),
+                boxed(b"schi", &boxed(b"tenc", &tenc)),
+            ]
+            .concat(),
+        );
+        let mut enca = vec![0, 0, 0, 0, 0, 0, 0, 1];
+        enca.extend([0; 20]);
+        enca.extend(sinf);
+        let stsd = boxed(
+            b"stsd",
+            &[&[0, 0, 0, 0, 0, 0, 0, 1][..], &boxed(b"enca", &enca)].concat(),
+        );
+        let mut tkhd = vec![0; 12];
+        tkhd.extend(1u32.to_be_bytes());
+        tkhd.extend([0; 68]);
+        let mut mdhd = vec![0; 12];
+        mdhd.extend(48_000u32.to_be_bytes());
+        mdhd.extend([0; 8]);
+        let mdia = boxed(
+            b"mdia",
+            &[
+                boxed(b"mdhd", &mdhd),
+                boxed(b"minf", &boxed(b"stbl", &stsd)),
+            ]
+            .concat(),
+        );
+        let trak = boxed(b"trak", &[boxed(b"tkhd", &tkhd), mdia].concat());
+        let mut trex = vec![0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1];
+        trex.extend([0; 12]);
+        let mvex = boxed(b"mvex", &boxed(b"trex", &trex));
+        boxed(b"moov", &[trak, mvex].concat())
+    }
+
     #[test]
     fn an_episode_gets_its_key_id() {
         let uri = "data:text/plain;v=v1;base64,AAAAOHBzc2gAAAAA7e+LqXnWSs6jyCfc1R0h7QAAABgSELLrrJ7y0k0vsCOpUfshHKxI88aJmwY=";
-        // A tenc box, version 0: is protected, IV size 0, key id zero, then a constant IV.
-        let mut tenc = vec![0, 0, 0, 0, 0, 0, 1, 0];
-        tenc.extend_from_slice(&[0; 16]);
-        tenc.extend_from_slice(&[16; 17]);
-        let mut init = ((tenc.len() + 8) as u32).to_be_bytes().to_vec();
-        init.extend_from_slice(b"tenc");
-        init.extend_from_slice(&tenc);
+        let mut init = episode_init();
+        assert_eq!(init_key_id(&init), Some([0; 16]));
         assert!(name_the_key(&mut init, uri));
-        assert_eq!(
-            cenc::tenc(&init).unwrap().key_id[..4],
-            [0xb2, 0xeb, 0xac, 0x9e]
-        );
+        assert_eq!(init_key_id(&init).unwrap()[..4], [0xb2, 0xeb, 0xac, 0x9e]);
         // Named already: left as it is.
         assert!(!name_the_key(&mut init, uri));
     }

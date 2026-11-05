@@ -1,0 +1,44 @@
+[package]
+name = "cenc-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4.13"
+
+[dependencies.cenc]
+path = ".."
+
+[[bin]]
+name = "movie_read"
+path = "fuzz_targets/movie_read.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "index_and_make_clear"
+path = "fuzz_targets/index_and_make_clear.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "indexer_prefixes"
+path = "fuzz_targets/indexer_prefixes.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "stream_download"
+path = "fuzz_targets/stream_download.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

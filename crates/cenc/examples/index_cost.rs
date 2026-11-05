@@ -1,10 +1,13 @@
-//! What indexing an Apple-shaped file costs: its time, and the heap its result keeps.
+//! What indexing an Apple-shaped file costs: its time, the heap its result keeps, and the time a
+//! download takes to index it as it comes.
 //!
-//! The file is synthetic, built here: four minutes of AAC as Apple serves it, 9 000 samples in
-//! 100 fragments, about 7.2 MB, 8-byte IVs and one subsample per sample. Run it in release:
+//! The file is synthetic, built here: AAC as Apple serves it, 90 samples a fragment, 8-byte IVs
+//! and one subsample per sample. By default four minutes: 9 000 samples in 100 fragments, about
+//! 7.4 MB; a number of fragments given makes it longer (6 000: four hours, 540 000 samples). Run it
+//! in release:
 //!
 //! ```sh
-//! cargo run --release -p cenc --example index_cost
+//! cargo run --release -p cenc --example index_cost [fragments]
 //! ```
 //!
 //! The figures go to `docs/measurements.md`, and the budget is in `docs/specs/fmp4-cenc.md` §10.
@@ -55,22 +58,55 @@ static ALLOCATOR: Counting = Counting;
 
 const FRAGMENTS: u32 = 100;
 const SAMPLES_PER_FRAGMENT: u32 = 90;
+/// How much a download brings at a time.
+const STEP: usize = 64 * 1024;
 const IV_SIZE: u8 = 8;
 /// AAC's frame, in a 44.1 kHz timescale.
 const FRAME: u32 = 1024;
-const RUNS: usize = 50;
 
 /// The one call that depends on the crate's interface: index `file` whole, and say how many
 /// samples were found. What it returns stays alive while the heap is counted.
 fn index(file: &[u8]) -> (impl Sized, usize) {
-    let layout = cenc::index_fmp4(file).expect("the synthetic file indexes");
-    let count = layout.samples.len();
-    (layout, count)
+    let indexed = cenc::index(file).expect("the synthetic file indexes");
+    let count = indexed.1.len();
+    (indexed, count)
+}
+
+/// The file fed to an `Indexer` [`STEP`] bytes at a time, made clear again after each step that
+/// indexed a fragment, as `cenc::AudioStream` does while a track downloads: the time it all took,
+/// and how many times the file was made clear.
+fn download(file: &[u8]) -> (Duration, usize) {
+    let movie = cenc::Movie::read(file)
+        .expect("the synthetic file's movie")
+        .expect("a whole movie box");
+    let mut data = file.to_vec();
+    let started = Instant::now();
+    let mut indexer = cenc::Indexer::new(&movie);
+    let (mut known, mut cleared) = (0, 0);
+    for end in (STEP..data.len()).step_by(STEP).chain([data.len()]) {
+        indexer
+            .advance(&data[..end])
+            .expect("the synthetic file indexes");
+        if indexer.samples().len() > known {
+            known = indexer.samples().len();
+            cenc::make_clear(&mut data[..end], &movie, indexer.samples());
+            cleared += 1;
+        }
+    }
+    indexer
+        .finish(&data)
+        .expect("the synthetic file ends whole");
+    (started.elapsed(), cleared)
 }
 
 fn main() {
-    let file = apple_shaped_file();
-    let expected = (FRAGMENTS * SAMPLES_PER_FRAGMENT) as usize;
+    let fragments = std::env::args()
+        .nth(1)
+        .map_or(FRAGMENTS, |n| n.parse().expect("a number of fragments"));
+    // Fewer runs of a long file: one takes a second's fraction already.
+    let runs = if fragments > FRAGMENTS { 5 } else { 50 };
+    let file = apple_shaped_file(fragments);
+    let expected = (fragments * SAMPLES_PER_FRAGMENT) as usize;
 
     let before = (
         LIVE_BYTES.load(Ordering::Relaxed),
@@ -82,7 +118,7 @@ fn main() {
     drop(kept);
     assert_eq!(count, expected, "every sample is indexed");
 
-    let mut times: Vec<Duration> = (0..RUNS)
+    let mut times: Vec<Duration> = (0..runs)
         .map(|_| {
             let started = Instant::now();
             black_box(index(black_box(&file)));
@@ -90,20 +126,26 @@ fn main() {
         })
         .collect();
     times.sort();
+    let (downloading, cleared) = download(&file);
 
     println!(
-        "file: {:.2} MB, {count} samples in {FRAGMENTS} fragments",
+        "file: {:.2} MB, {count} samples in {fragments} fragments",
         file.len() as f64 / 1e6
     );
     println!(
-        "index: best {:.3} ms, median {:.3} ms, of {RUNS} runs",
+        "index: best {:.3} ms, median {:.3} ms, of {runs} runs",
         times[0].as_secs_f64() * 1e3,
-        times[RUNS / 2].as_secs_f64() * 1e3
+        times[runs / 2].as_secs_f64() * 1e3
     );
     println!(
         "kept: {:.1} KiB in {blocks} blocks, {:.1} bytes a sample",
         bytes as f64 / 1024.0,
         bytes as f64 / count as f64
+    );
+    println!(
+        "download: {:.3} ms in all, {} KiB at a time, made clear {cleared} times",
+        downloading.as_secs_f64() * 1e3,
+        STEP / 1024
     );
 }
 
@@ -124,10 +166,10 @@ fn sample_size(n: u32) -> u32 {
     700 + n * 37 % 201
 }
 
-fn apple_shaped_file() -> Vec<u8> {
+fn apple_shaped_file(fragments: u32) -> Vec<u8> {
     let mut file = boxed(b"ftyp", b"iso8\0\0\0\0iso8mp41");
     file.extend(movie());
-    for fragment in 0..FRAGMENTS {
+    for fragment in 0..fragments {
         file.extend(fragment_bytes(fragment));
     }
     file
