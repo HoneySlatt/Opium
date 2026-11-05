@@ -34,7 +34,8 @@ impl Cdm {
     /// [`Error::LibraryNotOpened`], [`Error::NotACdm`] naming the missing function,
     /// [`Error::InterfaceNotSupported`], [`Error::InitialisationFailed`],
     /// [`Error::InitialisationTimedOut`], [`Error::ThreadNotStarted`],
-    /// [`Error::AnotherCdmLoaded`] when another path is loaded already, and
+    /// [`Error::AnotherCdmLoaded`] when another path is loaded already,
+    /// [`Error::HostStopped`] when the CDM thread has ended unexpectedly, and
     /// [`Error::ShutDown`] after [`shutdown`].
     pub fn load(path: &Path) -> Result<Cdm, Error> {
         LOADER.load(
@@ -56,7 +57,9 @@ impl Cdm {
     ///
     /// [`Error::InitDataRefused`] with the CDM's message, [`Error::NotProvisioned`] when the CDM
     /// has no device certificate (nothing is sent anywhere), [`Error::NoLicenceRequest`] when
-    /// the deadline passes, [`Error::TooLarge`], [`Error::ShutDown`].
+    /// the deadline passes, [`Error::TooLarge`], [`Error::NotInitialised`] when no CDM was
+    /// loaded, [`Error::HostStopped`] when the CDM thread has ended unexpectedly,
+    /// [`Error::ShutDown`].
     pub fn open_session(&self, init_data: &[u8]) -> Result<(Session, Vec<u8>), Error> {
         let runtime = LOADER.runtime().ok_or(Error::NotInitialised)?;
         let (key, challenge) = runtime.open_session(init_data)?;
@@ -85,7 +88,8 @@ impl Session {
     /// [`Error::LicenceRefused`] with the CDM's message and system code,
     /// [`Error::KeyNotUsable`] with the key's status, [`Error::LicenceNotTaken`] when the
     /// deadline passes, [`Error::NotProvisioned`], [`Error::SessionClosed`],
-    /// [`Error::TooLarge`], [`Error::ShutDown`].
+    /// [`Error::TooLarge`], [`Error::HostStopped`] when the CDM thread has ended unexpectedly,
+    /// [`Error::ShutDown`].
     pub fn give_licence(&self, licence: &[u8], key_id: &[u8; 16]) -> Result<(), Error> {
         self.runtime.give_licence(self.key, licence, key_id)
     }
@@ -102,7 +106,8 @@ impl Session {
     /// [`Error::SubsamplesMismatch`] and [`Error::TooLarge`] before reaching the CDM;
     /// [`Error::NoKey`], [`Error::DecryptionFailed`] and the other statuses of the CDM;
     /// [`Error::KeyExpired`] when the key expired since its licence;
-    /// [`Error::WrongLength`]; [`Error::SessionClosed`]; [`Error::ShutDown`].
+    /// [`Error::WrongLength`]; [`Error::SessionClosed`]; [`Error::HostStopped`] when the CDM
+    /// thread has ended unexpectedly; [`Error::ShutDown`].
     pub fn decrypt(&self, data: &mut [u8], sample: &Protected<'_>) -> Result<(), Error> {
         self.runtime.decrypt(self.key, data, sample)
     }
