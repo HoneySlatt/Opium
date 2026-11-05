@@ -16,6 +16,8 @@ Development happens on NixOS, under Wayland. Everything runs inside the Nix deve
 - `nix develop .#android`: the phone's shell, x86_64 only. It provides Rust with the Android
   targets, `cargo-ndk`, the Android SDK and NDK (Google's, under its own licence, accepted for this
   shell only), JDK 17 and Gradle 9.
+- `nix develop .#fuzz`: a nightly Rust and `cargo-fuzz`, for [fuzzing](#fuzzing) only
+  ([ADR-0030](docs/adr/0030-the-kopuz-code-rewritten-in-a-clean-room.md)).
 
 What the app needs besides, at run time (the [README](README.md#requirements) says it for users):
 
@@ -115,6 +117,25 @@ In `nix develop .#android`:
 - `am play` and `am live` play out loud.
 - `am fetch`, `am live` and `sc fetch` write decrypted protected audio to a file: never run them on
   your own.
+
+### Fuzzing
+
+The parsers of untrusted data are fuzzed two ways
+([ADR-0030](docs/adr/0030-the-kopuz-code-rewritten-in-a-clean-room.md)):
+
+- deterministic mutation tests inside `cargo test`, at every push: a seeded generator mutates the
+  test files, and the parser's steps and allocations are counted, never timed;
+- `cargo fuzz` targets, in a crate of their own beside the crate they fuzz (`crates/cenc/fuzz`),
+  outside the workspace and on `libfuzzer-sys`, run by hand and weekly in CI.
+
+```sh
+nix develop .#fuzz -c scripts/fuzz.sh 60           # every target, 60 s each, as CI does with 300
+cd crates/cenc/fuzz && nix develop ../../..#fuzz -c cargo fuzz run index_and_make_clear
+cargo fuzz run <target> artifacts/<target>/crash-…  # replays a crash, in the same shell
+```
+
+A crash leaves its input in the fuzz crate's `artifacts/`; its fix comes with a test in the
+crate's own tests. The corpora (`corpus/`) stay local.
 
 ### Measuring
 
