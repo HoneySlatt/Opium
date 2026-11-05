@@ -13,8 +13,10 @@ and stay afterwards as the reference for the protocols they describe.
 ## The clean-room rewrite
 
 Code adapted from Kopuz (EUPL-1.2) is replaced by code written from these files alone, so that
-Opium can leave the GPL ([ADR-0030](../adr/0030-the-kopuz-code-rewritten-in-a-clean-room.md);
-the inventory in [the licence audit](../audits/2026-11-05-licence.md)).
+no code of Opium's derives from Kopuz
+([ADR-0030](../adr/0030-the-kopuz-code-rewritten-in-a-clean-room.md); the GPL kept,
+[ADR-0032](../adr/0032-the-gpl-kept-and-kopuzs-code-still-written-again.md); the inventory in
+[the licence audit](../audits/2026-11-05-licence.md)).
 
 - **Two sides.** The *dirty side* read Kopuz's code and its adaptation in Opium, and wrote these
   specifications, describing behaviour only: no code, no names of functions, types or variables,
