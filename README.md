@@ -6,6 +6,18 @@ of Apple Music and [Cider](https://cider.sh). The desktop app is written in
 Rust with [egui](https://github.com/emilk/egui); the Android app in Kotlin
 with Jetpack Compose, over the same Rust core.
 
+## State
+
+- Not released yet: the first release is the [roadmap](docs/ROADMAP.md)'s
+  Stage 2. In daily use by its author on one computer and one phone.
+- The computer: Linux only. The phone: Android 14 or later, arm64.
+- The desktop window and the phone's screens are frozen until they move to
+  SlimeEngine's UI framework, fixes for data loss, crashes and security
+  aside ([ADR-0026](docs/adr/0026-the-egui-window-frozen-until-the-move.md),
+  [ADR-0028](docs/adr/0028-the-phones-compose-screens-frozen-until-measured.md)).
+- The APK is signed with Android's debug key.
+- What is being worked on: [docs/PLAN.md](docs/PLAN.md).
+
 - **One library, one search:** albums, songs, artists and playlists from every
   service share the same pages. A song or album you have on several services
   shows once, and plays from the best copy: your own file, then your Navidrome
@@ -17,11 +29,12 @@ with Jetpack Compose, over the same Rust core.
   window plays.
 - **Sound:** each track plays at its own sample rate through PipeWire, without
   resampling, while other apps' sound still plays. You get Apple Music's AAC
-  256, SoundCloud's original uploads when the artist allows downloads, and
+  256 and its Spatial Audio for headphones, SoundCloud's original uploads when the artist allows downloads, and
   your server's files as they are.
-- **Lyrics:** synced lyrics, word by word from Apple Music, line by line
-  otherwise. They come from the service, else from LRCLIB, NetEase Cloud Music
-  or KuGou.
+- **Lyrics:** synced lyrics from the song's own source first: Apple Music's,
+  word by word; a Navidrome server's; a file's `.lrc` beside it, or its tags.
+  Otherwise from lyrics sites, line by line: LRCLIB, and NetEase Cloud Music
+  and KuGou if you turn them on in Settings.
 - **Desktop:** a Now Playing view, a queue, MPRIS (media keys and desktop
   widgets), and keyboard shortcuts.
 - **Opium Connect:** paired devices share the play history, Opium's own
@@ -31,8 +44,8 @@ with Jetpack Compose, over the same Rust core.
   from home, they reach each other through [iroh](https://www.iroh.computer)'s
   relays, with the same encryption, which you can turn off or point at your
   own relay in Settings → Devices.
-- **Offline:** songs can be downloaded, kept sealed with a key in the
-  desktop's keyring, and a song that came through a service's DRM plays while
+- **Offline:** songs can be downloaded, kept sealed with a key held in the
+  desktop's keyring or the phone app's vault, and a song that came through a service's DRM plays while
   that service's subscription was confirmed in the last 30 days.
 
 ## Requirements
@@ -43,7 +56,7 @@ with Jetpack Compose, over the same Rust core.
   in to Apple Music and SoundCloud. The app opens it on a profile of its own.
   Set `OPIUM_BROWSER` to choose one.
 - Apple Music and SoundCloud's protected streams need the Widevine CDM that
-  Chrome, Brave, Vivaldi or Firefox installs. Play any DRM video once in that
+  Chrome, Chromium, Brave, Vivaldi or Firefox installs. Play any DRM video once in that
   browser so the CDM gets its certificate. Set `WIDEVINE_CDM` to point at a
   `libwidevinecdm.so` elsewhere.
 - An Apple Music subscription for Apple Music, a SoundCloud account, and a
@@ -54,11 +67,14 @@ with Jetpack Compose, over the same Rust core.
 
 ## Build
 
-With Nix:
+With Nix, from a clone of the repository:
 
 ```sh
-nix run github:HoneySlatt/Opium
+nix run .
 ```
+
+(`nix run github:HoneySlatt/Opium` works too for those with access to the
+repository, which is private.)
 
 Or with Cargo. Besides a Rust toolchain you need `pkg-config`, a C and C++
 compiler (the Widevine shim is C++), FFmpeg, PipeWire and libopus to link
@@ -84,6 +100,14 @@ cd android && gradle assembleRelease
 
 The APK is in `android/app/build/outputs/apk/release`. It is **signed with
 Android's debug key** for now, so it is not fit to hand to anyone else.
+
+## Development
+
+[CONTRIBUTING.md](CONTRIBUTING.md) gives the environment, the commands and
+the checks in detail. The direction, the current plan and the decisions are
+in [docs/ROADMAP.md](docs/ROADMAP.md), [docs/PLAN.md](docs/PLAN.md) and
+[docs/adr](docs/adr/README.md); the code's layout in
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Credits
 

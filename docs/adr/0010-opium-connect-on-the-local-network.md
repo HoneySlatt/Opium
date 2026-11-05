@@ -46,7 +46,7 @@ away from home, and rejected ([ADR-0015](0015-away-from-home-through-iroh.md)).
 - The desktop's firewall must let in 47820/tcp and 5353/udp (README).
 - A test run of the desktop goes on the network like the real one: a fresh profile shows as a new
   device on the owner's phone, and a copy of `connect.json` would *be* the owner's computer
-  (AGENTS.md).
+  (CONTRIBUTING.md).
 - Old builds and renamed builds do not talk to each other: the service name, the handshake's
   prologue and the iroh protocol name changed with the rename, with no compatibility kept
   ([ADR-0023](0023-the-rename-to-opium.md)).

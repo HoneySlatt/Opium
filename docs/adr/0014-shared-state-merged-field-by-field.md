@@ -55,6 +55,6 @@ differ (commit `75162f5`). Playlists are kept in a file of their own, `playlists
   it runs: tested in `crates/synced/src/tests.rs`, which a change extends.
 - Deletions are final: there is no undo of a deleted playlist across devices.
 - A test window that shares the owner's device identity (a copied `connect.json`) merges into the
-  owner's real state and can overwrite the phone's newer stop (AGENTS.md).
+  owner's real state and can overwrite the phone's newer stop (CONTRIBUTING.md).
 - The renamed playlists' provider (`Opium`, formerly `Music`) needs the owner's state converted
   once by hand ([ADR-0023](0023-the-rename-to-opium.md)).

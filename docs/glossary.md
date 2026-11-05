@@ -68,6 +68,11 @@ device keeps its own copy and merges the others' (`synced::Shared`, `synced::Kep
 rate the PipeWire graph runs at, the other programs mixed in and the device's volume on the
 desktop (`player::OutputInfo`, `player::Mixing`); the phone's own chain on Android.
 
+**slime-ui.** SlimeEngine's UI framework, which the desktop window moves to once it runs
+applications, and which may draw the phone's screens if it beats Compose
+([ADR-0026](adr/0026-the-egui-window-frozen-until-the-move.md),
+[ADR-0028](adr/0028-the-phones-compose-screens-frozen-until-measured.md)).
+
 **Spatial Audio.** Apple's binaural rendering of a song's Dolby Atmos mix, for headphones, which
 Opium plays from the song's enhanced HLS ([ADR-0002](adr/0002-apple-music-through-its-web-player.md)).
 
@@ -79,7 +84,7 @@ what a theme file leaves out is Stock's ([ADR-0011](adr/0011-themes-as-toml-file
 
 **Throwaway profile.** Config, cache and data folders of a test's own, with no session bus and no
 network, on which an agent runs the app without touching the owner's data
-([AGENTS.md](../AGENTS.md#running-opium-without-touching-the-owners-data)).
+([CONTRIBUTING.md](../CONTRIBUTING.md#a-throwaway-profile)).
 
 **Wake.** The callback through which the desktop's workings ask the window for a new frame when
 something it shows has changed (`desktop::Wake`, [ADR-0019](adr/0019-the-workings-apart-from-the-drawing.md)).

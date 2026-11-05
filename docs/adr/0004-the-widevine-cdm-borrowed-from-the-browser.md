@@ -49,7 +49,7 @@ there.
   it decrypts at its own pace (about 11.6 times real time, measured in commit `33a995e`). Opium does
   not work around either.
 - `widevine::locate` reads `XDG_CONFIG_HOME`: a test run with a config folder of its own finds no
-  CDM and needs `WIDEVINE_CDM` (AGENTS.md).
+  CDM and needs `WIDEVINE_CDM` (CONTRIBUTING.md).
 - A Windows port needs the CDM's host verification, which this shim does not do yet (ROADMAP).
 - Every `unsafe` call into the shim lacks the `// SAFETY:` comment the code rules ask for
   (PLAN, known debt).

@@ -1,7 +1,8 @@
 # 0006. egui for the desktop window
 
 - Status: Accepted; amended by [0022](0022-gpui-tried-and-abandoned.md) (egui stays until Opium
-  moves to SlimeEngine's UI framework)
+  moves to SlimeEngine's UI framework) and [0026](0026-the-egui-window-frozen-until-the-move.md) (the
+  window frozen until then)
 - Date: 2026-10-29
 
 ## Context

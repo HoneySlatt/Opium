@@ -111,8 +111,9 @@ Rules that keep it so:
 - Only `app-desktop` names egui types; `desktop` and everything below it know no toolkit.
 - Nothing `opium-ffi` depends on may need the desktop: `player`, `motion`, `desktop` and
   `app-desktop` stay out of the phone's build, and `widevine` builds a stub for Android.
-- The service crates (`apple-music`, `soundcloud`, `navidrome`, `local`) depend on `opium-core`
-  and the leaf crates only, never on each other nor on `services`.
+- The service crates (`apple-music`, `soundcloud`, `navidrome`, `local`) depend on `opium-core`,
+  the leaf crates and `lyrics` only (`local` reads `.lrc` files through it), never on each other
+  nor on `services`.
 
 ## Main flows
 

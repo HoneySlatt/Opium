@@ -19,7 +19,7 @@ call the app "Music" ([ADR-0023](0023-the-rename-to-opium.md)).
 | [0003](0003-sign-in-through-the-users-browser.md) | Signing in through the user's browser, on a profile of Opium's own | Accepted |
 | [0004](0004-the-widevine-cdm-borrowed-from-the-browser.md) | The Widevine CDM borrowed from the user's browser, through a C++ shim | Accepted |
 | [0005](0005-pipewire-at-each-tracks-own-rate.md) | PipeWire as the only output, at each track's own rate | Accepted |
-| [0006](0006-egui-for-the-desktop-window.md) | egui for the desktop window | Accepted; amended by 0022 |
+| [0006](0006-egui-for-the-desktop-window.md) | egui for the desktop window | Accepted; amended by 0022 and 0026 |
 | [0007](0007-one-library-and-the-best-copy.md) | One library, and the best copy of each song | Accepted |
 | [0008](0008-the-lyrics-sources.md) | Lyrics: the song's own source first, then the sites, LRCLIB alone by default | Accepted |
 | [0009](0009-the-android-app-over-the-rust-core.md) | The Android app: Kotlin and Compose over the Rust core, through UniFFI | Accepted |
@@ -35,6 +35,10 @@ call the app "Music" ([ADR-0023](0023-the-rename-to-opium.md)).
 | [0019](0019-the-workings-apart-from-the-drawing.md) | The desktop's workings apart from its drawing, waking it through `Wake` | Accepted |
 | [0020](0020-d-bus-over-async-io.md) | D-Bus spoken over async-io, not tokio | Accepted |
 | [0021](0021-the-exit-watch.md) | The exit watch | Accepted; amended by 0024 |
-| [0022](0022-gpui-tried-and-abandoned.md) | GPUI tried and abandoned; egui stays until SlimeEngine's UI framework runs applications | Accepted; amends 0006 (until the move) |
+| [0022](0022-gpui-tried-and-abandoned.md) | GPUI tried and abandoned; egui stays until SlimeEngine's UI framework runs applications | Accepted; amends 0006 (until the move); amended by 0026 |
 | [0023](0023-the-rename-to-opium.md) | The app is named Opium, everywhere, with no compatibility kept | Accepted |
 | [0024](0024-the-exit-watch-aborts-for-a-core-dump.md) | The exit watch aborts, for a core dump | Accepted; amends 0021 |
+| [0025](0025-the-quality-bar.md) | The quality bar: tiers and budgets | Accepted |
+| [0026](0026-the-egui-window-frozen-until-the-move.md) | The egui window is frozen until the move to SlimeEngine's UI framework | Accepted; amends 0006 and 0022 |
+| [0027](0027-macrobenchmark-for-the-phones-measurements-at-stage-3.md) | Macrobenchmark for the phone's measurements, at Stage 3 | Accepted |
+| [0028](0028-the-phones-compose-screens-frozen-until-measured.md) | The phone's Compose screens are frozen until slime-ui is measured on Android | Accepted |

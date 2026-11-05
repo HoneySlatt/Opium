@@ -1,7 +1,7 @@
 # Roadmap
 
-> **Proposal, not yet decided by the owner** (drafted on 2026-11-04, when the project came under
-> its method). Living document. It defines direction, ordering and exit criteria. It is not a task
+> **Decided by the owner on 2026-11-04**, when the project came under its method; its quality bar on
+> 2026-11-05. Living document. It defines direction, ordering and exit criteria. It is not a task
 > list: the current plan lives in `docs/PLAN.md`, and decisions live in `docs/adr/`. Stages will be
 > merged, reduced, reordered or dropped as the project evolves; each such change is recorded in an
 > ADR.
@@ -40,6 +40,68 @@ and Spotify's, in looks its user can change ([ADR-0011](adr/0011-themes-as-toml-
    update.
 7. **One core for both apps**: what both do is written once, in Rust.
 
+## Quality bar
+
+> **Decided by the owner on 2026-11-05** ([ADR-0025](adr/0025-the-quality-bar.md)). Taken from the method's default bars for every project, for
+> interfaces and desktop applications and for mobile applications, adapted to Opium; the sound row
+> comes from the bar for audio. "Today" gives what was measured on 2026-11-05 on the high desktop
+> tier, or says plainly that it was not measured. The figures themselves live in
+> [`measurements.md`](measurements.md). No budget is yet anchored on a figure measured from a
+> reference app, Spotify's battery on the phone aside. The desktop window is frozen until the move to
+> slime-ui, SlimeEngine's UI framework ([ADR-0026](adr/0026-the-egui-window-frozen-until-the-move.md)): the rows checked "with slime-ui" are worked on then.
+> The phone's Compose screens are frozen until Stage 3 measures slime-ui against Compose
+> ([ADR-0028](adr/0028-the-phones-compose-screens-frozen-until-measured.md)): its interface rows are worked on then, on the toolkit that wins.
+
+References: Apple Music's apps and Spotify's, on the computer and the phone, for looks, motion and
+responsiveness; Spotify's Android app for the battery used while playing; beyond them, the most
+refined current interfaces, in motion (springs, shapes that morph, transitions between elements),
+materials, type and responsiveness. For sound: each track bit-perfect at its own rate while other
+programs keep playing ([ADR-0005](adr/0005-pipewire-at-each-tracks-own-rate.md)).
+
+Hardware, from the lowest tier supported to the highest; release builds. Aiming at the top never
+narrows who can run Opium: on the lowest tier it holds its frame rate, answers at once and every
+feature works; it only loses detail (animated covers, effects).
+
+| Tier | Reference machine | Measured |
+|---|---|---|
+| Desktop, lowest | A 2015 laptop: 2 cores, 4 threads (Intel Core i5 of the Skylake generation), its integrated Intel HD 520, 4 GB of memory, a hard disk, a 1080p display at 60 Hz, scale 1 | Not measured |
+| Desktop, high | The owner's desktop: AMD Ryzen 7 5800X (8 cores), an AMD RX 6800-class GPU (Navi 21) through Mesa's OpenGL, a 4K display at 240 Hz, scale 1.5 | 2026-11-05, [baseline](measurements.md#baseline-of-the-desktop-app-before-any-budget-2026-11-05) |
+| Phone, lowest | An entry-level Android 14 phone: 4 GB of memory, a MediaTek Helio G99-class chip, a 90 Hz screen | Not measured |
+| Phone, high | The owner's Pixel on GrapheneOS, 120 Hz | Partly, 2026-11-03, before the rename and before this bar |
+
+Unmeasured, never assumed: every lowest tier, Intel and NVIDIA GPUs, Vulkan rendering (the window
+draws through OpenGL), X11. No budget can be checked in CI yet: each needs a display, PipeWire or
+the phone. Each budget gets a benchmark kept in the repository; one that can run in CI fails
+when it exceeds its budget by more than its noise.
+
+| Budget | Target | Measured by | Checked in |
+|---|---|---|---|
+| Desktop at rest: paused, window shown or hidden | No frame drawn, no CPU time, 0 wake-ups per second of Opium's own: Opium Connect wakes only when the network speaks to it. Today: 8.4 wake-ups a second, none on the window's threads ([at rest](measurements.md#1-at-rest-cpu-time-and-wake-ups)) | `scripts/measure/rest.sh`: `sample.py` and `top` | By hand, at each milestone touching the window or the workings |
+| Desktop playing, window hidden or without the focus | No frame drawn; wake-ups only from the audio path. Today: not measured (it needs sound) | As above | By hand, as above |
+| Desktop playing, window shown, nothing else moving | A frame only when the progress moves a pixel or the time a second. Today: a frame every 250 ms ([known debt](PLAN.md#known-debt)); its cost not measured (it needs sound) | As above, and the frames counted | With slime-ui: the window's side; the player's wake now |
+| Start-up to the first useful frame (the library from its cache) | Warm ≤ 100 ms on the high tier; cold no worse than today. Today: warm 173 ms to the window on screen ([start-up](measurements.md#3-warm-start-up)); cold not measured (it needs root) | `scripts/measure/startup.py`; a mark at the first useful frame, with slime-ui | With slime-ui |
+| Desktop memory, at rest and scrolling Songs over the whole library with its covers | At rest ≤ 150 MiB resident; scrolling the whole library, no more than today's peak (400 MiB). Today: about 370 MiB at rest ([memory](measurements.md#4-memory)); scrolling not measurable before slime-ui | `scripts/measure/memwatch.py` (`VmRSS`); `heaptrack` | By hand; the window's share with slime-ui |
+| Desktop power, at rest and while scrolling | At rest no measurable GPU power and no wake-up; playing, the work of the rows above and no more; CPU judged by its time and wake-ups. Today: 0 W at rest ([power](measurements.md#5-gpu-power-at-rest)); scrolling not measurable before slime-ui | `scripts/measure/power-compare.sh` (`power1_average`); RAPL or `powertop` run by the owner (root) | By hand; scrolling with slime-ui |
+| Scrolling and animations | The display's rate held, no dropped frame: on the high tier 240 Hz at 4K and scale 1.5, 99th percentile ≤ 4.17 ms and no frame over 8.33 ms; on the lowest tier 60 Hz, ≤ 16.7 ms | A frame-time trace per animation, from slime-ui's frame statistics and MCP server | With slime-ui: unmeasurable before |
+| Input to visible response | Within one frame where the work allows | The same trace, with input from the MCP server | With slime-ui: unmeasurable before |
+| The window's thread | Never waits on a disk or the network. Today: not audited | Reading the code; a trace of the thread once instrumented | With slime-ui |
+| Images | Decoded off the window's thread, in a cache bounded in memory that frees the GPU's. Today: one thread per cover file, unbounded ([known debt](PLAN.md#known-debt)) | Reading the code; memory under load | With slime-ui |
+| Rendering | Gradients dithered, colours blended correctly, text crisp and pixel-aligned at scales 1, 1.5 and 2, in each theme | Reference images through the screenshot mode | With slime-ui; in CI once the window renders without a display |
+| The look in one place | Each theme's colours, durations, springs, radii and blur in one place, shown by a gallery of every component; the owner approves the look from captures made off screen. Today: colours and component variants in the theme files both apps read ([ADR-0011](adr/0011-themes-as-toml-files-of-component-variants.md)); motion and radii in each app's code; no gallery; the screenshot mode captures a window on screen | Captures of the gallery, or the screenshot mode until then | By the owner, with slime-ui |
+| Accessibility | Screen readers name every control; the whole app by keyboard; reduced motion and transparency honoured; contrast checked in each theme. Today: no control named ([known debt](PLAN.md#known-debt)) | Orca; keyboard only; contrast ratios | With slime-ui |
+| Text ready for translation | Strings in one place per app, no sentence built from pieces, plurals by rule, layouts that hold longer text and right-to-left writing. Today: English only, the strings written in the code of both apps | A pseudo-locale with longer and right-to-left text | Once the owner decides Opium is translated ([open](#open)) |
+| HDR, wide gamut, variable refresh | Not supported, stated: the interface is drawn in sRGB, and a player's interface gains nothing from HDR; covers, animated ones included, are converted to 8-bit sRGB (`crates/motion`), so HDR or wide-gamut artwork is shown clipped; frames follow the compositor's pace, with no variable-refresh handling of the app's own | — | — |
+| Sound | No underrun while playing, under load (scrolling, a build), even when the graph runs 128-frame periods at 48 kHz, the method's default: Opium asks no latency of its own, so another program can set that quantum; each track at its own rate; other programs heard. Today: not measured (it needs sound) | `pw-top`: its error count and rate | By hand, at each milestone touching playback |
+| Bad input | Never a crash: parsers of untrusted data fuzzed (the services' answers, MP4 and CENC boxes, HLS playlists, file tags, what paired devices send, themes, settings); `unsafe` under Miri where it can run | `cargo fuzz`, Miri: a nightly toolchain in the shell, by an ADR | CI, once the nightly is decided |
+| Crash report | A crash leaves a report the user can attach to an issue; nothing leaves the machine without the user's consent. Today: only a hung exit leaves `exit.log` and a core dump ([ADR-0024](adr/0024-the-exit-watch-aborts-for-a-core-dump.md)); no panic hook in either app | Reading the code; a forced panic on a throwaway profile | By hand, once built |
+| Iteration | A warm CI run, whose cache hit, under 20 minutes; a cold run measured and recorded, without a budget; the full build and tests budgeted once measured. Today: the first cold CI run passed 31 minutes before the disk ran out; warm not measured; the full build and tests not measured | CI's durations; `scripts/check.sh` timed | CI, at each run |
+| Phone cold start | To the first useful frame, no worse than today; warm ≤ 150 ms. Today: cold 600 to 750 ms on the owner's Pixel, before the rename ([phone](measurements.md#the-phone-2026-11-03)); warm not measured | Macrobenchmark from Stage 3 ([ADR-0027](adr/0027-macrobenchmark-for-the-phones-measurements-at-stage-3.md)); until then `adb shell am start -W` (`TotalTime`) and a Perfetto trace | By hand, on the owner's phone; a mid-range phone unmeasured |
+| Phone frame times | The display's rate held while scrolling and animating, no janky frame: 120 Hz on the high tier (99th percentile ≤ 8.33 ms), 90 Hz on the lowest (≤ 11.1 ms). Today: not measured | Macrobenchmark from Stage 3 ([ADR-0027](adr/0027-macrobenchmark-for-the-phones-measurements-at-stage-3.md)); until then Perfetto's frame timeline and `adb shell dumpsys gfxinfo io.github.honeyslatt.opium framestats` | By hand, at Stage 3, on the toolkit that wins |
+| Phone battery while playing, screen off | No more than Spotify's for the same kind of song, Apple Music's protected songs included (under 844 ticks a minute). Today: 1,500 to 1,900 ticks a minute for Apple Music, before the rename ([phone](measurements.md#the-phone-2026-11-03)) | Macrobenchmark from Stage 3 ([ADR-0027](adr/0027-macrobenchmark-for-the-phones-measurements-at-stage-3.md)); until then CPU ticks from `/proc/<pid>/stat` over 60 s, and Perfetto's power rails where the phone exposes them | By the owner, or with the owner's go, at each milestone touching playback on the phone |
+| Phone in the background | No work outside the system's schedulers and the foreground services of playback and downloads; paused, no wake-up of Opium's own. Today: not measured | `/proc/<pid>/status` over adb; a Perfetto trace | By hand |
+| Phone memory, at rest and scrolling | No more than today. Today: not measured | `adb shell dumpsys meminfo io.github.honeyslatt.opium` | By hand |
+| Phone accessibility | TalkBack names every control; the system's font scale honoured up to its largest, without clipped text; touch targets of at least 48 dp; reduced motion honoured | TalkBack; the largest font scale; the layout inspector | At Stage 3, on the toolkit that wins |
+
 ## 3. Decisions
 
 ### Fixed
@@ -60,6 +122,10 @@ and Spotify's, in looks its user can change ([ADR-0011](adr/0011-themes-as-toml-
 | Devices | Opium Connect: mDNS, TCP 47820, SPAKE2, Noise; iroh away from home; state merged field by field ([ADR-0010](adr/0010-opium-connect-on-the-local-network.md), [ADR-0014](adr/0014-shared-state-merged-field-by-field.md), [ADR-0015](adr/0015-away-from-home-through-iroh.md)) |
 | Offline | Sealed downloads, DRM songs tied to a subscription confirmed in 30 days ([ADR-0017](adr/0017-downloads-sealed-and-tied-to-the-subscription.md)) |
 | Lyrics | The song's own source, then LRCLIB, other sites opt-in ([ADR-0008](adr/0008-the-lyrics-sources.md)) |
+| Quality bar | Tiers and budgets ([ADR-0025](adr/0025-the-quality-bar.md)) |
+| Desktop window | Frozen until the move to slime-ui, but for data loss, crashes and security flaws; agents drive it through slime-ui's MCP server then ([ADR-0026](adr/0026-the-egui-window-frozen-until-the-move.md)) |
+| The phone's benchmarks | Macrobenchmark with Perfetto, from Stage 3 ([ADR-0027](adr/0027-macrobenchmark-for-the-phones-measurements-at-stage-3.md)) |
+| The phone's screens | Compose frozen until Stage 3 measures slime-ui against it; the Kotlin system layer goes on ([ADR-0028](adr/0028-the-phones-compose-screens-frozen-until-measured.md)) |
 
 ### Open
 
@@ -67,7 +133,9 @@ Each is decided by an ADR at the stage where it becomes necessary, not earlier.
 
 | Topic | Candidates | Decide at |
 |---|---|---|
-| Links checked in CI | lychee added to the dev shell, or none | Stage 1 |
+| Dependency checks | `cargo deny` with a `deny.toml`, once the advisories it finds are fixed or accepted ([known debt](PLAN.md#known-debt)) | Stage 2 |
+| Translation | The text made ready for translation now, or English only until a release needs another language | Stage 2 |
+| A nightly toolchain, for fuzzing and Miri | From rust-overlay, already an input of the flake, or fenix | When fuzzing starts |
 | CI's time | One job, or the checks split across jobs if a run exceeds the owner's limit | Stage 1 |
 | What a release exposes of DRM | The owner's call: the repository's visibility, whether the CDM borrowing and the protected services ship, what becomes of the developer examples that write decrypted audio (`am fetch`, `am live`, `sc fetch`) | Stage 2 |
 | The release's signing key | The owner creates the keystore; how the build reads it, kept out of the repository | Stage 2 |
@@ -91,9 +159,12 @@ push, and the rename to Opium is committed with the owner's data moved.
   devices moved to the new names ([ADR-0023](adr/0023-the-rename-to-opium.md))
 - The Android dev shell building again from an empty store, and the phone's core checked
 - What the desktop app needs from a UI framework, in the repository, for SlimeEngine's Stage 6d
+- The quality bar measured as the app is today, its budgets decided by the owner
 
 **Exit.** `scripts/check.sh` and `scripts/check.sh android` pass locally and CI is green on `main`;
-the owner's computer and phone run Opium under its new names with their data.
+the owner's computer and phone run Opium under its new names with their data; the window's needs
+from a UI framework are written down and reviewed (M1.6); the budgets are decided (M1.7); the stage
+audit is recorded and its findings decided (M1.8).
 
 ### Stage 2 — The first release → 0.1.0
 
@@ -107,22 +178,34 @@ reproducibly, carry their licences and expose of DRM what the owner decided.
 - A Gradle wrapper, so the APK builds with a pinned Gradle
 - Cleartext HTTP on the phone limited to the Navidrome server
 - README and CHANGELOG for 0.1.0
+- The dependencies checked (`cargo deny`), once their advisories are fixed or accepted
+- A release audit before the tag, recorded in [`audits/`](audits/README.md): the stage audit, plus
+  the changelog, the version, signed and reproducible packages, debug symbols kept, a run on each
+  platform (no earlier release to update from)
 
 **Exit.** A tagged 0.1.0 whose Linux package (`nix build`) and signed APK were installed and run
 from clean profiles; both list their third-party licences; CI is green.
 
 ### Stage 3 — The phone on par
 
-**Goal.** The phone does what the computer does, as smoothly and as frugally as measured, and its
-known debt is cleared or recorded.
+**Goal.** First, the phone's toolkit decided by measurement; then the phone doing what the computer
+does, as smoothly and as frugally as measured, on that toolkit
+([ADR-0028](adr/0028-the-phones-compose-screens-frozen-until-measured.md)).
 
-- The phone's M3E completed where its design has parts the phone lacks
-- The Android debt left by the 2026-10-31 audit decided one by one: Opium Connect's node built on
-  the main thread, recompositions, accessibility labels, touch targets
+- After SlimeEngine's Stage 6d (its ADR-0173): a prototype of Opium's phone screens on slime-ui,
+  measured against the same screens in Compose in smoothness, start-up and power; slime-ui is taken
+  only if it matches or beats Compose, by an ADR
+- A Macrobenchmark module with Perfetto for that measurement and the phone's budgets
+  ([ADR-0027](adr/0027-macrobenchmark-for-the-phones-measurements-at-stage-3.md))
+- Then, on the toolkit that wins: the phone's M3E completed where its design has parts the phone
+  lacks; the interface debt of the [2026-10-31 audit](audits/2026-10-31-full.md) (recompositions,
+  accessibility labels, touch targets)
+- Opium Connect's node no longer built on the main thread (the system layer, not frozen)
 - Battery and smoothness measured against the reference player, before and after each change
 
-**Exit.** Every page of each theme exists on the phone; TalkBack names every control; the
-measurements are in the repository and no worse than at the stage's start.
+**Exit.** The toolkit decided by its measurement; every page of each theme exists on the phone;
+TalkBack names every control; the measurements are in the repository and no worse than at the
+stage's start.
 
 ### Stage 4 — Windows (eventual)
 

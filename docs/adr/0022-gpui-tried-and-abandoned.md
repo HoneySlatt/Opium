@@ -1,7 +1,8 @@
 # 0022. GPUI tried and abandoned; egui stays until SlimeEngine's UI framework runs applications
 
 - Status: Accepted; amends [0006](0006-egui-for-the-desktop-window.md) (egui stays the window until
-  the move to SlimeEngine's UI framework)
+  the move to SlimeEngine's UI framework); amended by [0026](0026-the-egui-window-frozen-until-the-move.md)
+  (the window frozen until then)
 - Date: 2026-11-04
 
 ## Context

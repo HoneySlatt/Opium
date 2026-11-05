@@ -1,0 +1,323 @@
+# Contributing
+
+How to set up the environment, the commands in detail, and how a change is made and checked. The
+rules for agents are in [`AGENTS.md`](AGENTS.md).
+
+## Environment
+
+Development happens on NixOS, under Wayland. Everything runs inside the Nix development shells of
+[`flake.nix`](flake.nix):
+
+- `nix develop`, loaded by direnv through `.envrc`: the workspace's shell. It provides Rust (cargo,
+  rustc, clippy, rustfmt, rust-analyzer), pkg-config, PipeWire, FFmpeg and libopus to link against,
+  cmake and perl for BoringSSL, git and lychee for the links between Markdown files, and Python,
+  Weston and hyperfine for measurements. Every tool `scripts/check.sh` and `scripts/measure/` use
+  comes from it.
+- `nix develop .#android`: the phone's shell, x86_64 only. It provides Rust with the Android
+  targets, `cargo-ndk`, the Android SDK and NDK (Google's, under its own licence, accepted for this
+  shell only), JDK 17 and Gradle 9.
+
+What the app needs besides, at run time (the [README](README.md#requirements) says it for users):
+
+- PipeWire, the only audio output.
+- A Chromium-family browser to sign in to Apple Music and SoundCloud; `OPIUM_BROWSER` chooses one.
+- The Widevine CDM a browser installed, for protected streams; `WIDEVINE_CDM` names a
+  `libwidevinecdm.so` elsewhere.
+- For Opium Connect, 47820/tcp and 5353/udp open in the firewall.
+
+The app keeps its files in three folders, each following its XDG variable:
+
+- `$XDG_CONFIG_HOME/opium`: settings, themes, sign-ins, the sign-in browsers' profiles,
+  `connect.json`, `shared.json`, `playlists.json`, the session.
+- `$XDG_CACHE_HOME/opium`: the library as last read, covers, animated covers, the files' index,
+  `exit.log`.
+- `$XDG_DATA_HOME/opium`: downloads.
+
+## Commands
+
+### The checks
+
+```sh
+scripts/check.sh            # every check of the definition of done; what CI runs
+scripts/check.sh android    # inside `nix develop .#android`: the phone's core
+```
+
+- `scripts/check.sh` runs, in order: formatting, clippy with warnings as errors, the build and the
+  tests, the code documentation with warnings as errors, and the links between the tracked Markdown
+  files (lychee, offline, anchors included). Its head says what it checks and what it does not.
+- `scripts/check.sh android` runs clippy on `opium-ffi` for arm64 Android, warnings as errors, in
+  `target-android`. It checks that the phone's core builds without the desktop's crates. The APK
+  itself is not checked.
+- CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs
+  `nix develop --no-update-lock-file --command scripts/check.sh` on every push to `main` and every
+  pull request. The flag makes an incomplete `flake.lock` an error instead of a silent update.
+- CI sets `CARGO_PROFILE_DEV_DEBUG=0` (the tests' binaries without debug info) and
+  `CARGO_INCREMENTAL=0` (no incremental data, which a fresh runner never reuses): the same checks in
+  a smaller, faster build. Set them locally to reproduce a CI build.
+- No test needs the network, PipeWire, a display, a session bus, a sign-in or a Widevine CDM. What
+  needs them is checked by hand, on a [throwaway profile](#a-throwaway-profile).
+- Run `scripts/check.sh` before reporting a milestone done. Lychee reads only tracked files: check a
+  new Markdown file with `lychee --offline --include-fragments <file>` until it is committed.
+
+### Build, test, lint
+
+```sh
+cargo build --workspace
+cargo test --workspace                            # no network, PipeWire, display or sign-in needed
+cargo clippy --workspace --all-targets -- -D warnings
+cargo fmt --all
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
+cargo run -p app-desktop                          # the desktop app, binary `opium`: on a throwaway profile
+cargo build --release -p app-desktop              # target/release/opium
+nix build                                         # the packaged desktop app: result/bin/opium
+```
+
+The first build is slow: `wreq` builds BoringSSL from source, and FFmpeg's bindings run bindgen.
+
+### The phone's build
+
+In `nix develop .#android`:
+
+```sh
+./android/build-core.sh                           # the core for arm64 and its Kotlin bindings
+(cd android && gradle assembleRelease)            # android/app/build/outputs/apk/release/app-release.apk
+```
+
+- `build-core.sh` builds `opium-ffi` with `cargo-ndk` for arm64-v8a at API level 34, into
+  `target-android`, then generates the Kotlin bindings with UniFFI into the app's generated
+  sources.
+- The Gradle project has no wrapper: `gradle` is the shell's. The shell points Gradle at the SDK's
+  own `aapt2`, as Gradle's is built for other Linuxes.
+- The release build is signed with Android's debug key, as the debug build is, so either installs
+  over the other.
+- Always build the release APK for the phone: a debug APK is not compiled ahead of time and feels
+  like 30 Hz.
+
+### Developer examples
+
+- `cargo run -p widevine --example probe` loads the browser's CDM and asks it for a licence
+  challenge, offline.
+- `cargo run -p lyrics --example find -- <seconds> <artist> -- <title>` asks every lyrics source
+  for one song, NetEase and KuGou included (the app leaves them off by default), and prints what
+  each gives and how long it took. It needs the network and no sign-in; each site learns the song.
+- The others run on the owner's real sign-ins, kept in the config folder, and only with the owner's
+  go ([AGENTS.md](AGENTS.md#never-on-your-own)):
+  - `cargo run -p apple-music --example am -- …`; `OPIUM_SPATIAL=1` asks for Spatial Audio;
+  - `cargo run -p soundcloud --example sc -- …`, which may renew SoundCloud's tokens on disk, under
+    the running app;
+  - `cargo run -p downloads --features keyring --example spike -- …`.
+- Each file's header lists its commands.
+- `am play` and `am live` play out loud.
+- `am fetch`, `am live` and `sc fetch` write decrypted protected audio to a file: never run them on
+  your own.
+
+### Measuring
+
+The quality bar's measures by hand ([ROADMAP](docs/ROADMAP.md#quality-bar)) are taken with the
+scripts in [`scripts/measure/`](scripts/measure/), each described at its head, on the release
+build, inside `nix develop`. Their figures go to [`docs/measurements.md`](docs/measurements.md).
+
+```sh
+cargo build --release -p app-desktop
+wpid=$(scripts/measure/weston.sh opium-measure-0)            # a headless Weston; prints its pid
+export WAYLAND_DISPLAY=opium-measure-0
+scripts/measure/rest.sh home <profile> <out>                  # wake-ups, CPU and memory at rest
+scripts/measure/startup.py <profile> 10 <out>/startup.json   # warm start to the first frame saved
+scripts/measure/power-compare.sh <profile> <out>              # GPU power, closed against open
+kill -TERM "$wpid"                                            # that pid only
+```
+
+- `<profile>` is a [throwaway profile](#a-throwaway-profile)'s folder, the scripts run under
+  `unshare --user --map-current-user --net` to keep it off the network; or a
+  [copy of the owner's profile](#tests-on-a-copy-of-the-owners-profile) made by
+  `scripts/measure/copy-profile.sh`, with the owner's go.
+- The scripts end each test instance by SIGTERM to its own pid, and refuse to start while another
+  Opium runs. Never close a window through the compositor: the command can reach the owner's
+  focused window.
+- `startup.py … map` times the window's mapping from Umbriel's event stream instead, on the
+  desktop.
+
+### The screenshot mode
+
+The desktop app saves its own window once it has had time to load, then quits
+(`crates/app-desktop/src/screenshot.rs`). It compares the image to nothing: look at it.
+
+| Variable | Effect |
+|---|---|
+| `OPIUM_SCREENSHOT=<file.png>` | Turns the mode on; the image's path |
+| `OPIUM_SCREENSHOT_AFTER=<seconds>` | The wait before the capture; 8 by default |
+| `OPIUM_SCREENSHOT_PAGE=<page>` | Opens a page first: `playlist:<index>`, `library-artist:<index>`, `album:<id>`, `artist:<id>` (Apple Music ids), `search:<query>`, `shelf:home\|new\|radio:<title>`, `page:home\|new\|radio\|albums\|artists\|recent\|songs\|settings\|favourites` |
+| `OPIUM_SCREENSHOT_DRAWER` | Opens the queue drawer |
+| `OPIUM_SCREENSHOT_LYRICS` | Opens the lyrics page |
+| `OPIUM_SCREENSHOT_NP` | Opens Now Playing |
+| `OPIUM_SCREENSHOT_SIGNAL` | Opens the signal path's popover, under the top bar's button |
+| `OPIUM_SCREENSHOT_DOWNLOADED` | Shows only the downloads in Songs |
+| `OPIUM_SCREENSHOT_PLAY=<row>` | Plays a Songs row once the library loaded: **sound, ask the owner** |
+| `OPIUM_SCREENSHOT_STATION=<ra.…>` | Tunes in to a station: **sound, ask the owner** |
+| `OPIUM_SCREENSHOT_DOWNLOAD` | Downloads the album or playlist opened, once loaded |
+
+- `_DRAWER`, `_LYRICS`, `_NP` and `_SIGNAL` act at start even without `OPIUM_SCREENSHOT`, and the
+  window then stays until closed.
+- `_PAGE`, `_PLAY`, `_STATION` and `_DOWNLOAD` need `OPIUM_SCREENSHOT`; `_DOWNLOADED` acts only
+  with `_PAGE`.
+
+## Running Opium without touching the owner's data
+
+### What the folders do not redirect
+
+The three XDG variables move every file the app keeps. They do **not** move:
+
+- **the session bus**: the single-instance check, so a test build started while the owner's Opium
+  runs only raises the owner's window and exits
+  ([ADR-0018](docs/adr/0018-one-instance-through-the-session-bus.md)); the MPRIS name; and **the
+  keyring**, whose one item "Opium downloads" holds the key every download is sealed with;
+- **the network**: Opium Connect announces the app on the local network and through iroh. A fresh
+  profile is a new device on the owner's phone; a copied `connect.json` *is* the owner's computer,
+  which merges into the phone's real history, playlists and session;
+- **the sound card**: PipeWire plays on the owner's speakers;
+- **the Widevine CDM**, found under `$XDG_CONFIG_HOME`: a test profile finds none unless
+  `WIDEVINE_CDM` names it.
+
+### A throwaway profile
+
+A test run uses a throwaway profile, no session bus and no network. Inside `nix develop`, with
+`WAYLAND_DISPLAY` naming the compositor's socket in `$XDG_RUNTIME_DIR`:
+
+```sh
+cargo build -p app-desktop
+test=$(mktemp -d /tmp/opium-test.XXXXXX)
+unshare --user --map-current-user --net env \
+    XDG_CONFIG_HOME="$test/config" XDG_CACHE_HOME="$test/cache" XDG_DATA_HOME="$test/data" \
+    DBUS_SESSION_BUS_ADDRESS=unix:path=/nonexistent \
+    OPIUM_SCREENSHOT="$test/shot.png" OPIUM_SCREENSHOT_AFTER=6 \
+    target/debug/opium
+rm -rf "$test"
+```
+
+- It writes only under `$test`.
+- It says that the media controls, the keyring (so downloads) and Opium Connect are unavailable,
+  which is expected.
+- Without the screenshot variables the window stays until closed.
+- Checked on 2026-11-05 under the Opium names, with the debug build on the desktop's compositor: the
+  capture saved after about 8.6 s, and only `$test` was written (`config/opium/` with
+  `connect.json`, `settings.toml` and `shared.json`; `cache/` with fontconfig's and Mesa's caches;
+  `shot.png`).
+- In a headless Weston (`scripts/measure/weston.sh`), use the release build: the debug build's
+  capture never fired there in 30 s ([pitfalls](#known-pitfalls)).
+
+### Tests on a copy of the owner's profile
+
+A check that needs the owner's signed-in services uses a **copy of the owner's config folder** as
+`XDG_CONFIG_HOME`, **with the owner's go each time**
+([AGENTS.md](AGENTS.md#never-on-your-own)): the run talks to the real services, and may renew the
+owner's tokens. `scripts/measure/copy-profile.sh` makes the copy. Only this way:
+
+- run as above but without `unshare … --net`, as the services need the network; the session bus
+  still pointed nowhere;
+- only while the owner's Opium is closed ([below](#the-owners-own-window)), and never while another
+  agent's test runs;
+- `connect.json` deleted from the copy before the run and after it: the run then shows on the
+  owner's phone as a new device, never to be paired;
+- `muted = true` in the copy's `settings.toml`, replacing the key if it is there
+  ([settings care](#settings-care));
+- `WIDEVINE_CDM` set to the browser's `libwidevinecdm.so`;
+- no change made in the app: everything there acts on the real accounts;
+- the copy deleted when done: it holds the owner's tokens
+  ([ADR-0013](docs/adr/0013-secrets-and-what-is-kept-on-disk.md)).
+
+SoundCloud's tokens last about a day and the copy may renew them. Tell the owner if it did: their
+own may then need a new sign-in.
+
+### The owner's own window
+
+The owner allows closing their Opium for a test, only gracefully and started again after:
+
+```sh
+pgrep -ax opium                       # whose? the owner's installed program, or a build in a tree
+playerctl --player=opium quit         # MPRIS Quit: it saves, then ends within 5 s (ADR-0021)
+pgrep -x opium || echo closed
+# … the test …
+setsid -f <the program pgrep showed> >/dev/null 2>&1   # started again, detached
+```
+
+- Never `kill` it: killing skips what it saves on closing.
+- A build running from a working tree may be another agent's test: leave it, and ask.
+
+### Settings care
+
+- `settings.toml` is rewritten whole from memory on every change, so an edit made while the app
+  runs is lost.
+- A file that does not read is kept beside as `settings.toml.bad`, and only its settings that read
+  are kept.
+- To change a key in a test profile, replace it; never add a second one. A duplicate key once made
+  the whole file unreadable, and the user's settings were lost.
+- Take a backup before any edit.
+
+## The phone over adb
+
+The phone is the owner's daily device, reached over `adb` only with the owner's go.
+
+- Install the release build only:
+  `adb install -r android/app/build/outputs/apk/release/app-release.apk`.
+- Then check that `adb shell dumpsys package io.github.honeyslatt.opium | grep pkgFlags` shows no
+  `DEBUGGABLE`.
+- Before each batch of taps (`adb shell input`), right before it, check that Opium is the focused
+  app: `adb shell dumpsys window | grep mCurrentFocus`. One check per batch: the owner may take the
+  phone back.
+- Never play a song there: it replaces the owner's queue.
+
+## When the app hangs on exit
+
+Closing the app sometimes hung, the window gone and the process left, which then kept a new start
+from opening. The cause is not found ([ADR-0021](docs/adr/0021-the-exit-watch.md)).
+
+- The exit watch ends the process five seconds after everything is saved. It appends where the
+  teardown stood to `exit.log` in the cache folder, then aborts, which leaves a core dump of every
+  thread ([ADR-0024](docs/adr/0024-the-exit-watch-aborts-for-a-core-dump.md)).
+- Read `exit.log` first, then the core dump, before guessing:
+
+  ```sh
+  coredumpctl list opium
+  coredumpctl gdb opium                 # then `thread apply all bt`
+  ```
+
+- One hang seen was still inside eframe's teardown, with the Mesa OpenGL driver's threads alive.
+
+## Known pitfalls
+
+- **The owner's display runs at a fractional scale (1.5).** Feathered edges and the covers' sizes
+  are computed in physical pixels: check a visual change at 1.5 as well as at 1.
+- **Exclusive audio breaks WirePlumber.** A program that took the card through ALSA `hw:` once left
+  WirePlumber without it; `systemctl --user restart wireplumber` brought it back, at another volume.
+  Check `wpctl status` after any audio experiment.
+- **`pgrep -f opium` matches shells** whose command line merely contains the word, yours included.
+  Use `pgrep -ax opium`, which matches the process's name, and read the path it prints.
+- **The owner's shell is zsh**: an unquoted `$var` is not split into words, and a word starting with
+  `=` is replaced by a command's path (`echo ====` fails). Quote, or run scripts with bash.
+- **A test build started while Opium runs exits at once, printing nothing**: it raised the running
+  window ([ADR-0018](docs/adr/0018-one-instance-through-the-session-bus.md)).
+- **With a test `XDG_CONFIG_HOME`, no Widevine CDM is found**: set `WIDEVINE_CDM`.
+- **In a headless Weston, the debug build's screenshot mode never saves** (2026-11-05, Weston 16;
+  the release build saves): measure and capture there with the release build.
+- **End a test process by its own pid**, never by name: `pkill -n weston` once ended another
+  agent's headless Weston.
+- **`unshare -rn` breaks D-Bus's authentication**; to cut the network but keep the bus, use
+  `unshare --user --map-current-user --net`.
+- **Opium Connect's tests listen on `0.0.0.0:47820` when the port is free**, reachable from the
+  local network for their few seconds.
+- **The session is shared with the phone**: an instance that shares the owner's device identity and
+  stops a song overwrites the phone's newer stop.
+- **Signing out deletes the tokens and the sign-in browser's profile**
+  ([ADR-0003](docs/adr/0003-sign-in-through-the-users-browser.md)).
+- **egui paints layers drawn without an `Area` before the others**: a layer drawn over the panes
+  must be registered (`ui::register_layer`).
+- **`color::mix(a, b, p)` weights `a` by `p`.**
+
+## Making a change
+
+1. Pick the current milestone in [`docs/PLAN.md`](docs/PLAN.md).
+2. Make the change, with its tests and its documentation.
+3. Run `scripts/check.sh`; run the app on a [throwaway profile](#a-throwaway-profile); measure what
+   the milestone touches against the [quality bar](docs/ROADMAP.md#quality-bar), into
+   [`docs/measurements.md`](docs/measurements.md).
+4. Commit one logical change at a time, in English, subject in the imperative.

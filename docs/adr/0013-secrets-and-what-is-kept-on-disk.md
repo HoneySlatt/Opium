@@ -51,7 +51,7 @@ the session, the shared state, the downloads' manifest and the covers.
 ## Consequences
 
 - A copy of the config folder holds tokens: a test profile copied from it is deleted after use
-  (AGENTS.md).
+  (CONTRIBUTING.md).
 - Anything new that holds a secret follows the same rules; a review checks errors and logs for
   addresses with tokens in them.
 - The keyring item is shared by every run on the owner's session: agents never change or delete it

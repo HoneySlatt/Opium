@@ -35,6 +35,6 @@ but could neither bring it forward nor hand it files, which the MPRIS name alrea
 
 - A test build started while the owner's Opium runs only raises the owner's window, and exits with
   nothing printed. An agent either closes the owner's window gracefully first or runs the test on
-  another session bus (AGENTS.md).
+  another session bus (CONTRIBUTING.md).
 - With no session bus, the check finds nothing and the app starts; MPRIS is then unavailable.
 - A Windows port needs another way to find the running instance (ROADMAP).
