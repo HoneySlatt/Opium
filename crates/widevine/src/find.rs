@@ -14,9 +14,11 @@ use crate::manifest::manifest_version;
 const LIBRARY: &str = "libwidevinecdm.so";
 
 /// The user-data folders of Chromium-family browsers under a config folder, in alphabetical
-/// order. A name ending in `*` stands for every folder starting with what comes before it.
+/// order. A name ending in `*` stands for every folder whose name starts with what comes
+/// before it: `BraveSoftware/*` is every folder under `BraveSoftware`, each one a Brave's
+/// (`Brave-Browser`, `Brave-Browser-Beta`, `Brave-Origin`, …).
 const CHROMIUM_FOLDERS: &[&str] = &[
-    "BraveSoftware/Brave-Browser*",
+    "BraveSoftware/*",
     "chromium",
     "google-chrome",
     "google-chrome-beta",
@@ -216,24 +218,26 @@ fn firefox_profiles(profiles: &Path, found: &mut Vec<Candidate>) {
 
 /// The folders a name of [`CHROMIUM_FOLDERS`] stands for, under `config`.
 fn matching_folders(config: &Path, pattern: &str) -> Vec<PathBuf> {
-    let path = config.join(pattern.trim_end_matches('*'));
-    if !pattern.ends_with('*') {
+    let Some(start) = pattern.strip_suffix('*') else {
+        let path = config.join(pattern);
         return if path.is_dir() {
             vec![path]
         } else {
             Vec::new()
         };
-    }
-    let (Some(parent), Some(prefix)) = (path.parent(), path.file_name()) else {
-        return Vec::new();
     };
-    let prefix = prefix.as_bytes();
-    subfolders(parent)
+    // The pattern's last part is a name's start, possibly empty; what comes before it, the
+    // folder to look in.
+    let (parent, prefix) = match start.rsplit_once('/') {
+        Some((parent, prefix)) => (config.join(parent), prefix),
+        None => (config.to_path_buf(), start),
+    };
+    subfolders(&parent)
         .into_iter()
         .filter(|folder| {
             folder
                 .file_name()
-                .is_some_and(|name| name.as_bytes().starts_with(prefix))
+                .is_some_and(|name| name.as_bytes().starts_with(prefix.as_bytes()))
         })
         .collect()
 }

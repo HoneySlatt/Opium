@@ -198,6 +198,24 @@ fn every_browsers_layout_is_found_and_the_highest_version_wins() {
 }
 
 #[test]
+fn every_folder_under_brave_software_is_a_brave_user_data_folder() {
+    let machine = Machine::new("brave");
+    let brave = machine.config().join("BraveSoftware");
+    let origin = machine.chromium(&brave.join("Brave-Origin"), "4.10.3112.0", None);
+    let nightly = machine.chromium(&brave.join("Brave-Browser-Nightly"), "4.10.3000.0", None);
+    let other = machine.chromium(&brave.join("Another"), "4.10.2000.0", None);
+    // A file beside them is not a user-data folder.
+    write(&brave.join("Brave-Notes"), b"");
+
+    let candidates = candidates_in(&machine.places());
+    usable(&candidates, &origin, "4.10.3112.0");
+    usable(&candidates, &nightly, "4.10.3000.0");
+    usable(&candidates, &other, "4.10.2000.0");
+    assert_eq!(candidates.len(), 3, "{candidates:#?}");
+    assert_eq!(choose(&candidates), Some(origin));
+}
+
+#[test]
 fn versions_compare_as_numbers_part_by_part() {
     let machine = Machine::new("numbers");
     let older = machine.chromium(&machine.config().join("chromium"), "4.9.12.0", None);
