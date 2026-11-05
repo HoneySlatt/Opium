@@ -61,7 +61,8 @@ impl Indexer {
     ///
     /// A malformed fragment: a box with a bad size, a nest deeper than 16, a count larger than
     /// the bytes left, a `tfhd` naming a track or sample entry the movie does not have, a `senc`
-    /// whose count or length does not fit its `traf`'s samples, subsamples not adding up to
+    /// whose count or length does not fit its `traf`'s samples (one counting none stands for
+    /// samples under a constant IV and without subsamples), subsamples not adding up to
     /// their sample, an 8-byte IV under a CBC scheme, a sample outside every `mdat`, samples
     /// sharing a byte of the file, more zero-size samples than their `moof` has bytes. The
     /// indexer stays where it was: the same error comes back from every later call.

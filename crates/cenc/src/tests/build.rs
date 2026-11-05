@@ -296,6 +296,8 @@ pub enum Aux {
     Senc,
     /// `saiz` and `saio`, the information laid in the `mdat` before the samples.
     SaizSaio,
+    /// An `senc` of `sample_count` 0, flags 0: what Apple's live radio sends under a constant IV.
+    EmptySenc,
     None,
 }
 
@@ -910,6 +912,9 @@ fn traf_box(
             saio.extend((layout.aux_at.wrapping_sub(base) as u32).to_be_bytes());
             body.extend(free_if(cleared, full(b"saio", 0, 0, &saio)));
         }
+        Aux::EmptySenc => {
+            body.extend(free_if(cleared, full(b"senc", 0, 0, &0u32.to_be_bytes())));
+        }
         Aux::None => {}
     }
     if !traf.sbgp.is_empty() {
@@ -1047,6 +1052,18 @@ pub fn plain(fragments: usize, count: u32, size: u32) -> FileSpec {
     }
 }
 
+/// Apple's live radio (§5): one `cbcs` track with a 1:9 pattern and a constant IV, two fragments
+/// of five samples, each with an `senc` that counts 0 samples.
+pub fn radio() -> FileSpec {
+    let mut radio = plain(2, 5, 64);
+    radio.movie.tracks[0].entries[0] = Entry::cbcs((1, 9), vec![0x44; 16]);
+    for fragment in &mut radio.fragments {
+        *fragment = FragmentSpec::simple(1, 5, 64, 0);
+        fragment.trafs[0].aux = Aux::EmptySenc;
+    }
+    radio
+}
+
 /// The layouts of §13, each named: every box layout of §2 to §5 on a file of its own.
 pub fn corpus() -> Vec<(&'static str, FileSpec)> {
     let mut files = vec![("plain", plain(2, 3, 50))];
@@ -1117,6 +1134,8 @@ pub fn corpus() -> Vec<(&'static str, FileSpec)> {
     cbcs_senc.fragments[0] = FragmentSpec::simple(1, 3, 64, 0);
     cbcs_senc.fragments[0].trafs[0].runs[0].samples[1].subsamples = vec![(4, 60)];
     files.push(("cbcs_senc", cbcs_senc));
+
+    files.push(("radio_empty_senc", radio()));
 
     let mut saiz = plain(1, 3, 50);
     saiz.fragments[0].trafs[0].aux = Aux::SaizSaio;
@@ -1511,6 +1530,40 @@ pub fn broken() -> Vec<(&'static str, Vec<u8>)> {
     let senc = offset_of(&file, b"senc");
     put_u32(&mut file, senc + 12, 4);
     files.push(("senc_count_mismatch", file));
+
+    let radio_file = build(&radio(), false).bytes;
+    let senc = offset_of(&radio_file, b"senc");
+    let mut file = radio_file.clone();
+    file[senc + 11] = 0x2;
+    files.push(("empty_senc_subsampled", file));
+
+    let mut file = radio_file.clone();
+    put_u32(&mut file, senc + 12, 2);
+    files.push(("radio_senc_count_mismatch", file));
+
+    let mut file = radio_file;
+    file.splice(senc + 16..senc + 16, [0; 16]);
+    put_u32(&mut file, senc, 32);
+    let moof = offset_of(&file, b"moof");
+    let traf = offset_of(&file, b"traf");
+    for at in [moof, traf] {
+        let size = u32::from_be_bytes(file[at..at + 4].try_into().unwrap());
+        put_u32(&mut file, at, size + 16);
+    }
+    let trun = offset_of(&file, b"trun");
+    let data_offset = u32::from_be_bytes(file[trun + 16..trun + 20].try_into().unwrap());
+    put_u32(&mut file, trun + 16, data_offset + 16);
+    files.push(("empty_senc_with_bytes_left", file));
+
+    let mut spec = plain(1, 3, 50);
+    spec.fragments[0].trafs[0].aux = Aux::EmptySenc;
+    files.push(("empty_senc_per_sample_iv", build(&spec, false).bytes));
+
+    let mut spec = radio();
+    spec.movie.tracks[0].groups = vec![Seig::key(OTHER_KEY, 16)];
+    spec.fragments.truncate(1);
+    spec.fragments[0].trafs[0].sbgp = vec![(3, 0), (1, 1), (1, 0)];
+    files.push(("empty_senc_seig_per_sample_iv", build(&spec, false).bytes));
 
     let senc_longer = {
         let mut spec = plain(1, 3, 50);

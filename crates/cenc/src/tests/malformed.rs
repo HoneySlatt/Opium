@@ -98,6 +98,36 @@ fn a_senc_whose_count_differs_from_the_trafs_samples() {
 }
 
 #[test]
+fn an_empty_senc_stands_only_for_samples_under_a_constant_iv_without_subsamples() {
+    let error = fails_in("empty_senc_subsampled", b"senc");
+    assert_eq!(
+        error.what,
+        "counts 0 samples yet says subsamples follow, where its `traf` has 5"
+    );
+    let error = fails_in("empty_senc_per_sample_iv", b"senc");
+    assert_eq!(
+        error.what,
+        "counts 0 samples where sample 0 of its `traf` needs a 16-byte IV of its own"
+    );
+    let error = fails_in("empty_senc_seig_per_sample_iv", b"senc");
+    assert_eq!(
+        error.what,
+        "counts 0 samples where sample 3 of its `traf` needs a 16-byte IV of its own"
+    );
+    let error = fails_in("empty_senc_with_bytes_left", b"senc");
+    assert!(
+        error.what.contains("16 bytes left after its 0 samples"),
+        "{error}"
+    );
+}
+
+#[test]
+fn a_senc_under_a_constant_iv_whose_count_differs_from_the_trafs_samples() {
+    let error = fails_in("radio_senc_count_mismatch", b"senc");
+    assert_eq!(error.what, "counts 2 samples where its `traf` has 5");
+}
+
+#[test]
 fn a_senc_whose_length_does_not_fit_its_iv_size() {
     let error = fails_in("senc_too_long", b"senc");
     assert!(error.what.contains("does not fit their IV size"), "{error}");

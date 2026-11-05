@@ -131,6 +131,20 @@ fn cbcs_with_a_constant_iv_and_a_senc_of_subsamples_only() {
 }
 
 #[test]
+fn cbcs_with_a_constant_iv_and_an_empty_senc_as_apples_live_radio_sends() {
+    let (_, _, table) = check("radio_empty_senc");
+    assert_eq!(table.len(), 10);
+    for sample in table.iter() {
+        assert!(sample.protected);
+        assert_eq!(sample.scheme, Scheme::Cbcs);
+        assert_eq!(sample.pattern, Pattern { crypt: 1, skip: 9 });
+        assert_eq!(sample.iv, [0x44; 16], "the constant IV");
+        assert_eq!(sample.iv_size, 16);
+        assert!(sample.subsamples.is_empty(), "protected whole");
+    }
+}
+
+#[test]
 fn saiz_and_saio_without_senc() {
     let (_, _, table) = check("saiz_saio");
     assert_eq!(table.get(0).unwrap().subsamples, &[(2, 48)]);

@@ -584,7 +584,8 @@ fn assign_groups(
     Ok(())
 }
 
-/// Reads the IVs and subsamples of a `senc` (23001-7 §7.2) for samples `first..first + count`.
+/// Reads the IVs and subsamples of a `senc` (23001-7 §7.2) for samples `first..first + count`;
+/// one that counts no sample carries nothing ([`check_empty_senc`]).
 fn senc(
     data: &[u8],
     header: Header,
@@ -595,13 +596,15 @@ fn senc(
     let mut body = Body::of(data, header);
     body.version()?;
     let subsampled = body.flags()? & 0x2 != 0;
-    let declared = body.u32("sample_count")?;
-    if declared as usize != count {
+    let carried = body.u32("sample_count")? as usize;
+    if carried == 0 && count > 0 {
+        check_empty_senc(&body, subsampled, first, count, cx)?;
+    } else if carried != count {
         return Err(body.fault(format!(
-            "counts {declared} samples where its `traf` has {count}"
+            "counts {carried} samples where its `traf` has {count}"
         )));
     }
-    for sample in first..first + count {
+    for sample in first..first + carried {
         *cx.steps += 1;
         let iv_size = cx.table.description(sample).iv_size as usize;
         let iv_at = push_iv(&mut body, iv_size, cx)?;
@@ -614,9 +617,38 @@ fn senc(
     }
     if body.left() != 0 {
         return Err(body.fault(format!(
-            "has {} bytes left after its {count} samples: its length does not fit their IV size",
+            "has {} bytes left after its {carried} samples: its length does not fit their IV size",
             body.left()
         )));
+    }
+    Ok(())
+}
+
+/// Checks that an `senc` counting no sample may stand for the `count` samples of its `traf` from
+/// `first` (§5). Apple's live radio sends one so in every fragment: it carries nothing, so its
+/// samples take their constant IV and are protected whole, as if there were no `senc`. It cannot
+/// stand for samples that need what it would carry: subsamples, or an IV of their own.
+fn check_empty_senc(
+    body: &Body<'_>,
+    subsampled: bool,
+    first: usize,
+    count: usize,
+    cx: &mut Context<'_>,
+) -> Result<(), Error> {
+    if subsampled {
+        return Err(body.fault(format!(
+            "counts 0 samples yet says subsamples follow, where its `traf` has {count}"
+        )));
+    }
+    for sample in first..first + count {
+        *cx.steps += 1;
+        let iv_size = cx.table.description(sample).iv_size;
+        if iv_size != 0 {
+            return Err(body.fault(format!(
+                "counts 0 samples where sample {} of its `traf` needs a {iv_size}-byte IV of its own",
+                sample - first
+            )));
+        }
     }
     Ok(())
 }
