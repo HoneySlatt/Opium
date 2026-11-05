@@ -946,24 +946,26 @@ fn carry_query_forward(next: &str, first: &str) -> String {
     }
 }
 
-/// The request that takes `entry`'s rows out of `playlist`, refused unless
-/// both are plain ids: a removal naming no song may empty the whole
-/// playlist, and an id goes unescaped into the address.
-fn playlist_removal_path(playlist: &str, entry: &str) -> Result<String> {
-    let plain = |id: &str| {
-        !id.is_empty()
-            && id
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
-    };
-    if !plain(playlist) || !plain(entry) {
-        return Err(Error::Protocol(format!(
-            "won't remove {entry:?} from playlist {playlist:?}: not a song's id"
-        )));
+/// `id` when it is an Apple Music id: a catalog number, or a prefix of one
+/// to three lowercase letters, a dot and a name (`i.AbC9-x`, `pl.u-8aAV`).
+/// Every request that changes the account checks its ids with it, as does
+/// the ratings' read, which shares their address: an empty or odd id may
+/// name a whole collection once in the address (a removal naming no song
+/// may empty the playlist; `..` climbs a level), and ids go into addresses
+/// unescaped.
+fn apple_id(id: &str) -> Result<&str> {
+    let catalog = !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit());
+    let named = id.split_once('.').is_some_and(|(prefix, name)| {
+        (1..=3).contains(&prefix.len())
+            && prefix.bytes().all(|b| b.is_ascii_lowercase())
+            && !name.is_empty()
+            && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+    });
+    if catalog || named {
+        Ok(id)
+    } else {
+        Err(Error::Protocol(format!("not an Apple Music id: {id:?}")))
     }
-    Ok(format!(
-        "/v1/me/library/playlists/{playlist}/tracks?ids%5Blibrary-songs%5D={entry}&mode=all"
-    ))
 }
 
 #[async_trait]
@@ -1180,7 +1182,11 @@ impl Provider for AppleMusic {
     /// Apple's favourites, as its own client sets them: `POST` adds, `DELETE`
     /// removes, the item named in the query (Kopuz found the form).
     async fn set_favourite(&self, kind: FavouriteKind, id: &ItemId, on: bool) -> Result<()> {
-        let path = format!("/v1/me/favorites?ids%5B{}%5D={}", catalog_type(kind), id.id);
+        let path = format!(
+            "/v1/me/favorites?ids%5B{}%5D={}",
+            catalog_type(kind),
+            apple_id(&id.id)?
+        );
         let req = if on {
             self.http
                 .post(format!("{API}{path}"))
@@ -1196,7 +1202,7 @@ impl Provider for AppleMusic {
         let path = format!(
             "/v1/me/library?ids%5B{}%5D={}&representation=ids",
             catalog_type(kind),
-            id.id
+            apple_id(&id.id)?
         );
         let req = self
             .http
@@ -1260,14 +1266,14 @@ impl Provider for AppleMusic {
         } else {
             "songs"
         };
-        let path = format!("/v1/me/library/{kind}/{}", library_id.id);
+        let path = format!("/v1/me/library/{kind}/{}", apple_id(&library_id.id)?);
         let req = self.http.delete(format!("{API}{path}"));
         self.send_change(req, &path).await
     }
 
     /// As the web player edits them. Apple takes no cover from it.
     async fn edit_playlist(&self, playlist: &ItemId, name: &str, description: &str) -> Result<()> {
-        let path = format!("/v1/me/library/playlists/{}", playlist.id);
+        let path = format!("/v1/me/library/playlists/{}", apple_id(&playlist.id)?);
         let body = serde_json::json!({
             "attributes": { "name": name, "description": description },
         });
@@ -1277,14 +1283,18 @@ impl Provider for AppleMusic {
 
     /// As the web player does it: every row of that song goes.
     async fn remove_from_playlist(&self, playlist: &ItemId, entry: &ItemId) -> Result<()> {
-        let path = playlist_removal_path(&playlist.id, &entry.id)?;
+        let path = format!(
+            "/v1/me/library/playlists/{}/tracks?ids%5Blibrary-songs%5D={}&mode=all",
+            apple_id(&playlist.id)?,
+            apple_id(&entry.id)?
+        );
         let req = self.http.delete(format!("{API}{path}"));
         self.send_change(req, &path).await
     }
 
     /// As the web player deletes them.
     async fn delete_playlist(&self, playlist: &ItemId) -> Result<()> {
-        let path = format!("/v1/me/library/playlists/{}", playlist.id);
+        let path = format!("/v1/me/library/playlists/{}", apple_id(&playlist.id)?);
         let req = self.http.delete(format!("{API}{path}"));
         self.send_change(req, &path).await
     }
@@ -1297,10 +1307,10 @@ impl Provider for AppleMusic {
         tracks: &[ItemId],
     ) -> Result<Playlist> {
         let path = "/v1/me/library/playlists";
-        let data: Vec<serde_json::Value> = tracks
+        let data = tracks
             .iter()
-            .map(|t| serde_json::json!({ "id": t.id, "type": "songs" }))
-            .collect();
+            .map(|t| Ok(serde_json::json!({ "id": apple_id(&t.id)?, "type": "songs" })))
+            .collect::<Result<Vec<_>>>()?;
         let mut attributes = serde_json::json!({ "name": name });
         if !description.is_empty() {
             attributes["description"] = description.into();
@@ -1346,12 +1356,12 @@ impl Provider for AppleMusic {
     async fn add_to_playlist(&self, playlist: &ItemId, tracks: &[ItemId]) -> Result<()> {
         let path = format!(
             "/v1/me/library/playlists/{}/tracks?representation=resources",
-            playlist.id
+            apple_id(&playlist.id)?
         );
-        let data: Vec<serde_json::Value> = tracks
+        let data = tracks
             .iter()
-            .map(|t| serde_json::json!({ "id": t.id, "type": "songs" }))
-            .collect();
+            .map(|t| Ok(serde_json::json!({ "id": apple_id(&t.id)?, "type": "songs" })))
+            .collect::<Result<Vec<_>>>()?;
         let req = self
             .http
             .post(format!("{API}{path}"))
@@ -1380,7 +1390,11 @@ impl Provider for AppleMusic {
 
     /// Apple's Suggest Less: the item rated -1, as its clients dislike.
     async fn suggest_less(&self, kind: FavouriteKind, id: &ItemId, on: bool) -> Result<()> {
-        let path = format!("/v1/me/ratings/{}/{}", catalog_type(kind), id.id);
+        let path = format!(
+            "/v1/me/ratings/{}/{}",
+            catalog_type(kind),
+            apple_id(&id.id)?
+        );
         let req = if on {
             self.http
                 .put(format!("{API}{path}"))
@@ -1400,7 +1414,11 @@ impl Provider for AppleMusic {
         struct Rating {
             value: i8,
         }
-        let path = format!("/v1/me/ratings/{}/{}", catalog_type(kind), id.id);
+        let path = format!(
+            "/v1/me/ratings/{}/{}",
+            catalog_type(kind),
+            apple_id(&id.id)?
+        );
         let resp: Option<types::Response<types::Resource<Rating>>> = self.fetch(&path).await?;
         Ok(Some(
             resp.and_then(|r| r.data.into_iter().next())
@@ -1881,26 +1899,48 @@ mod tests {
     }
 
     #[test]
-    fn a_removal_names_one_song_of_one_playlist() {
-        assert_eq!(
-            playlist_removal_path("p.AbC-12", "i.XyZ9").unwrap(),
-            "/v1/me/library/playlists/p.AbC-12/tracks?ids%5Blibrary-songs%5D=i.XyZ9&mode=all"
-        );
+    fn apple_ids_are_catalog_numbers_or_prefixed_names() {
+        for id in [
+            "1440833098",
+            "i.AbC9-x",
+            "l.xyz",
+            "p.A1",
+            "pl.u-8aAVZAvsGVW9j",
+            "ra.123",
+        ] {
+            assert_eq!(apple_id(id).unwrap(), id);
+        }
     }
 
     #[test]
-    fn a_removal_naming_no_song_is_never_sent() {
-        for (playlist, entry) in [
-            ("p.1", ""),
-            ("", "i.1"),
-            ("p.1", "i.1&mode=all"),
-            ("p.1/..", "i.1"),
-            ("p.1", " "),
+    fn a_removal_names_one_song_of_one_playlist() {
+        let path = format!(
+            "/v1/me/library/playlists/{}/tracks?ids%5Blibrary-songs%5D={}&mode=all",
+            apple_id("p.AbC-12").unwrap(),
+            apple_id("i.XyZ9").unwrap()
+        );
+        assert!(path.ends_with("playlists/p.AbC-12/tracks?ids%5Blibrary-songs%5D=i.XyZ9&mode=all"));
+    }
+
+    #[test]
+    fn anything_else_never_reaches_a_request_that_changes_the_account() {
+        for id in [
+            "",
+            " ",
+            ".",
+            "..",
+            "p.",
+            ".x",
+            "p..",
+            "1/2",
+            "../tracks",
+            "i.1&mode=all",
+            "i.1?x",
+            "i.é",
+            "abcd.1",
+            "P.1",
         ] {
-            assert!(
-                playlist_removal_path(playlist, entry).is_err(),
-                "{playlist:?} {entry:?}"
-            );
+            assert!(apple_id(id).is_err(), "{id:?}");
         }
     }
 }
