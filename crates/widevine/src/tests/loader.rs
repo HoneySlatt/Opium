@@ -1,11 +1,14 @@
 //! Loading (§2): idempotent, another path refused, a failed initialisation retried from the
-//! library already open, nothing after shutdown.
+//! library already open, loads from several threads at once, a shutdown during a load, nothing
+//! after shutdown.
 
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::mpsc::channel;
+use std::thread;
 
-use super::fake::{Call, Fake, Step, well_behaved};
+use super::fake::{Call, Fake, Gate, Step, well_behaved};
 use super::{QUICK, TestFolder};
 use crate::Error;
 use crate::desktop::Loader;
@@ -102,6 +105,123 @@ fn a_library_that_does_not_open_leaves_nothing_loaded() {
     let opened = Arc::new(AtomicUsize::new(0));
     loader.load(&second, opener(&fake, &opened), QUICK).unwrap();
     loader.shutdown();
+}
+
+fn count(fake: &Fake, wanted: impl Fn(&Call) -> bool) -> usize {
+    fake.calls().iter().filter(|call| wanted(call)).count()
+}
+
+/// A fake whose first initialisation waits at the gate, then answers as `answer` says.
+fn initialising_at(gate: &Arc<Gate>, answer: Vec<Step>) -> Arc<Fake> {
+    let held = Arc::clone(gate);
+    let mut base = well_behaved();
+    let mut first = true;
+    Fake::new(move |call: &Call| match call {
+        Call::Initialize { .. } if first => {
+            first = false;
+            let mut steps = vec![Step::Wait(Arc::clone(&held))];
+            steps.extend(answer.iter().cloned());
+            steps
+        }
+        other => base(other),
+    })
+}
+
+#[test]
+fn threads_loading_at_once_share_the_one_instance() {
+    let folder = TestFolder::new("loader-together");
+    let (first, _) = library_files(&folder);
+    let gate = Arc::new(Gate::default());
+    let fake = initialising_at(&gate, vec![Step::Initialized(true)]);
+    let opened = Arc::new(AtomicUsize::new(0));
+    let loader = Loader::new();
+    thread::scope(|scope| {
+        let load = || {
+            loader
+                .load(&first, opener(&fake, &opened), QUICK)
+                .map(|runtime| runtime.open_session(b"init").map(|_| ()))
+        };
+        let one = scope.spawn(load);
+        // The others come while the first holds the load, its CDM initialising.
+        gate.wait_until_entered();
+        let others: Vec<_> = (0..3).map(|_| scope.spawn(load)).collect();
+        gate.open();
+        assert_eq!(one.join().unwrap(), Ok(Ok(())));
+        for other in others {
+            assert_eq!(other.join().unwrap(), Ok(Ok(())));
+        }
+    });
+    loader.shutdown();
+    assert_eq!(opened.load(Ordering::Relaxed), 1);
+    assert_eq!(count(&fake, |call| matches!(call, Call::Create { .. })), 1);
+    assert_eq!(
+        count(&fake, |call| matches!(call, Call::Initialize { .. })),
+        1
+    );
+    assert_eq!(fake.calls().last(), Some(&Call::ModuleDeinitialised));
+}
+
+#[test]
+fn a_shutdown_while_the_cdm_initialises_ends_the_load() {
+    let folder = TestFolder::new("loader-shutdown-initialising");
+    let (first, _) = library_files(&folder);
+    let gate = Arc::new(Gate::default());
+    // The CDM never answers its initialisation.
+    let fake = initialising_at(&gate, Vec::new());
+    let opened = Arc::new(AtomicUsize::new(0));
+    let loader = Loader::new();
+    thread::scope(|scope| {
+        let loading = scope.spawn(|| {
+            loader
+                .load(&first, opener(&fake, &opened), QUICK)
+                .map(|_| ())
+        });
+        gate.wait_until_entered();
+        let runtime = loader.runtime().expect("the CDM thread runs");
+        let shutting = scope.spawn(|| loader.shutdown());
+        while runtime.shared().lock_queue().shutdown_started().is_none() {
+            thread::yield_now();
+        }
+        let after = scope.spawn(|| {
+            loader
+                .load(&first, opener(&fake, &opened), QUICK)
+                .map(|_| ())
+        });
+        gate.open();
+        assert_eq!(loading.join().unwrap(), Err(Error::ShutDown));
+        assert_eq!(after.join().unwrap(), Err(Error::ShutDown));
+        shutting.join().unwrap();
+    });
+    assert_eq!(opened.load(Ordering::Relaxed), 1);
+    assert_eq!(fake.calls().last(), Some(&Call::ModuleDeinitialised));
+}
+
+#[test]
+fn a_shutdown_while_the_library_opens_leaves_nothing_loaded() {
+    let folder = TestFolder::new("loader-shutdown-opening");
+    let (first, _) = library_files(&folder);
+    let fake = Fake::new(well_behaved());
+    let (entered, opening) = channel();
+    let (go_on, may_go_on) = channel::<()>();
+    let loader = Loader::new();
+    thread::scope(|scope| {
+        let library = fake.library();
+        let loading = scope.spawn(|| {
+            let open = move |_: &Path| {
+                entered.send(()).unwrap();
+                may_go_on.recv().unwrap();
+                Ok(library)
+            };
+            loader.load(&first, open, QUICK).map(|_| ())
+        });
+        opening.recv().unwrap();
+        // Shutting down never waits for a load: no CDM thread runs yet.
+        loader.shutdown();
+        go_on.send(()).unwrap();
+        assert_eq!(loading.join().unwrap(), Err(Error::ShutDown));
+    });
+    assert!(loader.runtime().is_none());
+    assert!(fake.calls().is_empty(), "the CDM thread never started");
 }
 
 #[test]
