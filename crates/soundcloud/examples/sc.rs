@@ -84,6 +84,13 @@ async fn fetch(
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let result = run().await;
+    // The CDM, when one was loaded, is torn down before the process exits.
+    widevine::shutdown();
+    result
+}
+
+async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let arg = |i: usize| args.get(i).map(String::as_str).unwrap_or_default();
     match arg(0) {

@@ -3,7 +3,8 @@
 //! - loading the CDM, and the time from opening a session to a usable key, the CDM's share and
 //!   the licence server's apart;
 //! - the CDM's time for each sample of the whole song, decrypted in place as the player needs it;
-//! - the process's wake-ups while it waits, a session open, nothing asked of the CDM.
+//! - the process's wake-ups while it waits, a session open, nothing asked of the CDM;
+//! - closing the session and shutting the CDM down, as Opium does when it quits.
 //!
 //! It needs a signed-in account (the token `am signin` keeps) and asks Apple for one licence a
 //! run: only with the owner's go (AGENTS.md, "Never on your own"). The encrypted file is held in
@@ -154,8 +155,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cleartext digest: {:016x}", digest.finish());
     report_rest(&before, &after, rest_seconds);
 
+    // What quitting costs once the window is gone: the session closed, the CDM torn down.
+    let started = Instant::now();
     drop(session);
     widevine::shutdown();
+    println!("session closed and CDM shut down: {}", ms(started.elapsed()));
     Ok(())
 }
 

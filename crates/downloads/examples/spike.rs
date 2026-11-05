@@ -14,6 +14,13 @@ use opium_core::model::{ItemId, ProviderKind};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let result = run().await;
+    // The CDM, when one was loaded, is torn down before the process exits.
+    widevine::shutdown();
+    result
+}
+
+async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let key = downloads::keyring::key().await?;
     let again = downloads::keyring::key().await?;
