@@ -95,6 +95,10 @@ pub struct Feed {
     shared: Arc<Shared>,
 }
 
+/// The most memory a download reserves before its bytes come, whatever length the server
+/// announces: a song is about 10 MB; a longer download grows past it as it comes.
+const RESERVED_AT_MOST: usize = 64 * 1024 * 1024;
+
 impl AudioStream {
     /// A track with nothing to decrypt: the user's own upload.
     pub fn plain(data: Vec<u8>) -> Self {
@@ -179,7 +183,11 @@ impl AudioStream {
             len,
             sample_duration,
             State {
-                data: Vec::with_capacity(usize::try_from(len).unwrap_or(0)),
+                // The length is the server's word: what is reserved up front is bounded, and
+                // the buffer grows past it as the bytes come.
+                data: Vec::with_capacity(
+                    usize::try_from(len).map_or(RESERVED_AT_MOST, |len| len.min(RESERVED_AT_MOST)),
+                ),
                 samples: Samples::Arriving(None),
                 decrypted: Vec::new(),
                 ready: 0,
@@ -890,6 +898,18 @@ mod tests {
         feed.push(&file);
         // Only the end says the open moof is whole.
         assert_eq!(feed.samples(), 0);
+        feed.end(None);
+        let mut out = Vec::new();
+        stream.read_to_end(&mut out).unwrap();
+        assert_eq!(out, clear);
+    }
+
+    #[test]
+    fn a_length_announced_too_large_reserves_no_memory_for_it() {
+        // A server may announce any length: the stream holds what comes, not what is said.
+        let (clear, file) = encrypted(ending_in_an_open_moof(3, 40));
+        let (mut stream, feed) = AudioStream::downloading(u64::MAX, Duration::from_secs(1), xor());
+        feed.push(&file);
         feed.end(None);
         let mut out = Vec::new();
         stream.read_to_end(&mut out).unwrap();
