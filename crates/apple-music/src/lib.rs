@@ -946,6 +946,26 @@ fn carry_query_forward(next: &str, first: &str) -> String {
     }
 }
 
+/// The request that takes `entry`'s rows out of `playlist`, refused unless
+/// both are plain ids: a removal naming no song may empty the whole
+/// playlist, and an id goes unescaped into the address.
+fn playlist_removal_path(playlist: &str, entry: &str) -> Result<String> {
+    let plain = |id: &str| {
+        !id.is_empty()
+            && id
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
+    };
+    if !plain(playlist) || !plain(entry) {
+        return Err(Error::Protocol(format!(
+            "won't remove {entry:?} from playlist {playlist:?}: not a song's id"
+        )));
+    }
+    Ok(format!(
+        "/v1/me/library/playlists/{playlist}/tracks?ids%5Blibrary-songs%5D={entry}&mode=all"
+    ))
+}
+
 #[async_trait]
 impl Provider for AppleMusic {
     fn kind(&self) -> ProviderKind {
@@ -1257,10 +1277,7 @@ impl Provider for AppleMusic {
 
     /// As the web player does it: every row of that song goes.
     async fn remove_from_playlist(&self, playlist: &ItemId, entry: &ItemId) -> Result<()> {
-        let path = format!(
-            "/v1/me/library/playlists/{}/tracks?ids%5Blibrary-songs%5D={}&mode=all",
-            playlist.id, entry.id
-        );
+        let path = playlist_removal_path(&playlist.id, &entry.id)?;
         let req = self.http.delete(format!("{API}{path}"));
         self.send_change(req, &path).await
     }
@@ -1861,5 +1878,29 @@ mod tests {
             "/v1/me/library/albums?limit=100",
         );
         assert_eq!(next, "/v1/me/library/albums?offset=200&limit=50");
+    }
+
+    #[test]
+    fn a_removal_names_one_song_of_one_playlist() {
+        assert_eq!(
+            playlist_removal_path("p.AbC-12", "i.XyZ9").unwrap(),
+            "/v1/me/library/playlists/p.AbC-12/tracks?ids%5Blibrary-songs%5D=i.XyZ9&mode=all"
+        );
+    }
+
+    #[test]
+    fn a_removal_naming_no_song_is_never_sent() {
+        for (playlist, entry) in [
+            ("p.1", ""),
+            ("", "i.1"),
+            ("p.1", "i.1&mode=all"),
+            ("p.1/..", "i.1"),
+            ("p.1", " "),
+        ] {
+            assert!(
+                playlist_removal_path(playlist, entry).is_err(),
+                "{playlist:?} {entry:?}"
+            );
+        }
     }
 }
