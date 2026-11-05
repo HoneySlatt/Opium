@@ -38,7 +38,17 @@ fn wait_for(signal: &Receiver<()>) {
     signal.recv_timeout(HANG_GUARD).expect("the fake got there");
 }
 
+/// Waits until the CDM thread has ended the turn under way: the request it sends is taken in a
+/// later turn. An answer may come before the thread has acted on the last events of its call,
+/// so a counter read just after an answer may miss them.
+fn after_this_turn(runtime: &Runtime) {
+    // Answered at once, with no call into the CDM, by an instance initialised already.
+    assert_eq!(runtime.initialise(), Ok(()));
+}
+
+/// The callbacks ignored so far, once the turn under way has ended.
 fn ignored(runtime: &Runtime) -> u64 {
+    after_this_turn(runtime);
     runtime.shared().counters.ignored.load(Ordering::Relaxed)
 }
 
@@ -689,8 +699,6 @@ fn answers_for_unknown_promises_are_ignored_and_noted() {
     let mut data = unmask(b"sample", &[]);
     runtime.decrypt(session, &mut data, &cenc(&key(1))).unwrap();
     assert_eq!(data, b"sample");
-    // Read after a later request: the licence is answered before the CDM thread has acted on
-    // the last events of its call.
     assert_eq!(ignored(&runtime), 6);
     assert!(runtime.shutdown());
 }
