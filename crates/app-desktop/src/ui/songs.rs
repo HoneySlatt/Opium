@@ -63,6 +63,10 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
             }
             let rows_top = table_top + tracks::HEAD_SPACE;
             tracks::scroll_to_selected(ui, rows_top, left, width);
+            // The header's Downloaded chip may just have switched the list the rows index, and
+            // the order made for the other list would point past this one's end.
+            rebuild_order(app);
+            let rows = app.songs_view.order.len();
 
             if rows == 0 {
                 empty(app, ui, &theme, rows_top, left, width);
