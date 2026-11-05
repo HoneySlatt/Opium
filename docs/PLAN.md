@@ -18,8 +18,10 @@ Every milestone ends with the definition of done in [`AGENTS.md`](../AGENTS.md#d
   ([ADR-0026](adr/0026-the-egui-window-frozen-until-the-move.md)), and the phone's Compose screens
   until Stage 3 measures slime-ui against Compose ([ADR-0028](adr/0028-the-phones-compose-screens-frozen-until-measured.md)). Work goes to the shared
   crates, the phone's Kotlin system layer and the documents.
-- Next: M1.6; M1.4's phone and M1.5 once Google's Android repository answers again; then M1.8,
-  the stage audit, which closes the stage.
+- M1.6: the needs are written in [`ui-framework-needs.md`](ui-framework-needs.md), each checked
+  against the code; the owner's review of their marks remains.
+- Next: the owner's review of M1.6; M1.4's phone and M1.5 once Google's Android repository
+  answers again; then M1.8, the stage audit, which closes the stage.
 
 ## Status
 
@@ -30,7 +32,7 @@ Every milestone ends with the definition of done in [`AGENTS.md`](../AGENTS.md#d
 | [M1.3](#m13--ci-green) | Every push to `main` and every pull request is checked by CI | Done |
 | [M1.4](#m14--the-rename-landed) | The owner's computer and phone run Opium under its new names, with their data | In progress: the computer done |
 | [M1.5](#m15--the-phones-core-checked) | The Android shell builds from an empty store and the phone's core is checked | Planned |
-| [M1.6](#m16--what-the-window-needs-from-a-ui-framework) | SlimeEngine's Stage 6d can read, in this repository, what Opium's window needs | Planned |
+| [M1.6](#m16--what-the-window-needs-from-a-ui-framework) | SlimeEngine's Stage 6d can read, in this repository, what Opium's window needs | In review: written, the owner's review remains |
 | [M1.7](#m17--the-quality-bar-measured) | The owner decides Opium's budgets with today's figures in hand | Done |
 | [M1.8](#m18--the-stage-audit) | The whole project examined before Stage 1 closes | Planned |
 
@@ -107,9 +109,11 @@ built in this stage.
 
 - **Goal.** SlimeEngine's Stage 6d, whose exit needs every indispensable need of the music player,
   can read those needs here.
-- **Delivers.** A document in `docs/` listing what Opium's window asks of a framework (windows,
-  input, drawing, images, motion, lists, text, waking, the system, accessibility, themes), each
-  need checked against the code, marked indispensable or wished, with what egui gives today.
+- **Delivers.** [`ui-framework-needs.md`](ui-framework-needs.md), listing what Opium's window asks
+  of a framework (windows, input, drawing, images, motion, lists, text, waking, the system,
+  accessibility, themes), each need checked against the code, marked indispensable or wished, with
+  what egui gives today. Written on 2026-11-05: 111 needs, 102 indispensable; the inventory written
+  for SlimeEngine's ADR-0170 on 2026-11-04 was not kept, so this one was made again from the code.
 - **Done when.** Every need cites the code that asks it; the owner has reviewed it.
 - **How to test.** A reread against the code.
 - **Measured.** Nothing.
@@ -167,6 +171,8 @@ For the owner to pick; none is planned.
 - **The player cannot wake the window**: the window asks it for its state every 250 ms while music
   plays. The player's `Wake` is shared work; the window's side waits for slime-ui.
 - **Waiting for slime-ui**, as `app-desktop` is frozen ([ADR-0026](adr/0026-the-egui-window-frozen-until-the-move.md)):
+  - Space toggles playback again on each key repeat while held (`ui/mod.rs:922`);
+  - files dropped on the window do nothing under Wayland, where winit 0.30 has no drag and drop;
   - Opium cannot be driven by an agent: nothing scrolls, clicks or types;
   - animations that go on without the focus (`ui/lyrics.rs`, `ui/loading.rs`);
   - one thread per cover file, unbounded (`ui/thumbs.rs`); WebP and GIF covers not decoded;

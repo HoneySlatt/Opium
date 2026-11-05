@@ -159,6 +159,7 @@ push, and the rename to Opium is committed with the owner's data moved.
   devices moved to the new names ([ADR-0023](adr/0023-the-rename-to-opium.md))
 - The Android dev shell building again from an empty store, and the phone's core checked
 - What the desktop app needs from a UI framework, in the repository, for SlimeEngine's Stage 6d
+  ([`ui-framework-needs.md`](ui-framework-needs.md))
 - The quality bar measured as the app is today, its budgets decided by the owner
 
 **Exit.** `scripts/check.sh` and `scripts/check.sh android` pass locally and CI is green on `main`;
@@ -230,7 +231,8 @@ runs applications (its Stage 6d) and after Slatty, its pilot, has moved
 ([ADR-0022](adr/0022-gpui-tried-and-abandoned.md)).
 
 - The interface's state and logic taken out of `app.rs` into a model free of any toolkit
-- Each page and component, in each theme's variants, on the framework
+- Each page and component, in each theme's variants, on the framework, with every need of
+  [`ui-framework-needs.md`](ui-framework-needs.md)
 - Agents read and drive the window through the framework; screen readers name its controls
 
 **Exit.** Every page of the three themes on the framework, egui removed; nothing drawn at rest under
