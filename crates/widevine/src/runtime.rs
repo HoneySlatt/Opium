@@ -189,6 +189,9 @@ pub(crate) struct Shared {
     next_session: AtomicU64,
     pub deadlines: Deadlines,
     pub counters: Counters,
+    /// The lines the CDM thread logged, for tests to read.
+    #[cfg(test)]
+    pub lines: Mutex<Vec<String>>,
 }
 
 /// What the host counts, for diagnostics and tests.
@@ -296,6 +299,8 @@ impl Runtime {
             next_session: AtomicU64::new(1),
             deadlines,
             counters: Counters::default(),
+            #[cfg(test)]
+            lines: Mutex::new(Vec::new()),
         });
         let for_thread = Arc::clone(&shared);
         thread::Builder::new()

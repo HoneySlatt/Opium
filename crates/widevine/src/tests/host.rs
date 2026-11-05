@@ -541,6 +541,123 @@ fn a_session_named_after_its_deadline_is_closed_when_it_is() {
     assert!(runtime.shutdown());
 }
 
+/// The lines the CDM thread logged so far.
+fn logged(runtime: &Runtime) -> Vec<String> {
+    runtime.shared().lines.lock().unwrap().clone()
+}
+
+#[test]
+fn a_licence_request_after_its_sessions_opening_timed_out_says_so() {
+    let first_promise = Arc::new(Mutex::new(None));
+    let kept = Arc::clone(&first_promise);
+    let fake = Fake::new(script(move |call| match call {
+        // The first opening is answered only during the second, after its deadline.
+        Call::CreateSession {
+            promise, init_data, ..
+        } if init_data == b"first" => {
+            *kept.lock().unwrap() = Some(*promise);
+            Some(Vec::new())
+        }
+        Call::CreateSession {
+            promise, init_data, ..
+        } if init_data == b"second" => {
+            let first = kept
+                .lock()
+                .unwrap()
+                .expect("the first session was asked for");
+            Some(vec![
+                Step::NewSession {
+                    promise: first,
+                    session: b"late".to_vec(),
+                },
+                Step::Message {
+                    session: b"late".to_vec(),
+                    kind: MESSAGE_LICENCE_REQUEST,
+                    message: b"too late".to_vec(),
+                },
+                Step::NewSession {
+                    promise: *promise,
+                    session: b"second".to_vec(),
+                },
+                Step::Message {
+                    session: b"second".to_vec(),
+                    kind: MESSAGE_LICENCE_REQUEST,
+                    message: b"in time".to_vec(),
+                },
+            ])
+        }
+        _ => None,
+    }));
+    let runtime = start(
+        &fake,
+        deadlines(|d| {
+            d.session_request = Duration::from_millis(20);
+            // The late session is still awaited, whenever the second opening comes.
+            d.close = HANG_GUARD;
+        }),
+    );
+    runtime.initialise().unwrap();
+    assert_eq!(
+        runtime.open_session(b"first").map(|_| ()),
+        Err(Error::NoLicenceRequest)
+    );
+    let (_, challenge) = runtime.open_session(b"second").unwrap();
+    assert_eq!(challenge, b"in time");
+    assert!(runtime.shutdown());
+    let lines = logged(&runtime);
+    assert!(
+        lines.iter().any(|line| line
+            == "the CDM made a licence request after its session's opening had failed or \
+                timed out; it is not sent, and the session is closed"),
+        "{lines:#?}"
+    );
+    assert!(
+        !lines
+            .iter()
+            .any(|line| line.contains("another licence request")),
+        "{lines:#?}"
+    );
+    assert!(
+        fake.calls()
+            .iter()
+            .any(|call| matches!(call, Call::CloseSession { session, .. } if session == b"late"))
+    );
+}
+
+#[test]
+fn a_second_licence_request_for_a_session_is_another() {
+    let fake = Fake::new(script(|call| match call {
+        Call::CreateSession { promise, .. } => Some(vec![
+            Step::NewSession {
+                promise: *promise,
+                session: b"twice".to_vec(),
+            },
+            Step::Message {
+                session: b"twice".to_vec(),
+                kind: MESSAGE_LICENCE_REQUEST,
+                message: b"first".to_vec(),
+            },
+            Step::Message {
+                session: b"twice".to_vec(),
+                kind: MESSAGE_LICENCE_REQUEST,
+                message: b"second".to_vec(),
+            },
+        ]),
+        _ => None,
+    }));
+    let runtime = ready(&fake);
+    let (_, challenge) = runtime.open_session(b"init").unwrap();
+    assert_eq!(challenge, b"first");
+    assert!(runtime.shutdown());
+    let lines = logged(&runtime);
+    assert!(
+        lines
+            .iter()
+            .any(|line| line == "the CDM made another licence request; it is not sent"),
+        "{lines:#?}"
+    );
+}
+
 // Licences and key statuses.
 
 fn licence_with(

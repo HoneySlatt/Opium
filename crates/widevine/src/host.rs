@@ -10,6 +10,7 @@
 
 use std::collections::VecDeque;
 use std::ffi::c_void;
+use std::fmt;
 use std::ptr;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -236,7 +237,7 @@ impl Host {
     pub(crate) fn run(&mut self) {
         self.library.module.initialize();
         let version = self.library.module.version();
-        log::line(format_args!("the CDM's version is {version}"));
+        self.log(format_args!("the CDM's version is {version}"));
         loop {
             self.shared.counters.turns.fetch_add(1, Ordering::Relaxed);
             self.fire_due_timers();
@@ -629,7 +630,7 @@ impl Host {
         while let Some(index) = self.waits.iter().position(|wait| wait.deadline() <= now) {
             match self.waits.remove(index) {
                 Wait::Initialise { reply, .. } => {
-                    log::line(format_args!("initialising the CDM: no answer in time"));
+                    self.log(format_args!("initialising the CDM: no answer in time"));
                     self.later.push_back(Later::DestroyInstance);
                     if let Some(instance) = &mut self.instance {
                         instance.ready = false;
@@ -643,18 +644,18 @@ impl Host {
                     reply,
                     ..
                 } => {
-                    log::line(format_args!(
+                    self.log(format_args!(
                         "opening a session: no licence request in time"
                     ));
                     self.shared.answer(reply, Err(Error::NoLicenceRequest));
                     self.abandon_opening(promise, session, false);
                 }
                 Wait::Licence { reply, .. } => {
-                    log::line(format_args!("taking a licence: no usable key in time"));
+                    self.log(format_args!("taking a licence: no usable key in time"));
                     self.shared.answer(reply, Err(Error::LicenceNotTaken));
                 }
                 Wait::Close { session, .. } => {
-                    log::line(format_args!(
+                    self.log(format_args!(
                         "closing a session: the CDM did not close it in time"
                     ));
                     self.forget_session(session);
@@ -681,7 +682,7 @@ impl Host {
             for _ in self.early_messages.drain(..) {
                 self.shared.counters.ignored.fetch_add(1, Ordering::Relaxed);
             }
-            log::line(format_args!(
+            self.log(format_args!(
                 "messages for sessions never named were ignored"
             ));
         }
@@ -709,7 +710,7 @@ impl Host {
             } => self.message(session, kind, message),
             Event::KeysChanged { session, keys } => self.keys_changed(&session, keys),
             Event::ExpirationChanged { session, expiry } => match self.known_session(&session) {
-                Some(_) => log::line(format_args!(
+                Some(_) => self.log(format_args!(
                     "a session's licence now expires at {expiry} s"
                 )),
                 None => self.ignore("an expiry for an unknown session"),
@@ -762,7 +763,7 @@ impl Host {
             }
             self.shared.answer(reply, Ok(()));
         } else {
-            log::line(format_args!("initialising the CDM: it failed"));
+            self.log(format_args!("initialising the CDM: it failed"));
             self.later.push_back(Later::DestroyInstance);
             self.shared.answer(reply, Err(Error::InitialisationFailed));
         }
@@ -856,7 +857,7 @@ impl Host {
                 reply,
                 ..
             } => {
-                log::line(format_args!(
+                self.log(format_args!(
                     "opening a session: the CDM refused the init data"
                 ));
                 self.shared.answer(
@@ -870,7 +871,7 @@ impl Host {
                 self.abandon_opening(promise, session, true);
             }
             Wait::Licence { reply, .. } => {
-                log::line(format_args!("taking a licence: the CDM refused it"));
+                self.log(format_args!("taking a licence: the CDM refused it"));
                 self.shared.answer(
                     reply,
                     Err(Error::LicenceRefused {
@@ -881,7 +882,7 @@ impl Host {
                 );
             }
             Wait::Close { session, .. } => {
-                log::line(format_args!(
+                self.log(format_args!(
                     "closing a session: the CDM refused, {message}"
                 ));
                 self.forget_session(session);
@@ -918,39 +919,53 @@ impl Host {
         }
         match kind {
             boundary::MESSAGE_LICENCE_REQUEST => {
-                let waiting = self.waits.iter_mut().find_map(|wait| match wait {
-                    Wait::Open {
-                        session: waiting,
-                        challenge,
-                        ..
-                    } if *waiting == session => Some(challenge),
-                    _ => None,
-                });
-                match waiting {
-                    Some(challenge) if challenge.is_none() => *challenge = Some(message),
-                    _ => log::line(format_args!(
-                        "the CDM made another licence request; it is not sent"
-                    )),
-                }
-                self.settle_opening(session);
+                let state = self.sessions[index].state;
+                self.licence_request(session, state, message);
             }
             boundary::MESSAGE_INDIVIDUALIZATION_REQUEST => {
-                log::line(format_args!(
+                self.log(format_args!(
                     "the CDM asks for a device certificate: not provisioned, nothing is sent"
                 ));
                 self.fail_session(session, &Error::NotProvisioned);
             }
             boundary::MESSAGE_LICENCE_RENEWAL => {
-                log::line(format_args!(
+                self.log(format_args!(
                     "the CDM asks for a licence renewal; it is not sent"
                 ));
             }
             boundary::MESSAGE_LICENCE_RELEASE => {
-                log::line(format_args!(
+                self.log(format_args!(
                     "the CDM asks for a licence release; it is not sent"
                 ));
             }
             _ => self.ignore("a message of an unknown type"),
+        }
+    }
+
+    /// Keeps the first licence request of a session that is opening as its challenge; any other
+    /// is logged and never sent.
+    fn licence_request(&mut self, session: SessionKey, state: SessionState, message: Vec<u8>) {
+        let challenge = self.waits.iter_mut().find_map(|wait| match wait {
+            Wait::Open {
+                session: waiting,
+                challenge,
+                ..
+            } if *waiting == session => Some(challenge),
+            _ => None,
+        });
+        match challenge {
+            Some(challenge) if challenge.is_none() => {
+                *challenge = Some(message);
+                self.settle_opening(session);
+            }
+            // A session still opening that nobody waits for has failed: its close is under way.
+            None if state == SessionState::Opening => self.log(format_args!(
+                "the CDM made a licence request after its session's opening had failed or \
+                 timed out; it is not sent, and the session is closed"
+            )),
+            _ => self.log(format_args!(
+                "the CDM made another licence request; it is not sent"
+            )),
         }
     }
 
@@ -991,8 +1006,8 @@ impl Host {
                 self.ignore("a close for a closed session");
             }
             SessionState::Opening | SessionState::Open => {
-                log::line(format_args!("the CDM closed a session"));
                 entry.state = SessionState::Closed;
+                self.log(format_args!("the CDM closed a session"));
                 self.fail_session(session, &Error::SessionClosed);
             }
         }
@@ -1010,7 +1025,7 @@ impl Host {
         let bit = 1 << request;
         if self.unanswered_logged & bit == 0 {
             self.unanswered_logged |= bit;
-            log::line(format_args!("the CDM asked for {what}; not answered"));
+            self.log(format_args!("the CDM asked for {what}; not answered"));
         }
     }
 
@@ -1103,7 +1118,7 @@ impl Host {
         if closed {
             self.waits.remove(index);
             self.forget_session(session);
-            log::line(format_args!("a session closed"));
+            self.log(format_args!("a session closed"));
         }
     }
 
@@ -1207,9 +1222,20 @@ impl Host {
         }
     }
 
+    /// Logs one line; in tests, also keeps it where the test can read it.
+    fn log(&self, what: fmt::Arguments<'_>) {
+        log::line(what);
+        #[cfg(test)]
+        self.shared
+            .lines
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(what.to_string());
+    }
+
     fn ignore(&self, what: &str) {
         self.shared.counters.ignored.fetch_add(1, Ordering::Relaxed);
-        log::line(format_args!("ignored {what}"));
+        self.log(format_args!("ignored {what}"));
     }
 
     // Shutdown.
@@ -1260,7 +1286,7 @@ impl Host {
             .iter()
             .any(|wait| matches!(wait, Wait::Close { .. }))
         {
-            log::line(format_args!(
+            self.log(format_args!(
                 "shutting down: some sessions did not close in time"
             ));
         }
@@ -1268,7 +1294,7 @@ impl Host {
         self.destroy_instance();
         self.library.module.deinitialize();
         let counters = &self.shared.counters;
-        log::line(format_args!(
+        self.log(format_args!(
             "shut down; the CDM set {} timers ({} fired) and asked {} times for a storage id; {} callbacks ignored",
             counters.timers_set.load(Ordering::Relaxed),
             counters.timers_fired.load(Ordering::Relaxed),
