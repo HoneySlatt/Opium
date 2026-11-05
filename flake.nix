@@ -1,4 +1,7 @@
 {
+  # The development shell that agents, the owner and CI use alike: `nix develop`, then
+  # `scripts/check.sh`. It provides every tool the checks use. `nix develop .#android` is the phone's
+  # shell; `nix build` packages the desktop app.
   description = "Opium, a music player for Apple Music, SoundCloud and Navidrome";
 
   inputs = {
@@ -90,6 +93,16 @@
               rustc
               clippy
               rustfmt
+              rust-analyzer
+              # The links between the Markdown files, checked by scripts/check.sh.
+              lychee
+              # Start-up times, for the quality bar (docs/ROADMAP.md).
+              hyperfine
+              # scripts/check.sh lists the Markdown files with git; scripts/measure/ is Python,
+              # and runs the window in a headless Weston.
+              git
+              python3
+              weston
               pkg-config
               pipewire
               rustPlatform.bindgenHook

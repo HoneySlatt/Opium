@@ -1,13 +1,18 @@
 #!/usr/bin/env bash
 # Runs every automated check of the definition of done (AGENTS.md). CI runs this script unchanged,
-# inside the Nix development shell: `nix develop --no-update-lock-file -c scripts/check.sh` (the flag
-# makes an incomplete flake.lock an error instead of a silent update).
+# inside the project's development shell (flake.nix), which provides every tool used here:
+# `nix develop --no-update-lock-file -c scripts/check.sh` (the flag makes an incomplete flake.lock an
+# error instead of a silent update).
 #
 # `scripts/check.sh android`, run inside `nix develop .#android`, checks the phone's core instead:
 # the Rust that the Android app loads, built for the phone. Building the APK itself is not checked.
 #
 # No test needs the network, PipeWire, a display, a session bus, a sign-in or a Widevine CDM. What
-# needs them is checked by hand (AGENTS.md, "Environment and commands").
+# needs them is checked by hand (CONTRIBUTING.md, "Running Opium without touching the owner's data").
+#
+# Not checked here yet (docs/PLAN.md): the dependencies' licences and advisories, as cargo-deny
+# finds advisories that only the owner can rule on; and the benchmarks, measured by hand for now
+# (docs/measurements.md).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -44,10 +49,8 @@ cargo test --workspace --locked
 step "documentation"
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked
 
-# Links between the Markdown files, offline. lychee is not in the dev shell yet (docs/PLAN.md).
-if command -v lychee >/dev/null; then
-    step "links"
-    git ls-files -z '*.md' | xargs -0 lychee --offline --include-fragments --no-progress
-fi
+# Links between the Markdown files, offline; the development shell provides lychee.
+step "links"
+git ls-files -z '*.md' | xargs -0 lychee --offline --include-fragments --no-progress
 
 step "all checks passed"

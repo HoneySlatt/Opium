@@ -21,15 +21,34 @@ jobs:
   check:
     runs-on: ubuntu-24.04
     # A cold build compiles BoringSSL, FFmpeg's bindings, iroh and wgpu: about 11 minutes of the
-    # script's work on a 16-core desktop, so several times that on a runner. To be measured on the
-    # first runs (docs/PLAN.md).
+    # script's work on a 16-core desktop, and 31 minutes on the first run here before the disk ran
+    # out. The quality bar's budget is 20 minutes for a warm run, one whose cache hit; a cold run is
+    # measured and recorded (docs/PLAN.md, M1.3). This limit only stops a hung run.
     timeout-minutes: 60
+    # The same checks, in a smaller and faster build: the tests' binaries carry no debug info, which
+    # they need only in a debugger, and nothing is kept for incremental builds, which a fresh runner
+    # never reuses. The first run filled the runner's disk while linking the tests.
+    env:
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_INCREMENTAL: "0"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The runner's preinstalled toolchains take most of its disk, and every tool used here comes
+      # from Nix: removing them leaves room for the Nix store and the build.
+      - name: Free the runner's disk
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup \
+            /opt/hostedtoolcache /usr/share/swift /usr/local/share/boost \
+            /usr/local/share/powershell /usr/local/julia*
+          df -h /
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
       # Cargo's downloads and the build, kept from one run to the next while the packages that
-      # Cargo.lock pins and the toolchain that flake.lock pins are unchanged.
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # Cargo.lock pins and the toolchain that flake.lock pins are unchanged. The key is exact, with no
+      # fallback, so an entry holds one build and never grows with stale artefacts; without debug
+      # info and incremental data, `target` is a fraction of a local debug build's size.
+      - id: cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cargo/registry
@@ -38,5 +57,15 @@ jobs:
           key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'flake.lock') }}
       # Without the flag, an incomplete flake.lock would be completed with an unpinned revision.
       - run: nix develop --no-update-lock-file --command scripts/check.sh
+      # Saved even when a check fails, so that the next run starts warm; skipped on a hit, as an
+      # entry cannot be overwritten.
+      - if: always() && steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ steps.cache.outputs.cache-primary-key }}
   # The phone's core (`scripts/check.sh android`) joins as a second job once the Android shell
-  # builds from an empty store again (docs/PLAN.md, known debt).
+  # builds from an empty store again (docs/PLAN.md, M1.5).
