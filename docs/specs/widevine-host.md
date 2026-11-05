@@ -45,8 +45,9 @@ never downloads, ships or modifies one.
 - It must export `InitializeCdmModule_4`, `CreateCdmInstance` and `GetCdmVersion`; otherwise it is
   "not a CDM". `InitializeCdmModule_4` is called once per process, after the library is opened and
   before the first `CreateCdmInstance`. `DeinitializeCdmModule` is called at shutdown when exported.
-- `RTLD_LOCAL` and immediate binding differ from today's loading (`RTLD_GLOBAL`): the change is
-  checked with the owner's CDM (§11) before it is kept.
+- `RTLD_LOCAL` and immediate binding differ from the adapted host's loading (`RTLD_GLOBAL`):
+  checked with the owner's CDM 4.10.3112.0 on 2026-11-05, which loads and makes its licence
+  requests so, and kept.
 - `GetCdmVersion` is kept for diagnostics.
 - One instance per process, of interface version 11 (`ContentDecryptionModule_11`), key system
   `com.widevine.alpha`, asked for through `CreateCdmInstance` with a host lookup that answers only
@@ -75,7 +76,10 @@ later, from the timers the thread fires. The host:
 - The CDM may call its host from the moment its instance exists: inside `CreateCdmInstance`, and
   during initialisation, before `OnInitialized`. A timer or a storage-id request made then is
   honoured like any other, once the instance is known; it is dropped only if the instance is
-  destroyed first.
+  destroyed first. The header says the host makes no other call before `OnInitialized` returns:
+  the host sends no request then, but firing a timer the CDM set, or answering its storage
+  request, answers the CDM's own call, and a CDM that answers its initialisation from a timer
+  needs it. The owner's CDM made neither during its initialisation.
 - **`GetCurrentWallTime()`**: seconds since the Unix epoch, as a double.
 - **Promises**: each call taking a `promise_id` gets a fresh id; the answer
   (`OnResolveNewSessionPromise`, `OnResolvePromise`, `OnResolveKeyStatusPromise`,
@@ -197,8 +201,9 @@ Before the process exits, `shutdown()` is called:
   seconds;
 - the library is never unloaded: no thread can be inside it when the process's exit handlers run.
 
-With the CDM 4.10.3112.0 the teardown takes about 0.44 s, the CDM waiting for a thread of its own
-to end; the owner chose to keep it whole, the window being closed by then.
+With the CDM 4.10.3112.0 the teardown takes 0.44 to 0.85 s right after loading, the CDM waiting
+for a thread of its own to end, and 0.3 ms after a while at rest; the owner chose to keep it whole,
+the window being closed by then.
 
 ## 9. Errors
 
@@ -241,6 +246,13 @@ the CDM 4.10.3112.0:
 - no figure worse than before, but one: a decrypt's median, as the caller sees it, may grow by at
   most 15 µs, the price of the round trip to the CDM thread (§7);
 - at rest, the host adds no wake-up beyond the CDM's own timers (§3).
+
+After, alternately with the old code: a decrypt's median grew by 8.8 µs, within the budget. Four
+figures grew beyond it, and the owner accepted each: one wake-up a second at rest while a session
+is open, the CDM's own timer fired in time where the old host never fired it; loading 0.8 ms
+longer, once a process; a decrypt's p95 25 µs longer (47–56 to 71–82 µs), its p99, its max and the
+whole song unchanged; the teardown after a while at rest 0.1 ms longer
+([measurements](../measurements.md#the-cdm-m111-2026-11-05)).
 
 The CDM paces its decrypts: a few calls wait inside it, so that a song always takes the same time.
 The host cannot change that pace, and must not add to it.
