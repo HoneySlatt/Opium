@@ -162,6 +162,9 @@ kill -TERM "$wpid"                                            # that pid only
   focused window.
 - `startup.py … map` times the window's mapping from Umbriel's event stream instead, on the
   desktop.
+- The CDM's costs (a licence, a decrypt, wake-ups at rest) are taken apart from the window, by
+  `scripts/measure/cdm-cost.sh` running builds of `crates/apple-music/examples/cdm_cost.rs` in
+  turn. Each run asks Apple for a licence on the owner's account: with the owner's go only.
 
 ### The screenshot mode
 

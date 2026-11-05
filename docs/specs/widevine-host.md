@@ -161,12 +161,15 @@ is a `pssh` built for that key id:
 
 As Chromium's own CDM host does, one thread owns the CDM:
 
-- **One CDM thread** creates the instance, makes every call into it, receives every callback, fires
-  the timers and holds the host's state. No other thread touches them.
+- **One CDM thread**, named `cdm` so that a measurement can find it, creates the instance, makes
+  every call into it, receives every callback, fires the timers and holds the host's state. No
+  other thread touches them.
 - Callers on any thread send it requests (open a session, give a licence, decrypt, close) and wait
   for the answer. The requests wait in a queue by priority: a session's opening, licence and closing
   go before decrypts, so that a track decrypting delays the licence of the track the user just
-  picked by one sample's decrypt at most (about 1.5 ms).
+  picked by one decrypt call at most. The CDM paces its decrypts (§11): most calls take tens of
+  microseconds, but a few wait inside the CDM up to about 200 ms, and no host can cut a call
+  short.
 - A decrypt request is one sample, never a whole track.
 - With no request and no timer due, the thread sleeps until the next timer or request: nothing
   runs at rest.
@@ -188,6 +191,9 @@ Before the process exits, `shutdown()` is called:
 
 ## 9. Errors
 
+What is logged goes to standard error, as in the rest of Opium, one line naming the step; never a
+challenge's, a licence's or a sample's bytes.
+
 Each error names its step and keeps what the CDM said:
 
 - the library could not be opened (with the loader's message); not a CDM (which symbol is
@@ -205,13 +211,31 @@ player ([ADR-0009](../adr/0009-the-android-app-over-the-rust-core.md)): loading 
 ## 11. What is measured
 
 On the owner's machine and with the owner's go (a licence needs a signed-in account), measured
-again **before** the rewrite and after it, the same way:
+before the rewrite and after it, the same way, alternately, by a program Opium keeps outside this
+crate. The figures before, on one song of 9 057 samples (210 s of AAC, 7.18 MB), five runs, with
+the CDM 4.10.3112.0:
 
-- the time from opening a session to a usable key;
-- the CDM time per sample over a whole track (about 1.5 ms, 11.6 times real time, when commit
-  `33a995e` measured it: an old figure, taken again first);
-- the CDM thread's wake-ups a second while paused, with a session open: honoured timers must not
-  add any beyond the CDM's own.
+| What | Before |
+|---|---|
+| Loading and initialising the CDM | 0.9 to 1.0 ms (7.9 ms on the first run) |
+| Opening a session, to its licence request | 74 to 82 ms |
+| Taking the licence, to a usable key | 270 to 336 ms |
+| One decrypt in place, as the caller sees it: median, p95 | 33 to 42 µs, 62 to 93 µs |
+| One decrypt in place: max | 196 to 197 ms (the CDM's pace) |
+| The whole song decrypted, sample after sample | 14.20 s every run: the CDM's pace, 15 times real time |
+| Wake-ups at rest, a session open | 0 a second |
+
+**The budget**, decided by the owner:
+
+- no figure worse than before, but one: a decrypt's median, as the caller sees it, may grow by at
+  most 15 µs, the price of the round trip to the CDM thread (§7);
+- at rest, the host adds no wake-up beyond the CDM's own timers (§3).
+
+The CDM paces its decrypts: a few calls wait inside it, so that a song always takes the same time.
+The host cannot change that pace, and must not add to it.
+
+The rewrite also measures, with its fake CDM, a decrypt's round trip through the host, median and
+p99, and reports it; a test never asserts a time.
 
 Without an account, with the owner's go to load the browser's CDM: loading, initialising, a
 licence request for a made-up key id, and the timers and storage requests the CDM makes meanwhile
@@ -241,11 +265,13 @@ These names are fixed: the callers are moved to them. Everything not listed here
 
 An export with no history, built by the dirty side:
 
-- this file, [fmp4-cenc.md](fmp4-cenc.md) §5 for what a sample's inputs are, and
+- this file, [fmp4-cenc.md](fmp4-cenc.md) (its §5 says what a sample's inputs are), and
   [README.md](README.md);
-- `crates/widevine/vendor/`: Chromium's header, its export header and `LICENSE.chromium`;
+- `crates/widevine/vendor/`: Chromium's header, its export header, `LICENSE.chromium`, and the
+  README that pins their revision;
 - `crates/widevine/Cargo.toml`, a workspace `Cargo.toml` of its own with the root's
   `[workspace.package]`, and the part of `Cargo.lock` its build needs (`cc`, `thiserror`);
+- Opium's `flake.nix` and `flake.lock`, for the development shell, and `.gitignore`;
 - no `src/`, no `shim/`, no `build.rs`, no `examples/`.
 
 The callers outside the crate are moved to §12's names by the dirty side, after the clean side's

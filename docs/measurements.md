@@ -10,6 +10,43 @@ the desktop runs on a [throwaway profile](../CONTRIBUTING.md#a-throwaway-profile
 cited live in [`scripts/measure/`](../scripts/measure/), each described at its head
 ([CONTRIBUTING.md](../CONTRIBUTING.md#measuring)).
 
+## The CDM, M1.11 (2026-11-05)
+
+What the browser's CDM costs Opium, before `crates/widevine` was written again
+([M1.11](PLAN.md#m110-to-m112--kopuzs-code-written-again)); what is measured is set in
+[`specs/widevine-host.md`](specs/widevine-host.md#11-what-is-measured) §11. Machine: AMD Ryzen 7
+5800X, Linux 7.3.0, load average 2.6 to 3.6. CDM: Widevine 4.10.3112.0, from Brave's profile.
+Command: `scripts/measure/cdm-cost.sh`, which runs
+[`cdm_cost.rs`](../crates/apple-music/examples/cdm_cost.rs) (a release build), with the owner's
+go: one licence on the owner's account a run, nothing played, nothing written to disk. Song
+1463409605, 7.18 MB, 9 057 samples, 210.3 s of AAC.
+
+Before: five runs of the code at commit `133176e`.
+
+| What | Before (5 runs) |
+|---|---|
+| Loading and initialising the CDM | 7.9 ms on the first run, 0.9 to 1.0 ms after |
+| A session to a usable key | 573 to 612 ms |
+| … of which the CDM: opening the session | 74 to 82 ms |
+| … of which the licence server | 195 to 231 ms |
+| … of which the CDM: taking the licence | 270 to 336 ms |
+| A decrypt in place: median, p95, p99 | 33 to 42 µs, 62 to 93 µs, 0.89 to 1.6 ms |
+| A decrypt in place: max | 196 to 197 ms |
+| The whole song decrypted | 14.20 s every time (14.199 to 14.218): 15 times real time |
+| Wake-ups at rest, a session open, but the measuring thread's | 0 a second (the process has no other thread) |
+
+- **The CDM paces its decrypts.** Most calls take tens of microseconds, but a few wait inside the
+  CDM up to 197 ms, so that a song always takes the same time: 14.20 s for this one, about
+  505 KB/s or 15 times real time. The mean, 1.57 ms a sample, is the pace, not the work; the old
+  figure "1.5 ms a sample, 11.6 times real time" was this mean. Nothing in the host can make the
+  CDM faster; the host must not add to it.
+- A licence asked while a track decrypts waits behind one decrypt call: up to about 200 ms when
+  that call is one the CDM paces.
+- The CDM sets no timer the old host would show at rest: the old host fires timers only during its
+  own calls, and the process has no thread but the measuring one.
+- Every run decrypted to the same cleartext (the program prints a digest of it), the check used
+  after the rewrite.
+
 ## Indexing an encrypted track, M1.10 (2026-11-05)
 
 What indexing an Apple-shaped file costs, before and after `crates/cenc` was written again
