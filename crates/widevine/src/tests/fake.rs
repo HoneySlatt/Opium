@@ -437,17 +437,20 @@ unsafe extern "C" fn fake_create(
     };
     // SAFETY: the host passes its key system's bytes.
     let key_system = unsafe { read(key_system.cast(), key_system_size) };
-    fake.record(Call::Create { key_system });
-    if fake.refuse_create.load(Ordering::Relaxed) {
-        return std::ptr::null_mut();
-    }
-    let instance = FakeInstance {
+    let steps = fake.react(Call::Create { key_system });
+    let mut instance = FakeInstance {
         fake,
         host,
         host_calls,
         later: HashMap::new(),
         next_timer: 0,
     };
+    // A CDM may call its host from inside `CreateCdmInstance`, even one that then gives no
+    // instance.
+    instance.run(steps);
+    if instance.fake.refuse_create.load(Ordering::Relaxed) {
+        return std::ptr::null_mut();
+    }
     Box::into_raw(Box::new(instance)).cast()
 }
 

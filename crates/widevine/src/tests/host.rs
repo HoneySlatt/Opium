@@ -179,6 +179,144 @@ fn an_initialisation_never_answered_meets_its_deadline() {
     );
 }
 
+fn marks(fake: &Fake) -> Vec<&'static str> {
+    fake.calls()
+        .into_iter()
+        .filter_map(|call| match call {
+            Call::Mark(name) => Some(name),
+            _ => None,
+        })
+        .collect()
+}
+
+fn storage_answers(fake: &Fake) -> Vec<Call> {
+    fake.calls()
+        .into_iter()
+        .filter(|call| matches!(call, Call::StorageId { .. }))
+        .collect()
+}
+
+#[test]
+fn a_timer_and_a_storage_request_made_inside_the_instances_creation_are_honoured() {
+    let fake = Fake::new(script(|call| match call {
+        // The instance initialises only once the timer set inside its creation fires.
+        Call::Create { .. } => Some(vec![
+            Step::Later {
+                delay_ms: 1,
+                steps: vec![
+                    Step::Mark("timer from the creation"),
+                    Step::Initialized(true),
+                ],
+            },
+            Step::RequestStorageId(7),
+        ]),
+        Call::Initialize { .. } => Some(Vec::new()),
+        _ => None,
+    }));
+    let runtime = ready(&fake);
+    licensed(&runtime);
+    assert!(runtime.shutdown());
+    assert_eq!(marks(&fake), ["timer from the creation"]);
+    assert_eq!(
+        storage_answers(&fake),
+        [Call::StorageId {
+            version: 7,
+            given: false
+        }]
+    );
+    let calls = fake.calls();
+    assert!(
+        position(&calls, |call| matches!(call, Call::Initialize { .. }))
+            < position(&calls, |call| matches!(call, Call::StorageId { .. })),
+        "the instance is initialised before any other call: {calls:?}"
+    );
+}
+
+#[test]
+fn a_storage_request_from_a_timer_during_initialisation_is_answered() {
+    let fake = Fake::new(script(|call| match call {
+        // As a CDM that waits for its storage id before it says it is initialised.
+        Call::Initialize { .. } => Some(vec![Step::Later {
+            delay_ms: 1,
+            steps: vec![Step::RequestStorageId(0)],
+        }]),
+        Call::StorageId { .. } => Some(vec![Step::Initialized(true)]),
+        _ => None,
+    }));
+    let runtime = start(&fake, deadlines(|d| d.initialise = HANG_GUARD));
+    assert_eq!(runtime.initialise(), Ok(()));
+    assert!(runtime.shutdown());
+    assert_eq!(
+        storage_answers(&fake),
+        [Call::StorageId {
+            version: 0,
+            given: false
+        }]
+    );
+}
+
+#[test]
+fn host_calls_of_an_instance_destroyed_first_are_dropped() {
+    let mut attempts = 0;
+    let fake = Fake::new(script(move |call| match call {
+        Call::Initialize { .. } => {
+            attempts += 1;
+            Some(if attempts == 1 {
+                vec![
+                    Step::Later {
+                        delay_ms: 0,
+                        steps: vec![Step::Mark("timer of a failed instance")],
+                    },
+                    Step::RequestStorageId(1),
+                    Step::Initialized(false),
+                ]
+            } else {
+                vec![Step::Initialized(true)]
+            })
+        }
+        _ => None,
+    }));
+    let runtime = start(&fake, QUICK);
+    assert_eq!(runtime.initialise(), Err(Error::InitialisationFailed));
+    assert_eq!(runtime.initialise(), Ok(()));
+    // Turns enough for the timer, due at once, to fire had it been kept.
+    licensed(&runtime);
+    assert!(runtime.shutdown());
+    assert!(marks(&fake).is_empty());
+    assert!(storage_answers(&fake).is_empty());
+}
+
+#[test]
+fn host_calls_of_a_creation_that_gives_no_instance_are_dropped() {
+    let mut creates = 0;
+    let fake = Fake::new(script(move |call| match call {
+        Call::Create { .. } => {
+            creates += 1;
+            Some(if creates == 1 {
+                vec![
+                    Step::Later {
+                        delay_ms: 0,
+                        steps: vec![Step::Mark("timer from no instance")],
+                    },
+                    Step::RequestStorageId(1),
+                ]
+            } else {
+                Vec::new()
+            })
+        }
+        _ => None,
+    }));
+    fake.refuse_create.store(true, Ordering::Relaxed);
+    let runtime = start(&fake, QUICK);
+    assert_eq!(runtime.initialise(), Err(Error::InterfaceNotSupported(11)));
+    fake.refuse_create.store(false, Ordering::Relaxed);
+    assert_eq!(runtime.initialise(), Ok(()));
+    licensed(&runtime);
+    assert!(runtime.shutdown());
+    assert!(marks(&fake).is_empty());
+    assert!(storage_answers(&fake).is_empty());
+}
+
 #[test]
 fn an_instance_of_another_interface_is_refused() {
     let fake = Fake::new(well_behaved());

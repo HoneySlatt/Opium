@@ -300,6 +300,16 @@ impl Host {
             .map(|instance| instance.cdm)
     }
 
+    /// The instance, while it is ready or initialising: its timers fire and its storage-id
+    /// requests are answered. A failed instance, waiting to be destroyed, is not called.
+    fn live_cdm(&self) -> Option<*mut c_void> {
+        let initialising = self.initialising();
+        self.instance
+            .as_ref()
+            .filter(|instance| instance.ready || initialising)
+            .map(|instance| instance.cdm)
+    }
+
     fn handle(&mut self, request: Request) {
         match request {
             Request::Initialise { reply } => self.initialise(reply),
@@ -358,15 +368,19 @@ impl Host {
                 &HOST_CALLS,
             )
         };
-        self.act_on_events();
         if cdm.is_null() {
+            // What the CDM asked for while giving no instance is dropped: there is none to answer.
+            self.act_on_events();
             self.shared.answer(
                 reply,
                 Err(Error::InterfaceNotSupported(calls.interface_version)),
             );
             return;
         }
+        // Known before its creation's events are acted on: the CDM may have set timers or asked
+        // for a storage id inside `CreateCdmInstance`.
         self.instance = Some(Instance { cdm, ready: false });
+        self.act_on_events();
         let deadline = Instant::now() + self.shared.deadlines.initialise;
         self.waits.push(Wait::Initialise { reply, deadline });
         // SAFETY: `cdm` was just created and is not destroyed.
@@ -555,13 +569,10 @@ impl Host {
     // Timers and calls made later.
 
     fn fire_due_timers(&mut self) {
-        // A failed instance, waiting to be destroyed, is not called.
-        if self.ready_cdm().is_none() && !self.initialising() {
-            return;
-        }
         let round = self.timers.round(Instant::now());
-        while let Some(context) = self.timers.pop_due(round) {
-            let Some(instance) = &self.instance else {
+        // Checked before each timer: one may end the initialisation in failure.
+        while let Some(cdm) = self.live_cdm() {
+            let Some(context) = self.timers.pop_due(round) else {
                 break;
             };
             self.shared
@@ -570,7 +581,7 @@ impl Host {
                 .fetch_add(1, Ordering::Relaxed);
             // SAFETY: the instance set this timer and is not destroyed (destroying clears the
             // timers); the context is handed back as it was given.
-            unsafe { (self.library.calls.timer_expired)(instance.cdm, context.0) };
+            unsafe { (self.library.calls.timer_expired)(cdm, context.0) };
             self.act_on_events();
         }
     }
@@ -583,8 +594,10 @@ impl Host {
             };
             match call {
                 Later::AnswerStorageId { version } => {
-                    if let Some(cdm) = self.ready_cdm() {
-                        // SAFETY: `cdm` is the ready instance; no storage id is given.
+                    // Answered while the instance initialises too: a CDM may wait for its
+                    // storage id before it says it is initialised.
+                    if let Some(cdm) = self.live_cdm() {
+                        // SAFETY: `cdm` is the live instance; no storage id is given.
                         unsafe { (self.library.calls.storage_id)(cdm, version, ptr::null(), 0) };
                         self.act_on_events();
                     }
@@ -601,7 +614,10 @@ impl Host {
         let Some(instance) = self.instance.take() else {
             return;
         };
+        // What it asked for goes with it.
         self.timers.clear();
+        self.later
+            .retain(|call| !matches!(call, Later::AnswerStorageId { .. }));
         // SAFETY: the instance is destroyed once: it was just taken out of the host.
         unsafe { (self.library.calls.destroy)(instance.cdm) };
         self.act_on_events();
@@ -704,7 +720,11 @@ impl Host {
                     .counters
                     .storage_requests
                     .fetch_add(1, Ordering::Relaxed);
-                self.later.push_back(Later::AnswerStorageId { version });
+                if self.instance.is_some() {
+                    self.later.push_back(Later::AnswerStorageId { version });
+                } else {
+                    self.ignore("a storage-id request from no instance");
+                }
             }
             Event::Unanswered { request } => self.unanswered(request),
         }
