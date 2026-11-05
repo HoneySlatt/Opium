@@ -996,6 +996,21 @@ mod tests {
     }
 
     #[test]
+    fn a_key_id_of_another_length_is_no_widevine_key() {
+        // Eight bytes of key id: the CDM decrypts only with 16.
+        let body = b"#EXTM3U\n\
+            #EXT-X-VERSION:7\n\
+            #EXT-X-TARGETDURATION:10\n\
+            #EXT-X-KEY:METHOD=SAMPLE-AES,URI=\"data:;base64,AAAAAAAAAAA=\",KEYFORMAT=\"urn:uuid:edef8ba9-79d6-4ace-a3c8-27dcd51d21ed\",KEYFORMATVERSIONS=\"1\"\n\
+            #EXT-X-MAP:URI=\"P1_track.mp4\",BYTERANGE=\"1000@0\"\n\
+            #EXTINF:10.0,\n\
+            #EXT-X-BYTERANGE:5000@1000\n\
+            P1_track.mp4\n\
+            #EXT-X-ENDLIST\n";
+        assert!(read_media_playlist("https://aod.itunes.apple.com/x/y/P1.m3u8", body).is_none());
+    }
+
+    #[test]
     fn the_media_playlist_gives_the_file_and_the_key() {
         let body = b"#EXTM3U\n\
             #EXT-X-VERSION:7\n\

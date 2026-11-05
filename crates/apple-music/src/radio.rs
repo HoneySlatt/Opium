@@ -284,6 +284,24 @@ pub(crate) fn pssh_key_id(key_uri: &str) -> Option<[u8; 16]> {
     data.get(at + 2..at + 18)?.try_into().ok()
 }
 
+/// The IV a protected sample decrypts with: the segment's own, else the playlist's, which must
+/// then be 16 bytes; a sample with neither keeps its zero IV.
+fn sample_iv(own: [u8; 16], playlist_iv: Option<&[u8]>) -> Result<[u8; 16]> {
+    match playlist_iv {
+        Some(iv) if own == [0; 16] => iv
+            .try_into()
+            .map_err(|_| Error::Playback("the station's playlist IV is not 16 bytes".into())),
+        _ => Ok(own),
+    }
+}
+
+/// The key id a rotated key at `key_uri` decrypts with: the one its PSSH names, else `current`.
+fn rotated_key_id(key_uri: &str, current: [u8; 16]) -> [u8; 16] {
+    pssh_key_id(key_uri)
+        .filter(|named| *named != [0; 16])
+        .unwrap_or(current)
+}
+
 /// An episode's init segment leaves its key id zero, the playlist's PSSH
 /// naming the key: put it in, for a player that decrypts with the init
 /// segment's key id. Says whether it did.
@@ -344,13 +362,7 @@ impl Segments {
                     if let Some((key_id, session)) = protection
                         && sample.protected
                     {
-                        // The segment's own IV, else the playlist's.
-                        let iv = match playlist_iv {
-                            Some(iv) if sample.iv == [0; 16] => iv.try_into().map_err(|_| {
-                                Error::Playback("the station's playlist IV is not 16 bytes".into())
-                            })?,
-                            _ => sample.iv,
-                        };
+                        let iv = sample_iv(sample.iv, playlist_iv)?;
                         session
                             .decrypt(bytes, &cbcs_sample(&sample, key_id, &iv))
                             .map_err(|e| Error::Playback(e.to_string()))?;
@@ -662,9 +674,7 @@ impl AppleMusic {
                         ..
                     } = &mut segments
                 {
-                    let rotated = pssh_key_id(uri)
-                        .filter(|named| *named != [0; 16])
-                        .unwrap_or(*key_id);
+                    let rotated = rotated_key_id(uri, *key_id);
                     match licensing.license(&cdm, uri, &rotated).await {
                         Ok(s) => {
                             *session = s;
@@ -759,6 +769,50 @@ https://a.example/index_2.m3u8\n";
         let uri = "data:text/plain;v=v1;base64,AAAAOHBzc2gAAAAA7e+LqXnWSs6jyCfc1R0h7QAAABgSELLrrJ7y0k0vsCOpUfshHKxI88aJmwY=";
         let kid = pssh_key_id(uri).unwrap();
         assert_eq!(kid[..4], [0xb2, 0xeb, 0xac, 0x9e]);
+    }
+
+    #[test]
+    fn a_sample_decrypts_with_its_own_iv_else_the_playlists() {
+        let own = [7; 16];
+        let playlist = [9u8; 16];
+        assert_eq!(sample_iv(own, Some(&playlist)).unwrap(), own);
+        assert_eq!(sample_iv([0; 16], Some(&playlist)).unwrap(), playlist);
+        assert_eq!(sample_iv([0; 16], None).unwrap(), [0; 16]);
+    }
+
+    #[test]
+    fn a_playlist_iv_of_another_length_fails_only_the_samples_that_need_it() {
+        let short = [9u8; 8];
+        assert_eq!(sample_iv([7; 16], Some(&short)).unwrap(), [7; 16]);
+        assert!(sample_iv([0; 16], Some(&short)).is_err());
+    }
+
+    #[test]
+    fn a_rotated_key_decrypts_with_the_key_id_its_pssh_names() {
+        let named = "data:text/plain;v=v1;base64,AAAAOHBzc2gAAAAA7e+LqXnWSs6jyCfc1R0h7QAAABgSELLrrJ7y0k0vsCOpUfshHKxI88aJmwY=";
+        assert_eq!(
+            rotated_key_id(named, [1; 16])[..4],
+            [0xb2, 0xeb, 0xac, 0x9e]
+        );
+        // A PSSH naming a zero key id, and a URI naming none, keep the current one.
+        let zero = format!(
+            "data:text/plain;base64,{}",
+            STANDARD.encode(
+                [
+                    &[0, 0, 0, 0x34][..],
+                    b"pssh",
+                    &[0; 4],
+                    &widevine::SYSTEM_ID,
+                    &[0, 0, 0, 0x14, 0x12, 0x10],
+                    &[0; 16],
+                    &[0x1a, 0x00],
+                ]
+                .concat()
+            )
+        );
+        assert_eq!(pssh_key_id(&zero), Some([0; 16]));
+        assert_eq!(rotated_key_id(&zero, [1; 16]), [1; 16]);
+        assert_eq!(rotated_key_id("skd://no-pssh", [1; 16]), [1; 16]);
     }
 
     /// A box: its size, its type, its body.
