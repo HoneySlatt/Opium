@@ -12,6 +12,12 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Every Monday at 06:53 UTC, even without a push, so that a project at rest still learns of
+  # changes in its dependencies and in CI's environment. The odd minute keeps off the hour; the
+  # owner's other projects run at 06:17 and 06:41. A push cancels a scheduled run in progress
+  # (concurrency, above).
+  schedule:
+    - cron: "53 6 * * 1"
 
 permissions:
   contents: read

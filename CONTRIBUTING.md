@@ -49,8 +49,13 @@ scripts/check.sh android    # inside `nix develop .#android`: the phone's core
   `target-android`. It checks that the phone's core builds without the desktop's crates. The APK
   itself is not checked.
 - CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs
-  `nix develop --no-update-lock-file --command scripts/check.sh` on every push to `main` and every
-  pull request. The flag makes an incomplete `flake.lock` an error instead of a silent update.
+  `nix develop --no-update-lock-file --command scripts/check.sh` on every push to `main`, every
+  pull request, and every Monday at 06:53 UTC. The flag makes an incomplete `flake.lock` an error
+  instead of a silent update.
+- The weekly run tells a project at rest that a dependency or CI's environment has changed.
+  GitHub stops scheduled runs after 60 days without activity on a public repository; a click in
+  the Actions tab starts them again. The repository is private: each run, weekly ones included,
+  spends GitHub's free quota of minutes.
 - CI sets `CARGO_PROFILE_DEV_DEBUG=0` (the tests' binaries without debug info) and
   `CARGO_INCREMENTAL=0` (no incremental data, which a fresh runner never reuses): the same checks in
   a smaller, faster build. Set them locally to reproduce a CI build.
