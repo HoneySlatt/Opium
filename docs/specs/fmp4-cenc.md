@@ -126,6 +126,12 @@ For each `moof`, each `traf`:
   together; per sample an IV of the sample's IV size (none when it is 0, the constant IV then
   serving), then if flagged a 16-bit `subsample_count` and that many pairs of 16-bit clear bytes and
   32-bit protected bytes.
+- **An empty `senc`** (`sample_count` 0, no subsample flag) carries nothing, and is not a count that
+  differs: when every sample of its `traf` has an IV size of 0, each takes its constant IV and is
+  protected whole, as if there were no `senc`. Apple's live radio sends it so, in every fragment of
+  its `cbcs` streams, observed with the owner on 2026-11-05 (`sample_count` 0 for 750 samples). An
+  empty `senc` with the subsample flag, or for samples that need a per-sample IV, is malformed, as
+  is any other count that differs.
 - **The IV size** is the sample's `seig` group's when it has one (below), else its sample entry's
   `tenc`'s. It is never guessed: an `senc` whose length does not match it exactly is malformed.
 - **Where there is no `senc`**, `saiz` and `saio` (§8.7.8, §8.7.9, full boxes) locate the same
@@ -328,7 +334,8 @@ Besides today's tests of `src/stream.rs`, each passing:
   several sample entries (Spatial Audio), `cbcs` with its pattern, an unencrypted `mp4a` track;
 - each malformed case of §9 an error, never a panic: sizes below their header or past their
   container, nesting 17 deep, counts larger than the bytes left, subsamples not adding up to the
-  sample, an `senc` whose count differs from its `traf`'s samples, an `senc` whose length does not
+  sample, an `senc` whose count differs from its `traf`'s samples (but for the empty `senc` of §5,
+  which reads, tested both ways), an `senc` whose length does not
   fit its IV size, an 8-byte IV under `cbcs`, a sample outside every `mdat`;
 - a deterministic mutation test in `cargo test`: thousands of small files made from the test files
   by flipping, cutting and repeating bytes of their `moov` and `moof` boxes (not of the audio) with
