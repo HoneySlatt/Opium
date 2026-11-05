@@ -17,9 +17,11 @@ never downloads, ships or modifies one.
 - `WIDEVINE_CDM`, when set, names the file to use, and nothing else is looked for.
 - Otherwise, under the config folder (`XDG_CONFIG_HOME`, else `~/.config`), each Chromium-family
   browser keeps it at `<user data>/WidevineCdm/<version>/_platform_specific/linux_x64/` (on arm64,
-  `linux_arm64`). The user-data folders, in alphabetical order: `BraveSoftware/Brave-Browser*`,
+  `linux_arm64`). The user-data folders, in alphabetical order: `BraveSoftware/*` (every Brave:
+  `Brave-Browser`, `Brave-Browser-Beta`, `Brave-Browser-Nightly`, `Brave-Origin` and any other),
   `chromium`, `google-chrome`, `google-chrome-beta`, `google-chrome-unstable`, `microsoft-edge*`,
-  `opera*`, `vivaldi`, `vivaldi-snapshot`.
+  `opera*`, `vivaldi`, `vivaldi-snapshot`. The owner's Brave keeps its CDM under
+  `BraveSoftware/Brave-Origin`: a narrower pattern finds no CDM on the owner's machine.
 - Google Chrome also installs one with the browser, at
   `/opt/google/chrome/WidevineCdm/_platform_specific/linux_x64/`; its version is in the
   `manifest.json` of `/opt/google/chrome/WidevineCdm/`.
@@ -70,6 +72,10 @@ later, from the timers the thread fires. The host:
 - **`SetTimer(delay_ms, context)`**: `TimerExpired(context)` is called on the CDM thread, as soon
   as possible once `delay_ms` has passed, and never before. The thread wakes for it, whether or not
   a request is waiting.
+- The CDM may call its host from the moment its instance exists: inside `CreateCdmInstance`, and
+  during initialisation, before `OnInitialized`. A timer or a storage-id request made then is
+  honoured like any other, once the instance is known; it is dropped only if the instance is
+  destroyed first.
 - **`GetCurrentWallTime()`**: seconds since the Unix epoch, as a double.
 - **Promises**: each call taking a `promise_id` gets a fresh id; the answer
   (`OnResolveNewSessionPromise`, `OnResolvePromise`, `OnResolveKeyStatusPromise`,
@@ -173,6 +179,8 @@ As Chromium's own CDM host does, one thread owns the CDM:
 - A decrypt request is one sample, never a whole track.
 - With no request and no timer due, the thread sleeps until the next timer or request: nothing
   runs at rest.
+- Should the CDM thread end unexpectedly, every request waiting and every request sent afterwards
+  gets "the CDM thread ended"; no caller waits for ever.
 - A callback from the CDM into Rust never panics (a panic across the C++ boundary is undefined
   behaviour): every Rust function the C++ calls catches what could go wrong and records an error.
 - The cleartext is written to a buffer that never overlaps the ciphertext the CDM reads, then copied
@@ -188,6 +196,9 @@ Before the process exits, `shutdown()` is called:
   by five seconds in total: `shutdown()` returns when the thread has ended, or after those five
   seconds;
 - the library is never unloaded: no thread can be inside it when the process's exit handlers run.
+
+With the CDM 4.10.3112.0 the teardown takes about 0.44 s, the CDM waiting for a thread of its own
+to end; the owner chose to keep it whole, the window being closed by then.
 
 ## 9. Errors
 
