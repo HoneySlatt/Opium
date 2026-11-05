@@ -24,9 +24,10 @@ Each need was found in the code of `crates/app-desktop`; the inventory written f
 
 The marks are the owner's to confirm.
 
-Of 111 needs, 102 are indispensable and 9 wished. egui gives 68 of them and Opium builds 28 itself,
-mostly drawing and motion (gradients, morphing shapes, springs, masks). 5 are in egui unused, and
-10 are missing.
+Of 113 needs, 104 are indispensable and 9 wished. egui gives 70 of them and Opium builds 28 itself,
+mostly drawing and motion (gradients, morphing shapes, springs, masks). 6 are in egui unused, and
+9 are missing. A row whose third column is mixed ("Given for X; built for Y") is counted by its first
+word.
 
 ## How the window is built
 
@@ -134,9 +135,9 @@ on each key repeat while held (`ui/mod.rs:922`): [known debt](PLAN.md#known-debt
 | Closed vector shapes that morph into one another: seven M3E shapes of 120 radii each, eased radius by radius, rotated, filled with a colour or an image | `ui/shapes.rs:1-178`, `ui/fab.rs:55-68`, `ui/loading.rs:56-82` | Built: a fan of triangles | Indispensable |
 | Transforms of what is drawn: scale about a point (a lyrics line grows), rotation (a cover spins) | `ui/lyrics.rs:253-262`, `ui/shapes.rs:71-78`, `ui/toolbar.rs:178` | Given for scale: `Shape::transform`; rotation built by turning points and texture coordinates | Indispensable |
 | The opacity of a group, for fades | `ui/motion.rs:62-64`, `ui/now_playing.rs:533` | Given: `Ui::set_opacity` | Indispensable |
-| Clipping to a rectangle | `ui/pane.rs:56`, `ui/grid.rs:571`, `ui/lyrics.rs:214` | Given: `set_clip_rect` | Indispensable |
+| Clipping to a rectangle | `ui/pane.rs:56`, `ui/grid.rs:571`, `ui/lyrics.rs:214` | Given: `set_clip_rect`, `painter_at` | Indispensable |
 | Clipping to a rounded rectangle, and masks that fade content at an edge: the M3E panes, the lyrics' top and bottom, the cover fading into the lyrics | `ui/mod.rs:725-766`, `ui/lyrics.rs:451-460`, `ui/now_playing.rs:471-494` | Built: corners painted over in the page's colour; opacity per line; a mesh with alpha per vertex | Indispensable |
-| Layers in a known order: pages, then floating bars, drawers, menus, tooltips, and a veil over the whole window; each layer takes the pointer or lets it through | `ui/mod.rs:729-740`, `:770-784`, `ui/drawer.rs:44-52`, `ui/motion.rs:71` | Given: `LayerId`, `Order`, `Area`; some layers registered by hand | Indispensable |
+| Layers in a known order: pages, then floating bars, drawers, menus, tooltips, and a veil over the whole window; a layer raised to the top while the window runs; each layer takes the pointer or lets it through | `ui/mod.rs:729-740`, `:770-784`, `ui/mod.rs:331`, `ui/drawer.rs:44-52`, `ui/motion.rs:89` | Given: `LayerId`, `Order`, `Area`, `move_to_top`; some layers registered by hand | Indispensable |
 | Translucent fills over content | `ui/now_playing.rs:547` | Given | Indispensable |
 | What lies behind an element, blurred, for glass | none | Missing | Wished: no theme uses it yet |
 | SVG icons, tinted, drawn at fractional positions: 70 icons, some logos with gradients of their own | `icons.rs`, `icons.rs:213-216`, `ui/mod.rs:1229-1232` | Given: `egui_extras`' SVG loader (resvg), `Image::tint`, `paint_at` | Indispensable |
@@ -169,10 +170,11 @@ theme with its own durations (`ui/motion.rs:25-30`).
 | A value moved between two states over a time, then eased: hover fades (0.1 to 0.2 s), the drawer sliding (0.24 s), the top bar turning solid, a lyrics line lit | `ui/tracks.rs:389`, `ui/drawer.rs:31-36`, `ui/mod.rs:436-438`, `ui/lyrics.rs:227` | Given: `animate_bool_with_time`, eased by Opium; once with egui's easing (`animate_bool_with_time_and_easing`) | Indispensable |
 | Cubic Bézier curves as CSS writes them, `cubic-bezier(0.3, 0, 0.1, 1)` | `ui/lyrics.rs:22-87` | Built: solved by bisection | Indispensable |
 | Damped springs that overshoot, M3E's fast and slow (stiffness 800 and 380, damping 0.6 and 0.8), on widths, radii, scales and shapes | `ui/motion.rs:98-149`, `ui/fab.rs:55-68`, `ui/home.rs:436-462` | Built: integrated in 240 Hz steps | Indispensable |
-| Delays in cascade: each of the next six lyrics lines follows 45 ms after the one before | `ui/lyrics.rs:184-217` | Built | Indispensable |
+| Delays in cascade: each of the next six lyrics lines follows 45 ms after the one before | `ui/lyrics.rs:26-27`, `:52-65`, `:184-217` | Built | Indispensable |
 | Animations driven by scrolling: the top bar's fill, the banner bar shown past the banner | `ui/mod.rs:429-444`, `ui/detail.rs:1160-1170` | Built: read from the scroll offset | Indispensable |
 | An element's entrance: a page fades in, and rises in Apple's and M3E's themes (14 px over 0.38 s for M3E); Now Playing rises 48 px | `ui/motion.rs:10-67`, `ui/mod.rs:86-87`, `:280-281` | Built | Indispensable |
 | A cross-fade of the whole window when the theme changes | `ui/motion.rs:71-115` | Built: a veil in the old colour on the top layer | Wished: a refinement |
+| A busy indicator while a song loads, sized and tinted by the theme | `ui/fab.rs:86-88`, `ui/dock.rs:323`, `ui/player_bar.rs:120` | Given: `Spinner` | Indispensable |
 | Animations that loop: the turning cookie (14 s), the loader morphing through six shapes, the equaliser bars, three breathing dots | `ui/fab.rs:19-36`, `ui/loading.rs:11-82`, `ui/tracks.rs:672-700`, `ui/lyrics.rs:462-477` | Built | Indispensable |
 | Reduced motion and reduced transparency, from the system or a setting | none | Missing | Indispensable: the quality bar's *Accessibility* |
 
@@ -186,6 +188,7 @@ theme with its own durations (`ui/motion.rs:25-30`).
 | A grid of covers, its columns from the width, only the rows in view built | `ui/grid.rs:622`, `:811` | Given: `show_viewport`; layout built | Indispensable |
 | Scroll bars styled by the theme, shown only when needed | `ui/rail.rs:183`, `theme.rs:354-375` | Given: `ScrollBarVisibility::VisibleWhenNeeded`, `Visuals` | Indispensable |
 | Shelves that scroll sideways, eased, with arrows, cards out of view skipped | `ui/grid.rs:395-560`, `ui/home.rs:614`, `:726` | Built over a clipped child | Indispensable |
+| Children laid out in a row or a column, centred on the other axis, inside margins; some from right to left | `ui/search_bar.rs:57`, `ui/window_bar.rs:25`, `ui/toolbar.rs:250`, `:446`, `ui/np_expressive.rs:217`, `ui/player_bar.rs:73`, `:212`, `ui/dock.rs:478` | Given: `Layout`, `Frame` with `Margin` | Indispensable |
 | A carousel with a focused item that grows | `ui/home.rs:388-557` | Built | Indispensable |
 | A table's header kept on top once its rows scroll past (Spotify's bar and column titles) | `ui/detail.rs:1160-1190`, `ui/mod.rs:665-697` | Built: drawn again on a layer from the scroll offset | Indispensable |
 | The scroll position kept per page (the page, the artist, the query), and a row scrolled into view | `ui/detail.rs:931`, `ui/artist.rs:414`, `ui/search.rs:135`, `ui/tracks.rs:749-754` | Given: `id_salt`, `scroll_to_rect` | Indispensable |
@@ -210,14 +213,14 @@ theme with its own durations (`ui/motion.rs:25-30`).
 | Letter spacing and line height set per style | `ui/lyrics.rs:387-388` | Given: `extra_letter_spacing`, `line_height` | Indispensable |
 | Text laid out, measured, then drawn where Opium places it | `ui/mod.rs:1211-1227`, `ui/search_bar.rs:196-199` | Given: galleys | Indispensable |
 | Tabular figures, so the time does not shift each second | `ui/player_bar.rs:175-186` | Built: room measured with every digit a 0; egui has no OpenType features | Wished: worked around |
-| Text fields of one line, without a frame, with a hint, vertically centred, the theme's cursor and selection colours, focus asked and given up, Enter submits | `ui/search_bar.rs:203-222`, `ui/window_bar.rs:162-170`, `ui/mod.rs:1140-1157`, `ui/sidebar.rs:157`, `theme.rs:366-374` | Given: `TextEdit`; centred by sizing it one line tall | Indispensable |
+| Text fields of one line, without a frame, with a hint, vertically centred, the theme's cursor and selection colours, focus asked and given up, Enter submits | `ui/search_bar.rs:203-222`, `ui/window_bar.rs:162-170`, `ui/mod.rs:1140-1157`, `ui/sidebar.rs:157-169`, `theme.rs:366-374` | Given: `TextEdit`; centred by sizing it one line tall | Indispensable |
 | A text field of several lines (a playlist's notes) | `ui/playlist_dialog.rs:463-468` | Given: `TextEdit::multiline` | Indispensable |
 | A masked field (the Navidrome password) | `ui/settings.rs:816-821`, `ui/playlist_dialog.rs:675-676` | Given: `TextEdit::password` | Indispensable |
 | A field limited in length (the six-digit pairing code), centred | `ui/pairing.rs:153-167` | Given: `char_limit`, `align` | Indispensable |
 | Copying and pasting in fields, and copying to the clipboard from code | `app.rs:6189`, `ui/window_bar.rs:162` | Given: `copy_text`, `TextEdit` | Indispensable |
 | Input methods in fields, for Japanese or Chinese searches | `ui/window_bar.rs:162` and every field | Given: `TextEdit` takes IME input | Indispensable |
 | Right-to-left text laid out right to left | none | Missing | Wished: the quality bar asks it only if Opium is translated |
-| Drawn text selected and copied | none | Missing | Wished: nothing asks it |
+| Drawn text selected and copied | none | Unused: `Label::selectable`, but Opium paints its text by hand | Wished: nothing asks it |
 
 ## The system
 
