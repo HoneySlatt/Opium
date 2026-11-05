@@ -12,26 +12,40 @@ cited live in [`scripts/measure/`](../scripts/measure/), each described at its h
 
 ## Indexing an encrypted track, M1.10 (2026-11-05)
 
-What indexing an Apple-shaped file costs, before and after `crates/cenc` is written again
+What indexing an Apple-shaped file costs, before and after `crates/cenc` was written again
 ([M1.10](PLAN.md#m110-to-m112--kopuzs-code-written-again)); the budget is in
 [`specs/fmp4-cenc.md`](specs/fmp4-cenc.md#10-performance) §10. Machine: AMD Ryzen 7 5800X, Linux
-7.3.0, load average about 1 to 3. Command: `cargo run --release -p cenc --example index_cost`
-([`index_cost.rs`](../crates/cenc/examples/index_cost.rs)), inside `nix develop`.
+7.3.0, load average 0.8 to 4. Command: `cargo run --release -p cenc --example index_cost
+[fragments]` ([`index_cost.rs`](../crates/cenc/examples/index_cost.rs)), inside `nix develop`.
 
 The file is synthetic, built by the program: 7.39 MB, 9 000 samples of 700 to 900 bytes in 100
-fragments, scheme `cenc`, 8-byte IVs, one subsample each. *Kept* is the heap the result of
-indexing holds while it lives, counted by a counting allocator: capacity, not length, so a `Vec`
-grown by doubling counts whole.
+fragments, scheme `cenc`, 8-byte IVs, one subsample each; with 6 000 fragments, four hours. *Kept*
+is the heap the result of indexing holds while it lives, counted by a counting allocator:
+capacity, not length, so a `Vec` grown by doubling counts whole. Before and after were run
+alternately, five times each against each round, the old code built from commit `39bb0fa` beside
+the new.
 
-| What | Before (`fmp4.rs`, commit `4522e68`) | After | Budget |
+| What | Before (`fmp4.rs`) | After | Budget |
 |---|---|---|---|
-| Indexing the whole file | best 0.458 to 0.474 ms, median 0.463 to 0.486 ms (3 runs of 50) | | not worse |
-| The table kept | 1 222.3 KiB in 9 002 blocks: 139.1 bytes a sample | | at most 48 bytes a sample |
+| Indexing the whole file, best of 50 | 0.445 to 0.461 ms (medians 0.459 to 0.474) | 0.317 to 0.335 ms (medians 0.330 to 0.343) | not worse: met |
+| The table kept | 1 222.3 KiB in 9 002 blocks: 139.1 bytes a sample | 406.3 KiB in 11 blocks: 46.2 bytes a sample | at most 48 bytes a sample: met |
+| A download, 64 KiB at a time, made clear at each new fragment | not measured (another interface) | 0.77 to 0.79 ms in all | none |
+| Four hours (443.5 MB, 540 000 samples): indexing, best of 5 | not measured | 25.8 ms | in proportion to the size |
+| Four hours: the table kept | not measured | 23.8 MiB, 46.2 bytes a sample | under 26 MB: met |
+| Four hours: a download | not measured | 763 ms in all | none |
 
-The licence audit's figures, 0.37 ms and 632 KiB plus 140 KiB in 9 000 allocations
-([audit §5](audits/2026-11-05-licence.md#5-measured)), came from a throwaway program on a 7.21 MB
-file and counted the table by its length (9 000 samples of 72 bytes); this kept program counts
-what the heap really holds. Before and after are compared with this program only.
+- Indexing four hours takes 80 times as long as four minutes, for 60 times the samples: near
+  proportion; the 443 MB file no longer fits any cache.
+- A download costs more than indexing whole because the file is made clear again at each new
+  fragment, over every fragment indexed so far: the time grows with the square of the fragments
+  ([debt](debt.md)). For a four-minute song, 0.45 ms in all.
+- The licence audit's figures, 0.37 ms and 632 KiB plus 140 KiB in 9 000 allocations
+  ([audit §5](audits/2026-11-05-licence.md#5-measured)), came from a throwaway program on a 7.21 MB
+  file and counted the table by its length (9 000 samples of 72 bytes); this kept program counts
+  what the heap really holds.
+- The first clean-room version indexed in 0.52 to 0.54 ms, slower than before; a second round made
+  it 0.32 ms, and the third, which bounds the samples by the file's bytes, kept it so
+  ([evidence](audits/2026-11-05-cenc-clean-room.md)).
 
 ## CI on GitHub (2026-11-05)
 

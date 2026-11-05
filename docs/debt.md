@@ -45,16 +45,26 @@ work is in [`PLAN.md`](PLAN.md); a stage's audit adds what it leaves open.
   - the shell's FFmpeg is built with GPL parts, which a distributed binary must not link;
   - the test tone `player/tests/data/tone.opus` has no recorded origin;
   - the examples `am fetch`, `am live` and `sc fetch` write decrypted protected audio to a file.
-- **Until M1.10** ([licence
-  audit](audits/2026-11-05-licence.md#4-what-kopuz-does-badly-here-and-opium-with-it)), in
-  `cenc/src/fmp4.rs`: a box of size 0 stops the walk, leaving a last fragment's samples encrypted
-  but handed on as clear; nesting is unbounded (a deep file overflows the stack); counts read from
-  the file size loops and allocations up to four billion; a negative data offset wraps; only the
-  first track is read; the IV size is guessed; an `mdat` must follow its `moof`, and the `tfhd`'s
-  base offset is ignored; reads are checked against the buffer, not the box; an `senc` whose count
-  differs reuses the last IV, and missing subsamples become "whole sample encrypted"; subsamples
-  larger than their sample go to the CDM; `saiz`/`saio` without `senc` decrypt to noise silently;
-  AAC's `roll` groups are relabelled `free` with the encryption's.
+- **Left by M1.10** (`cenc` written again; [evidence](audits/2026-11-05-cenc-clean-room.md)):
+  - Behaviour is checked on built files and on one file of FFmpeg's, never yet on Apple's or
+    SoundCloud's: their protected songs, Spatial Audio and the live radio are played with the
+    owner after M1.11 and M1.12 ([PLAN](PLAN.md#m110-to-m112--kopuzs-code-written-again)).
+  - The live radio's segments once fell back on the playlist's IV when the init gave none; a
+    protected sample without a constant IV or a per-sample IV is now an error, as the standard
+    asks. Whether Apple's stations ever relied on it is unknown until the radio is played.
+  - The new parser is stricter than the old: a `tenc` whose `default_isProtected` is 0, or stray
+    bytes after a sample entry's boxes, are errors; Spatial Audio's entries are made one only when
+    they share one `AudioSpecificConfig`. Any of them in Apple's files would stop a song, which
+    playing them with the owner shows.
+  - A downloading stream makes the file clear again at each new fragment, over every fragment
+    indexed: time in the square of the fragments. 0.45 ms in all for a four-minute song, 0.76 s
+    over a four-hour download, its last calls 0.24 ms each under the stream's lock
+    ([measured](measurements.md#indexing-an-encrypted-track-m110-2026-11-05)). A way to make
+    clear only the fragments just indexed needs a public item more in `cenc`.
+  - The CDM still returns a new buffer (`widevine`), copied into the stream's: decrypting in place
+    saves its copy once M1.11 gives the CDM's host an in-place call.
+  - The desktop's about screen still credits Kopuz for CENC code; it is frozen
+    ([ADR-0026](adr/0026-the-egui-window-frozen-until-the-move.md)), and M1.13 rewrites it.
 - **Until M1.11**, in `widevine`: the CDM's "no key" is reported as a decrypt failure; a CDM whose
   start failed passes for loaded at the next attempt; the CDM's timers fire in a loop, not in time;
   a session's close is not checked; CDM versions are sorted as text; promise ids are not matched,
