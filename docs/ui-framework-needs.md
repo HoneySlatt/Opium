@@ -22,9 +22,11 @@ Each need was found in the code of `crates/app-desktop`; the inventory written f
   approved for one of its built-in themes, or when the [quality bar](ROADMAP.md#quality-bar)
   requires it once the window is on slime-ui. *Wished* otherwise.
 
-The marks are the owner's to confirm.
+The owner confirmed this rule and the marks on 2026-11-05, and chose four needs as indispensable
+that the rule left wished: a Korean fallback and colour emoji, tabular figures, WebP and GIF
+covers, and mipmaps.
 
-Of 113 needs, 104 are indispensable and 9 wished. egui gives 70 of them and Opium builds 28 itself,
+Of 113 needs, 108 are indispensable and 5 wished. egui gives 70 of them and Opium builds 28 itself,
 mostly drawing and motion (gradients, morphing shapes, springs, masks). 6 are in egui unused, and
 9 are missing. A row whose third column is mixed ("Given for X; built for Y") is counted by its first
 word.
@@ -157,8 +159,8 @@ on each key repeat while held (`ui/mod.rs:922`): [known debt](PLAN.md#known-debt
 | A texture updated in place at each frame, for animated covers at 25 frames a second | `app.rs:3612-3690` | Given: `TextureHandle::set_partial` | Indispensable |
 | Knowing whether a rectangle is on screen, so an animated cover out of sight stops | `ui/mod.rs:1445`, `ui/artist.rs:1148` | Given: `is_rect_visible` | Indispensable |
 | JPEG and PNG | `ui/thumbs.rs:144`, `crates/app-desktop/Cargo.toml` (`image`'s features) | Given through the `image` crate | Indispensable |
-| WebP and GIF covers | [known debt](PLAN.md#known-debt) | Unused: `image` is built with JPEG and PNG only | Wished |
-| Mipmaps, for smooth downscaling | `ui/home.rs:574` filters linearly | Unused: `TextureOptions::mipmap_mode` | Wished |
+| WebP and GIF covers | [known debt](PLAN.md#known-debt) | Unused: `image` is built with JPEG and PNG only; decoding them is Opium's, showing them the framework's | Indispensable: the owner's choice |
+| Mipmaps, for smooth downscaling | `ui/home.rs:574` filters linearly | Unused: `TextureOptions::mipmap_mode` | Indispensable: the owner's choice |
 
 ## Motion
 
@@ -206,13 +208,13 @@ theme with its own durations (`ui/motion.rs:25-30`).
 |---|---|---|---|
 | Fonts by weight: Geist at 400, 500, 600 and 700 | `fonts.rs:1-56`, `:91-109` | Built: egui has no weights, so each is a family of its own | Indispensable |
 | Fallback fonts per script from the system (Greek, Japanese, which also covers Chinese, Arabic, Hebrew, Thai, Devanagari), added after start-up on a thread, kept upright, variable ones set to the weight asked | `fonts.rs:58-72`, `:99-103`, `:118-182` | Built on `set_fonts` and fontconfig; `FontData`'s axis coordinates given | Indispensable |
-| A Korean fallback, and colour emoji | `fonts.rs:121`, `:85` | Missing: monochrome emoji only ([known debt](PLAN.md#known-debt)) | Wished |
+| A Korean fallback, and colour emoji | `fonts.rs:121`, `:85` | Missing: monochrome emoji only ([known debt](PLAN.md#known-debt)) | Indispensable: the owner's choice |
 | Text styled by ranges: in one layout, runs of their own colour and opacity | `ui/lyrics.rs:374-435` | Given: `LayoutJob` sections | Indispensable |
 | Lyrics lit word by word: a soft wipe across the letters of the word being sung, laid out each frame, cached when unchanged | `ui/lyrics.rs:346-435` | Built on `LayoutJob`; the cache is egui's | Indispensable |
 | One line cut with "…" at a width; at most two lines then "…"; wrapping at a width | `ui/mod.rs:1204-1208`, `ui/home.rs:806-822`, `ui/lyrics.rs:433`, `:448` | Given: `TextWrapping` | Indispensable |
 | Letter spacing and line height set per style | `ui/lyrics.rs:387-388` | Given: `extra_letter_spacing`, `line_height` | Indispensable |
 | Text laid out, measured, then drawn where Opium places it | `ui/mod.rs:1211-1227`, `ui/search_bar.rs:196-199` | Given: galleys | Indispensable |
-| Tabular figures, so the time does not shift each second | `ui/player_bar.rs:175-186` | Built: room measured with every digit a 0; egui has no OpenType features | Wished: worked around |
+| Tabular figures, so the time does not shift each second | `ui/player_bar.rs:175-186` | Built: room measured with every digit a 0; egui has no OpenType features | Indispensable: the owner's choice |
 | Text fields of one line, without a frame, with a hint, vertically centred, the theme's cursor and selection colours, focus asked and given up, Enter submits | `ui/search_bar.rs:203-222`, `ui/window_bar.rs:162-170`, `ui/mod.rs:1140-1157`, `ui/sidebar.rs:157-169`, `theme.rs:366-374` | Given: `TextEdit`; centred by sizing it one line tall | Indispensable |
 | A text field of several lines (a playlist's notes) | `ui/playlist_dialog.rs:463-468` | Given: `TextEdit::multiline` | Indispensable |
 | A masked field (the Navidrome password) | `ui/settings.rs:816-821`, `ui/playlist_dialog.rs:675-676` | Given: `TextEdit::password` | Indispensable |

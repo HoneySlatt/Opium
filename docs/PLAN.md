@@ -9,7 +9,7 @@ Every milestone ends with the definition of done in [`AGENTS.md`](../AGENTS.md#d
 
 ## Current
 
-- Stage 1 — Under the method, started on 2026-11-04. M1.1, M1.2, M1.3 and M1.7 are done.
+- Stage 1 — Under the method, started on 2026-11-04. M1.1, M1.2, M1.3, M1.6 and M1.7 are done.
 - M1.3: the first CI run ran out of disk while linking the tests; the workflow now frees the disk,
   builds without debug info and keeps its cache even when a check fails. CI is green on `main`
   (2026-11-05: 24 minutes cold, 9 min 25 s warm, under the 20-minute budget). M1.3 is done.
@@ -18,8 +18,9 @@ Every milestone ends with the definition of done in [`AGENTS.md`](../AGENTS.md#d
   ([ADR-0026](adr/0026-the-egui-window-frozen-until-the-move.md)), and the phone's Compose screens
   until Stage 3 measures slime-ui against Compose ([ADR-0028](adr/0028-the-phones-compose-screens-frozen-until-measured.md)).
 - M1.6: the needs are written in [`ui-framework-needs.md`](ui-framework-needs.md), each checked
-  against the code and reviewed by a fresh agent; the owner's review of their marks remains.
-- **Standby** ([ADR-0029](adr/0029-opium-waits-for-slime-ui-then-moves-first.md)): once M1.6 is
+  against the code and reviewed by a fresh agent, their marks confirmed by the owner on 2026-11-05.
+  M1.6 is done.
+- **Standby** ([ADR-0029](adr/0029-opium-waits-for-slime-ui-then-moves-first.md)): since M1.6 is
   done, no milestone runs until SlimeEngine's Stage 6d is done. Only a loss of data, a crash, a
   security flaw or a service that stops working is fixed meanwhile.
 - At the wake: M1.4's phone and M1.5, then M1.8, the stage audit, which closes the stage; then
@@ -35,7 +36,7 @@ Every milestone ends with the definition of done in [`AGENTS.md`](../AGENTS.md#d
 | [M1.3](#m13--ci-green) | Every push to `main` and every pull request is checked by CI | Done |
 | [M1.4](#m14--the-rename-landed) | The owner's computer and phone run Opium under its new names, with their data | In progress: the computer done |
 | [M1.5](#m15--the-phones-core-checked) | The Android shell builds from an empty store and the phone's core is checked | Planned |
-| [M1.6](#m16--what-the-window-needs-from-a-ui-framework) | SlimeEngine's Stage 6d can read, in this repository, what Opium's window needs | In review: written and checked, the owner's review remains |
+| [M1.6](#m16--what-the-window-needs-from-a-ui-framework) | SlimeEngine's Stage 6d can read, in this repository, what Opium's window needs | Done |
 | [M1.7](#m17--the-quality-bar-measured) | The owner decides Opium's budgets with today's figures in hand | Done |
 | [M1.8](#m18--the-stage-audit) | The whole project examined before Stage 1 closes | Planned |
 
@@ -117,7 +118,7 @@ built in this stage.
 - **Delivers.** [`ui-framework-needs.md`](ui-framework-needs.md), listing what Opium's window asks
   of a framework (windows, input, drawing, images, motion, lists, text, waking, the system,
   accessibility, themes), each need checked against the code, marked indispensable or wished, with
-  what egui gives today. Written on 2026-11-05: 113 needs, 104 indispensable; the inventory written
+  what egui gives today. Written on 2026-11-05: 113 needs, 108 indispensable once the owner had confirmed the marks; the inventory written
   for SlimeEngine's ADR-0170 on 2026-11-04 was not kept, so this one was made again from the code.
 - **Done when.** Every need cites the code that asks it; the owner has reviewed it.
 - **How to test.** A reread against the code.
