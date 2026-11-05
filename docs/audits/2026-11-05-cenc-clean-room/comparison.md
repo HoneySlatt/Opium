@@ -31,7 +31,7 @@ Sources:
 - kopuz-a58c385: 764 files
 - kopuz-1d8b323: 771 files
 - fmp4.rs@4522e68: 1 files
-- tree: 136 files
+- tree: 157 files
 
 ## Raw tokens, runs of 50 or more
 
@@ -40,7 +40,7 @@ Sources:
 | kopuz-a58c385 | 764 | 0 | - | 29 |
 | kopuz-1d8b323 | 771 | 0 | - | 29 |
 | fmp4.rs@4522e68 | 1 | 0 | - | 32 |
-| tree | 136 | 1 | 106 | 49 |
+| tree | 157 | 1 | 106 | 49 |
 
 ### 106 raw tokens: `crates/cenc/src/stream.rs` lines 608 to 619, and tree `crates/downloads/src/sealed.rs` lines 208 to 219
 
@@ -64,41 +64,41 @@ Sources:
 
 | Against | Files | Runs at or above | Longest at or above | Longest below |
 |---|---|---|---|---|
-| kopuz-a58c385 | 764 | 155 | 64 | 29 |
-| kopuz-1d8b323 | 771 | 154 | 67 | 29 |
+| kopuz-a58c385 | 764 | 157 | 64 | 29 |
+| kopuz-1d8b323 | 771 | 156 | 67 | 29 |
 | fmp4.rs@4522e68 | 1 | 14 | 46 | 29 |
-| tree | 136 | 95 | 106 | 29 |
+| tree | 157 | 108 | 106 | 29 |
 
-### 64 normalised tokens: `crates/cenc/src/tests/build.rs` lines 374 to 387, and kopuz-a58c385 `daemon/server/src/lyrics/request.rs` lines 3 to 18
+### 64 normalised tokens: `crates/cenc/src/tests/build.rs` lines 376 to 389, and kopuz-a58c385 `daemon/server/src/lyrics/request.rs` lines 3 to 18
 
 ```text
-  374 | pub movie : MovieSpec ,
-  375 | pub fragments : Vec < FragmentSpec > ,
-  377 | pub trailing : Vec < u8 > ,
-  378 | }
-  381 | # [ derive ( Clone , Debug , PartialEq , Eq ) ]
-  382 | pub struct Expected {
-  383 | pub offset : usize ,
-  384 | pub size : usize ,
-  385 | pub duration : u32 ,
-  386 | pub fragment : usize ,
-  387 | pub entry : u32 ,
+  376 | pub movie : MovieSpec ,
+  377 | pub fragments : Vec < FragmentSpec > ,
+  379 | pub trailing : Vec < u8 > ,
+  380 | }
+  383 | # [ derive ( Clone , Debug , PartialEq , Eq ) ]
+  384 | pub struct Expected {
+  385 | pub offset : usize ,
+  386 | pub size : usize ,
+  387 | pub duration : u32 ,
+  388 | pub fragment : usize ,
+  389 | pub entry : u32 ,
 ```
 
 
-### 60 normalised tokens: `crates/cenc/src/tests/build.rs` lines 302 to 313, and kopuz-a58c385 `shared/api/src/catalog.rs` lines 81 to 94
+### 60 normalised tokens: `crates/cenc/src/tests/build.rs` lines 304 to 315, and kopuz-a58c385 `shared/api/src/catalog.rs` lines 81 to 94
 
 ```text
-  302 | Clone , Debug ) ]
-  303 | pub struct TrafSpec {
-  304 | pub track_id : u32 ,
-  306 | pub description_index : Option < u32 > ,
-  307 | pub default_duration : Option < u32 > ,
-  308 | pub default_size : Option < u32 > ,
-  310 | pub explicit_base : bool ,
-  311 | pub default_base_is_moof : bool ,
-  312 | pub runs : Vec < RunSpec > ,
-  313 | pub aux : Aux
+  304 | Clone , Debug ) ]
+  305 | pub struct TrafSpec {
+  306 | pub track_id : u32 ,
+  308 | pub description_index : Option < u32 > ,
+  309 | pub default_duration : Option < u32 > ,
+  310 | pub default_size : Option < u32 > ,
+  312 | pub explicit_base : bool ,
+  313 | pub default_base_is_moof : bool ,
+  314 | pub runs : Vec < RunSpec > ,
+  315 | pub aux : Aux
 ```
 
 
@@ -168,20 +168,20 @@ Sources:
 ```
 
 
-### 55 normalised tokens: `crates/cenc/src/tests/build.rs` lines 375 to 388, and kopuz-a58c385 `daemon/server/src/lyrics/request.rs` lines 24 to 35
+### 55 normalised tokens: `crates/cenc/src/tests/build.rs` lines 377 to 390, and kopuz-a58c385 `daemon/server/src/lyrics/request.rs` lines 24 to 35
 
 ```text
-  375 | ,
-  377 | pub trailing : Vec < u8 > ,
-  378 | }
-  381 | # [ derive ( Clone , Debug , PartialEq , Eq ) ]
-  382 | pub struct Expected {
-  383 | pub offset : usize ,
-  384 | pub size : usize ,
-  385 | pub duration : u32 ,
-  386 | pub fragment : usize ,
-  387 | pub entry : u32 ,
-  388 | pub key_id :
+  377 | ,
+  379 | pub trailing : Vec < u8 > ,
+  380 | }
+  383 | # [ derive ( Clone , Debug , PartialEq , Eq ) ]
+  384 | pub struct Expected {
+  385 | pub offset : usize ,
+  386 | pub size : usize ,
+  387 | pub duration : u32 ,
+  388 | pub fragment : usize ,
+  389 | pub entry : u32 ,
+  390 | pub key_id :
 ```
 
 
@@ -217,15 +217,15 @@ Sources:
 ```
 
 
-### 51 normalised tokens: `crates/cenc/src/tests/build.rs` lines 451 to 456, and kopuz-a58c385 `daemon/core/src/boot.rs` lines 313 to 320
+### 51 normalised tokens: `crates/cenc/src/tests/build.rs` lines 453 to 458, and kopuz-a58c385 `daemon/core/src/boot.rs` lines 313 to 320
 
 ```text
-  451 | ) ;
-  452 | trex . extend ( index . to_be_bytes ( ) ) ;
-  453 | trex . extend ( duration . to_be_bytes ( ) ) ;
-  454 | trex . extend ( size . to_be_bytes ( ) ) ;
-  455 | trex . extend ( flags . to_be_bytes ( ) ) ;
-  456 | mvex . extend ( full
+  453 | ) ;
+  454 | trex . extend ( index . to_be_bytes ( ) ) ;
+  455 | trex . extend ( duration . to_be_bytes ( ) ) ;
+  456 | trex . extend ( size . to_be_bytes ( ) ) ;
+  457 | trex . extend ( flags . to_be_bytes ( ) ) ;
+  458 | mvex . extend ( full
 ```
 
 
@@ -315,17 +315,17 @@ Sources:
 ```
 
 
-### 44 normalised tokens: `crates/cenc/src/tests/build.rs` lines 373 to 383, and kopuz-a58c385 `shared/api/src/catalog.rs` lines 88 to 99
+### 44 normalised tokens: `crates/cenc/src/tests/build.rs` lines 375 to 385, and kopuz-a58c385 `shared/api/src/catalog.rs` lines 88 to 99
 
 ```text
-  373 | ,
-  374 | pub movie : MovieSpec ,
-  375 | pub fragments : Vec < FragmentSpec > ,
-  377 | pub trailing : Vec < u8 > ,
-  378 | }
-  381 | # [ derive ( Clone , Debug , PartialEq , Eq ) ]
-  382 | pub struct Expected {
-  383 | pub offset : usize
+  375 | ,
+  376 | pub movie : MovieSpec ,
+  377 | pub fragments : Vec < FragmentSpec > ,
+  379 | pub trailing : Vec < u8 > ,
+  380 | }
+  383 | # [ derive ( Clone , Debug , PartialEq , Eq ) ]
+  384 | pub struct Expected {
+  385 | pub offset : usize
 ```
 
 
@@ -357,15 +357,15 @@ Sources:
 ```
 
 
-### 42 normalised tokens: `crates/cenc/src/tests/build.rs` lines 302 to 308, and kopuz-a58c385 `apps/legacy/components/src/settings/remote_folders.rs` lines 13 to 18
+### 42 normalised tokens: `crates/cenc/src/tests/build.rs` lines 304 to 310, and kopuz-a58c385 `apps/legacy/components/src/settings/remote_folders.rs` lines 13 to 18
 
 ```text
-  302 | # [ derive ( Clone , Debug ) ]
-  303 | pub struct TrafSpec {
-  304 | pub track_id : u32 ,
-  306 | pub description_index : Option < u32 > ,
-  307 | pub default_duration : Option < u32 > ,
-  308 | pub default_size : Option < u32 > ,
+  304 | # [ derive ( Clone , Debug ) ]
+  305 | pub struct TrafSpec {
+  306 | pub track_id : u32 ,
+  308 | pub description_index : Option < u32 > ,
+  309 | pub default_duration : Option < u32 > ,
+  310 | pub default_size : Option < u32 > ,
 ```
 
 
@@ -387,15 +387,15 @@ Sources:
 ```
 
 
-### 41 normalised tokens: `crates/cenc/src/tests/build.rs` lines 373 to 381, and kopuz-a58c385 `shared/api/src/library.rs` lines 51 to 59
+### 41 normalised tokens: `crates/cenc/src/tests/build.rs` lines 375 to 383, and kopuz-a58c385 `shared/api/src/library.rs` lines 51 to 59
 
 ```text
-  373 | pub leading : Vec < u8 > ,
-  374 | pub movie : MovieSpec ,
-  375 | pub fragments : Vec < FragmentSpec > ,
-  377 | pub trailing : Vec < u8 > ,
-  378 | }
-  381 | # [ derive ( Clone , Debug , PartialEq , Eq
+  375 | pub leading : Vec < u8 > ,
+  376 | pub movie : MovieSpec ,
+  377 | pub fragments : Vec < FragmentSpec > ,
+  379 | pub trailing : Vec < u8 > ,
+  380 | }
+  383 | # [ derive ( Clone , Debug , PartialEq , Eq
 ```
 
 
@@ -587,15 +587,15 @@ Sources:
 ```
 
 
-### 38 normalised tokens: `crates/cenc/src/tests/build.rs` lines 370 to 377, and kopuz-a58c385 `vendor/gpui-pre-linux/src/linux/wayland/client.rs` lines 307 to 312
+### 38 normalised tokens: `crates/cenc/src/tests/build.rs` lines 372 to 379, and kopuz-a58c385 `vendor/gpui-pre-linux/src/linux/wayland/client.rs` lines 307 to 312
 
 ```text
-  370 | Clone , Debug , Default ) ]
-  371 | pub struct FileSpec {
-  373 | pub leading : Vec < u8 > ,
-  374 | pub movie : MovieSpec ,
-  375 | pub fragments : Vec < FragmentSpec > ,
-  377 | pub trailing : Vec < u8
+  372 | Clone , Debug , Default ) ]
+  373 | pub struct FileSpec {
+  375 | pub leading : Vec < u8 > ,
+  376 | pub movie : MovieSpec ,
+  377 | pub fragments : Vec < FragmentSpec > ,
+  379 | pub trailing : Vec < u8
 ```
 
 
@@ -739,6 +739,21 @@ Sources:
 ```
 
 
+### 36 normalised tokens: `crates/cenc/src/tests/build.rs` lines 291 to 304, and kopuz-a58c385 `daemon/server/src/source/types.rs` lines 381 to 392
+
+```text
+  291 | }
+  294 | # [ derive ( Clone , Copy , Debug , PartialEq , Eq ) ]
+  295 | pub enum Aux {
+  296 | Senc ,
+  298 | SaizSaio ,
+  300 | EmptySenc ,
+  301 | None ,
+  302 | }
+  304 | # [ derive ( Clone , Debug
+```
+
+
 ### 36 normalised tokens: `crates/cenc/src/tests/layouts.rs` lines 18 to 20, and kopuz-a58c385 `daemon/kopuzd/tests/contract.rs` lines 2056 to 2058
 
 ```text
@@ -824,58 +839,74 @@ Sources:
 ```
 
 
-### 35 normalised tokens: `crates/cenc/src/tests/build.rs` lines 300 to 307, and kopuz-a58c385 `daemon/server/src/applemusic/cenc.rs` lines 343 to 354
+### 35 normalised tokens: `crates/cenc/src/tests/build.rs` lines 290 to 304, and kopuz-a58c385 `apps/kopuz/components/src/track_meta.rs` lines 211 to 228
 
 ```text
-  300 | }
-  302 | # [ derive ( Clone , Debug ) ]
-  303 | pub struct TrafSpec {
-  304 | pub track_id : u32 ,
-  306 | pub description_index : Option < u32 > ,
-  307 | pub default_duration : Option < u32 > ,
+  290 | }
+  291 | }
+  294 | # [ derive ( Clone , Copy , Debug , PartialEq , Eq ) ]
+  295 | pub enum Aux {
+  296 | Senc ,
+  298 | SaizSaio ,
+  300 | EmptySenc ,
+  301 | None ,
+  302 | }
+  304 | # [ derive ( Clone
 ```
 
 
-### 35 normalised tokens: `crates/cenc/src/tests/build.rs` lines 308 to 315, and kopuz-a58c385 `daemon/server/src/download_queue.rs` lines 32 to 37
+### 35 normalised tokens: `crates/cenc/src/tests/build.rs` lines 302 to 309, and kopuz-a58c385 `daemon/server/src/applemusic/cenc.rs` lines 343 to 354
 
 ```text
-  308 | pub default_size : Option < u32 > ,
-  310 | pub explicit_base : bool ,
-  311 | pub default_base_is_moof : bool ,
-  312 | pub runs : Vec < RunSpec > ,
-  313 | pub aux : Aux ,
-  315 | pub sbgp : Vec
+  302 | }
+  304 | # [ derive ( Clone , Debug ) ]
+  305 | pub struct TrafSpec {
+  306 | pub track_id : u32 ,
+  308 | pub description_index : Option < u32 > ,
+  309 | pub default_duration : Option < u32 > ,
 ```
 
 
-### 35 normalised tokens: `crates/cenc/src/tests/build.rs` lines 398 to 407, and kopuz-a58c385 `daemon/server/src/ytmusic/browse/search.rs` lines 112 to 120
+### 35 normalised tokens: `crates/cenc/src/tests/build.rs` lines 310 to 317, and kopuz-a58c385 `daemon/server/src/download_queue.rs` lines 32 to 37
 
 ```text
-  398 | Clone , Debug ) ]
-  399 | pub struct Built {
-  400 | pub bytes : Vec < u8 > ,
-  401 | pub samples : Vec < Expected > ,
-  403 | pub fragments : Vec < usize > ,
-  404 | }
-  407 | pub
+  310 | pub default_size : Option < u32 > ,
+  312 | pub explicit_base : bool ,
+  313 | pub default_base_is_moof : bool ,
+  314 | pub runs : Vec < RunSpec > ,
+  315 | pub aux : Aux ,
+  317 | pub sbgp : Vec
 ```
 
 
-### 35 normalised tokens: `crates/cenc/src/tests/layouts.rs` lines 161 to 163, and kopuz-a58c385 `apps/kopuz/now_playing/src/lyrics_view.rs` lines 735 to 738
+### 35 normalised tokens: `crates/cenc/src/tests/build.rs` lines 400 to 409, and kopuz-a58c385 `daemon/server/src/ytmusic/browse/search.rs` lines 112 to 120
 
 ```text
-  161 | ) ;
-  162 | let entries : Vec < u32 > = table . iter ( ) . map ( | s | s . entry ) . collect ( ) ;
-  163 | assert_eq ! ( entries ,
+  400 | Clone , Debug ) ]
+  401 | pub struct Built {
+  402 | pub bytes : Vec < u8 > ,
+  403 | pub samples : Vec < Expected > ,
+  405 | pub fragments : Vec < usize > ,
+  406 | }
+  409 | pub
 ```
 
 
-### 35 normalised tokens: `crates/cenc/src/tests/layouts.rs` lines 184 to 186, and kopuz-a58c385 `apps/kopuz/now_playing/src/lyrics_view.rs` lines 735 to 738
+### 35 normalised tokens: `crates/cenc/src/tests/layouts.rs` lines 175 to 177, and kopuz-a58c385 `apps/kopuz/now_playing/src/lyrics_view.rs` lines 735 to 738
 
 ```text
-  184 | ) ;
-  185 | let durations : Vec < u32 > = table . iter ( ) . map ( | s | s . duration ) . collect ( ) ;
-  186 | assert_eq ! ( durations ,
+  175 | ) ;
+  176 | let entries : Vec < u32 > = table . iter ( ) . map ( | s | s . entry ) . collect ( ) ;
+  177 | assert_eq ! ( entries ,
+```
+
+
+### 35 normalised tokens: `crates/cenc/src/tests/layouts.rs` lines 198 to 200, and kopuz-a58c385 `apps/kopuz/now_playing/src/lyrics_view.rs` lines 735 to 738
+
+```text
+  198 | ) ;
+  199 | let durations : Vec < u32 > = table . iter ( ) . map ( | s | s . duration ) . collect ( ) ;
+  200 | assert_eq ! ( durations ,
 ```
 
 
@@ -985,52 +1016,38 @@ Sources:
 ```
 
 
-### 34 normalised tokens: `crates/cenc/src/tests/build.rs` lines 291 to 302, and kopuz-a58c385 `daemon/server/src/ytmusic/discover.rs` lines 111 to 120
+### 34 normalised tokens: `crates/cenc/src/tests/build.rs` lines 339 to 347, and kopuz-a58c385 `apps/legacy/components/src/common/controls/dots_menu.rs` lines 63 to 68
 
 ```text
-  291 | }
-  294 | # [ derive ( Clone , Copy , Debug , PartialEq , Eq ) ]
-  295 | pub enum Aux {
-  296 | Senc ,
-  298 | SaizSaio ,
-  299 | None ,
-  300 | }
-  302 | # [ derive ( Clone , Debug
+  339 | Clone , Debug ) ]
+  340 | pub struct FragmentSpec {
+  341 | pub trafs : Vec < TrafSpec > ,
+  343 | pub gap : Vec < u8 > ,
+  345 | pub mdat64 : bool ,
+  347 | pub mdat_first : bool
 ```
 
 
-### 34 normalised tokens: `crates/cenc/src/tests/build.rs` lines 337 to 345, and kopuz-a58c385 `apps/legacy/components/src/common/controls/dots_menu.rs` lines 63 to 68
+### 34 normalised tokens: `crates/cenc/src/tests/build.rs` lines 1029 to 1034, and kopuz-a58c385 `daemon/db/src/backend/rows.rs` lines 104 to 109
 
 ```text
-  337 | Clone , Debug ) ]
-  338 | pub struct FragmentSpec {
-  339 | pub trafs : Vec < TrafSpec > ,
-  341 | pub gap : Vec < u8 > ,
-  343 | pub mdat64 : bool ,
-  345 | pub mdat_first : bool
+ 1029 | Resolved {
+ 1030 | protected : seig . protected ,
+ 1031 | iv_size : seig . iv_size ,
+ 1032 | key_id : seig . key_id ,
+ 1033 | pattern : seig . pattern ,
+ 1034 | constant_iv : seig . constant_iv . clone (
 ```
 
 
-### 34 normalised tokens: `crates/cenc/src/tests/build.rs` lines 1024 to 1029, and kopuz-a58c385 `daemon/db/src/backend/rows.rs` lines 104 to 109
+### 34 normalised tokens: `crates/cenc/src/tests/build.rs` lines 1030 to 1034, and kopuz-a58c385 `daemon/db/src/backend/migrations.rs` lines 1402 to 1406
 
 ```text
- 1024 | Resolved {
- 1025 | protected : seig . protected ,
- 1026 | iv_size : seig . iv_size ,
- 1027 | key_id : seig . key_id ,
- 1028 | pattern : seig . pattern ,
- 1029 | constant_iv : seig . constant_iv . clone (
-```
-
-
-### 34 normalised tokens: `crates/cenc/src/tests/build.rs` lines 1025 to 1029, and kopuz-a58c385 `daemon/db/src/backend/migrations.rs` lines 1402 to 1406
-
-```text
- 1025 | protected : seig . protected ,
- 1026 | iv_size : seig . iv_size ,
- 1027 | key_id : seig . key_id ,
- 1028 | pattern : seig . pattern ,
- 1029 | constant_iv : seig . constant_iv . clone ( ) ,
+ 1030 | protected : seig . protected ,
+ 1031 | iv_size : seig . iv_size ,
+ 1032 | key_id : seig . key_id ,
+ 1033 | pattern : seig . pattern ,
+ 1034 | constant_iv : seig . constant_iv . clone ( ) ,
 ```
 
 
@@ -1126,37 +1143,37 @@ Sources:
 ```
 
 
-### 33 normalised tokens: `crates/cenc/src/tests/build.rs` lines 338 to 347, and kopuz-a58c385 `daemon/core/src/session/mod.rs` lines 46 to 52
+### 33 normalised tokens: `crates/cenc/src/tests/build.rs` lines 340 to 349, and kopuz-a58c385 `daemon/core/src/session/mod.rs` lines 46 to 52
 
 ```text
-  338 | struct FragmentSpec {
-  339 | pub trafs : Vec < TrafSpec > ,
-  341 | pub gap : Vec < u8 > ,
-  343 | pub mdat64 : bool ,
-  345 | pub mdat_first : bool ,
-  347 | pub pssh : bool
+  340 | struct FragmentSpec {
+  341 | pub trafs : Vec < TrafSpec > ,
+  343 | pub gap : Vec < u8 > ,
+  345 | pub mdat64 : bool ,
+  347 | pub mdat_first : bool ,
+  349 | pub pssh : bool
 ```
 
 
-### 33 normalised tokens: `crates/cenc/src/tests/build.rs` lines 368 to 375, and kopuz-a58c385 `daemon/core/src/external.rs` lines 42 to 49
+### 33 normalised tokens: `crates/cenc/src/tests/build.rs` lines 370 to 377, and kopuz-a58c385 `daemon/core/src/external.rs` lines 42 to 49
 
 ```text
-  368 | }
-  370 | # [ derive ( Clone , Debug , Default ) ]
-  371 | pub struct FileSpec {
-  373 | pub leading : Vec < u8 > ,
-  374 | pub movie : MovieSpec ,
-  375 | pub fragments : Vec
+  370 | }
+  372 | # [ derive ( Clone , Debug , Default ) ]
+  373 | pub struct FileSpec {
+  375 | pub leading : Vec < u8 > ,
+  376 | pub movie : MovieSpec ,
+  377 | pub fragments : Vec
 ```
 
 
-### 33 normalised tokens: `crates/cenc/src/tests/build.rs` lines 1248 to 1251, and kopuz-a58c385 `apps/legacy/hooks/src/use_db_queries.rs` lines 68 to 71
+### 33 normalised tokens: `crates/cenc/src/tests/build.rs` lines 1267 to 1270, and kopuz-a58c385 `apps/legacy/hooks/src/use_db_queries.rs` lines 68 to 71
 
 ```text
- 1248 | corpus ( )
- 1249 | . into_iter ( )
- 1250 | . find ( | ( found , _ ) | * found == name )
- 1251 | . map ( | ( _ , spec ) | spec
+ 1267 | corpus ( )
+ 1268 | . into_iter ( )
+ 1269 | . find ( | ( found , _ ) | * found == name )
+ 1270 | . map ( | ( _ , spec ) | spec
 ```
 
 
@@ -1279,42 +1296,42 @@ Sources:
 ```
 
 
-### 32 normalised tokens: `crates/cenc/src/tests/build.rs` lines 313 to 321, and kopuz-a58c385 `apps/kopuz/library/src/filters.rs` lines 17 to 24
+### 32 normalised tokens: `crates/cenc/src/tests/build.rs` lines 315 to 323, and kopuz-a58c385 `apps/kopuz/library/src/filters.rs` lines 17 to 24
 
 ```text
-  313 | ,
-  315 | pub sbgp : Vec < ( u32 , u32 ) > ,
-  317 | pub sgpd : Vec < Seig > ,
-  318 | }
-  320 | impl TrafSpec {
-  321 | pub fn new ( track_id : u32
+  315 | ,
+  317 | pub sbgp : Vec < ( u32 , u32 ) > ,
+  319 | pub sgpd : Vec < Seig > ,
+  320 | }
+  322 | impl TrafSpec {
+  323 | pub fn new ( track_id : u32
 ```
 
 
-### 32 normalised tokens: `crates/cenc/src/tests/build.rs` lines 878 to 878, and kopuz-a58c385 `daemon/server/src/ytmusic/fixture_tests.rs` lines 191 to 191
+### 32 normalised tokens: `crates/cenc/src/tests/build.rs` lines 880 to 880, and kopuz-a58c385 `daemon/server/src/ytmusic/fixture_tests.rs` lines 191 to 191
 
 ```text
-  878 | let samples : Vec < & SampleSpec > = traf . runs . iter ( ) . flat_map ( | run | & run . samples ) . collect ( ) ;
+  880 | let samples : Vec < & SampleSpec > = traf . runs . iter ( ) . flat_map ( | run | & run . samples ) . collect ( ) ;
 ```
 
 
-### 32 normalised tokens: `crates/cenc/src/tests/build.rs` lines 930 to 936, and kopuz-a58c385 `apps/legacy/kopuz/src/updates.rs` lines 216 to 223
+### 32 normalised tokens: `crates/cenc/src/tests/build.rs` lines 935 to 941, and kopuz-a58c385 `apps/legacy/kopuz/src/updates.rs` lines 216 to 223
 
 ```text
-  930 | fn expected (
-  931 | spec : & FragmentSpec ,
-  932 | movie : & MovieSpec ,
-  933 | moof_at : usize ,
-  934 | layouts : & [ TrafLayout ] ,
-  935 | ) -> Vec < Expected > {
-  936 | let
+  935 | fn expected (
+  936 | spec : & FragmentSpec ,
+  937 | movie : & MovieSpec ,
+  938 | moof_at : usize ,
+  939 | layouts : & [ TrafLayout ] ,
+  940 | ) -> Vec < Expected > {
+  941 | let
 ```
 
 
-### 32 normalised tokens: `crates/cenc/src/tests/build.rs` lines 1295 to 1295, and kopuz-a58c385 `daemon/server/src/applemusic/cenc.rs` lines 4 to 4
+### 32 normalised tokens: `crates/cenc/src/tests/build.rs` lines 1314 to 1314, and kopuz-a58c385 `daemon/server/src/applemusic/cenc.rs` lines 4 to 4
 
 ```text
- 1295 | u32 :: from_be_bytes ( [ bytes [ at ] , bytes [ at + 1 ] , bytes [ at + 2 ] , bytes [ at + 3 ] ] )
+ 1314 | u32 :: from_be_bytes ( [ bytes [ at ] , bytes [ at + 1 ] , bytes [ at + 2 ] , bytes [ at + 3 ] ] )
 ```
 
 
@@ -1326,12 +1343,12 @@ Sources:
 ```
 
 
-### 32 normalised tokens: `crates/cenc/src/tests/layouts.rs` lines 163 to 165, and kopuz-a58c385 `daemon/db/tests/persistence.rs` lines 148 to 151
+### 32 normalised tokens: `crates/cenc/src/tests/layouts.rs` lines 177 to 179, and kopuz-a58c385 `daemon/db/tests/persistence.rs` lines 148 to 151
 
 ```text
-  163 | ] ) ;
-  164 | assert_eq ! ( movie . pssh . len ( ) , 1 ) ;
-  165 | assert_eq ! ( movie . pssh [ 0 ] . key_ids , vec ! [
+  177 | ] ) ;
+  178 | assert_eq ! ( movie . pssh . len ( ) , 1 ) ;
+  179 | assert_eq ! ( movie . pssh [ 0 ] . key_ids , vec ! [
 ```
 
 
@@ -1499,69 +1516,85 @@ Sources:
 ```
 
 
-### 31 normalised tokens: `crates/cenc/src/tests/build.rs` lines 308 to 315, and kopuz-a58c385 `daemon/db/src/lib.rs` lines 56 to 62
+### 31 normalised tokens: `crates/cenc/src/tests/build.rs` lines 288 to 301, and kopuz-a58c385 `apps/kopuz/library/src/filters.rs` lines 162 to 173
 
 ```text
-  308 | u32 > ,
-  310 | pub explicit_base : bool ,
-  311 | pub default_base_is_moof : bool ,
-  312 | pub runs : Vec < RunSpec > ,
-  313 | pub aux : Aux ,
-  315 | pub sbgp : Vec <
+  288 | }
+  289 | flags
+  290 | }
+  291 | }
+  294 | # [ derive ( Clone , Copy , Debug , PartialEq , Eq ) ]
+  295 | pub enum Aux {
+  296 | Senc ,
+  298 | SaizSaio ,
+  300 | EmptySenc ,
+  301 | None ,
 ```
 
 
-### 31 normalised tokens: `crates/cenc/src/tests/build.rs` lines 339 to 347, and kopuz-a58c385 `apps/kopuz/page_home/src/data.rs` lines 35 to 40
+### 31 normalised tokens: `crates/cenc/src/tests/build.rs` lines 310 to 317, and kopuz-a58c385 `daemon/db/src/lib.rs` lines 56 to 62
 
 ```text
-  339 | pub trafs : Vec < TrafSpec > ,
-  341 | pub gap : Vec < u8 > ,
-  343 | pub mdat64 : bool ,
-  345 | pub mdat_first : bool ,
-  347 | pub pssh : bool ,
+  310 | u32 > ,
+  312 | pub explicit_base : bool ,
+  313 | pub default_base_is_moof : bool ,
+  314 | pub runs : Vec < RunSpec > ,
+  315 | pub aux : Aux ,
+  317 | pub sbgp : Vec <
 ```
 
 
-### 31 normalised tokens: `crates/cenc/src/tests/build.rs` lines 394 to 401, and kopuz-a58c385 `apps/legacy/hooks/src/use_db_queries.rs` lines 31 to 39
+### 31 normalised tokens: `crates/cenc/src/tests/build.rs` lines 341 to 349, and kopuz-a58c385 `apps/kopuz/page_home/src/data.rs` lines 35 to 40
 
 ```text
-  394 | ,
-  395 | }
-  398 | # [ derive ( Clone , Debug ) ]
-  399 | pub struct Built {
-  400 | pub bytes : Vec < u8 > ,
-  401 | pub samples : Vec < Expected > ,
+  341 | pub trafs : Vec < TrafSpec > ,
+  343 | pub gap : Vec < u8 > ,
+  345 | pub mdat64 : bool ,
+  347 | pub mdat_first : bool ,
+  349 | pub pssh : bool ,
 ```
 
 
-### 31 normalised tokens: `crates/cenc/src/tests/build.rs` lines 400 to 407, and kopuz-a58c385 `apps/legacy/components/src/playback/controls.rs` lines 121 to 126
+### 31 normalised tokens: `crates/cenc/src/tests/build.rs` lines 396 to 403, and kopuz-a58c385 `apps/legacy/hooks/src/use_db_queries.rs` lines 31 to 39
 
 ```text
-  400 | pub bytes : Vec < u8 > ,
-  401 | pub samples : Vec < Expected > ,
-  403 | pub fragments : Vec < usize > ,
-  404 | }
-  407 | pub fn build ( spec :
+  396 | ,
+  397 | }
+  400 | # [ derive ( Clone , Debug ) ]
+  401 | pub struct Built {
+  402 | pub bytes : Vec < u8 > ,
+  403 | pub samples : Vec < Expected > ,
 ```
 
 
-### 31 normalised tokens: `crates/cenc/src/tests/build.rs` lines 414 to 418, and kopuz-a58c385 `apps/legacy/components/src/navigation/controller.rs` lines 110 to 114
+### 31 normalised tokens: `crates/cenc/src/tests/build.rs` lines 402 to 409, and kopuz-a58c385 `apps/legacy/components/src/playback/controls.rs` lines 121 to 126
 
 ```text
-  414 | cleared ) ;
-  415 | bytes . extend ( built . bytes ) ;
-  416 | samples . extend ( built . samples ) ;
-  417 | fragments . push ( built . moof_at ) ;
-  418 | }
+  402 | pub bytes : Vec < u8 > ,
+  403 | pub samples : Vec < Expected > ,
+  405 | pub fragments : Vec < usize > ,
+  406 | }
+  409 | pub fn build ( spec :
 ```
 
 
-### 31 normalised tokens: `crates/cenc/src/tests/build.rs` lines 1249 to 1251, and kopuz-a58c385 `shared/config/src/store.rs` lines 269 to 271
+### 31 normalised tokens: `crates/cenc/src/tests/build.rs` lines 416 to 420, and kopuz-a58c385 `apps/legacy/components/src/navigation/controller.rs` lines 110 to 114
 
 ```text
- 1249 | . into_iter ( )
- 1250 | . find ( | ( found , _ ) | * found == name )
- 1251 | . map ( | ( _ , spec ) | spec )
+  416 | cleared ) ;
+  417 | bytes . extend ( built . bytes ) ;
+  418 | samples . extend ( built . samples ) ;
+  419 | fragments . push ( built . moof_at ) ;
+  420 | }
+```
+
+
+### 31 normalised tokens: `crates/cenc/src/tests/build.rs` lines 1268 to 1270, and kopuz-a58c385 `shared/config/src/store.rs` lines 269 to 271
+
+```text
+ 1268 | . into_iter ( )
+ 1269 | . find ( | ( found , _ ) | * found == name )
+ 1270 | . map ( | ( _ , spec ) | spec )
 ```
 
 
@@ -1573,21 +1606,21 @@ Sources:
 ```
 
 
-### 31 normalised tokens: `crates/cenc/src/tests/layouts.rs` lines 191 to 193, and kopuz-a58c385 `apps/legacy/pages/src/server/browse.rs` lines 620 to 622
+### 31 normalised tokens: `crates/cenc/src/tests/layouts.rs` lines 205 to 207, and kopuz-a58c385 `apps/legacy/pages/src/server/browse.rs` lines 620 to 622
 
 ```text
-  191 | ) ;
-  192 | assert_eq ! ( movie . pssh . len ( ) , 2 ) ;
-  193 | assert ! ( movie . pssh [ 0 ] . key_ids . is_empty ( )
+  205 | ) ;
+  206 | assert_eq ! ( movie . pssh . len ( ) , 2 ) ;
+  207 | assert ! ( movie . pssh [ 0 ] . key_ids . is_empty ( )
 ```
 
 
-### 31 normalised tokens: `crates/cenc/src/tests/layouts.rs` lines 192 to 194, and kopuz-a58c385 `daemon/core/src/sources/removable.rs` lines 298 to 300
+### 31 normalised tokens: `crates/cenc/src/tests/layouts.rs` lines 206 to 208, and kopuz-a58c385 `daemon/core/src/sources/removable.rs` lines 298 to 300
 
 ```text
-  192 | ) ;
-  193 | assert ! ( movie . pssh [ 0 ] . key_ids . is_empty ( ) ) ;
-  194 | assert_eq ! ( movie . pssh [ 0 ] . data ,
+  206 | ) ;
+  207 | assert ! ( movie . pssh [ 0 ] . key_ids . is_empty ( ) ) ;
+  208 | assert_eq ! ( movie . pssh [ 0 ] . data ,
 ```
 
 
@@ -1839,40 +1872,40 @@ Sources:
 ```
 
 
-### 30 normalised tokens: `crates/cenc/src/tests/build.rs` lines 331 to 338, and kopuz-a58c385 `daemon/core/src/offline_cache.rs` lines 136 to 143
+### 30 normalised tokens: `crates/cenc/src/tests/build.rs` lines 333 to 340, and kopuz-a58c385 `daemon/core/src/offline_cache.rs` lines 136 to 143
 
 ```text
-  331 | Vec :: new ( ) ,
-  332 | sgpd : Vec :: new ( ) ,
-  333 | }
-  334 | }
+  333 | Vec :: new ( ) ,
+  334 | sgpd : Vec :: new ( ) ,
   335 | }
-  337 | # [ derive ( Clone , Debug ) ]
-  338 | pub struct FragmentSpec {
+  336 | }
+  337 | }
+  339 | # [ derive ( Clone , Debug ) ]
+  340 | pub struct FragmentSpec {
 ```
 
 
-### 30 normalised tokens: `crates/cenc/src/tests/build.rs` lines 335 to 341, and kopuz-a58c385 `apps/legacy/hooks/src/use_db_queries.rs` lines 32 to 39
+### 30 normalised tokens: `crates/cenc/src/tests/build.rs` lines 337 to 343, and kopuz-a58c385 `apps/legacy/hooks/src/use_db_queries.rs` lines 32 to 39
 
 ```text
-  335 | }
-  337 | # [ derive ( Clone , Debug ) ]
-  338 | pub struct FragmentSpec {
-  339 | pub trafs : Vec < TrafSpec > ,
-  341 | pub gap : Vec < u8 > ,
+  337 | }
+  339 | # [ derive ( Clone , Debug ) ]
+  340 | pub struct FragmentSpec {
+  341 | pub trafs : Vec < TrafSpec > ,
+  343 | pub gap : Vec < u8 > ,
 ```
 
 
-### 30 normalised tokens: `crates/cenc/src/tests/build.rs` lines 341 to 351, and kopuz-a58c385 `apps/legacy/hooks/src/downloads.rs` lines 24 to 31
+### 30 normalised tokens: `crates/cenc/src/tests/build.rs` lines 343 to 353, and kopuz-a58c385 `apps/legacy/hooks/src/downloads.rs` lines 24 to 31
 
 ```text
-  341 | gap : Vec < u8 > ,
-  343 | pub mdat64 : bool ,
-  345 | pub mdat_first : bool ,
-  347 | pub pssh : bool ,
-  348 | }
-  350 | impl FragmentSpec {
-  351 | pub fn new (
+  343 | gap : Vec < u8 > ,
+  345 | pub mdat64 : bool ,
+  347 | pub mdat_first : bool ,
+  349 | pub pssh : bool ,
+  350 | }
+  352 | impl FragmentSpec {
+  353 | pub fn new (
 ```
 
 
@@ -1895,14 +1928,14 @@ Sources:
 ```
 
 
-### 30 normalised tokens: `crates/cenc/src/tests/layouts.rs` lines 155 to 160, and kopuz-a58c385 `daemon/server/src/subsonic.rs` lines 984 to 994
+### 30 normalised tokens: `crates/cenc/src/tests/layouts.rs` lines 169 to 174, and kopuz-a58c385 `daemon/server/src/subsonic.rs` lines 984 to 994
 
 ```text
-  155 | table . iter ( ) . all ( | s | s . key_id == OTHER_KEY ) ) ;
-  156 | }
-  158 | # [ test ]
-  159 | fn several_sample_entries_for_spatial_audio ( ) {
-  160 | let
+  169 | table . iter ( ) . all ( | s | s . key_id == OTHER_KEY ) ) ;
+  170 | }
+  172 | # [ test ]
+  173 | fn several_sample_entries_for_spatial_audio ( ) {
+  174 | let
 ```
 
 
@@ -1923,36 +1956,36 @@ Sources:
 ```
 
 
-### 64 normalised tokens: `crates/cenc/src/tests/build.rs` lines 374 to 387, and kopuz-1d8b323 `daemon/server/src/lyrics/request.rs` lines 3 to 18
+### 64 normalised tokens: `crates/cenc/src/tests/build.rs` lines 376 to 389, and kopuz-1d8b323 `daemon/server/src/lyrics/request.rs` lines 3 to 18
 
 ```text
-  374 | pub movie : MovieSpec ,
-  375 | pub fragments : Vec < FragmentSpec > ,
-  377 | pub trailing : Vec < u8 > ,
-  378 | }
-  381 | # [ derive ( Clone , Debug , PartialEq , Eq ) ]
-  382 | pub struct Expected {
-  383 | pub offset : usize ,
-  384 | pub size : usize ,
-  385 | pub duration : u32 ,
-  386 | pub fragment : usize ,
-  387 | pub entry : u32 ,
+  376 | pub movie : MovieSpec ,
+  377 | pub fragments : Vec < FragmentSpec > ,
+  379 | pub trailing : Vec < u8 > ,
+  380 | }
+  383 | # [ derive ( Clone , Debug , PartialEq , Eq ) ]
+  384 | pub struct Expected {
+  385 | pub offset : usize ,
+  386 | pub size : usize ,
+  387 | pub duration : u32 ,
+  388 | pub fragment : usize ,
+  389 | pub entry : u32 ,
 ```
 
 
-### 60 normalised tokens: `crates/cenc/src/tests/build.rs` lines 302 to 313, and kopuz-1d8b323 `shared/api/src/catalog.rs` lines 81 to 94
+### 60 normalised tokens: `crates/cenc/src/tests/build.rs` lines 304 to 315, and kopuz-1d8b323 `shared/api/src/catalog.rs` lines 81 to 94
 
 ```text
-  302 | Clone , Debug ) ]
-  303 | pub struct TrafSpec {
-  304 | pub track_id : u32 ,
-  306 | pub description_index : Option < u32 > ,
-  307 | pub default_duration : Option < u32 > ,
-  308 | pub default_size : Option < u32 > ,
-  310 | pub explicit_base : bool ,
-  311 | pub default_base_is_moof : bool ,
-  312 | pub runs : Vec < RunSpec > ,
-  313 | pub aux : Aux
+  304 | Clone , Debug ) ]
+  305 | pub struct TrafSpec {
+  306 | pub track_id : u32 ,
+  308 | pub description_index : Option < u32 > ,
+  309 | pub default_duration : Option < u32 > ,
+  310 | pub default_size : Option < u32 > ,
+  312 | pub explicit_base : bool ,
+  313 | pub default_base_is_moof : bool ,
+  314 | pub runs : Vec < RunSpec > ,
+  315 | pub aux : Aux
 ```
 
 
@@ -2022,20 +2055,20 @@ Sources:
 ```
 
 
-### 55 normalised tokens: `crates/cenc/src/tests/build.rs` lines 375 to 388, and kopuz-1d8b323 `daemon/server/src/lyrics/request.rs` lines 24 to 35
+### 55 normalised tokens: `crates/cenc/src/tests/build.rs` lines 377 to 390, and kopuz-1d8b323 `daemon/server/src/lyrics/request.rs` lines 24 to 35
 
 ```text
-  375 | ,
-  377 | pub trailing : Vec < u8 > ,
-  378 | }
-  381 | # [ derive ( Clone , Debug , PartialEq , Eq ) ]
-  382 | pub struct Expected {
-  383 | pub offset : usize ,
-  384 | pub size : usize ,
-  385 | pub duration : u32 ,
-  386 | pub fragment : usize ,
-  387 | pub entry : u32 ,
-  388 | pub key_id :
+  377 | ,
+  379 | pub trailing : Vec < u8 > ,
+  380 | }
+  383 | # [ derive ( Clone , Debug , PartialEq , Eq ) ]
+  384 | pub struct Expected {
+  385 | pub offset : usize ,
+  386 | pub size : usize ,
+  387 | pub duration : u32 ,
+  388 | pub fragment : usize ,
+  389 | pub entry : u32 ,
+  390 | pub key_id :
 ```
 
 
@@ -2071,15 +2104,15 @@ Sources:
 ```
 
 
-### 51 normalised tokens: `crates/cenc/src/tests/build.rs` lines 451 to 456, and kopuz-1d8b323 `daemon/core/src/boot.rs` lines 314 to 321
+### 51 normalised tokens: `crates/cenc/src/tests/build.rs` lines 453 to 458, and kopuz-1d8b323 `daemon/core/src/boot.rs` lines 314 to 321
 
 ```text
-  451 | ) ;
-  452 | trex . extend ( index . to_be_bytes ( ) ) ;
-  453 | trex . extend ( duration . to_be_bytes ( ) ) ;
-  454 | trex . extend ( size . to_be_bytes ( ) ) ;
-  455 | trex . extend ( flags . to_be_bytes ( ) ) ;
-  456 | mvex . extend ( full
+  453 | ) ;
+  454 | trex . extend ( index . to_be_bytes ( ) ) ;
+  455 | trex . extend ( duration . to_be_bytes ( ) ) ;
+  456 | trex . extend ( size . to_be_bytes ( ) ) ;
+  457 | trex . extend ( flags . to_be_bytes ( ) ) ;
+  458 | mvex . extend ( full
 ```
 
 
@@ -2155,17 +2188,17 @@ Sources:
 ```
 
 
-### 44 normalised tokens: `crates/cenc/src/tests/build.rs` lines 373 to 383, and kopuz-1d8b323 `shared/api/src/catalog.rs` lines 88 to 99
+### 44 normalised tokens: `crates/cenc/src/tests/build.rs` lines 375 to 385, and kopuz-1d8b323 `shared/api/src/catalog.rs` lines 88 to 99
 
 ```text
-  373 | ,
-  374 | pub movie : MovieSpec ,
-  375 | pub fragments : Vec < FragmentSpec > ,
-  377 | pub trailing : Vec < u8 > ,
-  378 | }
-  381 | # [ derive ( Clone , Debug , PartialEq , Eq ) ]
-  382 | pub struct Expected {
-  383 | pub offset : usize
+  375 | ,
+  376 | pub movie : MovieSpec ,
+  377 | pub fragments : Vec < FragmentSpec > ,
+  379 | pub trailing : Vec < u8 > ,
+  380 | }
+  383 | # [ derive ( Clone , Debug , PartialEq , Eq ) ]
+  384 | pub struct Expected {
+  385 | pub offset : usize
 ```
 
 
@@ -2197,15 +2230,15 @@ Sources:
 ```
 
 
-### 42 normalised tokens: `crates/cenc/src/tests/build.rs` lines 302 to 308, and kopuz-1d8b323 `apps/legacy/components/src/settings/remote_folders.rs` lines 13 to 18
+### 42 normalised tokens: `crates/cenc/src/tests/build.rs` lines 304 to 310, and kopuz-1d8b323 `apps/legacy/components/src/settings/remote_folders.rs` lines 13 to 18
 
 ```text
-  302 | # [ derive ( Clone , Debug ) ]
-  303 | pub struct TrafSpec {
-  304 | pub track_id : u32 ,
-  306 | pub description_index : Option < u32 > ,
-  307 | pub default_duration : Option < u32 > ,
-  308 | pub default_size : Option < u32 > ,
+  304 | # [ derive ( Clone , Debug ) ]
+  305 | pub struct TrafSpec {
+  306 | pub track_id : u32 ,
+  308 | pub description_index : Option < u32 > ,
+  309 | pub default_duration : Option < u32 > ,
+  310 | pub default_size : Option < u32 > ,
 ```
 
 
@@ -2227,15 +2260,15 @@ Sources:
 ```
 
 
-### 41 normalised tokens: `crates/cenc/src/tests/build.rs` lines 373 to 381, and kopuz-1d8b323 `shared/api/src/library.rs` lines 51 to 59
+### 41 normalised tokens: `crates/cenc/src/tests/build.rs` lines 375 to 383, and kopuz-1d8b323 `shared/api/src/library.rs` lines 51 to 59
 
 ```text
-  373 | pub leading : Vec < u8 > ,
-  374 | pub movie : MovieSpec ,
-  375 | pub fragments : Vec < FragmentSpec > ,
-  377 | pub trailing : Vec < u8 > ,
-  378 | }
-  381 | # [ derive ( Clone , Debug , PartialEq , Eq
+  375 | pub leading : Vec < u8 > ,
+  376 | pub movie : MovieSpec ,
+  377 | pub fragments : Vec < FragmentSpec > ,
+  379 | pub trailing : Vec < u8 > ,
+  380 | }
+  383 | # [ derive ( Clone , Debug , PartialEq , Eq
 ```
 
 
@@ -2441,15 +2474,15 @@ Sources:
 ```
 
 
-### 38 normalised tokens: `crates/cenc/src/tests/build.rs` lines 370 to 377, and kopuz-1d8b323 `vendor/gpui-pre-linux/src/linux/wayland/client.rs` lines 307 to 312
+### 38 normalised tokens: `crates/cenc/src/tests/build.rs` lines 372 to 379, and kopuz-1d8b323 `vendor/gpui-pre-linux/src/linux/wayland/client.rs` lines 307 to 312
 
 ```text
-  370 | Clone , Debug , Default ) ]
-  371 | pub struct FileSpec {
-  373 | pub leading : Vec < u8 > ,
-  374 | pub movie : MovieSpec ,
-  375 | pub fragments : Vec < FragmentSpec > ,
-  377 | pub trailing : Vec < u8
+  372 | Clone , Debug , Default ) ]
+  373 | pub struct FileSpec {
+  375 | pub leading : Vec < u8 > ,
+  376 | pub movie : MovieSpec ,
+  377 | pub fragments : Vec < FragmentSpec > ,
+  379 | pub trailing : Vec < u8
 ```
 
 
@@ -2593,6 +2626,21 @@ Sources:
 ```
 
 
+### 36 normalised tokens: `crates/cenc/src/tests/build.rs` lines 291 to 304, and kopuz-1d8b323 `daemon/server/src/source/types.rs` lines 381 to 392
+
+```text
+  291 | }
+  294 | # [ derive ( Clone , Copy , Debug , PartialEq , Eq ) ]
+  295 | pub enum Aux {
+  296 | Senc ,
+  298 | SaizSaio ,
+  300 | EmptySenc ,
+  301 | None ,
+  302 | }
+  304 | # [ derive ( Clone , Debug
+```
+
+
 ### 36 normalised tokens: `crates/cenc/src/tests/layouts.rs` lines 18 to 20, and kopuz-1d8b323 `daemon/kopuzd/tests/contract.rs` lines 2057 to 2059
 
 ```text
@@ -2678,58 +2726,74 @@ Sources:
 ```
 
 
-### 35 normalised tokens: `crates/cenc/src/tests/build.rs` lines 300 to 307, and kopuz-1d8b323 `daemon/server/src/applemusic/cenc.rs` lines 343 to 354
+### 35 normalised tokens: `crates/cenc/src/tests/build.rs` lines 290 to 304, and kopuz-1d8b323 `apps/kopuz/components/src/track_meta.rs` lines 211 to 228
 
 ```text
-  300 | }
-  302 | # [ derive ( Clone , Debug ) ]
-  303 | pub struct TrafSpec {
-  304 | pub track_id : u32 ,
-  306 | pub description_index : Option < u32 > ,
-  307 | pub default_duration : Option < u32 > ,
+  290 | }
+  291 | }
+  294 | # [ derive ( Clone , Copy , Debug , PartialEq , Eq ) ]
+  295 | pub enum Aux {
+  296 | Senc ,
+  298 | SaizSaio ,
+  300 | EmptySenc ,
+  301 | None ,
+  302 | }
+  304 | # [ derive ( Clone
 ```
 
 
-### 35 normalised tokens: `crates/cenc/src/tests/build.rs` lines 308 to 315, and kopuz-1d8b323 `daemon/server/src/download_queue.rs` lines 32 to 37
+### 35 normalised tokens: `crates/cenc/src/tests/build.rs` lines 302 to 309, and kopuz-1d8b323 `daemon/server/src/applemusic/cenc.rs` lines 343 to 354
 
 ```text
-  308 | pub default_size : Option < u32 > ,
-  310 | pub explicit_base : bool ,
-  311 | pub default_base_is_moof : bool ,
-  312 | pub runs : Vec < RunSpec > ,
-  313 | pub aux : Aux ,
-  315 | pub sbgp : Vec
+  302 | }
+  304 | # [ derive ( Clone , Debug ) ]
+  305 | pub struct TrafSpec {
+  306 | pub track_id : u32 ,
+  308 | pub description_index : Option < u32 > ,
+  309 | pub default_duration : Option < u32 > ,
 ```
 
 
-### 35 normalised tokens: `crates/cenc/src/tests/build.rs` lines 398 to 407, and kopuz-1d8b323 `daemon/server/src/ytmusic/browse/search.rs` lines 112 to 120
+### 35 normalised tokens: `crates/cenc/src/tests/build.rs` lines 310 to 317, and kopuz-1d8b323 `daemon/server/src/download_queue.rs` lines 32 to 37
 
 ```text
-  398 | Clone , Debug ) ]
-  399 | pub struct Built {
-  400 | pub bytes : Vec < u8 > ,
-  401 | pub samples : Vec < Expected > ,
-  403 | pub fragments : Vec < usize > ,
-  404 | }
-  407 | pub
+  310 | pub default_size : Option < u32 > ,
+  312 | pub explicit_base : bool ,
+  313 | pub default_base_is_moof : bool ,
+  314 | pub runs : Vec < RunSpec > ,
+  315 | pub aux : Aux ,
+  317 | pub sbgp : Vec
 ```
 
 
-### 35 normalised tokens: `crates/cenc/src/tests/layouts.rs` lines 161 to 163, and kopuz-1d8b323 `apps/kopuz/now_playing/src/lyrics_view.rs` lines 735 to 738
+### 35 normalised tokens: `crates/cenc/src/tests/build.rs` lines 400 to 409, and kopuz-1d8b323 `daemon/server/src/ytmusic/browse/search.rs` lines 112 to 120
 
 ```text
-  161 | ) ;
-  162 | let entries : Vec < u32 > = table . iter ( ) . map ( | s | s . entry ) . collect ( ) ;
-  163 | assert_eq ! ( entries ,
+  400 | Clone , Debug ) ]
+  401 | pub struct Built {
+  402 | pub bytes : Vec < u8 > ,
+  403 | pub samples : Vec < Expected > ,
+  405 | pub fragments : Vec < usize > ,
+  406 | }
+  409 | pub
 ```
 
 
-### 35 normalised tokens: `crates/cenc/src/tests/layouts.rs` lines 184 to 186, and kopuz-1d8b323 `apps/kopuz/now_playing/src/lyrics_view.rs` lines 735 to 738
+### 35 normalised tokens: `crates/cenc/src/tests/layouts.rs` lines 175 to 177, and kopuz-1d8b323 `apps/kopuz/now_playing/src/lyrics_view.rs` lines 735 to 738
 
 ```text
-  184 | ) ;
-  185 | let durations : Vec < u32 > = table . iter ( ) . map ( | s | s . duration ) . collect ( ) ;
-  186 | assert_eq ! ( durations ,
+  175 | ) ;
+  176 | let entries : Vec < u32 > = table . iter ( ) . map ( | s | s . entry ) . collect ( ) ;
+  177 | assert_eq ! ( entries ,
+```
+
+
+### 35 normalised tokens: `crates/cenc/src/tests/layouts.rs` lines 198 to 200, and kopuz-1d8b323 `apps/kopuz/now_playing/src/lyrics_view.rs` lines 735 to 738
+
+```text
+  198 | ) ;
+  199 | let durations : Vec < u32 > = table . iter ( ) . map ( | s | s . duration ) . collect ( ) ;
+  200 | assert_eq ! ( durations ,
 ```
 
 
@@ -2839,52 +2903,38 @@ Sources:
 ```
 
 
-### 34 normalised tokens: `crates/cenc/src/tests/build.rs` lines 291 to 302, and kopuz-1d8b323 `daemon/server/src/ytmusic/discover.rs` lines 111 to 120
+### 34 normalised tokens: `crates/cenc/src/tests/build.rs` lines 339 to 347, and kopuz-1d8b323 `apps/legacy/components/src/common/controls/dots_menu.rs` lines 63 to 68
 
 ```text
-  291 | }
-  294 | # [ derive ( Clone , Copy , Debug , PartialEq , Eq ) ]
-  295 | pub enum Aux {
-  296 | Senc ,
-  298 | SaizSaio ,
-  299 | None ,
-  300 | }
-  302 | # [ derive ( Clone , Debug
+  339 | Clone , Debug ) ]
+  340 | pub struct FragmentSpec {
+  341 | pub trafs : Vec < TrafSpec > ,
+  343 | pub gap : Vec < u8 > ,
+  345 | pub mdat64 : bool ,
+  347 | pub mdat_first : bool
 ```
 
 
-### 34 normalised tokens: `crates/cenc/src/tests/build.rs` lines 337 to 345, and kopuz-1d8b323 `apps/legacy/components/src/common/controls/dots_menu.rs` lines 63 to 68
+### 34 normalised tokens: `crates/cenc/src/tests/build.rs` lines 1029 to 1034, and kopuz-1d8b323 `daemon/db/src/backend/rows.rs` lines 104 to 109
 
 ```text
-  337 | Clone , Debug ) ]
-  338 | pub struct FragmentSpec {
-  339 | pub trafs : Vec < TrafSpec > ,
-  341 | pub gap : Vec < u8 > ,
-  343 | pub mdat64 : bool ,
-  345 | pub mdat_first : bool
+ 1029 | Resolved {
+ 1030 | protected : seig . protected ,
+ 1031 | iv_size : seig . iv_size ,
+ 1032 | key_id : seig . key_id ,
+ 1033 | pattern : seig . pattern ,
+ 1034 | constant_iv : seig . constant_iv . clone (
 ```
 
 
-### 34 normalised tokens: `crates/cenc/src/tests/build.rs` lines 1024 to 1029, and kopuz-1d8b323 `daemon/db/src/backend/rows.rs` lines 104 to 109
+### 34 normalised tokens: `crates/cenc/src/tests/build.rs` lines 1030 to 1034, and kopuz-1d8b323 `daemon/db/src/backend/migrations.rs` lines 1402 to 1406
 
 ```text
- 1024 | Resolved {
- 1025 | protected : seig . protected ,
- 1026 | iv_size : seig . iv_size ,
- 1027 | key_id : seig . key_id ,
- 1028 | pattern : seig . pattern ,
- 1029 | constant_iv : seig . constant_iv . clone (
-```
-
-
-### 34 normalised tokens: `crates/cenc/src/tests/build.rs` lines 1025 to 1029, and kopuz-1d8b323 `daemon/db/src/backend/migrations.rs` lines 1402 to 1406
-
-```text
- 1025 | protected : seig . protected ,
- 1026 | iv_size : seig . iv_size ,
- 1027 | key_id : seig . key_id ,
- 1028 | pattern : seig . pattern ,
- 1029 | constant_iv : seig . constant_iv . clone ( ) ,
+ 1030 | protected : seig . protected ,
+ 1031 | iv_size : seig . iv_size ,
+ 1032 | key_id : seig . key_id ,
+ 1033 | pattern : seig . pattern ,
+ 1034 | constant_iv : seig . constant_iv . clone ( ) ,
 ```
 
 
@@ -2980,37 +3030,37 @@ Sources:
 ```
 
 
-### 33 normalised tokens: `crates/cenc/src/tests/build.rs` lines 338 to 347, and kopuz-1d8b323 `daemon/core/src/session/mod.rs` lines 46 to 52
+### 33 normalised tokens: `crates/cenc/src/tests/build.rs` lines 340 to 349, and kopuz-1d8b323 `daemon/core/src/session/mod.rs` lines 46 to 52
 
 ```text
-  338 | struct FragmentSpec {
-  339 | pub trafs : Vec < TrafSpec > ,
-  341 | pub gap : Vec < u8 > ,
-  343 | pub mdat64 : bool ,
-  345 | pub mdat_first : bool ,
-  347 | pub pssh : bool
+  340 | struct FragmentSpec {
+  341 | pub trafs : Vec < TrafSpec > ,
+  343 | pub gap : Vec < u8 > ,
+  345 | pub mdat64 : bool ,
+  347 | pub mdat_first : bool ,
+  349 | pub pssh : bool
 ```
 
 
-### 33 normalised tokens: `crates/cenc/src/tests/build.rs` lines 368 to 375, and kopuz-1d8b323 `daemon/core/src/external.rs` lines 42 to 49
+### 33 normalised tokens: `crates/cenc/src/tests/build.rs` lines 370 to 377, and kopuz-1d8b323 `daemon/core/src/external.rs` lines 42 to 49
 
 ```text
-  368 | }
-  370 | # [ derive ( Clone , Debug , Default ) ]
-  371 | pub struct FileSpec {
-  373 | pub leading : Vec < u8 > ,
-  374 | pub movie : MovieSpec ,
-  375 | pub fragments : Vec
+  370 | }
+  372 | # [ derive ( Clone , Debug , Default ) ]
+  373 | pub struct FileSpec {
+  375 | pub leading : Vec < u8 > ,
+  376 | pub movie : MovieSpec ,
+  377 | pub fragments : Vec
 ```
 
 
-### 33 normalised tokens: `crates/cenc/src/tests/build.rs` lines 1248 to 1251, and kopuz-1d8b323 `apps/legacy/hooks/src/use_db_queries.rs` lines 68 to 71
+### 33 normalised tokens: `crates/cenc/src/tests/build.rs` lines 1267 to 1270, and kopuz-1d8b323 `apps/legacy/hooks/src/use_db_queries.rs` lines 68 to 71
 
 ```text
- 1248 | corpus ( )
- 1249 | . into_iter ( )
- 1250 | . find ( | ( found , _ ) | * found == name )
- 1251 | . map ( | ( _ , spec ) | spec
+ 1267 | corpus ( )
+ 1268 | . into_iter ( )
+ 1269 | . find ( | ( found , _ ) | * found == name )
+ 1270 | . map ( | ( _ , spec ) | spec
 ```
 
 
@@ -3133,42 +3183,42 @@ Sources:
 ```
 
 
-### 32 normalised tokens: `crates/cenc/src/tests/build.rs` lines 313 to 321, and kopuz-1d8b323 `apps/kopuz/library/src/filters.rs` lines 17 to 24
+### 32 normalised tokens: `crates/cenc/src/tests/build.rs` lines 315 to 323, and kopuz-1d8b323 `apps/kopuz/library/src/filters.rs` lines 17 to 24
 
 ```text
-  313 | ,
-  315 | pub sbgp : Vec < ( u32 , u32 ) > ,
-  317 | pub sgpd : Vec < Seig > ,
-  318 | }
-  320 | impl TrafSpec {
-  321 | pub fn new ( track_id : u32
+  315 | ,
+  317 | pub sbgp : Vec < ( u32 , u32 ) > ,
+  319 | pub sgpd : Vec < Seig > ,
+  320 | }
+  322 | impl TrafSpec {
+  323 | pub fn new ( track_id : u32
 ```
 
 
-### 32 normalised tokens: `crates/cenc/src/tests/build.rs` lines 878 to 878, and kopuz-1d8b323 `daemon/server/src/ytmusic/fixture_tests.rs` lines 191 to 191
+### 32 normalised tokens: `crates/cenc/src/tests/build.rs` lines 880 to 880, and kopuz-1d8b323 `daemon/server/src/ytmusic/fixture_tests.rs` lines 191 to 191
 
 ```text
-  878 | let samples : Vec < & SampleSpec > = traf . runs . iter ( ) . flat_map ( | run | & run . samples ) . collect ( ) ;
+  880 | let samples : Vec < & SampleSpec > = traf . runs . iter ( ) . flat_map ( | run | & run . samples ) . collect ( ) ;
 ```
 
 
-### 32 normalised tokens: `crates/cenc/src/tests/build.rs` lines 930 to 936, and kopuz-1d8b323 `apps/legacy/kopuz/src/updates.rs` lines 216 to 223
+### 32 normalised tokens: `crates/cenc/src/tests/build.rs` lines 935 to 941, and kopuz-1d8b323 `apps/legacy/kopuz/src/updates.rs` lines 216 to 223
 
 ```text
-  930 | fn expected (
-  931 | spec : & FragmentSpec ,
-  932 | movie : & MovieSpec ,
-  933 | moof_at : usize ,
-  934 | layouts : & [ TrafLayout ] ,
-  935 | ) -> Vec < Expected > {
-  936 | let
+  935 | fn expected (
+  936 | spec : & FragmentSpec ,
+  937 | movie : & MovieSpec ,
+  938 | moof_at : usize ,
+  939 | layouts : & [ TrafLayout ] ,
+  940 | ) -> Vec < Expected > {
+  941 | let
 ```
 
 
-### 32 normalised tokens: `crates/cenc/src/tests/build.rs` lines 1295 to 1295, and kopuz-1d8b323 `daemon/server/src/applemusic/cenc.rs` lines 4 to 4
+### 32 normalised tokens: `crates/cenc/src/tests/build.rs` lines 1314 to 1314, and kopuz-1d8b323 `daemon/server/src/applemusic/cenc.rs` lines 4 to 4
 
 ```text
- 1295 | u32 :: from_be_bytes ( [ bytes [ at ] , bytes [ at + 1 ] , bytes [ at + 2 ] , bytes [ at + 3 ] ] )
+ 1314 | u32 :: from_be_bytes ( [ bytes [ at ] , bytes [ at + 1 ] , bytes [ at + 2 ] , bytes [ at + 3 ] ] )
 ```
 
 
@@ -3180,12 +3230,12 @@ Sources:
 ```
 
 
-### 32 normalised tokens: `crates/cenc/src/tests/layouts.rs` lines 163 to 165, and kopuz-1d8b323 `daemon/db/tests/persistence.rs` lines 148 to 151
+### 32 normalised tokens: `crates/cenc/src/tests/layouts.rs` lines 177 to 179, and kopuz-1d8b323 `daemon/db/tests/persistence.rs` lines 148 to 151
 
 ```text
-  163 | ] ) ;
-  164 | assert_eq ! ( movie . pssh . len ( ) , 1 ) ;
-  165 | assert_eq ! ( movie . pssh [ 0 ] . key_ids , vec ! [
+  177 | ] ) ;
+  178 | assert_eq ! ( movie . pssh . len ( ) , 1 ) ;
+  179 | assert_eq ! ( movie . pssh [ 0 ] . key_ids , vec ! [
 ```
 
 
@@ -3328,69 +3378,85 @@ Sources:
 ```
 
 
-### 31 normalised tokens: `crates/cenc/src/tests/build.rs` lines 308 to 315, and kopuz-1d8b323 `daemon/db/src/lib.rs` lines 56 to 62
+### 31 normalised tokens: `crates/cenc/src/tests/build.rs` lines 288 to 301, and kopuz-1d8b323 `apps/kopuz/library/src/filters.rs` lines 162 to 173
 
 ```text
-  308 | u32 > ,
-  310 | pub explicit_base : bool ,
-  311 | pub default_base_is_moof : bool ,
-  312 | pub runs : Vec < RunSpec > ,
-  313 | pub aux : Aux ,
-  315 | pub sbgp : Vec <
+  288 | }
+  289 | flags
+  290 | }
+  291 | }
+  294 | # [ derive ( Clone , Copy , Debug , PartialEq , Eq ) ]
+  295 | pub enum Aux {
+  296 | Senc ,
+  298 | SaizSaio ,
+  300 | EmptySenc ,
+  301 | None ,
 ```
 
 
-### 31 normalised tokens: `crates/cenc/src/tests/build.rs` lines 339 to 347, and kopuz-1d8b323 `apps/kopuz/page_home/src/data.rs` lines 35 to 40
+### 31 normalised tokens: `crates/cenc/src/tests/build.rs` lines 310 to 317, and kopuz-1d8b323 `daemon/db/src/lib.rs` lines 56 to 62
 
 ```text
-  339 | pub trafs : Vec < TrafSpec > ,
-  341 | pub gap : Vec < u8 > ,
-  343 | pub mdat64 : bool ,
-  345 | pub mdat_first : bool ,
-  347 | pub pssh : bool ,
+  310 | u32 > ,
+  312 | pub explicit_base : bool ,
+  313 | pub default_base_is_moof : bool ,
+  314 | pub runs : Vec < RunSpec > ,
+  315 | pub aux : Aux ,
+  317 | pub sbgp : Vec <
 ```
 
 
-### 31 normalised tokens: `crates/cenc/src/tests/build.rs` lines 394 to 401, and kopuz-1d8b323 `apps/legacy/hooks/src/use_db_queries.rs` lines 31 to 39
+### 31 normalised tokens: `crates/cenc/src/tests/build.rs` lines 341 to 349, and kopuz-1d8b323 `apps/kopuz/page_home/src/data.rs` lines 35 to 40
 
 ```text
-  394 | ,
-  395 | }
-  398 | # [ derive ( Clone , Debug ) ]
-  399 | pub struct Built {
-  400 | pub bytes : Vec < u8 > ,
-  401 | pub samples : Vec < Expected > ,
+  341 | pub trafs : Vec < TrafSpec > ,
+  343 | pub gap : Vec < u8 > ,
+  345 | pub mdat64 : bool ,
+  347 | pub mdat_first : bool ,
+  349 | pub pssh : bool ,
 ```
 
 
-### 31 normalised tokens: `crates/cenc/src/tests/build.rs` lines 400 to 407, and kopuz-1d8b323 `apps/legacy/components/src/playback/controls.rs` lines 121 to 126
+### 31 normalised tokens: `crates/cenc/src/tests/build.rs` lines 396 to 403, and kopuz-1d8b323 `apps/legacy/hooks/src/use_db_queries.rs` lines 31 to 39
 
 ```text
-  400 | pub bytes : Vec < u8 > ,
-  401 | pub samples : Vec < Expected > ,
-  403 | pub fragments : Vec < usize > ,
-  404 | }
-  407 | pub fn build ( spec :
+  396 | ,
+  397 | }
+  400 | # [ derive ( Clone , Debug ) ]
+  401 | pub struct Built {
+  402 | pub bytes : Vec < u8 > ,
+  403 | pub samples : Vec < Expected > ,
 ```
 
 
-### 31 normalised tokens: `crates/cenc/src/tests/build.rs` lines 414 to 418, and kopuz-1d8b323 `apps/legacy/components/src/navigation/controller.rs` lines 110 to 114
+### 31 normalised tokens: `crates/cenc/src/tests/build.rs` lines 402 to 409, and kopuz-1d8b323 `apps/legacy/components/src/playback/controls.rs` lines 121 to 126
 
 ```text
-  414 | cleared ) ;
-  415 | bytes . extend ( built . bytes ) ;
-  416 | samples . extend ( built . samples ) ;
-  417 | fragments . push ( built . moof_at ) ;
-  418 | }
+  402 | pub bytes : Vec < u8 > ,
+  403 | pub samples : Vec < Expected > ,
+  405 | pub fragments : Vec < usize > ,
+  406 | }
+  409 | pub fn build ( spec :
 ```
 
 
-### 31 normalised tokens: `crates/cenc/src/tests/build.rs` lines 1249 to 1251, and kopuz-1d8b323 `shared/config/src/store.rs` lines 269 to 271
+### 31 normalised tokens: `crates/cenc/src/tests/build.rs` lines 416 to 420, and kopuz-1d8b323 `apps/legacy/components/src/navigation/controller.rs` lines 110 to 114
 
 ```text
- 1249 | . into_iter ( )
- 1250 | . find ( | ( found , _ ) | * found == name )
- 1251 | . map ( | ( _ , spec ) | spec )
+  416 | cleared ) ;
+  417 | bytes . extend ( built . bytes ) ;
+  418 | samples . extend ( built . samples ) ;
+  419 | fragments . push ( built . moof_at ) ;
+  420 | }
+```
+
+
+### 31 normalised tokens: `crates/cenc/src/tests/build.rs` lines 1268 to 1270, and kopuz-1d8b323 `shared/config/src/store.rs` lines 269 to 271
+
+```text
+ 1268 | . into_iter ( )
+ 1269 | . find ( | ( found , _ ) | * found == name )
+ 1270 | . map ( | ( _ , spec ) | spec )
 ```
 
 
@@ -3402,21 +3468,21 @@ Sources:
 ```
 
 
-### 31 normalised tokens: `crates/cenc/src/tests/layouts.rs` lines 191 to 193, and kopuz-1d8b323 `apps/legacy/pages/src/server/browse.rs` lines 620 to 622
+### 31 normalised tokens: `crates/cenc/src/tests/layouts.rs` lines 205 to 207, and kopuz-1d8b323 `apps/legacy/pages/src/server/browse.rs` lines 620 to 622
 
 ```text
-  191 | ) ;
-  192 | assert_eq ! ( movie . pssh . len ( ) , 2 ) ;
-  193 | assert ! ( movie . pssh [ 0 ] . key_ids . is_empty ( )
+  205 | ) ;
+  206 | assert_eq ! ( movie . pssh . len ( ) , 2 ) ;
+  207 | assert ! ( movie . pssh [ 0 ] . key_ids . is_empty ( )
 ```
 
 
-### 31 normalised tokens: `crates/cenc/src/tests/layouts.rs` lines 192 to 194, and kopuz-1d8b323 `daemon/core/src/sources/removable.rs` lines 298 to 300
+### 31 normalised tokens: `crates/cenc/src/tests/layouts.rs` lines 206 to 208, and kopuz-1d8b323 `daemon/core/src/sources/removable.rs` lines 298 to 300
 
 ```text
-  192 | ) ;
-  193 | assert ! ( movie . pssh [ 0 ] . key_ids . is_empty ( ) ) ;
-  194 | assert_eq ! ( movie . pssh [ 0 ] . data ,
+  206 | ) ;
+  207 | assert ! ( movie . pssh [ 0 ] . key_ids . is_empty ( ) ) ;
+  208 | assert_eq ! ( movie . pssh [ 0 ] . data ,
 ```
 
 
@@ -3668,40 +3734,40 @@ Sources:
 ```
 
 
-### 30 normalised tokens: `crates/cenc/src/tests/build.rs` lines 331 to 338, and kopuz-1d8b323 `daemon/core/src/offline_cache.rs` lines 136 to 143
+### 30 normalised tokens: `crates/cenc/src/tests/build.rs` lines 333 to 340, and kopuz-1d8b323 `daemon/core/src/offline_cache.rs` lines 136 to 143
 
 ```text
-  331 | Vec :: new ( ) ,
-  332 | sgpd : Vec :: new ( ) ,
-  333 | }
-  334 | }
+  333 | Vec :: new ( ) ,
+  334 | sgpd : Vec :: new ( ) ,
   335 | }
-  337 | # [ derive ( Clone , Debug ) ]
-  338 | pub struct FragmentSpec {
+  336 | }
+  337 | }
+  339 | # [ derive ( Clone , Debug ) ]
+  340 | pub struct FragmentSpec {
 ```
 
 
-### 30 normalised tokens: `crates/cenc/src/tests/build.rs` lines 335 to 341, and kopuz-1d8b323 `apps/legacy/hooks/src/use_db_queries.rs` lines 32 to 39
+### 30 normalised tokens: `crates/cenc/src/tests/build.rs` lines 337 to 343, and kopuz-1d8b323 `apps/legacy/hooks/src/use_db_queries.rs` lines 32 to 39
 
 ```text
-  335 | }
-  337 | # [ derive ( Clone , Debug ) ]
-  338 | pub struct FragmentSpec {
-  339 | pub trafs : Vec < TrafSpec > ,
-  341 | pub gap : Vec < u8 > ,
+  337 | }
+  339 | # [ derive ( Clone , Debug ) ]
+  340 | pub struct FragmentSpec {
+  341 | pub trafs : Vec < TrafSpec > ,
+  343 | pub gap : Vec < u8 > ,
 ```
 
 
-### 30 normalised tokens: `crates/cenc/src/tests/build.rs` lines 341 to 351, and kopuz-1d8b323 `apps/legacy/hooks/src/downloads.rs` lines 24 to 31
+### 30 normalised tokens: `crates/cenc/src/tests/build.rs` lines 343 to 353, and kopuz-1d8b323 `apps/legacy/hooks/src/downloads.rs` lines 24 to 31
 
 ```text
-  341 | gap : Vec < u8 > ,
-  343 | pub mdat64 : bool ,
-  345 | pub mdat_first : bool ,
-  347 | pub pssh : bool ,
-  348 | }
-  350 | impl FragmentSpec {
-  351 | pub fn new (
+  343 | gap : Vec < u8 > ,
+  345 | pub mdat64 : bool ,
+  347 | pub mdat_first : bool ,
+  349 | pub pssh : bool ,
+  350 | }
+  352 | impl FragmentSpec {
+  353 | pub fn new (
 ```
 
 
@@ -3724,28 +3790,28 @@ Sources:
 ```
 
 
-### 30 normalised tokens: `crates/cenc/src/tests/layouts.rs` lines 155 to 160, and kopuz-1d8b323 `daemon/server/src/subsonic.rs` lines 984 to 994
+### 30 normalised tokens: `crates/cenc/src/tests/layouts.rs` lines 169 to 174, and kopuz-1d8b323 `daemon/server/src/subsonic.rs` lines 984 to 994
 
 ```text
-  155 | table . iter ( ) . all ( | s | s . key_id == OTHER_KEY ) ) ;
-  156 | }
-  158 | # [ test ]
-  159 | fn several_sample_entries_for_spatial_audio ( ) {
-  160 | let
+  169 | table . iter ( ) . all ( | s | s . key_id == OTHER_KEY ) ) ;
+  170 | }
+  172 | # [ test ]
+  173 | fn several_sample_entries_for_spatial_audio ( ) {
+  174 | let
 ```
 
 
-### 46 normalised tokens: `crates/cenc/src/tests/build.rs` lines 395 to 407, and fmp4.rs@4522e68 `fmp4.rs` lines 333 to 351
+### 46 normalised tokens: `crates/cenc/src/tests/build.rs` lines 397 to 409, and fmp4.rs@4522e68 `fmp4.rs` lines 333 to 351
 
 ```text
-  395 | }
-  398 | # [ derive ( Clone , Debug ) ]
-  399 | pub struct Built {
-  400 | pub bytes : Vec < u8 > ,
-  401 | pub samples : Vec < Expected > ,
-  403 | pub fragments : Vec < usize > ,
-  404 | }
-  407 | pub fn build ( spec : &
+  397 | }
+  400 | # [ derive ( Clone , Debug ) ]
+  401 | pub struct Built {
+  402 | pub bytes : Vec < u8 > ,
+  403 | pub samples : Vec < Expected > ,
+  405 | pub fragments : Vec < usize > ,
+  406 | }
+  409 | pub fn build ( spec : &
 ```
 
 
@@ -3772,16 +3838,16 @@ Sources:
 ```
 
 
-### 35 normalised tokens: `crates/cenc/src/tests/build.rs` lines 334 to 343, and fmp4.rs@4522e68 `fmp4.rs` lines 332 to 344
+### 35 normalised tokens: `crates/cenc/src/tests/build.rs` lines 336 to 345, and fmp4.rs@4522e68 `fmp4.rs` lines 332 to 344
 
 ```text
-  334 | }
-  335 | }
-  337 | # [ derive ( Clone , Debug ) ]
-  338 | pub struct FragmentSpec {
-  339 | pub trafs : Vec < TrafSpec > ,
-  341 | pub gap : Vec < u8 > ,
-  343 | pub mdat64 : bool
+  336 | }
+  337 | }
+  339 | # [ derive ( Clone , Debug ) ]
+  340 | pub struct FragmentSpec {
+  341 | pub trafs : Vec < TrafSpec > ,
+  343 | pub gap : Vec < u8 > ,
+  345 | pub mdat64 : bool
 ```
 
 
@@ -3796,10 +3862,10 @@ Sources:
 ```
 
 
-### 32 normalised tokens: `crates/cenc/src/tests/build.rs` lines 1295 to 1295, and fmp4.rs@4522e68 `fmp4.rs` lines 10 to 10
+### 32 normalised tokens: `crates/cenc/src/tests/build.rs` lines 1314 to 1314, and fmp4.rs@4522e68 `fmp4.rs` lines 10 to 10
 
 ```text
- 1295 | u32 :: from_be_bytes ( [ bytes [ at ] , bytes [ at + 1 ] , bytes [ at + 2 ] , bytes [ at + 3 ] ] )
+ 1314 | u32 :: from_be_bytes ( [ bytes [ at ] , bytes [ at + 1 ] , bytes [ at + 2 ] , bytes [ at + 3 ] ] )
 ```
 
 
@@ -3945,19 +4011,6 @@ Sources:
 ```
 
 
-### 49 normalised tokens: `crates/cenc/tests/allocation.rs` lines 60 to 69, and tree `crates/widevine/src/native.rs` lines 54 to 62
-
-```text
-   60 | }
-   63 | static MEASURING : Mutex < ( ) > = Mutex :: new ( ( ) ) ;
-   65 | fn measuring ( ) -> MutexGuard < 'static , ( ) > {
-   66 | MEASURING
-   67 | . lock ( )
-   68 | . unwrap_or_else ( | poisoned | poisoned . into_inner ( ) )
-   69 | }
-```
-
-
 ### 48 normalised tokens: `crates/cenc/src/stream.rs` lines 765 to 769, and tree `crates/downloads/src/sealed.rs` lines 261 to 265
 
 ```text
@@ -4024,45 +4077,45 @@ Sources:
 ```
 
 
-### 47 normalised tokens: `crates/cenc/src/tests/build.rs` lines 304 to 313, and tree `crates/local/src/scan.rs` lines 39 to 46
+### 47 normalised tokens: `crates/cenc/src/tests/build.rs` lines 306 to 315, and tree `crates/local/src/scan.rs` lines 39 to 46
 
 ```text
-  304 | ,
-  306 | pub description_index : Option < u32 > ,
-  307 | pub default_duration : Option < u32 > ,
-  308 | pub default_size : Option < u32 > ,
-  310 | pub explicit_base : bool ,
-  311 | pub default_base_is_moof : bool ,
-  312 | pub runs : Vec < RunSpec > ,
-  313 | pub aux : Aux
+  306 | ,
+  308 | pub description_index : Option < u32 > ,
+  309 | pub default_duration : Option < u32 > ,
+  310 | pub default_size : Option < u32 > ,
+  312 | pub explicit_base : bool ,
+  313 | pub default_base_is_moof : bool ,
+  314 | pub runs : Vec < RunSpec > ,
+  315 | pub aux : Aux
 ```
 
 
-### 47 normalised tokens: `crates/cenc/src/tests/build.rs` lines 377 to 388, and tree `crates/app-desktop/src/theme.rs` lines 100 to 111
+### 47 normalised tokens: `crates/cenc/src/tests/build.rs` lines 379 to 390, and tree `crates/app-desktop/src/theme.rs` lines 100 to 111
 
 ```text
-  377 | ,
-  378 | }
-  381 | # [ derive ( Clone , Debug , PartialEq , Eq ) ]
-  382 | pub struct Expected {
-  383 | pub offset : usize ,
-  384 | pub size : usize ,
-  385 | pub duration : u32 ,
-  386 | pub fragment : usize ,
-  387 | pub entry : u32 ,
-  388 | pub key_id :
+  379 | ,
+  380 | }
+  383 | # [ derive ( Clone , Debug , PartialEq , Eq ) ]
+  384 | pub struct Expected {
+  385 | pub offset : usize ,
+  386 | pub size : usize ,
+  387 | pub duration : u32 ,
+  388 | pub fragment : usize ,
+  389 | pub entry : u32 ,
+  390 | pub key_id :
 ```
 
 
-### 47 normalised tokens: `crates/cenc/src/tests/build.rs` lines 451 to 456, and tree `crates/synced/src/tests.rs` lines 111 to 117
+### 47 normalised tokens: `crates/cenc/src/tests/build.rs` lines 453 to 458, and tree `crates/synced/src/tests.rs` lines 111 to 117
 
 ```text
-  451 | ) ;
-  452 | trex . extend ( index . to_be_bytes ( ) ) ;
-  453 | trex . extend ( duration . to_be_bytes ( ) ) ;
-  454 | trex . extend ( size . to_be_bytes ( ) ) ;
-  455 | trex . extend ( flags . to_be_bytes ( ) ) ;
-  456 | mvex
+  453 | ) ;
+  454 | trex . extend ( index . to_be_bytes ( ) ) ;
+  455 | trex . extend ( duration . to_be_bytes ( ) ) ;
+  456 | trex . extend ( size . to_be_bytes ( ) ) ;
+  457 | trex . extend ( flags . to_be_bytes ( ) ) ;
+  458 | mvex
 ```
 
 
@@ -4184,54 +4237,54 @@ Sources:
 ```
 
 
-### 40 normalised tokens: `crates/cenc/src/tests/build.rs` lines 302 to 310, and tree `crates/soundcloud/src/types.rs` lines 24 to 31
+### 40 normalised tokens: `crates/cenc/src/tests/build.rs` lines 304 to 312, and tree `crates/soundcloud/src/types.rs` lines 24 to 31
 
 ```text
-  302 | Debug ) ]
-  303 | pub struct TrafSpec {
-  304 | pub track_id : u32 ,
-  306 | pub description_index : Option < u32 > ,
-  307 | pub default_duration : Option < u32 > ,
-  308 | pub default_size : Option < u32 > ,
-  310 | pub explicit_base : bool
+  304 | Debug ) ]
+  305 | pub struct TrafSpec {
+  306 | pub track_id : u32 ,
+  308 | pub description_index : Option < u32 > ,
+  309 | pub default_duration : Option < u32 > ,
+  310 | pub default_size : Option < u32 > ,
+  312 | pub explicit_base : bool
 ```
 
 
-### 40 normalised tokens: `crates/cenc/src/tests/build.rs` lines 337 to 347, and tree `crates/desktop/src/mpris.rs` lines 46 to 53
+### 40 normalised tokens: `crates/cenc/src/tests/build.rs` lines 339 to 349, and tree `crates/desktop/src/mpris.rs` lines 46 to 53
 
 ```text
-  337 | Clone , Debug ) ]
-  338 | pub struct FragmentSpec {
-  339 | pub trafs : Vec < TrafSpec > ,
-  341 | pub gap : Vec < u8 > ,
-  343 | pub mdat64 : bool ,
-  345 | pub mdat_first : bool ,
-  347 | pub pssh : bool ,
+  339 | Clone , Debug ) ]
+  340 | pub struct FragmentSpec {
+  341 | pub trafs : Vec < TrafSpec > ,
+  343 | pub gap : Vec < u8 > ,
+  345 | pub mdat64 : bool ,
+  347 | pub mdat_first : bool ,
+  349 | pub pssh : bool ,
 ```
 
 
-### 40 normalised tokens: `crates/cenc/src/tests/build.rs` lines 394 to 404, and tree `crates/soundcloud/src/types.rs` lines 101 to 110
+### 40 normalised tokens: `crates/cenc/src/tests/build.rs` lines 396 to 406, and tree `crates/soundcloud/src/types.rs` lines 101 to 110
 
 ```text
-  394 | ,
-  395 | }
-  398 | # [ derive ( Clone , Debug ) ]
-  399 | pub struct Built {
-  400 | pub bytes : Vec < u8 > ,
-  401 | pub samples : Vec < Expected > ,
-  403 | pub fragments : Vec < usize > ,
-  404 | }
+  396 | ,
+  397 | }
+  400 | # [ derive ( Clone , Debug ) ]
+  401 | pub struct Built {
+  402 | pub bytes : Vec < u8 > ,
+  403 | pub samples : Vec < Expected > ,
+  405 | pub fragments : Vec < usize > ,
+  406 | }
 ```
 
 
-### 40 normalised tokens: `crates/cenc/src/tests/build.rs` lines 452 to 456, and tree `crates/synced/src/tests.rs` lines 111 to 116
+### 40 normalised tokens: `crates/cenc/src/tests/build.rs` lines 454 to 458, and tree `crates/synced/src/tests.rs` lines 111 to 116
 
 ```text
-  452 | ) ;
-  453 | trex . extend ( duration . to_be_bytes ( ) ) ;
-  454 | trex . extend ( size . to_be_bytes ( ) ) ;
-  455 | trex . extend ( flags . to_be_bytes ( ) ) ;
-  456 | mvex . extend ( full
+  454 | ) ;
+  455 | trex . extend ( duration . to_be_bytes ( ) ) ;
+  456 | trex . extend ( size . to_be_bytes ( ) ) ;
+  457 | trex . extend ( flags . to_be_bytes ( ) ) ;
+  458 | mvex . extend ( full
 ```
 
 
@@ -4247,29 +4300,29 @@ Sources:
 ```
 
 
-### 39 normalised tokens: `crates/cenc/src/tests/build.rs` lines 300 to 308, and tree `crates/apple-music/src/playback.rs` lines 317 to 331
+### 39 normalised tokens: `crates/cenc/src/tests/build.rs` lines 302 to 310, and tree `crates/apple-music/src/playback.rs` lines 326 to 340
 
 ```text
-  300 | }
-  302 | # [ derive ( Clone , Debug ) ]
-  303 | pub struct TrafSpec {
-  304 | pub track_id : u32 ,
-  306 | pub description_index : Option < u32 > ,
-  307 | pub default_duration : Option < u32 > ,
-  308 | pub default_size : Option
+  302 | }
+  304 | # [ derive ( Clone , Debug ) ]
+  305 | pub struct TrafSpec {
+  306 | pub track_id : u32 ,
+  308 | pub description_index : Option < u32 > ,
+  309 | pub default_duration : Option < u32 > ,
+  310 | pub default_size : Option
 ```
 
 
-### 39 normalised tokens: `crates/cenc/src/tests/build.rs` lines 374 to 383, and tree `crates/local/src/scan.rs` lines 46 to 54
+### 39 normalised tokens: `crates/cenc/src/tests/build.rs` lines 376 to 385, and tree `crates/local/src/scan.rs` lines 46 to 54
 
 ```text
-  374 | ,
-  375 | pub fragments : Vec < FragmentSpec > ,
-  377 | pub trailing : Vec < u8 > ,
-  378 | }
-  381 | # [ derive ( Clone , Debug , PartialEq , Eq ) ]
-  382 | pub struct Expected {
-  383 | pub offset : usize
+  376 | ,
+  377 | pub fragments : Vec < FragmentSpec > ,
+  379 | pub trailing : Vec < u8 > ,
+  380 | }
+  383 | # [ derive ( Clone , Debug , PartialEq , Eq ) ]
+  384 | pub struct Expected {
+  385 | pub offset : usize
 ```
 
 
@@ -4281,6 +4334,18 @@ Sources:
   326 | fn lock ( & self ) -> MutexGuard < '_ , State > {
   327 | self . state . lock ( ) . unwrap_or_else ( | e | e . into_inner ( ) )
   328 | }
+```
+
+
+### 38 normalised tokens: `crates/cenc/src/table.rs` lines 73 to 80, and tree `crates/widevine/src/boundary.rs` lines 54 to 61
+
+```text
+   73 | # [ derive ( Clone , Copy , Debug , PartialEq , Eq ) ]
+   74 | pub ( crate ) struct Fragment {
+   75 | pub start : usize ,
+   76 | pub first_sample : usize ,
+   77 | }
+   80 | # [ derive ( Clone
 ```
 
 
@@ -4346,16 +4411,16 @@ Sources:
 ```
 
 
-### 37 normalised tokens: `crates/cenc/src/tests/build.rs` lines 307 to 315, and tree `crates/app-desktop/src/app.rs` lines 551 to 559
+### 37 normalised tokens: `crates/cenc/src/tests/build.rs` lines 309 to 317, and tree `crates/app-desktop/src/app.rs` lines 551 to 559
 
 ```text
-  307 | ,
-  308 | pub default_size : Option < u32 > ,
-  310 | pub explicit_base : bool ,
-  311 | pub default_base_is_moof : bool ,
-  312 | pub runs : Vec < RunSpec > ,
-  313 | pub aux : Aux ,
-  315 | pub sbgp : Vec <
+  309 | ,
+  310 | pub default_size : Option < u32 > ,
+  312 | pub explicit_base : bool ,
+  313 | pub default_base_is_moof : bool ,
+  314 | pub runs : Vec < RunSpec > ,
+  315 | pub aux : Aux ,
+  317 | pub sbgp : Vec <
 ```
 
 
@@ -4454,32 +4519,32 @@ Sources:
 ```
 
 
-### 35 normalised tokens: `crates/cenc/src/tests/build.rs` lines 374 to 381, and tree `crates/opium-core/src/model.rs` lines 287 to 295
+### 35 normalised tokens: `crates/cenc/src/tests/build.rs` lines 376 to 383, and tree `crates/opium-core/src/model.rs` lines 287 to 295
 
 ```text
-  374 | pub movie : MovieSpec ,
-  375 | pub fragments : Vec < FragmentSpec > ,
-  377 | pub trailing : Vec < u8 > ,
-  378 | }
-  381 | # [ derive ( Clone , Debug , PartialEq , Eq ) ]
+  376 | pub movie : MovieSpec ,
+  377 | pub fragments : Vec < FragmentSpec > ,
+  379 | pub trailing : Vec < u8 > ,
+  380 | }
+  383 | # [ derive ( Clone , Debug , PartialEq , Eq ) ]
 ```
 
 
-### 35 normalised tokens: `crates/cenc/src/tests/layouts.rs` lines 161 to 163, and tree `crates/opium-core/src/queue.rs` lines 434 to 436
+### 35 normalised tokens: `crates/cenc/src/tests/layouts.rs` lines 175 to 177, and tree `crates/opium-core/src/queue.rs` lines 434 to 436
 
 ```text
-  161 | ) ;
-  162 | let entries : Vec < u32 > = table . iter ( ) . map ( | s | s . entry ) . collect ( ) ;
-  163 | assert_eq ! ( entries ,
+  175 | ) ;
+  176 | let entries : Vec < u32 > = table . iter ( ) . map ( | s | s . entry ) . collect ( ) ;
+  177 | assert_eq ! ( entries ,
 ```
 
 
-### 35 normalised tokens: `crates/cenc/src/tests/layouts.rs` lines 184 to 186, and tree `crates/opium-core/src/queue.rs` lines 434 to 436
+### 35 normalised tokens: `crates/cenc/src/tests/layouts.rs` lines 198 to 200, and tree `crates/opium-core/src/queue.rs` lines 434 to 436
 
 ```text
-  184 | ) ;
-  185 | let durations : Vec < u32 > = table . iter ( ) . map ( | s | s . duration ) . collect ( ) ;
-  186 | assert_eq ! ( durations ,
+  198 | ) ;
+  199 | let durations : Vec < u32 > = table . iter ( ) . map ( | s | s . duration ) . collect ( ) ;
+  200 | assert_eq ! ( durations ,
 ```
 
 
@@ -4492,6 +4557,16 @@ Sources:
    19 | pub kind : Kind ,
    21 | pub body : usize ,
    23 | pub end : usize ,
+```
+
+
+### 34 normalised tokens: `crates/cenc/src/fragment.rs` lines 4 to 8, and tree `crates/widevine/src/host.rs` lines 25 to 28
+
+```text
+    4 | :: collections :: HashMap ;
+    6 | use crate :: Error ;
+    7 | use crate :: boxes :: { Body , Children , Header , Kind , skip } ;
+    8 | use crate :: claims :: Claims ;
 ```
 
 
@@ -4509,41 +4584,50 @@ Sources:
 ```
 
 
-### 34 normalised tokens: `crates/cenc/src/tests/build.rs` lines 335 to 343, and tree `crates/soundcloud/src/types.rs` lines 102 to 109
+### 34 normalised tokens: `crates/cenc/src/tests/build.rs` lines 337 to 345, and tree `crates/soundcloud/src/types.rs` lines 102 to 109
 
 ```text
-  335 | }
-  337 | # [ derive ( Clone , Debug ) ]
-  338 | pub struct FragmentSpec {
-  339 | pub trafs : Vec < TrafSpec > ,
-  341 | pub gap : Vec < u8 > ,
-  343 | pub mdat64 : bool
+  337 | }
+  339 | # [ derive ( Clone , Debug ) ]
+  340 | pub struct FragmentSpec {
+  341 | pub trafs : Vec < TrafSpec > ,
+  343 | pub gap : Vec < u8 > ,
+  345 | pub mdat64 : bool
 ```
 
 
-### 34 normalised tokens: `crates/cenc/src/tests/build.rs` lines 373 to 381, and tree `crates/connect/src/lib.rs` lines 188 to 198
+### 34 normalised tokens: `crates/cenc/src/tests/build.rs` lines 375 to 383, and tree `crates/connect/src/lib.rs` lines 188 to 198
 
 ```text
-  373 | ,
-  374 | pub movie : MovieSpec ,
-  375 | pub fragments : Vec < FragmentSpec > ,
-  377 | pub trailing : Vec < u8 > ,
-  378 | }
-  381 | # [ derive ( Clone , Debug , PartialEq , Eq
+  375 | ,
+  376 | pub movie : MovieSpec ,
+  377 | pub fragments : Vec < FragmentSpec > ,
+  379 | pub trailing : Vec < u8 > ,
+  380 | }
+  383 | # [ derive ( Clone , Debug , PartialEq , Eq
 ```
 
 
-### 34 normalised tokens: `crates/cenc/src/tests/build.rs` lines 812 to 819, and tree `crates/app-desktop/src/ui/grid.rs` lines 205 to 212
+### 34 normalised tokens: `crates/cenc/src/tests/build.rs` lines 814 to 821, and tree `crates/app-desktop/src/ui/grid.rs` lines 205 to 212
 
 ```text
-  812 | fn traf_box (
-  813 | traf : & TrafSpec ,
-  814 | track : & TrackSpec ,
-  815 | base : usize ,
-  816 | layout : & TrafLayout ,
-  817 | cleared : bool ,
-  818 | ) -> Vec < u8 > {
-  819 | let
+  814 | fn traf_box (
+  815 | traf : & TrafSpec ,
+  816 | track : & TrackSpec ,
+  817 | base : usize ,
+  818 | layout : & TrafLayout ,
+  819 | cleared : bool ,
+  820 | ) -> Vec < u8 > {
+  821 | let
+```
+
+
+### 34 normalised tokens: `crates/cenc/tests/allocation.rs` lines 5 to 7, and tree `crates/widevine/src/runtime.rs` lines 10 to 12
+
+```text
+    5 | std :: alloc :: { GlobalAlloc , Layout , System } ;
+    6 | use std :: sync :: atomic :: { AtomicUsize , Ordering } ;
+    7 | use std :: sync :: { Mutex , MutexGuard
 ```
 
 
@@ -4582,7 +4666,7 @@ Sources:
 ```
 
 
-### 33 normalised tokens: `crates/cenc/src/stream.rs` lines 645 to 648, and tree `crates/apple-music/src/radio.rs` lines 790 to 793
+### 33 normalised tokens: `crates/cenc/src/stream.rs` lines 645 to 648, and tree `crates/apple-music/src/radio.rs` lines 847 to 850
 
 ```text
   645 | ] ;
@@ -4612,6 +4696,16 @@ Sources:
 ```
 
 
+### 32 normalised tokens: `crates/cenc/src/boxes.rs` lines 15 to 19, and tree `crates/widevine/src/boundary.rs` lines 54 to 57
+
+```text
+   15 | # [ derive ( Clone , Copy , Debug , PartialEq , Eq ) ]
+   16 | pub ( crate ) struct Header {
+   18 | pub at : usize ,
+   19 | pub kind : Kind ,
+```
+
+
 ### 32 normalised tokens: `crates/cenc/src/fragment.rs` lines 106 to 112, and tree `crates/player/src/engine.rs` lines 177 to 185
 
 ```text
@@ -4636,12 +4730,22 @@ Sources:
 ```
 
 
-### 32 normalised tokens: `crates/cenc/src/fragment.rs` lines 300 to 302, and tree `crates/apple-music/src/radio.rs` lines 677 to 679
+### 32 normalised tokens: `crates/cenc/src/fragment.rs` lines 300 to 302, and tree `crates/apple-music/src/radio.rs` lines 690 to 692
 
 ```text
   300 | truns . len ( ) ) ;
   301 | for ( n , trun_box ) in boxes . truns . iter ( ) . enumerate ( ) {
   302 | let before = cx . table
+```
+
+
+### 32 normalised tokens: `crates/cenc/src/movie.rs` lines 114 to 117, and tree `crates/widevine/src/boundary.rs` lines 54 to 57
+
+```text
+  114 | # [ derive ( Clone , Copy , Debug , PartialEq , Eq ) ]
+  115 | pub ( crate ) struct Group {
+  116 | pub protected : bool ,
+  117 | pub iv_size : u8 ,
 ```
 
 
@@ -4715,14 +4819,14 @@ Sources:
 ```
 
 
-### 32 normalised tokens: `crates/cenc/src/tests/build.rs` lines 1025 to 1029, and tree `crates/opium-ffi/src/lib.rs` lines 2060 to 2064
+### 32 normalised tokens: `crates/cenc/src/tests/build.rs` lines 1030 to 1034, and tree `crates/opium-ffi/src/lib.rs` lines 2060 to 2064
 
 ```text
- 1025 | protected : seig . protected ,
- 1026 | iv_size : seig . iv_size ,
- 1027 | key_id : seig . key_id ,
- 1028 | pattern : seig . pattern ,
- 1029 | constant_iv : seig . constant_iv . clone (
+ 1030 | protected : seig . protected ,
+ 1031 | iv_size : seig . iv_size ,
+ 1032 | key_id : seig . key_id ,
+ 1033 | pattern : seig . pattern ,
+ 1034 | constant_iv : seig . constant_iv . clone (
 ```
 
 
@@ -4751,6 +4855,19 @@ Sources:
   108 | senc : Option < Header > ,
   109 | saiz : Option < Header > ,
   110 | saio : Option
+```
+
+
+### 31 normalised tokens: `crates/cenc/src/movie.rs` lines 75 to 86, and tree `crates/widevine/src/lib.rs` lines 75 to 86
+
+```text
+   75 | ,
+   77 | pub pattern : Pattern ,
+   78 | }
+   81 | # [ derive ( Clone , Copy , Debug , Hash , PartialEq , Eq ) ]
+   82 | pub enum Scheme {
+   84 | Cenc ,
+   86 | Cens
 ```
 
 
@@ -4843,27 +4960,27 @@ Sources:
 ```
 
 
-### 31 normalised tokens: `crates/cenc/src/tests/build.rs` lines 313 to 321, and tree `crates/desktop/src/devices.rs` lines 16 to 26
+### 31 normalised tokens: `crates/cenc/src/tests/build.rs` lines 315 to 323, and tree `crates/desktop/src/devices.rs` lines 16 to 26
 
 ```text
-  313 | ,
-  315 | pub sbgp : Vec < ( u32 , u32 ) > ,
-  317 | pub sgpd : Vec < Seig > ,
-  318 | }
-  320 | impl TrafSpec {
-  321 | pub fn new ( track_id :
+  315 | ,
+  317 | pub sbgp : Vec < ( u32 , u32 ) > ,
+  319 | pub sgpd : Vec < Seig > ,
+  320 | }
+  322 | impl TrafSpec {
+  323 | pub fn new ( track_id :
 ```
 
 
-### 31 normalised tokens: `crates/cenc/src/tests/build.rs` lines 1024 to 1029, and tree `crates/app-desktop/src/theme.rs` lines 60 to 65
+### 31 normalised tokens: `crates/cenc/src/tests/build.rs` lines 1029 to 1034, and tree `crates/app-desktop/src/theme.rs` lines 60 to 65
 
 ```text
- 1024 | Resolved {
- 1025 | protected : seig . protected ,
- 1026 | iv_size : seig . iv_size ,
- 1027 | key_id : seig . key_id ,
- 1028 | pattern : seig . pattern ,
- 1029 | constant_iv : seig . constant_iv
+ 1029 | Resolved {
+ 1030 | protected : seig . protected ,
+ 1031 | iv_size : seig . iv_size ,
+ 1032 | key_id : seig . key_id ,
+ 1033 | pattern : seig . pattern ,
+ 1034 | constant_iv : seig . constant_iv
 ```
 
 
@@ -4873,6 +4990,16 @@ Sources:
     5 | GlobalAlloc , Layout , System } ;
     6 | use std :: sync :: atomic :: { AtomicUsize , Ordering } ;
     7 | use std :: sync :: { Mutex , MutexGuard } ;
+```
+
+
+### 30 normalised tokens: `crates/cenc/src/claims.rs` lines 15 to 19, and tree `crates/widevine/src/tests/fake.rs` lines 120 to 123
+
+```text
+   15 | # [ derive ( Debug , Default ) ]
+   16 | pub ( crate ) struct Claims {
+   17 | in_order : Vec < ( usize , usize ) > ,
+   19 | out_of_order : BTreeMap
 ```
 
 
@@ -4978,21 +5105,21 @@ Sources:
 ```
 
 
-### 30 normalised tokens: `crates/cenc/src/tests/build.rs` lines 846 to 848, and tree `crates/app-desktop/src/ui/home.rs` lines 625 to 627
+### 30 normalised tokens: `crates/cenc/src/tests/build.rs` lines 848 to 850, and tree `crates/app-desktop/src/ui/home.rs` lines 625 to 627
 
 ```text
-  846 | . to_be_bytes ( ) ) ) ;
-  847 | let mut run_end = base ;
-  848 | for ( run , start ) in traf . runs . iter ( ) . zip (
+  848 | . to_be_bytes ( ) ) ) ;
+  849 | let mut run_end = base ;
+  850 | for ( run , start ) in traf . runs . iter ( ) . zip (
 ```
 
 
-### 30 normalised tokens: `crates/cenc/src/tests/build.rs` lines 1249 to 1251, and tree `crates/app-desktop/src/app.rs` lines 1105 to 1107
+### 30 normalised tokens: `crates/cenc/src/tests/build.rs` lines 1268 to 1270, and tree `crates/app-desktop/src/app.rs` lines 1105 to 1107
 
 ```text
- 1249 | . into_iter ( )
- 1250 | . find ( | ( found , _ ) | * found == name )
- 1251 | . map ( | ( _ , spec ) | spec
+ 1268 | . into_iter ( )
+ 1269 | . find ( | ( found , _ ) | * found == name )
+ 1270 | . map ( | ( _ , spec ) | spec
 ```
 
 
@@ -5003,6 +5130,69 @@ Sources:
    50 | assert_eq ! ( movie . tracks . len ( ) , 1 ) ;
    51 | let track = & movie . tracks [ 0 ] ;
    52 | assert_eq ! (
+```
+
+
+### 30 normalised tokens: `crates/cenc/src/tests/other.rs` lines 131 to 133, and tree `crates/widevine/src/tests/loader.rs` lines 276 to 278
+
+```text
+  131 | check :: < crate :: Track > ( ) ;
+  132 | check :: < crate :: TrackDefaults > ( ) ;
+  133 | check :: < crate :: SampleEntry > ( ) ;
+```
+
+
+### 30 normalised tokens: `crates/cenc/src/tests/other.rs` lines 132 to 134, and tree `crates/widevine/src/tests/loader.rs` lines 276 to 278
+
+```text
+  132 | check :: < crate :: TrackDefaults > ( ) ;
+  133 | check :: < crate :: SampleEntry > ( ) ;
+  134 | check :: < crate :: Protection > ( ) ;
+```
+
+
+### 30 normalised tokens: `crates/cenc/src/tests/other.rs` lines 133 to 135, and tree `crates/widevine/src/tests/loader.rs` lines 276 to 278
+
+```text
+  133 | check :: < crate :: SampleEntry > ( ) ;
+  134 | check :: < crate :: Protection > ( ) ;
+  135 | check :: < crate :: Scheme > ( ) ;
+```
+
+
+### 30 normalised tokens: `crates/cenc/src/tests/other.rs` lines 134 to 136, and tree `crates/widevine/src/tests/loader.rs` lines 276 to 278
+
+```text
+  134 | check :: < crate :: Protection > ( ) ;
+  135 | check :: < crate :: Scheme > ( ) ;
+  136 | check :: < crate :: Pattern > ( ) ;
+```
+
+
+### 30 normalised tokens: `crates/cenc/src/tests/other.rs` lines 135 to 137, and tree `crates/widevine/src/tests/loader.rs` lines 276 to 278
+
+```text
+  135 | check :: < crate :: Scheme > ( ) ;
+  136 | check :: < crate :: Pattern > ( ) ;
+  137 | check :: < crate :: Pssh > ( ) ;
+```
+
+
+### 30 normalised tokens: `crates/cenc/src/tests/other.rs` lines 136 to 138, and tree `crates/widevine/src/tests/loader.rs` lines 276 to 278
+
+```text
+  136 | check :: < crate :: Pattern > ( ) ;
+  137 | check :: < crate :: Pssh > ( ) ;
+  138 | check :: < crate :: Indexer > ( ) ;
+```
+
+
+### 30 normalised tokens: `crates/cenc/src/tests/other.rs` lines 137 to 139, and tree `crates/widevine/src/tests/loader.rs` lines 276 to 278
+
+```text
+  137 | check :: < crate :: Pssh > ( ) ;
+  138 | check :: < crate :: Indexer > ( ) ;
+  139 | check :: < crate :: SampleTable > ( ) ;
 ```
 
 

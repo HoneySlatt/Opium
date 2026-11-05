@@ -45,16 +45,14 @@ work is in [`PLAN.md`](PLAN.md); a stage's audit adds what it leaves open.
   - the test tone `player/tests/data/tone.opus` has no recorded origin;
   - the examples `am fetch`, `am live` and `sc fetch` write decrypted protected audio to a file.
 - **Left by M1.10** (`cenc` written again; [evidence](audits/2026-11-05-cenc-clean-room.md)):
-  - Behaviour is checked on built files and on one file of FFmpeg's, never yet on Apple's or
-    SoundCloud's: their protected songs, Spatial Audio and the live radio are played with the
-    owner after M1.11 and M1.12 ([PLAN](PLAN.md#m110-to-m112--kopuzs-code-written-again)).
-  - The live radio's segments once fell back on the playlist's IV when the init gave none; a
-    protected sample without a constant IV or a per-sample IV is now an error, as the standard
-    asks. Whether Apple's stations ever relied on it is unknown until the radio is played.
+  - Played with the owner on 2026-11-05: an Apple Music song in stereo, one in Spatial Audio, and
+    the live radio Apple Music 1, which first failed on an empty `senc` the specification called
+    malformed, fixed through the clean room ([evidence](audits/2026-11-05-cenc-clean-room.md)).
+    SoundCloud's protected stream is not played yet: the album tried was served as previews only,
+    the account having no Go+.
   - The new parser is stricter than the old: a `tenc` whose `default_isProtected` is 0, or stray
-    bytes after a sample entry's boxes, are errors; Spatial Audio's entries are made one only when
-    they share one `AudioSpecificConfig`. Any of them in Apple's files would stop a song, which
-    playing them with the owner shows.
+    bytes after a sample entry's boxes, are errors. Apple's songs, Spatial Audio and the radio
+    played; other files of theirs may still meet them.
   - A downloading stream makes the file clear again at each new fragment, over every fragment
     indexed: time in the square of the fragments. 0.45 ms in all for a four-minute song, 0.76 s
     over a four-hour download, its last calls 0.24 ms each under the stream's lock
@@ -64,12 +62,14 @@ work is in [`PLAN.md`](PLAN.md); a stage's audit adds what it leaves open.
     ([ADR-0026](adr/0026-the-egui-window-frozen-until-the-move.md)), and M1.13 rewrites it.
 - **Left by M1.11** (`widevine` written again; [evidence](audits/2026-11-05-widevine-clean-room.md)):
   - Checked with the owner's CDM: loading, initialising, a licence request, the figures before
-    and after ([measured](measurements.md#the-cdm-m111-2026-11-05)). Not yet: Apple's and
-    SoundCloud's protected songs played end to end, Spatial Audio and the live radio, with the
-    owner after M1.12. A licence now waits for the exact key id its decrypts use: a wrong one
-    costs ten seconds before "the CDM did not take the licence".
+    and after ([measured](measurements.md#the-cdm-m111-2026-11-05)); played with the owner, on
+    the owner's profile: Apple Music in stereo and in Spatial Audio, the live radio. Not yet:
+    SoundCloud's protected stream (above). A licence now waits for the exact key id its decrypts
+    use: a wrong one costs ten seconds before "the CDM did not take the licence".
   - The live radio's rotated keys now ask for the key id their PSSH names; whether Apple's
-    stations rotate keys at all is unknown until the radio is played.
+    stations rotate keys is not known: none rotated while the radio played.
+  - Each licence logs its expiry twice ("now expires at …", then "at 0"): two lines a song on
+    standard error, more than the log needs.
   - A buffer the CDM sets on a failed decrypt is not destroyed: the header says to ignore it, and
     the clean side chose a rare leak over a possible double free.
   - Quitting right after the CDM is loaded takes up to 0.85 s more once the window has closed:

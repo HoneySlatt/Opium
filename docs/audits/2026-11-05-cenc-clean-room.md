@@ -188,6 +188,32 @@ key), with throwaway programs outside the tree:
 Not checked: Apple's and SoundCloud's own files, `cbcs`, Spatial Audio and the live radio, which
 need the owner's accounts and CDM (with the owner, after M1.12).
 
+## Round 4: Apple's live radio, played with the owner
+
+After M1.11, playing with the owner on the owner's profile, Apple Music in stereo and in Spatial
+Audio played, but the live radio Apple Music 1 did not: a throwaway diagnostic (statistics only,
+nothing played or written; two licences, with the owner's go) found the same error before and after
+M1.11, "the `senc` at 0xb367 counts 0 samples where its `traf` has 750". Apple's radio puts an empty
+`senc` in every fragment of its `cbcs` streams, with a constant IV; the specification, the dirty
+side's, called it malformed.
+
+- The specification answered first (commit `4f7e597`): an empty `senc`, without the subsample flag,
+  carries nothing when every sample of its `traf` has an IV size of 0; malformed otherwise.
+- A new export, a new repository holding `crates/cenc` as it was at `734f535` with that answer
+  (commit `11b3bcb`), and a new agent of the clean side, which never read Kopuz or `fmp4.rs`:
+  [its brief](2026-11-05-cenc-clean-room/brief-round-4.md). It asked no question.
+- Its change (commit `0f5cca2`): the rule in the one place `senc` is read; a built file of the
+  radio's shape, which failed before; the cases that stay errors (the subsample flag, samples that
+  need an IV, a `seig` group giving one its own IV, bytes left over, another count). The four fuzz
+  targets ran 60 s each without a fault; indexing is no slower (0.32 ms), the table the same
+  46.2 bytes a sample.
+- Its tool calls: 36, 34 shell and 2 edits, none outside the export, no network, every `nix` call
+  `--offline`.
+- The comparison run again ([report](2026-11-05-cenc-clean-room/comparison.md)): the same figures
+  against Kopuz and `fmp4.rs`, but three runs of 31 to 36 normalised tokens more, a test's
+  `#[derive(…)] pub enum` against unrelated code of Kopuz's interface.
+- The radio then played, on the owner's profile.
+
 ## Better than Kopuz
 
 What the [licence audit](2026-11-05-licence.md#4-what-kopuz-does-badly-here-and-opium-with-it)

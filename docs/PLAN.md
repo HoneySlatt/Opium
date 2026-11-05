@@ -18,8 +18,9 @@ Every milestone ends with the definition of done in [`AGENTS.md`](../AGENTS.md#d
   working is fixed.
 - **Next: M1.12**, `apple-music`'s derived items written again in a clean room from
   [`specs/apple-music-playback.md`](specs/apple-music-playback.md).
-- With the owner, now due: Apple Music's and SoundCloud's protected songs, Spatial Audio and the
-  live radio played, never yet on the new `cenc` and `widevine`.
+- Played with the owner on 2026-11-05, on the new `cenc` and `widevine`: Apple Music in stereo and
+  Spatial Audio, the live radio (after a fix to `cenc`). Still due: a SoundCloud song served
+  encrypted, which the owner's account did not get for the album tried.
 - The standby ends when SlimeEngine's Stage 6d plans its ports: Opium's desktop is the first of
   four, during the stage, and the phone moves to uwui without condition
   ([ADR-0031](adr/0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md)). Stage 1 closes

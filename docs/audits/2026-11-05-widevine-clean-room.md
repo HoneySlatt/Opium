@@ -266,5 +266,9 @@ found in the CDM's host, each now handled and tested (`crates/widevine/src/tests
 - CDM versions are compared as numbers; Flatpak's folders, Edge, Opera and Vivaldi's snapshot are
   known; the CDM is never downloaded.
 
-Not checked: Apple's and SoundCloud's protected songs played end to end, Spatial Audio and the live
-radio; they are played with the owner after M1.12.
+Played with the owner after the milestone, on the owner's profile with the new build: an Apple Music
+song in stereo and one in Spatial Audio; the live radio, once `cenc` read the empty `senc` Apple's
+radio sends (a fourth round of `cenc`'s clean room). Not played: SoundCloud's protected stream, the
+album tried being served as previews only, without Go+. The run also showed a crash in the egui
+window, older than this work: the Songs page's Downloaded chip switched its list after the rows'
+order was made; fixed (commit `ebd42ca`), and checked by the owner's clicks.
