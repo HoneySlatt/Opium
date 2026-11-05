@@ -112,7 +112,7 @@ when it exceeds its budget by more than its noise.
 
 | Topic | Decision |
 |---|---|
-| Licence | GPL-3.0-or-later ([ADR-0001](adr/0001-gpl-3-0-or-later.md)) until M1.13, then MIT OR Apache-2.0, once the code adapted from Kopuz is written again in a clean room ([ADR-0030](adr/0030-the-kopuz-code-rewritten-in-a-clean-room.md)) |
+| Licence | GPL-3.0-or-later ([ADR-0001](adr/0001-gpl-3-0-or-later.md)), kept after the code adapted from Kopuz is written again in a clean room ([ADR-0030](adr/0030-the-kopuz-code-rewritten-in-a-clean-room.md), [ADR-0032](adr/0032-the-gpl-kept-and-kopuzs-code-still-written-again.md)) |
 | Name | Opium, everywhere, no compatibility with the old names ([ADR-0023](adr/0023-the-rename-to-opium.md)) |
 | Services | Apple Music, SoundCloud, Navidrome (OpenSubsonic), the device's own files ([ADR-0016](adr/0016-the-services.md)) |
 | One library | The best copy of each song: files, server, Apple Music, SoundCloud ([ADR-0007](adr/0007-one-library-and-the-best-copy.md)) |
@@ -169,15 +169,16 @@ push, and the rename to Opium is committed with the owner's data moved.
 - What the desktop app needs from a UI framework, in the repository, for SlimeEngine's Stage 6d
   ([`ui-framework-needs.md`](ui-framework-needs.md))
 - The quality bar measured as the app is today, its budgets decided by the owner
-- The code adapted from Kopuz written again in a clean room, then Opium under MIT OR Apache-2.0
-  ([ADR-0030](adr/0030-the-kopuz-code-rewritten-in-a-clean-room.md))
+- The code adapted from Kopuz written again in a clean room, Opium still under the GPL
+  ([ADR-0030](adr/0030-the-kopuz-code-rewritten-in-a-clean-room.md),
+  [ADR-0032](adr/0032-the-gpl-kept-and-kopuzs-code-still-written-again.md))
 - The figures uwui must match, measured under egui and on the Compose phone
   ([ADR-0031](adr/0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md))
 
 **Exit.** `scripts/check.sh` and `scripts/check.sh android` pass locally and CI is green on `main`;
 the owner's computer and phone run Opium under its new names with their data; the window's needs
 from a UI framework are written down and reviewed (M1.6); the budgets are decided (M1.7); Opium is
-under MIT OR Apache-2.0 with nothing of Kopuz's left (M1.13); the figures to beat are measured
+left with nothing of Kopuz's (M1.13); the figures to beat are measured
 (M1.14); the stage audit is recorded and its findings decided (M1.8).
 
 ### Stage 5 — On uwui

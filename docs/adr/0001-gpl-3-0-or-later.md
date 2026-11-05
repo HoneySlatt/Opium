@@ -1,7 +1,7 @@
 # 0001. GPL-3.0-or-later
 
-- Status: Accepted; to be amended at M1.13, once the code adapted from Kopuz is written again
-  ([ADR-0030](0030-the-kopuz-code-rewritten-in-a-clean-room.md))
+- Status: Accepted; confirmed by [0032](0032-the-gpl-kept-and-kopuzs-code-still-written-again.md)
+  (kept once the code adapted from Kopuz is written again)
 - Date: 2026-10-29
 
 ## Context

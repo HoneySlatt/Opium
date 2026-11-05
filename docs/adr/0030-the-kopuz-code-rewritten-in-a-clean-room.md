@@ -2,7 +2,9 @@
 
 - Status: Accepted; amends [0004](0004-the-widevine-cdm-borrowed-from-the-browser.md) (the shape of
   the CDM's host) and [0029](0029-opium-waits-for-slime-ui-then-moves-first.md) (the standby lifted
-  for these milestones)
+  for these milestones); amended by
+  [0032](0032-the-gpl-kept-and-kopuzs-code-still-written-again.md) (the GPL kept, the rewrite
+  going on)
 - Date: 2026-11-05
 
 ## Context

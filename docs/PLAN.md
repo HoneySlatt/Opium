@@ -52,7 +52,7 @@ Every milestone ends with the definition of done in [`AGENTS.md`](../AGENTS.md#d
 | [M1.10](#m110-to-m112--kopuzs-code-written-again) | `cenc` written again in a clean room | Done |
 | [M1.11](#m110-to-m112--kopuzs-code-written-again) | `widevine` written again in a clean room | Done |
 | [M1.12](#m110-to-m112--kopuzs-code-written-again) | `apple-music`'s derived items written again in a clean room | Planned, next |
-| [M1.13](#m113--mit-or-apache-20) | Opium under MIT OR Apache-2.0 | Planned |
+| [M1.13](#m113--nothing-of-kopuzs-left) | Nothing of Kopuz's left, the GPL kept | Planned |
 | [M1.14](#m114--the-figures-to-beat-on-uwui) | The figures uwui must match: the egui window's and the Compose phone's | Planned |
 
 ## Stage 1 — Under the method
@@ -181,21 +181,22 @@ One milestone each, in this order: `cenc`, then `widevine`, then `apple-music`.
   yet: playing needs the owner's account and speakers, with the protected songs above. A decrypt's
   p95 grew by 25 µs, also accepted. What it left is in [debt.md](debt.md).
 
-### M1.13 — MIT OR Apache-2.0
+### M1.13 — Nothing of Kopuz's left
 
-- **Goal.** Opium is offered under MIT OR Apache-2.0, at the user's choice.
+- **Goal.** No code of Opium's derives from Kopuz, and every document says so. Opium stays under
+  GPL-3.0-or-later ([ADR-0032](adr/0032-the-gpl-kept-and-kopuzs-code-still-written-again.md),
+  decided on 2026-11-06 in place of MIT OR Apache-2.0).
 - **Delivers.**
-  - `LICENSE-MIT` and `LICENSE-APACHE` in place of `LICENSE`.
-  - `license = "MIT OR Apache-2.0"` in the root `Cargo.toml`; `flake.nix`'s licence; the about
-    screens on both apps.
-  - A new ADR that amends ADR-0001.
-  - The README, CONTRIBUTING, `AGENTS.md` and the CHANGELOG; the third-party notices the audit
-    lists.
-  - The versions before stay under the GPL, as the README says.
+  - A token comparison of the whole tree with Kopuz at both revisions, recorded in
+    [`audits/`](audits/README.md).
+  - The credits that name Kopuz for code made true: the about screens on both apps (the desktop's
+    says "Widevine and CENC code adapted from Kopuz"), the README, the third-party notices the
+    [licence audit](audits/2026-11-05-licence.md) lists, the CHANGELOG. Kopuz stays credited for
+    the facts about Apple's service it found.
 - **Done when.**
   - M1.10 to M1.12 are done.
-  - A comparison of the whole tree with Kopuz is recorded.
-  - Every place of the audit's §3 is changed.
+  - The comparison finds no run above its threshold owed to Kopuz.
+  - No document or screen says that Opium holds Kopuz's code.
 - **Measured.** Nothing.
 
 ### M1.14 — The figures to beat on uwui

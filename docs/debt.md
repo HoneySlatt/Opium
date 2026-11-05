@@ -59,7 +59,7 @@ work is in [`PLAN.md`](PLAN.md); a stage's audit adds what it leaves open.
     ([measured](measurements.md#indexing-an-encrypted-track-m110-2026-11-05)). A way to make
     clear only the fragments just indexed needs a public item more in `cenc`.
   - The desktop's about screen still credits Kopuz for CENC code; it is frozen
-    ([ADR-0026](adr/0026-the-egui-window-frozen-until-the-move.md)), and M1.13 rewrites it.
+    ([ADR-0026](adr/0026-the-egui-window-frozen-until-the-move.md)), and M1.13 corrects it.
 - **Left by M1.11** (`widevine` written again; [evidence](audits/2026-11-05-widevine-clean-room.md)):
   - Checked with the owner's CDM: loading, initialising, a licence request, the figures before
     and after ([measured](measurements.md#the-cdm-m111-2026-11-05)); played with the owner, on
