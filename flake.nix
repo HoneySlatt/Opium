@@ -116,6 +116,24 @@
             LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath (runtimeLibs pkgs);
           };
         }
+        // {
+          # Fuzzing the parsers of untrusted data with `cargo fuzz`, which needs a nightly
+          # toolchain (ADR-0030): `nix develop .#fuzz`, then `cargo fuzz run <target>` in a fuzz
+          # crate, such as crates/cenc/fuzz.
+          fuzz =
+            let
+              pkgs = import nixpkgs {
+                inherit system;
+                overlays = [ rust-overlay.overlays.default ];
+              };
+            in
+            pkgs.mkShell {
+              packages = [
+                (pkgs.rust-bin.selectLatestNightlyWith (toolchain: toolchain.minimal))
+                pkgs.cargo-fuzz
+              ];
+            };
+        }
         // nixpkgs.lib.optionalAttrs (system == "x86_64-linux") {
           # The Android app: its Rust core for the phone, and Gradle.
           android =
