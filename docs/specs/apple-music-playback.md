@@ -38,7 +38,7 @@ Standards cited: **RFC 8216** (HLS), **RFC 3986** (resolving a relative address)
 
 The entry's `assets` is an array of objects, each with a `flavor` (a string) and a `URL`.
 
-- **An upload**: exactly one asset, with no `flavor` and a non-empty `URL`. The caller
+- **An upload**: exactly one asset, with no `flavor` (or a `null` one) and a non-empty `URL`. The caller
   (`playback.rs`'s own code, given in the export) fetches that `URL`: an encrypted media playlist
   (§4) is licensed under the song's own id, anything else is the song's file itself.
 - **A catalog song**: among the assets whose `flavor` contains `:ctrp` (AES-CTR, which Widevine can
@@ -76,14 +76,15 @@ The entry's `assets` is an array of objects, each with a `flavor` (a string) and
   - `key-system`: `com.widevine.alpha`;
   - `uri`: the key's `URI` from the playlist;
   - `adamId`: the id the song is licensed as (the matched catalog id when there is one, §2);
-  - `isLibrary`: whether that id is a library id;
+  - `isLibrary`: whether the song was asked for by a library id (§2), as Opium's own callers
+    pass it, even when `adamId` is the catalog id it was matched to;
   - `user-initiated`: `true`.
 - The request is sent through `lib.rs`'s own `send`, which renews the developer token on a 401 and
   sends it again once. A 401 or 403 after that is "not signed in"; another failure status names
   it.
-- The answer is JSON. An `errorCode` that is a number other than 0 is "licence refused (errorCode
-  N)"; otherwise `license` is the licence, base64 (standard alphabet, padded); missing or
-  undecodable is "licence response without a licence".
+- The answer is JSON. An `errorCode` that is a number other than 0, whole or not, is "licence
+  refused (errorCode N)"; otherwise `license` is the licence, base64 (standard alphabet, padded);
+  missing, empty or undecodable is "licence response without a licence".
 - Two uses, two items (§12):
   - asking for the licence alone, which answers its bytes: the phone's MediaDrm takes them itself
     (`AppleMusic::license`, Opium's own, calls it);
@@ -110,7 +111,8 @@ Apple's `next` keeps the path and the `offset` but drops parameters the first re
 - The result is a path and query relative to `https://amp-api.music.apple.com`, whatever host a
   whole `next` names: a page is only ever asked of that host. With no parameter at all, the result
   is the path alone, with no `?`. A `next` or a first request that does not resolve gives `next`
-  as it is.
+  as it is, with a `/` before it when it has none: put after the API's address, text such as
+  `evil.example:99` would otherwise change the host.
 - `at_offset` (Opium's own, given in the export) builds the address of a page at a given offset
   with it, as the library's pages are asked 32 at a time.
 
@@ -180,7 +182,9 @@ Apple's web player carries a developer token, a JWT (RFC 7519), in its main scri
   most one every five minutes, the old token kept when the reading fails). A token without a
   readable `exp` is renewed on a 401 only.
 - Each step that fails names itself: the page out of reach (its status), no script named, the
-  script out of reach (its status), no token in the script, a payload that does not decode.
+  script out of reach (its status), no token in the script, a payload that does not decode. A
+  page or a script out of reach, a failure status included, is a network error: a renewal that
+  meets one is tried again at the next request, rather than taken for a sign-out.
 - Searching the page and the script is a scan in time proportional to their length: the code
   before took 0.08 ms for both (median of 30), on the files of 2026-11-05, in a release build. The
   new search must be no slower; it is measured afterwards on the same files.
