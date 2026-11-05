@@ -169,6 +169,9 @@ pub(crate) struct Fake {
     pub quiet_decrypts: AtomicBool,
     /// Buffers handed to the host and not yet released.
     pub buffers_held: AtomicI64,
+    /// When set, the CDM thread waits at this gate when it asks for the module's version, then
+    /// panics: a CDM thread that ends unexpectedly.
+    pub panic_at: Mutex<Option<Arc<Gate>>>,
 }
 
 /// The mask the fake "decrypts" protected bytes with.
@@ -182,6 +185,7 @@ impl Fake {
             refuse_create: AtomicBool::new(false),
             quiet_decrypts: AtomicBool::new(false),
             buffers_held: AtomicI64::new(0),
+            panic_at: Mutex::new(None),
         })
     }
 
@@ -232,6 +236,16 @@ impl Module for FakeModule {
     }
 
     fn version(&mut self) -> String {
+        let gate = self
+            .0
+            .panic_at
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
+        if let Some(gate) = gate {
+            gate.pass();
+            panic!("the fake ends the CDM thread");
+        }
         "0.0.0.fake".to_owned()
     }
 }

@@ -1342,6 +1342,52 @@ fn shutdown_answers_an_initialisation_under_way() {
     assert_eq!(fake.calls().last(), Some(&Call::ModuleDeinitialised));
 }
 
+/// Sends the request `ask` makes from a thread of its own; its answer comes on the receiver.
+fn in_background<T: Send + 'static>(
+    runtime: &Runtime,
+    ask: impl FnOnce(&Runtime) -> T + Send + 'static,
+) -> Receiver<T> {
+    let (answer, answered) = channel();
+    let runtime = runtime.clone();
+    // A test that fails leaves the thread waiting; it is not joined.
+    thread::spawn(move || answer.send(ask(&runtime)));
+    answered
+}
+
+#[test]
+fn a_cdm_thread_that_ends_answers_every_request_waiting_and_every_later_one() {
+    let fake = Fake::new(well_behaved());
+    let gate = Arc::new(Gate::default());
+    *fake.panic_at.lock().unwrap() = Some(Arc::clone(&gate));
+    let runtime = start(&fake, QUICK);
+    gate.wait_until_entered();
+    let initialising = in_background(&runtime, Runtime::initialise);
+    let opening = in_background(&runtime, |runtime| {
+        runtime.open_session(b"init").map(|_| ())
+    });
+    let decrypting = in_background(&runtime, |runtime| {
+        runtime.decrypt(1, &mut [1, 2, 3], &cenc(&key(1)))
+    });
+    until_queued(&runtime, 3);
+    runtime.close(1);
+    gate.open();
+    for waiting in [initialising, opening, decrypting] {
+        assert_eq!(
+            waiting.recv_timeout(HANG_GUARD),
+            Ok(Err(Error::HostStopped))
+        );
+    }
+    let later = in_background(&runtime, |runtime| {
+        runtime.give_licence(1, b"licence", &key(1))
+    });
+    assert_eq!(later.recv_timeout(HANG_GUARD), Ok(Err(Error::HostStopped)));
+    runtime.close(2);
+    assert_eq!(queued(&runtime), 0, "nothing waits for a thread that ended");
+    assert!(runtime.shared().counters.panicked.load(Ordering::Relaxed));
+    assert!(runtime.shutdown(), "the thread has ended");
+    assert_eq!(Error::HostStopped.to_string(), "the CDM thread ended");
+}
+
 #[test]
 fn shutdown_is_bounded_when_the_cdm_never_closes() {
     let fake = Fake::new(script(|call| match call {

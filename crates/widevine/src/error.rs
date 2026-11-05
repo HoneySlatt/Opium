@@ -32,8 +32,9 @@ pub enum Error {
     /// The thread that owns the CDM could not be started; the system's message.
     #[error("starting the CDM thread: {0}")]
     ThreadNotStarted(String),
-    /// The thread that owns the CDM ended without answering a request.
-    #[error("the CDM thread ended without answering")]
+    /// The thread that owns the CDM ended unexpectedly (a panic), before or while answering:
+    /// no request is taken any more.
+    #[error("the CDM thread ended")]
     HostStopped,
     /// This platform has no CDM to load (Android, where MediaDrm decrypts).
     #[error("no CDM on this platform")]

@@ -3,7 +3,8 @@
 //! Callers on any thread put a request in a queue by priority and wait for its answer; the CDM
 //! thread ([`crate::host`]) takes them one at a time. A session's opening, licence and closing
 //! go before decrypts. Shutting down answers every request still queued, refuses every later
-//! one, and waits for the CDM thread to end, five seconds at most.
+//! one, and waits for the CDM thread to end, five seconds at most. Should the CDM thread end
+//! otherwise, by a panic, the requests queued and every later one get [`Error::HostStopped`].
 
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -129,6 +130,8 @@ pub(crate) struct Queue {
     decrypts: VecDeque<Request>,
     /// When shutting down began.
     shutdown_started: Option<Instant>,
+    /// Whether the CDM thread has ended: nobody takes requests any more.
+    thread_ended: bool,
 }
 
 impl Queue {
@@ -149,6 +152,25 @@ impl Queue {
 
     pub(crate) fn shutdown_started(&self) -> Option<Instant> {
         self.shutdown_started
+    }
+
+    /// Why a new request is refused, if it is: shut down, or the CDM thread ended.
+    fn refusal(&self) -> Option<Error> {
+        if self.shutdown_started.is_some() {
+            Some(Error::ShutDown)
+        } else if self.thread_ended {
+            Some(Error::HostStopped)
+        } else {
+            None
+        }
+    }
+
+    /// Every request waiting, taken out of the queue.
+    fn take_all(&mut self) -> Vec<Request> {
+        self.control
+            .drain(..)
+            .chain(self.decrypts.drain(..))
+            .collect()
     }
 
     #[cfg(test)]
@@ -226,15 +248,30 @@ impl Shared {
     }
 }
 
-/// Marks the CDM thread ended when it returns or unwinds.
+/// Marks the CDM thread ended when it returns or unwinds, and answers what nobody will take.
+///
+/// After a shutdown the queue is empty and requests are refused as shut down already; after a
+/// panic, the requests queued, and every later one, get [`Error::HostStopped`]. The requests
+/// the thread held themselves (the one under way, the waits for the CDM) are dropped as it
+/// unwinds, which their callers see as [`Error::HostStopped`] too.
 struct EndOfThread(Arc<Shared>);
 
 impl Drop for EndOfThread {
     fn drop(&mut self) {
+        let shared = &self.0;
         if thread::panicking() {
-            self.0.counters.panicked.store(true, Ordering::Relaxed);
+            shared.counters.panicked.store(true, Ordering::Relaxed);
+            crate::log::line(format_args!("the CDM thread ended unexpectedly"));
         }
-        self.0.mark_ended();
+        let waiting = {
+            let mut queue = shared.lock_queue();
+            queue.thread_ended = true;
+            queue.take_all()
+        };
+        for request in waiting {
+            request.refuse(shared, Error::HostStopped);
+        }
+        shared.mark_ended();
     }
 }
 
@@ -356,7 +393,7 @@ impl Runtime {
     /// Asks for the session to be closed, without waiting: how it went is logged.
     pub(crate) fn close(&self, session: SessionKey) {
         let mut queue = self.shared.lock_queue();
-        if queue.shutdown_started.is_none() {
+        if queue.refusal().is_none() {
             queue.push(Request::Close { session });
             drop(queue);
             self.shared.wake.notify_one();
@@ -371,10 +408,7 @@ impl Runtime {
         let waiting: Vec<Request> = {
             let mut queue = self.shared.lock_queue();
             queue.shutdown_started.get_or_insert(started);
-            let Queue {
-                control, decrypts, ..
-            } = &mut *queue;
-            control.drain(..).chain(decrypts.drain(..)).collect()
+            queue.take_all()
         };
         self.shared.wake.notify_all();
         for request in waiting {
@@ -393,8 +427,8 @@ impl Runtime {
         let request = make(Reply(sender));
         {
             let mut queue = self.shared.lock_queue();
-            if queue.shutdown_started.is_some() {
-                return Err(Error::ShutDown);
+            if let Some(error) = queue.refusal() {
+                return Err(error);
             }
             queue.push(request);
             self.shared
@@ -403,7 +437,8 @@ impl Runtime {
                 .fetch_add(1, Ordering::Relaxed);
         }
         self.shared.wake.notify_one();
-        // A closed channel means the request was dropped unanswered: the CDM thread ended.
+        // A closed channel means the request was dropped unanswered: the CDM thread ended while
+        // it held it.
         receiver.recv().unwrap_or(Err(Error::HostStopped))
     }
 }
