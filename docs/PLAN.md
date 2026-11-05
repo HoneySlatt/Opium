@@ -16,12 +16,15 @@ Every milestone ends with the definition of done in [`AGENTS.md`](../AGENTS.md#d
 - M1.4: the rename has landed on the owner's computer and its folder; the phone remains.
 - The egui window is frozen until the move to SlimeEngine's UI framework, slime-ui
   ([ADR-0026](adr/0026-the-egui-window-frozen-until-the-move.md)), and the phone's Compose screens
-  until Stage 3 measures slime-ui against Compose ([ADR-0028](adr/0028-the-phones-compose-screens-frozen-until-measured.md)). Work goes to the shared
-  crates, the phone's Kotlin system layer and the documents.
+  until Stage 3 measures slime-ui against Compose ([ADR-0028](adr/0028-the-phones-compose-screens-frozen-until-measured.md)).
 - M1.6: the needs are written in [`ui-framework-needs.md`](ui-framework-needs.md), each checked
-  against the code; the owner's review of their marks remains.
-- Next: the owner's review of M1.6; M1.4's phone and M1.5 once Google's Android repository
-  answers again; then M1.8, the stage audit, which closes the stage.
+  against the code and reviewed by a fresh agent; the owner's review of their marks remains.
+- **Standby** ([ADR-0029](adr/0029-opium-waits-for-slime-ui-then-moves-first.md)): once M1.6 is
+  done, no milestone runs until SlimeEngine's Stage 6d is done. Only a loss of data, a crash, a
+  security flaw or a service that stops working is fixed meanwhile.
+- At the wake: M1.4's phone and M1.5, then M1.8, the stage audit, which closes the stage; then
+  Stage 5, the move to slime-ui, before Stages 2, 3 and 4. On 2026-11-05 Google's Android
+  repository still answered 404, for the SDK's command-line tools too.
 
 ## Status
 
@@ -97,8 +100,10 @@ built in this stage.
 
 - **Goal.** The phone's Rust core is checked like the rest, and its shell builds anywhere.
 - **Delivers.** The Android shell building from an empty store again: on 2026-11-04, Google's
-  server answered 404 for the SDK's `cmake-4.1.2-linux.zip`. Then `scripts/check.sh android` run,
-  and a CI job for it if the SDK's download fits CI's time.
+  server answered 404 for the SDK's `cmake-4.1.2-linux.zip`, and on 2026-11-05 for its command-line
+  tools (`commandlinetools-linux-16111833_latest.zip`) too: the versions that nixpkgs' `androidenv`
+  asks for are gone. Then `scripts/check.sh android` run, and a CI job for it if the SDK's download
+  fits CI's time.
 - **Done when.** `nix develop .#android` builds on a machine that never built it, and
   `scripts/check.sh android` passes.
 - **How to test.** `nix develop .#android -c scripts/check.sh android`; `./android/build-core.sh`
@@ -174,6 +179,7 @@ For the owner to pick; none is planned.
   - Space toggles playback again on each key repeat while held (`ui/mod.rs:922`);
   - files dropped on the window do nothing under Wayland, where winit 0.30 has no drag and drop;
   - Opium cannot be driven by an agent: nothing scrolls, clicks or types;
+  - a comment says the cookie turns in twenty seconds; it turns in 14 (`ui/fab.rs:28`);
   - animations that go on without the focus (`ui/lyrics.rs`, `ui/loading.rs`);
   - one thread per cover file, unbounded (`ui/thumbs.rs`); WebP and GIF covers not decoded;
   - no Korean among the fallback fonts (`fonts.rs`); no colour emoji;

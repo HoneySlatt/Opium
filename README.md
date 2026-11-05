@@ -16,6 +16,8 @@ with Jetpack Compose, over the same Rust core.
   aside ([ADR-0026](docs/adr/0026-the-egui-window-frozen-until-the-move.md),
   [ADR-0028](docs/adr/0028-the-phones-compose-screens-frozen-until-measured.md)).
 - The APK is signed with Android's debug key.
+- On standby until SlimeEngine's UI framework runs applications; the move to it
+  comes next ([ADR-0029](docs/adr/0029-opium-waits-for-slime-ui-then-moves-first.md)).
 - What is being worked on: [docs/PLAN.md](docs/PLAN.md).
 
 - **One library, one search:** albums, songs, artists and playlists from every

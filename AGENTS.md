@@ -25,6 +25,9 @@ Rules for AI agents working in this repository. Read this file fully at the star
 - Work on the current milestone, or on what the owner asks; a request that changes the plan goes
   into the PLAN.
 - Do not start later stages, nor prepare abstractions for them.
+- Opium is on standby until slime-ui runs applications
+  ([ADR-0029](docs/adr/0029-opium-waits-for-slime-ui-then-moves-first.md)): fix only data loss, a
+  crash, a security flaw or a service that stopped working, unless the owner asks otherwise.
 - When experience contradicts the roadmap, propose a change; once accepted, record it in an ADR.
 - `crates/app-desktop` is frozen until the move to slime-ui, SlimeEngine's UI framework
   ([ADR-0026](docs/adr/0026-the-egui-window-frozen-until-the-move.md)): change it only for data loss,

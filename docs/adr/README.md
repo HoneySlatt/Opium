@@ -39,6 +39,7 @@ call the app "Music" ([ADR-0023](0023-the-rename-to-opium.md)).
 | [0023](0023-the-rename-to-opium.md) | The app is named Opium, everywhere, with no compatibility kept | Accepted |
 | [0024](0024-the-exit-watch-aborts-for-a-core-dump.md) | The exit watch aborts, for a core dump | Accepted; amends 0021 |
 | [0025](0025-the-quality-bar.md) | The quality bar: tiers and budgets | Accepted |
-| [0026](0026-the-egui-window-frozen-until-the-move.md) | The egui window is frozen until the move to SlimeEngine's UI framework | Accepted; amends 0006 and 0022 |
+| [0026](0026-the-egui-window-frozen-until-the-move.md) | The egui window is frozen until the move to SlimeEngine's UI framework | Accepted; amends 0006 and 0022; amended by 0029 |
 | [0027](0027-macrobenchmark-for-the-phones-measurements-at-stage-3.md) | Macrobenchmark for the phone's measurements, at Stage 3 | Accepted |
 | [0028](0028-the-phones-compose-screens-frozen-until-measured.md) | The phone's Compose screens are frozen until slime-ui is measured on Android | Accepted |
+| [0029](0029-opium-waits-for-slime-ui-then-moves-first.md) | Opium waits for slime-ui, then moves to it before anything else | Accepted; amends 0026 (no work meanwhile) and the ROADMAP's order |

@@ -1,7 +1,8 @@
 # 0026. The egui window is frozen until the move to SlimeEngine's UI framework
 
 - Status: Accepted; amends [0006](0006-egui-for-the-desktop-window.md) and
-  [0022](0022-gpui-tried-and-abandoned.md) (the window frozen until the move)
+  [0022](0022-gpui-tried-and-abandoned.md) (the window frozen until the move); amended by
+  [0029](0029-opium-waits-for-slime-ui-then-moves-first.md) (no work meanwhile)
 - Date: 2026-11-05
 
 ## Context

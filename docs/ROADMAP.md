@@ -1,8 +1,10 @@
 # Roadmap
 
 > **Decided by the owner on 2026-11-04**, when the project came under its method; its quality bar on
-> 2026-11-05. Living document. It defines direction, ordering and exit criteria. It is not a task
-> list: the current plan lives in `docs/PLAN.md`, and decisions live in `docs/adr/`. Stages will be
+> 2026-11-05, and its order the same day
+> ([ADR-0029](adr/0029-opium-waits-for-slime-ui-then-moves-first.md)). Living document. It defines
+> direction, ordering and exit criteria. It is not a task list: the current plan lives in
+> `docs/PLAN.md`, and decisions live in `docs/adr/`. Stages will be
 > merged, reduced, reordered or dropped as the project evolves; each such change is recorded in an
 > ADR.
 
@@ -141,11 +143,14 @@ Each is decided by an ADR at the stage where it becomes necessary, not earlier.
 | The release's signing key | The owner creates the keystore; how the build reads it, kept out of the repository | Stage 2 |
 | Third-party licences | `cargo-about` for the Rust crates, and the Gradle dependencies' own list, or one tool for both | Stage 2 |
 | Cleartext HTTP on the phone | Only for the Navidrome host the user types (checked in the HTTP client, since Android's network security file cannot name a host chosen at run time), or only for private addresses | Stage 2 |
-| Windows before or after the move to SlimeEngine's UI framework | Port the egui window, or wait and port once | End of Stage 3 |
 | Windows audio | WASAPI exclusive, or shared with `MATCH_FORMAT`, through the `wasapi` crate, weighed against principle 4 | Stage 4 |
 | The exit watch | Kept as a safety net, or removed once the hang is found ([ADR-0021](adr/0021-the-exit-watch.md)) | When the hang is found |
 
 ## 4. Stages
+
+The stages run in the order 1, 5, 2, 3, 4: the move to slime-ui comes first
+([ADR-0029](adr/0029-opium-waits-for-slime-ui-then-moves-first.md)). They keep their numbers, which
+earlier ADRs cite.
 
 ### Stage 1 — Under the method
 
@@ -166,6 +171,24 @@ push, and the rename to Opium is committed with the owner's data moved.
 the owner's computer and phone run Opium under its new names with their data; the window's needs
 from a UI framework are written down and reviewed (M1.6); the budgets are decided (M1.7); the stage
 audit is recorded and its findings decided (M1.8).
+
+### Stage 5 — On SlimeEngine's UI framework
+
+**Goal.** The desktop window drawn by SlimeEngine's UI framework, egui gone, once that framework
+runs applications (its Stage 6d) and after Slatty, its pilot, has moved
+([ADR-0022](adr/0022-gpui-tried-and-abandoned.md)). Opium is on standby until then, and this stage
+comes right after Stage 1 ([ADR-0029](adr/0029-opium-waits-for-slime-ui-then-moves-first.md)).
+
+- The interface's state and logic taken out of `app.rs` into a model free of any toolkit
+- Each page and component, in each theme's variants, on the framework, with every need of
+  [`ui-framework-needs.md`](ui-framework-needs.md)
+- Agents read and drive the window through the framework; screen readers name its controls
+- A need missing in slime-ui added there, under SlimeEngine's rules, when it serves others too;
+  one of Opium's alone built in Opium; neither worked around
+
+**Exit.** Every page of the three themes on the framework, egui removed; nothing drawn at rest under
+Wayland and under Xwayland; the display's rate held while scrolling and animating; memory at start
+and power at rest no worse than egui's, measured the same way.
 
 ### Stage 2 — The first release → 0.1.0
 
@@ -224,27 +247,12 @@ stage's start.
 song at its own rate, downloads and plays offline, pairs with the phone, and its checks pass in CI
 on Windows.
 
-### Stage 5 — On SlimeEngine's UI framework
-
-**Goal.** The desktop window drawn by SlimeEngine's UI framework, egui gone, once that framework
-runs applications (its Stage 6d) and after Slatty, its pilot, has moved
-([ADR-0022](adr/0022-gpui-tried-and-abandoned.md)).
-
-- The interface's state and logic taken out of `app.rs` into a model free of any toolkit
-- Each page and component, in each theme's variants, on the framework, with every need of
-  [`ui-framework-needs.md`](ui-framework-needs.md)
-- Agents read and drive the window through the framework; screen readers name its controls
-
-**Exit.** Every page of the three themes on the framework, egui removed; nothing drawn at rest under
-Wayland and under Xwayland; the display's rate held while scrolling and animating; memory at start
-and power at rest no worse than egui's, measured the same way.
-
 ## 5. Release map
 
 | Version | Stage | Content |
 |---|---|---|
 | — | 1 | Under the method, the rename (no release) |
+| — | 5 | On SlimeEngine's UI framework (no release: 0.1.0 ships on it) |
 | 0.1.0 | 2 | The first release |
 | 0.2 | 3 | The phone on par |
 | 0.3 | 4 | Windows |
-| 0.4 | 5 | On SlimeEngine's UI framework |
