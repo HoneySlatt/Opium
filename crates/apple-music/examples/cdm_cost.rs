@@ -159,7 +159,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let started = Instant::now();
     drop(session);
     widevine::shutdown();
-    println!("session closed and CDM shut down: {}", ms(started.elapsed()));
+    println!(
+        "session closed and CDM shut down: {}",
+        ms(started.elapsed())
+    );
     Ok(())
 }
 
