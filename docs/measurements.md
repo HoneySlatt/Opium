@@ -18,7 +18,7 @@ Runner: GitHub's `ubuntu-24.04`. Workflow: [`ci.yml`](../.github/workflows/ci.ym
 | Run | Cache | Duration | Cache saved |
 |---|---|---|---|
 | Cold | None | 24 min 3 s | 1.1 GB |
-| Warm | Hit | Not measured yet | — |
+| Warm (run `41952855207`) | Hit | 9 min 25 s: the disk freed in 3 min 46 s, the cache restored in 53 s, `scripts/check.sh` in 4 min 35 s | Not saved again (hit) |
 
 The run before (`41929905546`, without these changes) filled the runner's disk after 31 minutes.
 

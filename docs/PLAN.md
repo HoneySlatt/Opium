@@ -9,16 +9,17 @@ Every milestone ends with the definition of done in [`AGENTS.md`](../AGENTS.md#d
 
 ## Current
 
-- Stage 1 — Under the method, started on 2026-11-04. M1.1, M1.2 and M1.7 are done.
+- Stage 1 — Under the method, started on 2026-11-04. M1.1, M1.2, M1.3 and M1.7 are done.
 - M1.3: the first CI run ran out of disk while linking the tests; the workflow now frees the disk,
   builds without debug info and keeps its cache even when a check fails. CI is green on `main`
-  (2026-11-05: 24 minutes cold, a cache of 1.1 GB); a warm run's duration is still to measure.
-- M1.4: the rename has landed on the owner's computer; the repository's folder and the phone remain.
+  (2026-11-05: 24 minutes cold, 9 min 25 s warm, under the 20-minute budget). M1.3 is done.
+- M1.4: the rename has landed on the owner's computer and its folder; the phone remains.
 - The egui window is frozen until the move to SlimeEngine's UI framework, slime-ui
   ([ADR-0026](adr/0026-the-egui-window-frozen-until-the-move.md)), and the phone's Compose screens
   until Stage 3 measures slime-ui against Compose ([ADR-0028](adr/0028-the-phones-compose-screens-frozen-until-measured.md)). Work goes to the shared
   crates, the phone's Kotlin system layer and the documents.
-- Next: M1.3 green; M1.8, the stage audit, closes the stage.
+- Next: M1.6; M1.4's phone and M1.5 once Google's Android repository answers again; then M1.8,
+  the stage audit, which closes the stage.
 
 ## Status
 
@@ -26,7 +27,7 @@ Every milestone ends with the definition of done in [`AGENTS.md`](../AGENTS.md#d
 |---|---|---|
 | [M1.1](#m11--the-projects-memory-in-the-repository) | A session arriving in the repository finds the rules, the decisions, the direction and the plan | Done |
 | [M1.2](#m12--the-checks-green) | `scripts/check.sh` passes on `main` | Done |
-| [M1.3](#m13--ci-green) | Every push to `main` and every pull request is checked by CI | In progress: green; warm duration to measure |
+| [M1.3](#m13--ci-green) | Every push to `main` and every pull request is checked by CI | Done |
 | [M1.4](#m14--the-rename-landed) | The owner's computer and phone run Opium under its new names, with their data | In progress: the computer done |
 | [M1.5](#m15--the-phones-core-checked) | The Android shell builds from an empty store and the phone's core is checked | Planned |
 | [M1.6](#m16--what-the-window-needs-from-a-ui-framework) | SlimeEngine's Stage 6d can read, in this repository, what Opium's window needs | Planned |
