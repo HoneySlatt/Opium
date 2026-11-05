@@ -10,6 +10,29 @@ the desktop runs on a [throwaway profile](../CONTRIBUTING.md#a-throwaway-profile
 cited live in [`scripts/measure/`](../scripts/measure/), each described at its head
 ([CONTRIBUTING.md](../CONTRIBUTING.md#measuring)).
 
+## Indexing an encrypted track, M1.10 (2026-11-05)
+
+What indexing an Apple-shaped file costs, before and after `crates/cenc` is written again
+([M1.10](PLAN.md#m110-to-m112--kopuzs-code-written-again)); the budget is in
+[`specs/fmp4-cenc.md`](specs/fmp4-cenc.md#10-performance) §10. Machine: AMD Ryzen 7 5800X, Linux
+7.3.0, load average about 1 to 3. Command: `cargo run --release -p cenc --example index_cost`
+([`index_cost.rs`](../crates/cenc/examples/index_cost.rs)), inside `nix develop`.
+
+The file is synthetic, built by the program: 7.39 MB, 9 000 samples of 700 to 900 bytes in 100
+fragments, scheme `cenc`, 8-byte IVs, one subsample each. *Kept* is the heap the result of
+indexing holds while it lives, counted by a counting allocator: capacity, not length, so a `Vec`
+grown by doubling counts whole.
+
+| What | Before (`fmp4.rs`, commit `4522e68`) | After | Budget |
+|---|---|---|---|
+| Indexing the whole file | best 0.458 to 0.474 ms, median 0.463 to 0.486 ms (3 runs of 50) | | not worse |
+| The table kept | 1 222.3 KiB in 9 002 blocks: 139.1 bytes a sample | | at most 48 bytes a sample |
+
+The licence audit's figures, 0.37 ms and 632 KiB plus 140 KiB in 9 000 allocations
+([audit §5](audits/2026-11-05-licence.md#5-measured)), came from a throwaway program on a 7.21 MB
+file and counted the table by its length (9 000 samples of 72 bytes); this kept program counts
+what the heap really holds. Before and after are compared with this program only.
+
 ## CI on GitHub (2026-11-05)
 
 Runner: GitHub's `ubuntu-24.04`. Workflow: [`ci.yml`](../.github/workflows/ci.yml) at commit
