@@ -2,9 +2,7 @@
 //!
 //! Neither token comes from an official developer account: the developer token is
 //! read from the web player ([`auth`]) and the user token from a browser sign-in
-//! ([`signin`]). Request shapes follow Kopuz (<https://github.com/Kopuz-org/kopuz>),
-//! Copyright (c) 2026 Temidaradev and the Kopuz contributors, EUPL-1.2, used
-//! here under the GPL-3.0-or-later through the EUPL's compatibility clause.
+//! ([`signin`]).
 
 pub mod auth;
 mod convert;
@@ -15,7 +13,12 @@ mod radio;
 mod resume;
 mod seen;
 pub use seen::SeenElsewhere;
+#[cfg(test)]
+mod mutation_tests;
 pub mod signin;
+mod station;
+#[cfg(test)]
+mod test_support;
 mod types;
 
 pub use cenc::AudioStream;
@@ -173,8 +176,79 @@ const RECENT_SHOWN: usize = 100;
 /// Search caps each result type at 25.
 const SEARCH_LIMIT: u32 = 25;
 
+/// Where Apple's services answer: always Apple's own addresses, as [`Hosts::apple`] gives
+/// them, but in tests, which put a local server in their place. Each is a scheme and a
+/// host, without a final `/`.
+#[derive(Debug, Clone)]
+struct Hosts {
+    /// The API (`amp-api.music.apple.com`).
+    api: String,
+    /// The web player, which the developer token is read from.
+    web_player: String,
+    /// The web player's playback service (`webPlayback`).
+    play: String,
+    /// The licence server.
+    licence: String,
+}
+
+impl Hosts {
+    fn apple() -> Self {
+        Self {
+            api: API.into(),
+            web_player: WEB_PLAYER.into(),
+            play: playback::PLAY.into(),
+            licence: playback::LICENCE.into(),
+        }
+    }
+
+    /// Each host on the local server at `port`, plain HTTP, under Apple's names: the test
+    /// client resolves them to `127.0.0.1`.
+    #[cfg(test)]
+    fn local(port: u16) -> Self {
+        let local = |url: &str| format!("{}:{port}", url.replacen("https://", "http://", 1));
+        Self {
+            api: local(API),
+            web_player: local(WEB_PLAYER),
+            play: local(playback::PLAY),
+            licence: local(playback::LICENCE),
+        }
+    }
+}
+
+/// The crate's one HTTP client, but for what tests add: its user agent, its timeouts and its
+/// redirect policy.
+fn client_builder() -> reqwest::ClientBuilder {
+    reqwest::Client::builder()
+        .user_agent(USER_AGENT)
+        // A server out of reach, or a download that stalls, fails rather
+        // than hang what waits on it.
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .read_timeout(std::time::Duration::from_secs(30))
+        // A song's start needs three of Apple's hosts: their connections
+        // are kept a while, not dropped after 90 s.
+        .pool_idle_timeout(std::time::Duration::from_secs(300))
+        // Every request carries the account's token in a header of
+        // Apple's own, which nothing strips on the way: a redirect to
+        // another host would hand the account over with it, so one is
+        // followed only to Apple's own hosts.
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            let apple = attempt
+                .url()
+                .host_str()
+                .is_some_and(|host| host == "apple.com" || host.ends_with(".apple.com"));
+            if !apple {
+                attempt.stop()
+            } else if attempt.previous().len() > 5 {
+                attempt.error("too many redirects")
+            } else {
+                attempt.follow()
+            }
+        }))
+}
+
 pub struct AppleMusic {
     http: reqwest::Client,
+    hosts: Hosts,
     /// Borrowed from the web player, which swaps it now and then: read again
     /// when Apple turns it down.
     developer_token: std::sync::RwLock<String>,
@@ -193,6 +267,44 @@ pub struct AppleMusic {
 /// once more.
 const RENEW_EVERY: std::time::Duration = std::time::Duration::from_secs(300);
 
+/// How long before the developer token expires it is read again.
+const RENEW_BEFORE_EXPIRY: std::time::Duration = std::time::Duration::from_secs(600);
+
+/// Whether `token` expires within [`RENEW_BEFORE_EXPIRY`], or has: never for a token whose
+/// expiry does not read.
+fn expires_soon(token: &str) -> bool {
+    auth::expires_at(token).is_some_and(|at| {
+        match at.duration_since(std::time::SystemTime::now()) {
+            Ok(left) => left <= RENEW_BEFORE_EXPIRY,
+            // Expired already.
+            Err(_) => true,
+        }
+    })
+}
+
+/// `id`, when it is an id of Apple's that may go into an address unescaped: a catalog
+/// number, or one to three lower-case letters, a dot and one or more ASCII letters, digits
+/// or dashes (`i.AbC9-x`, `pl.u-1b2`, `ra.123`).
+///
+/// # Errors
+///
+/// [`Error::Protocol`], naming `id`, for anything else: a request that would change the
+/// account, or name a station, is refused before it is sent.
+fn apple_id(id: &str) -> Result<&str> {
+    let catalog = !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit());
+    let prefixed = id.split_once('.').is_some_and(|(kind, name)| {
+        (1..=3).contains(&kind.len())
+            && kind.bytes().all(|b| b.is_ascii_lowercase())
+            && !name.is_empty()
+            && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+    });
+    if catalog || prefixed {
+        Ok(id)
+    } else {
+        Err(Error::Protocol(format!("not an Apple Music id: {id:?}")))
+    }
+}
+
 /// The account as others see it on Apple Music.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Profile {
@@ -206,40 +318,25 @@ impl AppleMusic {
     /// Fetch a developer token and look up the account's storefront (its country),
     /// which every catalog request is scoped to.
     pub async fn connect(user_token: impl Into<String>) -> Result<Self> {
-        let http = reqwest::Client::builder()
-            .user_agent(USER_AGENT)
-            // A server out of reach, or a download that stalls, fails rather
-            // than hang what waits on it.
-            .connect_timeout(std::time::Duration::from_secs(10))
-            .read_timeout(std::time::Duration::from_secs(30))
-            // A song's start needs three of Apple's hosts: their connections
-            // are kept a while, not dropped after 90 s.
-            .pool_idle_timeout(std::time::Duration::from_secs(300))
-            // Every request carries the account's token in a header of
-            // Apple's own, which nothing strips on the way: a redirect to
-            // another host would hand the account over with it, so one is
-            // followed only to Apple's own hosts.
-            .redirect(reqwest::redirect::Policy::custom(|attempt| {
-                let apple = attempt
-                    .url()
-                    .host_str()
-                    .is_some_and(|host| host == "apple.com" || host.ends_with(".apple.com"));
-                if !apple {
-                    attempt.stop()
-                } else if attempt.previous().len() > 5 {
-                    attempt.error("too many redirects")
-                } else {
-                    attempt.follow()
-                }
-            }))
+        let http = client_builder()
             .build()
             .map_err(|e| Error::Network(e.to_string()))?;
-        let developer_token = auth::developer_token(&http).await?;
+        Self::connect_through(http, Hosts::apple(), user_token.into()).await
+    }
+
+    /// [`connect`](Self::connect), through `http` to `hosts`.
+    async fn connect_through(
+        http: reqwest::Client,
+        hosts: Hosts,
+        user_token: String,
+    ) -> Result<Self> {
+        let developer_token = auth::developer_token_at(&http, &hosts.web_player).await?;
         let mut am = Self {
             http,
+            hosts,
             developer_token: std::sync::RwLock::new(developer_token),
             renewed: tokio::sync::Mutex::new(None),
-            user_token: user_token.into(),
+            user_token,
             storefront: String::new(),
             seen: std::sync::Mutex::new(None),
             current: Default::default(),
@@ -323,16 +420,25 @@ impl AppleMusic {
             .header("Cookie", format!("media-user-token={}", self.user_token))
     }
 
+    /// The address of `path` on the API's host.
+    fn api(&self, path: &str) -> String {
+        format!("{}{path}", self.hosts.api)
+    }
+
     /// Send `request` with both tokens. Turned down with a 401, the developer
     /// token having expired or been swapped, it is read again from the web
     /// player and the request sent once more: a long session doesn't end up
-    /// signed out for it.
+    /// signed out for it. A token about to expire is read again before.
     async fn send(
         &self,
         request: reqwest::RequestBuilder,
         what: &str,
     ) -> Result<reqwest::Response> {
-        let token = self.developer_token();
+        let mut token = self.developer_token();
+        // The old token goes on being sent when the web player can't be read.
+        if expires_soon(&token) && matches!(self.renew_developer_token(&token).await, Ok(true)) {
+            token = self.developer_token();
+        }
         let again = request.try_clone();
         let failed = |e: reqwest::Error| Error::Network(format!("{what}: {e}"));
         let resp = self
@@ -361,7 +467,7 @@ impl AppleMusic {
         if renewed.is_some_and(|at| at.elapsed() < RENEW_EVERY) {
             return Ok(false);
         }
-        let token = match auth::developer_token(&self.http).await {
+        let token = match auth::developer_token_at(&self.http, &self.hosts.web_player).await {
             Ok(token) => token,
             Err(e @ Error::Network(_)) => return Err(e),
             Err(_) => {
@@ -387,7 +493,7 @@ impl AppleMusic {
             let resp = self
                 .send(
                     self.http
-                        .get(format!("{API}{path}"))
+                        .get(self.api(path))
                         .header("Media-User-Token", &self.user_token),
                     path,
                 )
@@ -490,9 +596,7 @@ impl AppleMusic {
         };
         Ok(Page {
             items: resp.data.into_iter().map(convert).collect(),
-            next: resp
-                .next
-                .map(|next| Cursor(carry_query_forward(&next, first))),
+            next: resp.next.map(|next| Cursor(next_page_path(&next, first))),
         })
     }
 }
@@ -875,7 +979,7 @@ impl AppleMusic {
     {
         let mut next = Some(next);
         while let Some(path) = next.take() {
-            let path = carry_query_forward(&path, first);
+            let path = next_page_path(&path, first);
             let Some(resp) = self
                 .fetch::<types::Response<types::Resource<A>>>(&path)
                 .await?
@@ -907,10 +1011,77 @@ fn offset_in(next: &str) -> Option<usize> {
         .and_then(|(_, v)| v.parse().ok())
 }
 
+/// The address of the page after one: Apple's `next` for it, completed with each query
+/// parameter of `first`, the first page's request, that `next` drops (Apple's keeps the path
+/// and the `offset` but not `limit`, `include` or `l`), so that later pages keep the first's
+/// size and inclusions.
+///
+/// Both are resolved against the API's address (RFC 3986 §5), so either may be a path or a
+/// whole address. The result is a path and a query on the API's host, whatever host a whole
+/// `next` names: `next`'s path as resolved, its query as Apple wrote it, then the parameters
+/// added, in `first`'s order, written as `application/x-www-form-urlencoded`. Names are
+/// compared once percent-decoded; where both have one, `next`'s value stays. With no
+/// parameter at all, the path alone. A `next` or a `first` that does not resolve to a path
+/// gives `next` as it is, with a `/` before it when it has none, so that the page is still
+/// asked of the API's host. Never panics.
+fn next_page_path(next: &str, first: &str) -> String {
+    let resolved = url::Url::parse(API)
+        .ok()
+        .and_then(|api| Some((api.join(next).ok()?, api.join(first).ok()?)));
+    let Some((next_url, first_url)) = resolved.filter(|(next, _)| !next.cannot_be_a_base()) else {
+        return on_api_host(next.to_owned());
+    };
+    let query = query_as_written(next);
+    let named: std::collections::HashSet<String> = url::form_urlencoded::parse(query.as_bytes())
+        .map(|(name, _)| name.into_owned())
+        .collect();
+    let mut added = url::form_urlencoded::Serializer::new(String::new());
+    for (name, value) in first_url.query_pairs() {
+        if !named.contains(name.as_ref()) {
+            added.append_pair(&name, &value);
+        }
+    }
+    let added = added.finish();
+    let mut params = query.to_owned();
+    if !added.is_empty() {
+        if !params.is_empty() && !params.ends_with('&') {
+            params.push('&');
+        }
+        params.push_str(&added);
+    }
+    let path = on_api_host(next_url.path().to_owned());
+    if url::form_urlencoded::parse(params.as_bytes())
+        .next()
+        .is_none()
+    {
+        path
+    } else {
+        format!("{path}?{params}")
+    }
+}
+
+/// `path` with a `/` before it when it has none: put after the API's address, it stays on
+/// the API's host.
+fn on_api_host(path: String) -> String {
+    if path.starts_with('/') {
+        path
+    } else {
+        format!("/{path}")
+    }
+}
+
+/// The query of `address` as it is written: after its first `?`, before any `#`.
+fn query_as_written(address: &str) -> &str {
+    let before_fragment = address.split('#').next().unwrap_or("");
+    before_fragment
+        .split_once('?')
+        .map_or("", |(_, query)| query)
+}
+
 fn at_offset(next: &str, offset: usize, first: &str) -> String {
     let base = url::Url::parse(API).expect("API base");
     let Ok(mut url) = base.join(next) else {
-        return carry_query_forward(next, first);
+        return next_page_path(next, first);
     };
     let kept: Vec<(String, String)> = url
         .query_pairs()
@@ -922,50 +1093,7 @@ fn at_offset(next: &str, offset: usize, first: &str) -> String {
         .extend_pairs(kept)
         .append_pair("offset", &offset.to_string());
     let path = format!("{}?{}", url.path(), url.query().unwrap_or_default());
-    carry_query_forward(&path, first)
-}
-
-/// Apple's `next` keeps the path and the offset but drops `limit` and `include`,
-/// so later pages would shrink to the default size. Re-add whatever the first
-/// request had that `next` doesn't.
-fn carry_query_forward(next: &str, first: &str) -> String {
-    let base = url::Url::parse(API).expect("API base");
-    let (Ok(mut merged), Ok(first)) = (base.join(next), base.join(first)) else {
-        return next.to_owned();
-    };
-    let present: Vec<String> = merged.query_pairs().map(|(k, _)| k.into_owned()).collect();
-    let missing: Vec<(String, String)> = first
-        .query_pairs()
-        .filter(|(k, _)| !present.iter().any(|p| p == k))
-        .map(|(k, v)| (k.into_owned(), v.into_owned()))
-        .collect();
-    merged.query_pairs_mut().extend_pairs(missing);
-    match merged.query() {
-        Some(q) => format!("{}?{q}", merged.path()),
-        None => merged.path().to_owned(),
-    }
-}
-
-/// `id` when it is an Apple Music id: a catalog number, or a prefix of one
-/// to three lowercase letters, a dot and a name (`i.AbC9-x`, `pl.u-8aAV`).
-/// Every request that changes the account checks its ids with it, as does
-/// the ratings' read, which shares their address: an empty or odd id may
-/// name a whole collection once in the address (a removal naming no song
-/// may empty the playlist; `..` climbs a level), and ids go into addresses
-/// unescaped.
-fn apple_id(id: &str) -> Result<&str> {
-    let catalog = !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit());
-    let named = id.split_once('.').is_some_and(|(prefix, name)| {
-        (1..=3).contains(&prefix.len())
-            && prefix.bytes().all(|b| b.is_ascii_lowercase())
-            && !name.is_empty()
-            && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
-    });
-    if catalog || named {
-        Ok(id)
-    } else {
-        Err(Error::Protocol(format!("not an Apple Music id: {id:?}")))
-    }
+    next_page_path(&path, first)
 }
 
 #[async_trait]
@@ -1189,10 +1317,10 @@ impl Provider for AppleMusic {
         );
         let req = if on {
             self.http
-                .post(format!("{API}{path}"))
+                .post(self.api(&path))
                 .header("Content-Length", "0")
         } else {
-            self.http.delete(format!("{API}{path}"))
+            self.http.delete(self.api(&path))
         };
         self.send_change(req, &path).await
     }
@@ -1206,7 +1334,7 @@ impl Provider for AppleMusic {
         );
         let req = self
             .http
-            .post(format!("{API}{path}"))
+            .post(self.api(&path))
             .header("Content-Length", "0");
         self.send_change(req, &path).await
     }
@@ -1267,7 +1395,7 @@ impl Provider for AppleMusic {
             "songs"
         };
         let path = format!("/v1/me/library/{kind}/{}", apple_id(&library_id.id)?);
-        let req = self.http.delete(format!("{API}{path}"));
+        let req = self.http.delete(self.api(&path));
         self.send_change(req, &path).await
     }
 
@@ -1277,7 +1405,7 @@ impl Provider for AppleMusic {
         let body = serde_json::json!({
             "attributes": { "name": name, "description": description },
         });
-        let req = self.http.patch(format!("{API}{path}")).json(&body);
+        let req = self.http.patch(self.api(&path)).json(&body);
         self.send_change(req, &path).await
     }
 
@@ -1288,14 +1416,14 @@ impl Provider for AppleMusic {
             apple_id(&playlist.id)?,
             apple_id(&entry.id)?
         );
-        let req = self.http.delete(format!("{API}{path}"));
+        let req = self.http.delete(self.api(&path));
         self.send_change(req, &path).await
     }
 
     /// As the web player deletes them.
     async fn delete_playlist(&self, playlist: &ItemId) -> Result<()> {
         let path = format!("/v1/me/library/playlists/{}", apple_id(&playlist.id)?);
-        let req = self.http.delete(format!("{API}{path}"));
+        let req = self.http.delete(self.api(&path));
         self.send_change(req, &path).await
     }
 
@@ -1322,7 +1450,7 @@ impl Provider for AppleMusic {
         let resp = self
             .send(
                 self.http
-                    .post(format!("{API}{path}"))
+                    .post(self.api(path))
                     .header("Media-User-Token", &self.user_token)
                     .json(&body),
                 path,
@@ -1364,7 +1492,7 @@ impl Provider for AppleMusic {
             .collect::<Result<Vec<_>>>()?;
         let req = self
             .http
-            .post(format!("{API}{path}"))
+            .post(self.api(&path))
             .json(&serde_json::json!({ "data": data }));
         self.send_change(req, &path).await
     }
@@ -1396,14 +1524,12 @@ impl Provider for AppleMusic {
             apple_id(&id.id)?
         );
         let req = if on {
-            self.http
-                .put(format!("{API}{path}"))
-                .json(&serde_json::json!({
-                    "type": "rating",
-                    "attributes": { "value": -1 },
-                }))
+            self.http.put(self.api(&path)).json(&serde_json::json!({
+                "type": "rating",
+                "attributes": { "value": -1 },
+            }))
         } else {
-            self.http.delete(format!("{API}{path}"))
+            self.http.delete(self.api(&path))
         };
         self.send_change(req, &path).await
     }
@@ -1564,72 +1690,33 @@ impl Provider for AppleMusic {
             .collect())
     }
 
-    /// A station's next songs, about `count` of them. Apple hands out two a
-    /// call and its calls share a cursor, so they go four at a time and
-    /// repeats are dropped (Kopuz measured the trade-off).
+    /// About `count` of the station's next songs, each once: calls of a few songs each run
+    /// side by side, within the bounds `station` sets, so that the first songs can start
+    /// while the rest arrive. Fails only when no song came.
     async fn station_tracks(&self, station: &ItemId, count: usize) -> Result<Vec<Track>> {
-        let path = format!("/v1/me/stations/next-tracks/{}", station.id);
-        let call = || async {
-            let resp = self
-                .send(
-                    self.http
-                        .post(format!("{API}{path}"))
-                        .header("Media-User-Token", &self.user_token)
-                        .header("Content-Length", "0"),
-                    &path,
-                )
-                .await?;
-            if !resp.status().is_success() {
-                return Err(Error::Protocol(format!("{path}: HTTP {}", resp.status())));
+        use futures_util::StreamExt;
+
+        if count == 0 {
+            return Ok(Vec::new());
+        }
+        let path = format!("/v1/me/stations/next-tracks/{}", apple_id(&station.id)?);
+        let mut gathering = station::Gathering::new(count);
+        let mut calls = futures_util::stream::FuturesUnordered::new();
+        loop {
+            let more = gathering.calls_to_send();
+            for _ in 0..more {
+                calls.push(self.next_station_songs(&path));
             }
-            resp.json::<types::Response<types::Song>>()
-                .await
-                .map_err(|e| Error::Protocol(format!("{path}: {e}")))
-        };
-        let mut tracks: Vec<Track> = Vec::new();
-        let mut barren = 0;
-        // Why no song came, if none does: signed out, or out of reach.
-        let mut failed = None;
-        for _ in 0..8 {
-            if tracks.len() >= count {
+            gathering.sent(more);
+            if gathering.is_over() {
                 break;
             }
-            let before = tracks.len();
-            let (a, b, c, d) = tokio::join!(call(), call(), call(), call());
-            let mut answered = false;
-            for page in [a, b, c, d] {
-                let page = match page {
-                    Ok(page) => page,
-                    Err(e) => {
-                        failed.get_or_insert(e);
-                        continue;
-                    }
-                };
-                answered = true;
-                for song in page.data {
-                    let track = convert::track(song);
-                    if !tracks.iter().any(|t| t.id == track.id) {
-                        tracks.push(track);
-                    }
-                }
-            }
-            if !answered {
+            let Some(answer) = calls.next().await else {
                 break;
-            }
-            if tracks.len() == before {
-                barren += 1;
-                if barren == 2 {
-                    break;
-                }
-            }
+            };
+            gathering.answered(answer);
         }
-        if tracks.is_empty() {
-            return Err(
-                failed.unwrap_or_else(|| Error::Playback("the station offered no songs".into()))
-            );
-        }
-        tracks.truncate(count);
-        Ok(tracks)
+        gathering.into_songs()
     }
 
     /// Apple's home: the shelves the web player shows, titled in English as
@@ -1674,19 +1761,56 @@ impl Provider for AppleMusic {
 }
 
 impl AppleMusic {
-    /// Catalog song `id`'s lyrics, word-timed if it has them.
+    /// The catalog song `id`'s lyrics: word-timed ones, else line-timed ones. An endpoint
+    /// that answers 404, no TTML, or TTML that does not read gives none, and the next is
+    /// asked; the first TTML of an answer is the one read.
+    ///
+    /// # Errors
+    ///
+    /// Any other failure of either request ends the search with it.
     async fn lyrics_of(&self, id: &str) -> Result<Option<Lyrics>> {
-        for kind in ["syllable-lyrics", "lyrics"] {
-            let path = format!("/v1/catalog/{}/songs/{id}/{kind}", self.storefront);
-            let Some(resp) = self.fetch::<types::LyricsResponse>(&path).await? else {
+        for endpoint in ["syllable-lyrics", "lyrics"] {
+            let path = format!("/v1/catalog/{}/songs/{id}/{endpoint}", self.storefront);
+            let Some(answer) = self.fetch::<types::LyricsResponse>(&path).await? else {
                 continue;
             };
-            let ttml = resp.data.into_iter().find_map(|r| r.attributes?.ttml);
-            if let Some(lyrics) = ttml.as_deref().and_then(lyrics::parse_ttml) {
+            let ttml = answer
+                .data
+                .iter()
+                .find_map(|entry| entry.attributes.as_ref()?.ttml.as_deref());
+            if let Some(lyrics) = ttml.and_then(lyrics::parse_ttml) {
                 return Ok(Some(lyrics));
             }
         }
         Ok(None)
+    }
+
+    /// One call for a station's next songs, at `path`.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::NotSignedIn`] on a 401 or 403 once the developer token was renewed; another
+    /// failure status, or an answer that does not read, names `path`.
+    async fn next_station_songs(&self, path: &str) -> Result<Vec<Track>> {
+        let request = self
+            .http
+            .post(self.api(path))
+            .header("Media-User-Token", &self.user_token)
+            .header("Content-Length", "0");
+        let resp = self.send(request, path).await?;
+        let status = resp.status();
+        match status.as_u16() {
+            401 | 403 => return Err(Error::NotSignedIn),
+            _ if !status.is_success() => {
+                return Err(Error::Protocol(format!("{path}: HTTP {status}")));
+            }
+            _ => {}
+        }
+        let body = resp
+            .text()
+            .await
+            .map_err(|e| Error::Network(format!("{path}: {e}")))?;
+        station::songs_in(path, &body)
     }
 }
 
@@ -1864,83 +1988,600 @@ mod tests {
             ]
         );
     }
+}
+
+#[cfg(test)]
+mod reading_tests {
+    use super::*;
 
     #[test]
-    fn the_next_page_keeps_the_first_requests_parameters() {
-        let next = carry_query_forward(
-            "/v1/me/library/songs?offset=100",
-            "/v1/me/library/songs?limit=100&include=albums",
-        );
-        assert_eq!(
-            next,
-            "/v1/me/library/songs?offset=100&limit=100&include=albums"
-        );
-    }
-
-    #[test]
-    fn a_page_at_an_offset_keeps_the_first_requests_parameters() {
-        assert_eq!(
-            at_offset(
-                "/v1/me/library/songs?offset=100",
-                700,
-                "/v1/me/library/songs?limit=100&include=albums"
-            ),
-            "/v1/me/library/songs?offset=700&limit=100&include=albums"
-        );
-    }
-
-    #[test]
-    fn the_next_page_wins_where_both_set_a_parameter() {
-        let next = carry_query_forward(
-            "/v1/me/library/albums?offset=200&limit=50",
-            "/v1/me/library/albums?limit=100",
-        );
-        assert_eq!(next, "/v1/me/library/albums?offset=200&limit=50");
-    }
-
-    #[test]
-    fn apple_ids_are_catalog_numbers_or_prefixed_names() {
+    fn ids_that_may_go_into_an_address() {
         for id in [
-            "1440833098",
+            "1234567890",
+            "0",
             "i.AbC9-x",
-            "l.xyz",
-            "p.A1",
-            "pl.u-8aAVZAvsGVW9j",
+            "pl.u-1b2",
             "ra.123",
+            "abc.D",
+            "p.-",
         ] {
             assert_eq!(apple_id(id).unwrap(), id);
         }
-    }
-
-    #[test]
-    fn a_removal_names_one_song_of_one_playlist() {
-        let path = format!(
-            "/v1/me/library/playlists/{}/tracks?ids%5Blibrary-songs%5D={}&mode=all",
-            apple_id("p.AbC-12").unwrap(),
-            apple_id("i.XyZ9").unwrap()
-        );
-        assert!(path.ends_with("playlists/p.AbC-12/tracks?ids%5Blibrary-songs%5D=i.XyZ9&mode=all"));
-    }
-
-    #[test]
-    fn anything_else_never_reaches_a_request_that_changes_the_account() {
         for id in [
-            "",
-            " ",
-            ".",
-            "..",
-            "p.",
-            ".x",
-            "p..",
-            "1/2",
-            "../tracks",
-            "i.1&mode=all",
-            "i.1?x",
-            "i.é",
-            "abcd.1",
-            "P.1",
+            "", ".", "i.", ".a", "abcd.x", "Pl.x", "i.a/b", "i.a?b", "i.a b", "i.a.b", "i.é",
+            "12a", "1/2", "../x", "pl.u_1", "-1",
         ] {
-            assert!(apple_id(id).is_err(), "{id:?}");
+            let error = apple_id(id).unwrap_err();
+            assert!(
+                matches!(&error, Error::Protocol(m) if m.contains("not an Apple Music id")),
+                "{id}: {error}"
+            );
         }
+    }
+
+    #[test]
+    fn a_later_page_keeps_the_first_pages_parameters() {
+        let first =
+            "/v1/me/library/albums?limit=100&include=catalog&fields%5Balbums%5D=contentRating";
+        assert_eq!(
+            next_page_path("/v1/me/library/albums?offset=100", first),
+            "/v1/me/library/albums?offset=100&limit=100&include=catalog&fields%5Balbums%5D=contentRating"
+        );
+    }
+
+    #[test]
+    fn nexts_own_parameters_and_their_spelling_stay() {
+        let first = "/v1/x?limit=100&ids%5Bsongs%5D=1&l=en-US&q=a+b";
+        // `ids[songs]` written either way is the same name; `next`'s value wins.
+        assert_eq!(
+            next_page_path("/v1/x?ids[songs]=2&offset=5&l=fr", first),
+            "/v1/x?ids[songs]=2&offset=5&l=fr&limit=100&q=a+b"
+        );
+        assert_eq!(
+            next_page_path("/v1/x?limit=7&offset=5", "/v1/x?limit=100&a=%C3%A9%20x"),
+            "/v1/x?limit=7&offset=5&a=%C3%A9+x"
+        );
+    }
+
+    #[test]
+    fn a_whole_next_stays_on_the_apis_host() {
+        assert_eq!(
+            next_page_path("https://elsewhere.example/v1/x?offset=2", "/v1/x?limit=10"),
+            "/v1/x?offset=2&limit=10"
+        );
+        assert_eq!(next_page_path("//elsewhere.example/v1/x", "/v1/x"), "/v1/x");
+        assert_eq!(
+            next_page_path("relative?offset=1", "/v1/a/b?l=x"),
+            "/relative?offset=1&l=x"
+        );
+        assert_eq!(next_page_path("/v1/a/../b/./c", "/v1"), "/v1/b/c");
+    }
+
+    #[test]
+    fn no_parameter_is_the_path_alone() {
+        assert_eq!(next_page_path("/v1/x", "/v1/x"), "/v1/x");
+        assert_eq!(next_page_path("/v1/x?", "/v1/x?"), "/v1/x");
+        assert_eq!(next_page_path("/v1/x?#f", "/v1/x"), "/v1/x");
+        assert_eq!(next_page_path("/v1/x?&", "/v1/y?a=1"), "/v1/x?&a=1");
+    }
+
+    #[test]
+    fn what_does_not_resolve_is_next_as_it_is_on_the_apis_host() {
+        assert_eq!(
+            next_page_path("http://[::1", "/v1/x?limit=1"),
+            "/http://[::1"
+        );
+        assert_eq!(
+            next_page_path("/v1/x?offset=1", "http://[::1"),
+            "/v1/x?offset=1"
+        );
+        // A scheme of its own and no path to keep: still asked of the API.
+        assert_eq!(
+            next_page_path("evil.example:99", "/v1/x"),
+            "/evil.example:99"
+        );
+        assert_eq!(next_page_path("", "/v1/x?limit=1"), "/?limit=1");
+    }
+
+    #[test]
+    fn at_offset_builds_on_it() {
+        assert_eq!(
+            at_offset(
+                "/v1/me/library/songs?offset=100",
+                300,
+                "/v1/me/library/songs?limit=100&relate=albums"
+            ),
+            "/v1/me/library/songs?offset=300&limit=100&relate=albums"
+        );
+    }
+
+    #[test]
+    fn a_token_expiring_soon_or_gone_is_renewed_before_use() {
+        use crate::test_support::{fake_token, seconds_from_now};
+        assert!(expires_soon(&fake_token(seconds_from_now(60))));
+        assert!(expires_soon(&fake_token(1)));
+        assert!(!expires_soon(&fake_token(seconds_from_now(3600))));
+        assert!(!expires_soon("not.a.token"));
+    }
+}
+
+#[cfg(test)]
+mod http_tests {
+    use super::*;
+    use crate::test_support::{
+        Reply, Request, TestServer, USER_TOKEN, apple_music, apple_server, fake_token, json_reply,
+        lasting_token, reply, seconds_from_now, test_client, web_player_and_storefront,
+    };
+    use serde_json::json;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    const PROFILE: &str = "/v1/me/social-profile";
+
+    fn profile() -> Reply {
+        json_reply(&json!({ "data": [{ "id": "me", "attributes": { "name": "Made Up" } }] }))
+    }
+
+    /// A server whose web player gives `tokens` in turn, the last for ever after, and whose
+    /// API answers with `api`.
+    fn rotating(
+        tokens: Vec<String>,
+        api: impl Fn(&Request) -> Reply + Send + Sync + 'static,
+    ) -> TestServer {
+        let reads = AtomicUsize::new(0);
+        TestServer::start(move |request| {
+            if request.path == crate::test_support::SCRIPT {
+                let n = reads.fetch_add(1, Ordering::SeqCst).min(tokens.len() - 1);
+                return reply(200, &format!("t=\"{}\"", tokens[n]));
+            }
+            web_player_and_storefront(request, &tokens[0]).unwrap_or_else(|| api(request))
+        })
+    }
+
+    #[tokio::test]
+    async fn a_token_about_to_expire_is_read_again_before_a_request() {
+        let expiring = fake_token(seconds_from_now(60));
+        let fresh = lasting_token();
+        let server = rotating(vec![expiring.clone(), fresh.clone()], |_| profile());
+        let am = apple_music(&server).await;
+        assert_eq!(
+            am.profile().await.unwrap().unwrap().name.as_deref(),
+            Some("Made Up")
+        );
+        assert_eq!(
+            am.profile().await.unwrap().unwrap().name.as_deref(),
+            Some("Made Up")
+        );
+        let bearers: Vec<String> = server
+            .requests_to(PROFILE)
+            .iter()
+            .filter_map(|r| r.bearer().map(str::to_owned))
+            .collect();
+        assert_eq!(bearers, [fresh.clone(), fresh]);
+        // Read twice in all: at the connection, then before its first request (the
+        // storefront's), and not again.
+        assert_eq!(server.requests_to(crate::test_support::SCRIPT).len(), 2);
+    }
+
+    #[tokio::test]
+    async fn a_token_whose_expiry_does_not_read_is_kept_until_refused() {
+        let header = base64::Engine::encode(
+            &base64::engine::general_purpose::URL_SAFE_NO_PAD,
+            r#"{"alg":"ES256"}"#,
+        );
+        let payload = base64::Engine::encode(
+            &base64::engine::general_purpose::URL_SAFE_NO_PAD,
+            r#"{"iss":"MADEUP"}"#,
+        );
+        let no_expiry = format!("{header}.{payload}.c2ln");
+        let server = rotating(vec![no_expiry.clone(), lasting_token()], |_| profile());
+        let am = apple_music(&server).await;
+        am.profile().await.unwrap();
+        assert_eq!(
+            server.requests_to(PROFILE)[0].bearer(),
+            Some(no_expiry.as_str())
+        );
+        assert_eq!(server.requests_to(crate::test_support::SCRIPT).len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_refused_token_is_read_again_and_the_request_sent_once_more() {
+        let (old, new) = (
+            lasting_token(),
+            fake_token(seconds_from_now(80 * 24 * 3600)),
+        );
+        let accepted = new.clone();
+        let server = rotating(vec![old.clone(), new.clone()], move |request| {
+            if request.bearer() == Some(accepted.as_str()) {
+                profile()
+            } else {
+                reply(401, "")
+            }
+        });
+        let am = apple_music(&server).await;
+        am.profile().await.unwrap();
+        let bearers: Vec<Option<String>> = server
+            .requests_to(PROFILE)
+            .iter()
+            .map(|r| r.bearer().map(str::to_owned))
+            .collect();
+        assert_eq!(bearers, [Some(old), Some(new)]);
+    }
+
+    #[tokio::test]
+    async fn a_request_refused_again_is_sent_no_third_time() {
+        let server = rotating(
+            vec![lasting_token(), fake_token(seconds_from_now(9_000_000))],
+            |_| reply(401, ""),
+        );
+        let am = apple_music(&server).await;
+        assert!(matches!(am.profile().await, Err(Error::NotSignedIn)));
+        assert_eq!(server.requests_to(PROFILE).len(), 2);
+    }
+
+    #[tokio::test]
+    async fn a_short_wait_asked_for_is_waited_and_the_request_sent_again() {
+        let calls = AtomicUsize::new(0);
+        let server = apple_server(move |_| {
+            if calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                reply(429, "").header("Retry-After", "0")
+            } else {
+                profile()
+            }
+        });
+        let am = apple_music(&server).await;
+        assert!(am.profile().await.unwrap().is_some());
+        assert_eq!(server.requests_to(PROFILE).len(), 2);
+    }
+
+    #[tokio::test]
+    async fn a_long_wait_asked_for_is_not() {
+        let server = apple_server(|_| reply(429, "").header("Retry-After", "11"));
+        let am = apple_music(&server).await;
+        let error = am.profile().await.unwrap_err();
+        assert!(error.to_string().contains("429"), "{error}");
+        assert_eq!(server.requests_to(PROFILE).len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_redirect_off_apples_hosts_is_not_followed() {
+        let server = apple_server(|request| {
+            if request.host_name() == "elsewhere.example" {
+                return profile();
+            }
+            let port = request.host.rsplit(':').next().unwrap_or("").to_owned();
+            reply(302, "").header(
+                "Location",
+                &format!("http://elsewhere.example:{port}{PROFILE}"),
+            )
+        });
+        let am = apple_music(&server).await;
+        let error = am.profile().await.unwrap_err();
+        assert!(error.to_string().contains("302"), "{error}");
+        assert!(
+            server
+                .requests()
+                .iter()
+                .all(|r| r.host_name() != "elsewhere.example")
+        );
+    }
+
+    fn upload(id: &str) -> serde_json::Value {
+        json!({ "id": id, "type": "library-songs", "attributes": { "name": "Made-up upload" } })
+    }
+
+    #[tokio::test]
+    async fn later_pages_are_asked_with_the_first_pages_parameters() {
+        let server = apple_server(|request| {
+            let next = if request.path.contains("offset=100") {
+                json!(null)
+            } else {
+                json!("/v1/me/library/songs?offset=100")
+            };
+            json_reply(&json!({ "data": [upload("i.A")], "next": next }))
+        });
+        let am = apple_music(&server).await;
+        let first = am.library_tracks(None).await.unwrap();
+        let cursor = first.next.expect("a next page");
+        assert_eq!(
+            cursor.0,
+            "/v1/me/library/songs?offset=100&limit=100&relate=albums"
+        );
+        let second = am.library_tracks(Some(&cursor)).await.unwrap();
+        assert!(second.next.is_none());
+        let paths: Vec<String> = server
+            .requests_to("/v1/me/library/songs")
+            .into_iter()
+            .map(|r| r.path)
+            .collect();
+        assert_eq!(
+            paths,
+            [
+                "/v1/me/library/songs?limit=100&relate=albums",
+                "/v1/me/library/songs?offset=100&limit=100&relate=albums"
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn pages_asked_at_once_keep_them_too() {
+        let server = apple_server(|_| {
+            json_reply(&json!({
+                "data": [{ "id": "l.x", "type": "library-albums", "attributes": { "name": "Made-up album" } }],
+                "next": "/v1/me/library/albums?offset=1",
+                "meta": { "total": 3 },
+            }))
+        });
+        let am = apple_music(&server).await;
+        let mut albums = 0;
+        am.each_library_album(|page, _| albums += page.len())
+            .await
+            .unwrap();
+        assert_eq!(albums, 3);
+        let mut later: Vec<String> = server
+            .requests_to("/v1/me/library/albums")
+            .into_iter()
+            .skip(1)
+            .map(|r| r.path)
+            .collect();
+        later.sort();
+        let rest = "&limit=100&include=catalog&fields%5Balbums%5D=contentRating";
+        assert_eq!(
+            later,
+            [
+                format!("/v1/me/library/albums?offset=1{rest}"),
+                format!("/v1/me/library/albums?offset=2{rest}")
+            ]
+        );
+    }
+
+    fn station() -> ItemId {
+        ItemId::new(ProviderKind::AppleMusic, "ra.1234")
+    }
+
+    const NEXT_TRACKS: &str = "/v1/me/stations/next-tracks/ra.1234";
+
+    fn songs(ids: &[String]) -> Reply {
+        let data: Vec<serde_json::Value> = ids
+            .iter()
+            .map(|id| json!({ "id": id, "type": "songs", "attributes": { "name": format!("Made-up {id}") } }))
+            .collect();
+        json_reply(&json!({ "data": data }))
+    }
+
+    /// A station whose `n`th call (from 0) answers `answer(n)`, each held a little so that
+    /// calls overlap.
+    fn station_server(answer: impl Fn(usize) -> Reply + Send + Sync + 'static) -> TestServer {
+        let calls = Arc::new(AtomicUsize::new(0));
+        apple_server(move |request| {
+            if request.path != NEXT_TRACKS {
+                return reply(404, "");
+            }
+            answer(calls.fetch_add(1, Ordering::SeqCst)).held(std::time::Duration::from_millis(30))
+        })
+    }
+
+    #[tokio::test]
+    async fn a_station_is_asked_side_by_side_within_its_bounds() {
+        // Each call brings two songs, one of them the first call's again. The first is held
+        // until a second comes (five seconds at most): the calls are sent side by side.
+        let arrived = Arc::new(AtomicUsize::new(0));
+        let server = station_server(move |n| {
+            arrived.fetch_add(1, Ordering::SeqCst);
+            let held = std::time::Instant::now();
+            while n == 0
+                && arrived.load(Ordering::SeqCst) < 2
+                && held.elapsed() < std::time::Duration::from_secs(5)
+            {
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+            songs(&["0".into(), format!("{}", n + 1)])
+        });
+        let am = apple_music(&server).await;
+        let tracks = am.station_tracks(&station(), 20).await.unwrap();
+        assert_eq!(tracks.len(), 20);
+        let ids: std::collections::HashSet<&str> =
+            tracks.iter().map(|t| t.id.id.as_str()).collect();
+        assert_eq!(ids.len(), 20, "each song once");
+        let calls = server.requests_to(NEXT_TRACKS);
+        assert!(calls.len() <= station::MOST_CALLS, "{} calls", calls.len());
+        let peak = server.peak_in_flight();
+        assert!(
+            (2..=station::MOST_IN_FLIGHT).contains(&peak),
+            "{peak} at once"
+        );
+        for call in &calls {
+            assert_eq!(call.method, "POST");
+            assert_eq!(call.header("content-length"), Some("0"));
+            assert_eq!(call.header("media-user-token"), Some(USER_TOKEN));
+            assert!(call.body.is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn a_station_gives_no_more_than_asked_nor_than_its_budget_of_calls() {
+        let server =
+            station_server(|n| songs(&[format!("a{n}"), format!("b{n}"), format!("c{n}")]));
+        let am = apple_music(&server).await;
+        assert_eq!(am.station_tracks(&station(), 25).await.unwrap().len(), 25);
+
+        let server = station_server(|n| songs(&[format!("a{n}"), format!("b{n}")]));
+        let am = apple_music(&server).await;
+        let tracks = am.station_tracks(&station(), 1000).await.unwrap();
+        assert_eq!(server.requests_to(NEXT_TRACKS).len(), station::MOST_CALLS);
+        assert_eq!(tracks.len(), 2 * station::MOST_CALLS);
+        assert!(server.peak_in_flight() <= station::MOST_IN_FLIGHT);
+    }
+
+    #[tokio::test]
+    async fn a_station_repeating_itself_ends_before_its_budget() {
+        let server = station_server(|_| songs(&["7".into(), "8".into()]));
+        let am = apple_music(&server).await;
+        let tracks = am.station_tracks(&station(), 20).await.unwrap();
+        let ids: Vec<&str> = tracks.iter().map(|t| t.id.id.as_str()).collect();
+        assert_eq!(ids, ["7", "8"]);
+        assert!(server.requests_to(NEXT_TRACKS).len() < station::MOST_CALLS);
+    }
+
+    #[tokio::test]
+    async fn a_station_offering_nothing_fails_without_spending_its_budget() {
+        let server = station_server(|_| songs(&[]));
+        let am = apple_music(&server).await;
+        let error = am.station_tracks(&station(), 10).await.unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "unexpected response: the station offered no songs"
+        );
+        assert!(server.requests_to(NEXT_TRACKS).len() < station::MOST_CALLS);
+    }
+
+    #[tokio::test]
+    async fn a_station_failing_says_how() {
+        for (status, body, expected) in [
+            (403, "", "not signed in".to_owned()),
+            (500, "", format!("{NEXT_TRACKS}: HTTP 500")),
+            (
+                200,
+                "{\"data\":",
+                format!("unexpected response: {NEXT_TRACKS}: "),
+            ),
+        ] {
+            let server = station_server(move |_| reply(status, body));
+            let am = apple_music(&server).await;
+            let error = am.station_tracks(&station(), 10).await.unwrap_err();
+            assert!(error.to_string().contains(&expected), "{status}: {error}");
+            assert!(server.requests_to(NEXT_TRACKS).len() < station::MOST_CALLS);
+        }
+        // A failure after songs came is no failure.
+        let server = station_server(|n| {
+            if n == 0 {
+                songs(&["1".into()])
+            } else {
+                reply(500, "")
+            }
+        });
+        let am = apple_music(&server).await;
+        assert_eq!(am.station_tracks(&station(), 10).await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn no_song_asked_or_a_station_id_that_is_not_apples_sends_nothing() {
+        let server = station_server(|_| songs(&["1".into()]));
+        let am = apple_music(&server).await;
+        assert!(am.station_tracks(&station(), 0).await.unwrap().is_empty());
+        for id in ["ra.1/../../me/library", "ra 1", "", "ra.1?x=y"] {
+            let station = ItemId::new(ProviderKind::AppleMusic, id);
+            let error = am.station_tracks(&station, 10).await.unwrap_err();
+            assert!(
+                error.to_string().contains("not an Apple Music id"),
+                "{id}: {error}"
+            );
+        }
+        assert!(
+            server
+                .requests()
+                .iter()
+                .all(|r| !r.path.contains("stations"))
+        );
+    }
+
+    const TTML: &str = r#"<tt xmlns="http://www.w3.org/ns/ttml"><body><div><p begin="1.0" end="2.5">A made-up line</p></div></body></tt>"#;
+
+    fn lyrics_reply(ttml: Option<&str>) -> Reply {
+        json_reply(
+            &json!({ "data": [{ "id": "1", "type": "lyrics", "attributes": { "ttml": ttml } }] }),
+        )
+    }
+
+    /// The lyrics of `1234` with its two endpoints answering `word_timed` and `line_timed`,
+    /// and which were asked.
+    async fn lyrics_with(
+        word_timed: Reply,
+        line_timed: Reply,
+    ) -> (Result<Option<Lyrics>>, Vec<String>) {
+        let answers = std::sync::Mutex::new((Some(word_timed), Some(line_timed)));
+        let server = apple_server(move |request| {
+            let mut answers = answers.lock().unwrap();
+            let answer = match request.path.as_str() {
+                "/v1/catalog/zz/songs/1234/syllable-lyrics" => answers.0.take(),
+                "/v1/catalog/zz/songs/1234/lyrics" => answers.1.take(),
+                _ => None,
+            };
+            answer.unwrap_or_else(|| reply(404, ""))
+        });
+        let am = apple_music(&server).await;
+        let lyrics = am.lyrics_of("1234").await;
+        let asked = server
+            .requests()
+            .into_iter()
+            .map(|r| r.path)
+            .filter(|p| p.contains("lyrics"))
+            .collect();
+        (lyrics, asked)
+    }
+
+    const WORD: &str = "/v1/catalog/zz/songs/1234/syllable-lyrics";
+    const LINE: &str = "/v1/catalog/zz/songs/1234/lyrics";
+
+    #[tokio::test]
+    async fn word_timed_lyrics_come_first() {
+        let (lyrics, asked) = lyrics_with(lyrics_reply(Some(TTML)), lyrics_reply(Some(TTML))).await;
+        assert_eq!(
+            lyrics.unwrap().unwrap().lines.last().unwrap().text,
+            "A made-up line"
+        );
+        assert_eq!(asked, [WORD]);
+    }
+
+    #[tokio::test]
+    async fn line_timed_ones_are_asked_only_when_the_first_gives_none() {
+        let none = [
+            reply(404, ""),
+            json_reply(&json!({ "data": [] })),
+            lyrics_reply(None),
+            lyrics_reply(Some("<tt><body></body></tt>")),
+        ];
+        for word_timed in none {
+            let (lyrics, asked) = lyrics_with(word_timed, lyrics_reply(Some(TTML))).await;
+            assert!(lyrics.unwrap().is_some());
+            assert_eq!(asked, [WORD, LINE]);
+        }
+        let (lyrics, asked) = lyrics_with(reply(404, ""), reply(404, "")).await;
+        assert!(lyrics.unwrap().is_none());
+        assert_eq!(asked, [WORD, LINE]);
+    }
+
+    #[tokio::test]
+    async fn any_other_failure_ends_the_search() {
+        let (lyrics, asked) = lyrics_with(reply(500, ""), lyrics_reply(Some(TTML))).await;
+        assert!(lyrics.unwrap_err().to_string().contains("HTTP 500"));
+        assert_eq!(asked, [WORD]);
+        let (lyrics, asked) = lyrics_with(reply(200, "not json"), lyrics_reply(Some(TTML))).await;
+        assert!(matches!(lyrics, Err(Error::Protocol(_))));
+        assert_eq!(asked, [WORD]);
+    }
+
+    #[tokio::test]
+    async fn an_upload_has_no_lyrics_and_asks_nothing() {
+        let server = apple_server(|_| lyrics_reply(Some(TTML)));
+        let am = apple_music(&server).await;
+        let upload = ItemId::new(ProviderKind::AppleMusic, "i.Mine");
+        assert!(am.lyrics(&upload).await.unwrap().is_none());
+        assert!(server.requests().iter().all(|r| !r.path.contains("lyrics")));
+    }
+
+    #[tokio::test]
+    async fn the_client_reaches_only_the_local_server() {
+        // A sanity check of the seam itself: Apple's names resolve to the local server.
+        let server = TestServer::start(|request| reply(200, &request.host));
+        let body = test_client(server.port())
+            .get(format!("{}/x", server.hosts().api))
+            .send()
+            .await
+            .unwrap()
+            .text()
+            .await
+            .unwrap();
+        assert_eq!(body, format!("amp-api.music.apple.com:{}", server.port()));
     }
 }

@@ -382,29 +382,6 @@ mod tests {
     }
 
     #[test]
-    fn a_library_song_plays_by_its_catalog_id() {
-        let t = track(song(serde_json::json!({
-            "id": "i.abc",
-            "attributes": {
-                "name": "Kool-Aid",
-                "artistName": "Bring Me The Horizon",
-                "durationInMillis": 208_000,
-                "contentRating": "explicit",
-                "artwork": { "url": "https://is1.mzstatic.com/x/{w}x{h}bb.jpg" },
-                "playParams": { "id": "i.abc", "kind": "song", "catalogId": "1811922756" }
-            }
-        })));
-        assert_eq!(t.id.id, "1811922756");
-        assert_eq!(t.duration, Some(Duration::from_secs(208)));
-        assert!(t.explicit);
-        assert_eq!(
-            t.artwork.unwrap().url(600),
-            "https://is1.mzstatic.com/x/600x600bb.jpg"
-        );
-        assert_eq!(t.quality.unwrap().bitrate_kbps, Some(256));
-    }
-
-    #[test]
     fn an_upload_keeps_its_library_id_and_claims_no_quality() {
         let t = track(song(serde_json::json!({
             "id": "i.upload",
@@ -423,13 +400,312 @@ mod tests {
         })));
         assert_eq!(t.album_id.map(|a| a.id), Some("l.album".to_owned()));
     }
+}
+
+/// Conversions of songs, albums and the rest made up for the tests: no title, artist, id or
+/// address here belongs to a real release.
+#[cfg(test)]
+mod made_up_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn read<T: serde::de::DeserializeOwned>(json: serde_json::Value) -> T {
+        serde_json::from_value(json).expect("the made-up resource reads")
+    }
 
     #[test]
-    fn a_catalog_song_keeps_its_own_id() {
-        let t = track(song(
-            serde_json::json!({ "id": "1811922756", "attributes": { "name": "x" } }),
-        ));
-        assert_eq!(t.id.id, "1811922756");
+    fn a_catalog_song_keeps_its_details_and_the_web_players_quality() {
+        let t = track(read(json!({
+            "id": "900000001",
+            "type": "songs",
+            "attributes": {
+                "name": "Paper Lanterns Over Nowhere",
+                "artistName": "The Imaginary Quartet",
+                "albumName": "Songs Nobody Recorded",
+                "durationInMillis": 187_250,
+                "trackNumber": 3,
+                "discNumber": 2,
+                "contentRating": "explicit",
+                "artwork": { "url": "https://art.example/{w}x{h}bb.{f}", "bgColor": "1a2b3c" },
+                "url": "https://music.apple.com/zz/album/songs-nobody-recorded/900000000?i=900000001",
+            },
+        })));
+        assert_eq!(t.id, ItemId::new(ProviderKind::AppleMusic, "900000001"));
+        assert_eq!(t.title, "Paper Lanterns Over Nowhere");
+        assert_eq!(t.artists, ["The Imaginary Quartet"]);
+        assert_eq!(t.album.as_deref(), Some("Songs Nobody Recorded"));
+        assert_eq!(t.album_id.map(|a| a.id).as_deref(), Some("900000000"));
+        assert_eq!(t.duration, Some(Duration::from_millis(187_250)));
+        assert_eq!((t.track_number, t.disc_number), (Some(3), Some(2)));
+        assert!(t.explicit);
+        assert!(!t.in_library && t.library_id.is_none());
+        assert_eq!(t.quality, Some(web_quality()));
+        let art = t.artwork.unwrap();
+        assert_eq!(art.url_template, "https://art.example/{size}x{size}bb.jpg");
+        assert_eq!(art.background, Some(0x1a2b3c));
+    }
+
+    #[test]
+    fn a_library_song_plays_by_its_catalog_id_and_keeps_its_place() {
+        let t = track(read(json!({
+            "id": "i.MadeUp42",
+            "type": "library-songs",
+            "attributes": {
+                "name": "A Tune for the Tests",
+                "artistName": "Placeholder Band",
+                "trackNumber": 0,
+                "playParams": { "id": "i.MadeUp42", "kind": "song", "catalogId": "900000777" },
+            },
+            "relationships": { "albums": { "data": [{ "id": "l.Album7", "type": "library-albums" }] } },
+        })));
+        assert_eq!(t.id.id, "900000777");
+        assert_eq!(t.library_id.map(|l| l.id).as_deref(), Some("i.MadeUp42"));
+        assert!(t.in_library);
+        assert_eq!(t.album_id.map(|a| a.id).as_deref(), Some("l.Album7"));
+        // An upload's 0 is no track number.
+        assert_eq!(t.track_number, None);
         assert!(t.quality.is_some());
+        assert!(!t.explicit);
+    }
+
+    #[test]
+    fn a_song_with_nothing_but_its_id_still_converts() {
+        let t = track(read(json!({ "id": "900000002" })));
+        assert_eq!(t.title, "");
+        assert_eq!(t.artists, [""]);
+        assert!(t.artwork.is_none() && t.duration.is_none() && t.album_id.is_none());
+        let empty_catalog = track(read(json!({
+            "id": "i.Mine",
+            "attributes": { "playParams": { "catalogId": "" } },
+        })));
+        assert_eq!(empty_catalog.id.id, "i.Mine");
+        assert!(empty_catalog.quality.is_none());
+    }
+
+    #[test]
+    fn an_album_takes_its_real_genre_its_notes_and_its_catalog_rating() {
+        let a = album(read(json!({
+            "id": "l.MadeUpAlbum",
+            "type": "library-albums",
+            "attributes": {
+                "name": "Echoes of a Fictional Summer",
+                "artistName": "Invented Ensemble",
+                "releaseDate": "2019-07-14",
+                "trackCount": 11,
+                "genreNames": ["Music", "Ambient"],
+                "editorialNotes": { "standard": "A <b>calm</b><br />record.", "short": "Calm." },
+                "copyright": "℗ 2019 Nobody Records",
+                "isMasteredForItunes": true,
+                "dateAdded": "2026-01-02T03:04:05Z",
+                "editorialVideo": { "motionSquareVideo1x1": { "video": "https://video.example/m.m3u8" } },
+                "artwork": { "url": "https://art.example/{w}x{h}.jpg" },
+            },
+            "relationships": {
+                "catalog": { "data": [{ "id": "900000100", "attributes": { "contentRating": "explicit" } }] },
+                "artists": { "data": [{ "id": "900000200", "attributes": { "artwork": { "url": "https://art.example/a/{w}x{h}.jpg" } } }] },
+            },
+        })));
+        assert_eq!(a.title, "Echoes of a Fictional Summer");
+        assert_eq!(a.genre.as_deref(), Some("Ambient"));
+        assert_eq!(a.description.as_deref(), Some("A calm record."));
+        assert_eq!(a.year, Some(2019));
+        assert_eq!(a.track_count, Some(11));
+        assert!(a.explicit && a.mastered);
+        assert_eq!(a.catalog_id.map(|c| c.id).as_deref(), Some("900000100"));
+        assert_eq!(a.artist_id.map(|c| c.id).as_deref(), Some("900000200"));
+        assert!(a.artist_artwork.is_some());
+        assert_eq!(a.motion.as_deref(), Some("https://video.example/m.m3u8"));
+        assert_eq!(a.added.as_deref(), Some("2026-01-02T03:04:05Z"));
+    }
+
+    #[test]
+    fn an_album_without_details_has_none() {
+        let a = album(read(json!({
+            "id": "900000101",
+            "attributes": { "genreNames": ["Musique"], "releaseDate": "20", "editorialNotes": { "short": "  " } },
+        })));
+        assert_eq!(a.genre, None);
+        assert_eq!(a.year, None);
+        assert_eq!(a.description, None);
+        assert!(!a.explicit && !a.mastered && a.motion.is_none());
+    }
+
+    #[test]
+    fn the_favourite_songs_playlist_is_named_in_the_apps_words_and_kept_apart() {
+        let favourites = playlist(read(json!({
+            "id": "p.Favs",
+            "attributes": { "name": "Morceaux inventés", "tags": ["favorited"], "canEdit": true },
+        })));
+        assert!(favourites.favourites);
+        assert_eq!(favourites.name, "Favourite Songs");
+        assert!(!favourites.editable);
+        let own = playlist(read(json!({
+            "id": "p.Mine",
+            "attributes": {
+                "name": "Road Trip to Nowhere",
+                "description": { "standard": "Made up for a test." },
+                "canEdit": true,
+                "playParams": { "globalId": "pl.u-MadeUp" },
+                "curatorName": "A. Tester",
+            },
+        })));
+        assert!(!own.favourites && own.editable);
+        assert_eq!(own.name, "Road Trip to Nowhere");
+        assert_eq!(own.description.as_deref(), Some("Made up for a test."));
+        assert_eq!(own.catalog_id.map(|c| c.id).as_deref(), Some("pl.u-MadeUp"));
+        assert_eq!(own.curator.as_deref(), Some("A. Tester"));
+    }
+
+    #[test]
+    fn a_library_artist_is_its_catalog_artist_with_its_photo() {
+        let a = library_artist(read(json!({
+            "id": "r.Lib1",
+            "attributes": { "name": "Fictional Singer" },
+            "relationships": { "catalog": { "data": [{ "id": "900000300", "attributes": { "artwork": { "url": "https://art.example/s/{w}x{h}.jpg" } } }] } },
+        })));
+        assert_eq!(a.id.id, "900000300");
+        assert_eq!(a.library_id.map(|l| l.id).as_deref(), Some("r.Lib1"));
+        assert!(a.artwork.is_some());
+        let alone = library_artist(read(json!({ "id": "r.Lib2" })));
+        assert_eq!(alone.id.id, "r.Lib2");
+        assert!(alone.artwork.is_none());
+        let catalog = artist(read(
+            json!({ "id": "900000301", "attributes": { "name": "Nobody", "inFavorites": true } }),
+        ));
+        assert_eq!(
+            (catalog.name.as_str(), catalog.in_favourites),
+            ("Nobody", Some(true))
+        );
+        assert!(catalog.library_id.is_none());
+    }
+
+    #[test]
+    fn recently_added_keeps_albums_playlists_and_audio_stations() {
+        let kinds = |json: serde_json::Value| collection(read(json));
+        assert!(matches!(
+            kinds(json!({ "id": "l.a", "type": "library-albums", "attributes": { "name": "x" } })),
+            Some(Collection::Album(_))
+        ));
+        assert!(matches!(
+            kinds(json!({ "id": "p.a", "type": "library-playlists" })),
+            Some(Collection::Playlist(_))
+        ));
+        assert!(matches!(
+            kinds(
+                json!({ "id": "ra.1", "type": "stations", "attributes": { "name": "Made-up FM" } })
+            ),
+            Some(Collection::Station(_))
+        ));
+        assert!(kinds(json!({ "id": "1", "type": "songs" })).is_none());
+        // Attributes that don't read are left out, the item kept.
+        let Some(Collection::Album(a)) =
+            kinds(json!({ "id": "l.b", "type": "albums", "attributes": { "name": 5 } }))
+        else {
+            panic!("an album");
+        };
+        assert_eq!(a.title, "");
+    }
+
+    #[test]
+    fn stations_say_what_they_play() {
+        let kind_of = |attributes: serde_json::Value| {
+            station(read(json!({ "id": "ra.2", "attributes": attributes }))).map(|s| s.kind)
+        };
+        assert_eq!(
+            kind_of(json!({ "isLive": true, "playParams": { "format": "stream" } })),
+            Some(StationKind::Live)
+        );
+        assert_eq!(
+            kind_of(json!({ "playParams": { "format": "stream" } })),
+            Some(StationKind::Episode)
+        );
+        assert_eq!(
+            kind_of(json!({ "playParams": { "format": "tracks" } })),
+            Some(StationKind::Tracks)
+        );
+        assert_eq!(kind_of(json!({ "mediaKind": "video" })), None);
+        assert_eq!(station(read(json!({ "id": "ra.3" }))), None);
+        let s = station(read(json!({ "id": "ra.4", "attributes": {
+            "name": "Imaginary Radio", "editorialNotes": { "short": "", "tagline": "Never on air" } } }))).unwrap();
+        assert_eq!(
+            s.description, None,
+            "an empty short line is none, the tagline unused"
+        );
+        let s = station(read(json!({ "id": "ra.5", "attributes": { "editorialNotes": { "tagline": "Never on air" } } }))).unwrap();
+        assert_eq!(s.description.as_deref(), Some("Never on air"));
+    }
+
+    #[test]
+    fn a_home_shelf_needs_a_title_and_something_to_show() {
+        let shelf_of = |json: serde_json::Value| shelf(read(json));
+        let full = shelf_of(json!({
+            "attributes": { "title": { "stringForDisplay": "Made For Tests" }, "display": { "kind": "MusicNotesHeroShelf" } },
+            "relationships": { "contents": { "data": [{ "id": "p.x", "type": "playlists" }, { "id": "1", "type": "songs" }] } },
+        }))
+        .unwrap();
+        assert_eq!(full.title, "Made For Tests");
+        assert!(full.hero);
+        assert_eq!(full.items.len(), 1);
+        assert!(
+            shelf_of(json!({ "attributes": { "title": { "stringForDisplay": "Empty" } } }))
+                .is_none()
+        );
+        assert!(shelf_of(json!({ "relationships": { "contents": { "data": [{ "id": "p.x", "type": "playlists" }] } } })).is_none());
+    }
+
+    #[test]
+    fn an_artists_banner_is_its_videos_first_frame_else_the_editors_picture() {
+        let attributes: types::ArtistAttributes = read(json!({
+            "editorialVideo": { "motionArtistWide16x9": {
+                "video": "https://video.example/wide.m3u8",
+                "previewFrame": { "url": "https://art.example/f/{w}x{h}.jpg" } } },
+            "editorialArtwork": { "centeredFullscreenBackground": { "url": "https://art.example/b/{w}x{h}.jpg" } },
+        }));
+        assert_eq!(
+            artist_banner(&attributes),
+            (
+                Some("https://video.example/wide.m3u8".into()),
+                Some("https://art.example/f/2400x1350.jpg".into())
+            )
+        );
+        let pictured: types::ArtistAttributes = read(json!({
+            "editorialVideo": { "motionArtistWide16x9": { "video": "" } },
+            "editorialArtwork": { "centeredFullscreenBackground": { "url": "https://art.example/b/{w}x{h}.jpg" } },
+        }));
+        assert_eq!(
+            artist_banner(&pictured),
+            (None, Some("https://art.example/b/2400x1200.jpg".into()))
+        );
+        assert_eq!(
+            artist_banner(&types::ArtistAttributes::default()),
+            (None, None)
+        );
+    }
+
+    #[test]
+    fn a_music_video_has_its_still_at_16_by_9() {
+        let v = music_video(read(json!({ "id": "900000400", "attributes": {
+            "name": "A Video Never Shot", "artistName": "Phantom Act", "contentRating": "explicit",
+            "artwork": { "url": "https://art.example/v/{w}x{h}.jpg" }, "url": "https://music.apple.com/zz/music-video/x/900000400" } })))
+        .unwrap();
+        assert_eq!(v.title, "A Video Never Shot");
+        assert_eq!(
+            v.thumbnail.as_deref(),
+            Some("https://art.example/v/800x450.jpg")
+        );
+        assert!(v.explicit);
+        assert!(music_video(read(json!({ "id": "900000401" }))).is_none());
+    }
+
+    #[test]
+    fn artwork_without_an_address_is_none() {
+        let empty: types::Artwork = read(json!({ "url": "" }));
+        assert!(artwork(Some(&empty)).is_none());
+        assert!(artwork(None).is_none());
+        let crop: types::Artwork =
+            read(json!({ "url": "https://art.example/{w}x{h}{c}.{f}", "bgColor": "zz0000" }));
+        let art = artwork(Some(&crop)).unwrap();
+        assert_eq!(art.url_template, "https://art.example/{size}x{size}cc.jpg");
+        assert_eq!(art.background, None);
     }
 }
