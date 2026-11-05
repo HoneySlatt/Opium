@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
-# Runs builds of the CDM's measuring program in turn, the same way, for a before-and-after:
+# Runs builds of a measuring program that takes a song's id in turn, the same way, for a
+# before-and-after:
 #
 #   scripts/measure/cdm-cost.sh <out-dir> <song id> <rounds> <name>=<binary>...
 #
-# Each round runs every binary once, in the order given, with the default 30 s at rest; each run
-# writes <out-dir>/<name>-<round>.txt. A binary is a release build of
-# `crates/apple-music/examples/cdm_cost.rs`, copied aside, the old one built from the commit
-# before the change. Every run asks Apple for one licence on the owner's account: only with the
+# Each round runs every binary once, in the order given; each run writes
+# <out-dir>/<name>-<round>.txt. A binary is a release build of
+# `crates/apple-music/examples/cdm_cost.rs` (the CDM, M1.11) or `am_cost.rs` (Apple Music's steps,
+# M1.12), copied aside, the old one built from the commit before the change. Every run asks Apple
+# for one licence on the owner's account, and `am_cost` for a station's batch too: only with the
 # owner's go (AGENTS.md, "Never on your own"). Runs are ten seconds apart, so that licences are
 # never asked in a burst. Nothing is played; nothing is written but the reports.
 set -euo pipefail

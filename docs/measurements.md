@@ -10,6 +10,33 @@ the desktop runs on a [throwaway profile](../CONTRIBUTING.md#a-throwaway-profile
 cited live in [`scripts/measure/`](../scripts/measure/), each described at its head
 ([CONTRIBUTING.md](../CONTRIBUTING.md#measuring)).
 
+## Apple Music's steps, M1.12 (2026-11-05)
+
+How long Apple Music's steps take Opium on the owner's account, before and after
+`crates/apple-music`'s derived items were written again
+([M1.12](PLAN.md#m110-to-m112--kopuzs-code-written-again)). Machine: AMD Ryzen 7 5800X, Linux
+7.3.0, the owner's network. Command: `scripts/measure/cdm-cost.sh`, which runs release builds of
+[`am_cost.rs`](../crates/apple-music/examples/am_cost.rs), with the owner's go: one licence and one
+station batch on the owner's account a run, nothing played, nothing written to disk. Song
+1463409605 and its station; a library of 8 499 songs.
+
+- *Before, first*: five runs of the code at `c132830`, ten seconds apart, at a load average of 8.8
+  rising to 16.6 (another build ran meanwhile).
+
+| What | Before, first (5 runs) |
+|---|---|
+| The developer token, on a client of its own | 507 to 791 ms |
+| Connecting: the token and the storefront | 772 to 886 ms |
+| The library's first page of 100 songs | 1 266 to 1 641 ms |
+| Every song of the library | 7.3 to 12.2 s |
+| A station's batch of 20 | 1 162 to 2 129 ms, 20 distinct songs every run |
+| The song ready to play (webPlayback to the first samples decrypted) | 1 035 to 1 459 ms |
+| Its first MiB of cleartext | the same digest every run, `d467d7d1094aa53a` |
+
+- **Searching the page and the script for the token**, apart: the two regular expressions of the
+  code before, built and run over Apple's page (2.4 MB) and script (3.3 MB) of 2026-11-05, saved
+  outside the repository: 0.08 ms (median of 30, p95 0.20 ms).
+
 ## The CDM, M1.11 (2026-11-05)
 
 What the browser's CDM costs Opium, before and after `crates/widevine` was written again
