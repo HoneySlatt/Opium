@@ -81,9 +81,9 @@ built in this stage.
 - **Goal.** Opium under its new names on the owner's computer and phone, with their data.
 - **Delivers.** The rename ([ADR-0023](adr/0023-the-rename-to-opium.md), `8e8784d`); the GitHub
   repository renamed `HoneySlatt/Opium` (`8e82ab7`); the owner's data moved on the computer: the
-  folders, the keyring item, the sealed files' magic, the shared state's provider. Left: the
-  repository's folder renamed; on the phone, the new package installed (release build), signed in
-  and paired again.
+  folders, the keyring item, the sealed files' magic, the shared state's provider; the repository's
+  folder renamed. Left: on the phone, the new package installed (release build), signed in and
+  paired again.
 - **Done when.** On the computer, Opium starts on the moved folders with its library, sign-ins and
   downloads; on the phone, it is signed in and paired, and the history and playlists match.
 - **How to test.** `scripts/check.sh`; a run on a
