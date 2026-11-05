@@ -12,40 +12,60 @@ cited live in [`scripts/measure/`](../scripts/measure/), each described at its h
 
 ## The CDM, M1.11 (2026-11-05)
 
-What the browser's CDM costs Opium, before `crates/widevine` was written again
+What the browser's CDM costs Opium, before and after `crates/widevine` was written again
 ([M1.11](PLAN.md#m110-to-m112--kopuzs-code-written-again)); what is measured is set in
 [`specs/widevine-host.md`](specs/widevine-host.md#11-what-is-measured) §11. Machine: AMD Ryzen 7
-5800X, Linux 7.3.0, load average 2.6 to 3.6. CDM: Widevine 4.10.3112.0, from Brave's profile.
-Command: `scripts/measure/cdm-cost.sh`, which runs
-[`cdm_cost.rs`](../crates/apple-music/examples/cdm_cost.rs) (a release build), with the owner's
-go: one licence on the owner's account a run, nothing played, nothing written to disk. Song
-1463409605, 7.18 MB, 9 057 samples, 210.3 s of AAC.
+5800X, Linux 7.3.0. CDM: Widevine 4.10.3112.0, from Brave's profile. Command:
+`scripts/measure/cdm-cost.sh`, which runs release builds of
+[`cdm_cost.rs`](../crates/apple-music/examples/cdm_cost.rs), with the owner's go: one licence on
+the owner's account a run, nothing played, nothing written to disk. Song 1463409605, 7.18 MB,
+9 057 samples, 210.3 s of AAC.
 
-Before: five runs of the code at commit `133176e`.
+- *Before, first*: five runs of the code at `133176e`, load average 2.6 to 3.6.
+- *Before* and *after*: five rounds, each running the old code (built from `fce9347`) then the new
+  one (`380bebc`), the same program but for its `cdm` module. The first round ran at a load
+  average of 18 (another build), and is left out on both sides below: before, a session to a
+  usable key in 1 084 ms and a decrypt's median 60.9 µs; after, 612 ms and 52.2 µs (p95 155 µs,
+  p99 3.0 ms).
 
-| What | Before (5 runs) |
-|---|---|
-| Loading and initialising the CDM | 7.9 ms on the first run, 0.9 to 1.0 ms after |
-| A session to a usable key | 573 to 612 ms |
-| … of which the CDM: opening the session | 74 to 82 ms |
-| … of which the licence server | 195 to 231 ms |
-| … of which the CDM: taking the licence | 270 to 336 ms |
-| A decrypt in place: median, p95, p99 | 33 to 42 µs, 62 to 93 µs, 0.89 to 1.6 ms |
-| A decrypt in place: max | 196 to 197 ms |
-| The whole song decrypted | 14.20 s every time (14.199 to 14.218): 15 times real time |
-| Wake-ups at rest, a session open, but the measuring thread's | 0 a second (the process has no other thread) |
+| What | Before, first (5 runs) | Before (rounds 2 to 5) | After (rounds 2 to 5) |
+|---|---|---|---|
+| Loading and initialising the CDM | 7.9 ms on the first run, 0.9 to 1.0 ms after | 0.9 to 1.2 ms | 1.7 to 1.9 ms |
+| A session to a usable key | 573 to 612 ms | 573 to 589 ms | 566 to 584 ms |
+| … of which the CDM: opening the session | 74 to 82 ms | 74 to 80 ms | 75 to 78 ms |
+| … of which the licence server | 195 to 231 ms | 200 to 254 ms | 191 to 310 ms |
+| … of which the CDM: taking the licence | 270 to 336 ms | 247 to 309 ms | 185 to 304 ms |
+| A decrypt in place: median | 33 to 42 µs | 31.9 to 32.9 µs | 41.0 to 41.6 µs |
+| A decrypt in place: p95, p99 | 62 to 93 µs, 0.89 to 1.6 ms | 47 to 56 µs, 0.99 to 1.08 ms | 71 to 82 µs, 0.98 to 1.02 ms |
+| A decrypt in place: max | 196 to 197 ms | 197 ms | 196 ms |
+| The whole song decrypted | 14.20 s every run | 14.20 s | 14.20 s |
+| The cleartext's digest | `680d56e025ce09e0` | the same | the same |
+| Wake-ups at rest, a session open, but the measuring thread's | 0 a second | 0 a second | 1.00 to 1.07 a second, all on the `cdm` thread |
+| The session closed and the CDM shut down, after 30 s at rest | not measured | 0.16 to 0.25 ms | 0.30 to 0.34 ms |
 
 - **The CDM paces its decrypts.** Most calls take tens of microseconds, but a few wait inside the
   CDM up to 197 ms, so that a song always takes the same time: 14.20 s for this one, about
   505 KB/s or 15 times real time. The mean, 1.57 ms a sample, is the pace, not the work; the old
-  figure "1.5 ms a sample, 11.6 times real time" was this mean. Nothing in the host can make the
-  CDM faster; the host must not add to it.
+  figure "1.5 ms a sample, 11.6 times real time" was this mean. The host cannot change that pace.
+- **A decrypt's median grows by 8.8 µs** (32.5 to 41.3 µs, the rounds' means), the round trip to
+  the `cdm` thread: within the budget of 15 µs the owner set. With the fake CDM, the round trip
+  adds 6.5 to 7.1 µs.
+- **A decrypt's p95 grows by about 25 µs** (47–56 to 71–82 µs): waking the `cdm` thread sometimes
+  costs more than its median. The p99, the max and the whole song are unchanged. The owner
+  accepted it.
+- **Loading grows by about 0.8 ms**, once a process, on the backend's thread: the `cdm` thread
+  started, and the calls sent to it. The owner accepted it, and the teardown after a while at rest
+  growing from 0.2 to 0.3 ms.
+- **One wake-up a second at rest, a session open**: the CDM sets a timer of about a second while a
+  session is open (48 in a run), which the old host never fired and the new one fires in time, as
+  ADR-0030 asks. The owner accepted it. With no session open, nothing wakes.
+- **Quitting**: right after the CDM is loaded, its teardown takes 0.44 to 0.85 s (the probe), its
+  module waiting for a thread of its own; after a while at rest, 0.3 ms. The window is gone by then.
+  The owner chose to keep the teardown whole.
 - A licence asked while a track decrypts waits behind one decrypt call: up to about 200 ms when
   that call is one the CDM paces.
-- The CDM sets no timer the old host would show at rest: the old host fires timers only during its
-  own calls, and the process has no thread but the measuring one.
-- Every run decrypted to the same cleartext (the program prints a digest of it), the check used
-  after the rewrite.
+- A licence's figures are the same within their noise; the CDM's share of a licence varies from
+  run to run on both sides.
 
 ## Indexing an encrypted track, M1.10 (2026-11-05)
 

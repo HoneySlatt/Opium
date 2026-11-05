@@ -25,8 +25,7 @@ work is in [`PLAN.md`](PLAN.md); a stage's audit adds what it leaves open.
 - **The dependencies are not checked**: `cargo deny` finds three advisories against `zstd`
   (RUSTSEC-2026-0391, -0398, -0403), six unmaintained crates and a yanked `async-executor`; a
   passing `deny.toml` would ignore them or update `Cargo.lock`, the owner's call at Stage 2.
-- **`unsafe` without `// SAFETY:`**: `File::from_raw_fd` (`opium-ffi/src/lib.rs`); the CDM shim's,
-  until M1.11.
+- **`unsafe` without `// SAFETY:`**: `File::from_raw_fd` (`opium-ffi/src/lib.rs`).
 - **Public items without documentation**: not counted yet.
 - **Left on purpose by the [2026-10-31 audit](audits/2026-10-31-full.md)**: SoundCloud's clear HLS
   joined whole before it plays; the player's real-time scratch buffer reallocated, 32-bit sources
@@ -61,14 +60,35 @@ work is in [`PLAN.md`](PLAN.md); a stage's audit adds what it leaves open.
     over a four-hour download, its last calls 0.24 ms each under the stream's lock
     ([measured](measurements.md#indexing-an-encrypted-track-m110-2026-11-05)). A way to make
     clear only the fragments just indexed needs a public item more in `cenc`.
-  - The CDM still returns a new buffer (`widevine`), copied into the stream's: decrypting in place
-    saves its copy once M1.11 gives the CDM's host an in-place call.
   - The desktop's about screen still credits Kopuz for CENC code; it is frozen
     ([ADR-0026](adr/0026-the-egui-window-frozen-until-the-move.md)), and M1.13 rewrites it.
-- **Until M1.11**, in `widevine`: the CDM's "no key" is reported as a decrypt failure; a CDM whose
-  start failed passes for loaded at the next attempt; the CDM's timers fire in a loop, not in time;
-  a session's close is not checked; CDM versions are sorted as text; promise ids are not matched,
-  key statuses and the CDM's rejection messages are dropped, and `RequestStorageId` gets no answer;
-  the library is loaded `RTLD_GLOBAL` and the instance never destroyed; 14 `unsafe` without
-  `// SAFETY:`.
+- **Left by M1.11** (`widevine` written again; [evidence](audits/2026-11-05-widevine-clean-room.md)):
+  - Checked with the owner's CDM: loading, initialising, a licence request, the figures before
+    and after ([measured](measurements.md#the-cdm-m111-2026-11-05)). Not yet: Apple's and
+    SoundCloud's protected songs played end to end, Spatial Audio and the live radio, with the
+    owner after M1.12. A licence now waits for the exact key id its decrypts use: a wrong one
+    costs ten seconds before "the CDM did not take the licence".
+  - The live radio's rotated keys now ask for the key id their PSSH names; whether Apple's
+    stations rotate keys at all is unknown until the radio is played.
+  - A buffer the CDM sets on a failed decrypt is not destroyed: the header says to ignore it, and
+    the clean side chose a rare leak over a possible double free.
+  - Quitting right after the CDM is loaded takes up to 0.85 s more once the window has closed:
+    the CDM's teardown waits for a thread of its own. Kept whole, the owner's choice.
+  - One wake-up a second at rest while a session is open, the CDM's own timer fired in time;
+    accepted by the owner. Closing a paused song's session would end it, at the cost of a
+    licence when it resumes.
+  - What to tell the user when the CDM is not provisioned is not known yet: the error says only
+    "not provisioned".
+  - The C++ is compiled with warnings as errors: a newer compiler than the flake's could stop the
+    build on a new warning.
+  - Opening a session and giving a licence block the async task that calls them, a tokio worker
+    with it, 75 to 340 ms, and ten seconds when a licence never gives the key wanted. Older than
+    M1.11; the worst case is new.
+  - `Cdm::load` answers Ok once loaded even if the `cdm` thread has since ended; the next call
+    fails with "the CDM thread ended". `give_licence` and `decrypt` leave "not initialised" out of
+    their documentation, and "the CDM closed the session" is said when the host closed it.
+- **The screenshot mode may never save**: on 2026-11-05 the release build saved in one of nine
+  runs, on the desktop or in a headless Weston, old code and new alike; it waits for frames the
+  compositor may not send. The cause is not known. The visual checks of the definition of done and
+  M1.14 lean on it; frozen with `app-desktop` ([pitfall](../CONTRIBUTING.md#known-pitfalls)).
 - **Until M1.12**, in `apple-music`: a download without a `Content-Length` fails the track.

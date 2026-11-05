@@ -326,8 +326,12 @@ from opening. The cause is not found ([ADR-0021](docs/adr/0021-the-exit-watch.md
 - **A test build started while Opium runs exits at once, printing nothing**: it raised the running
   window ([ADR-0018](docs/adr/0018-one-instance-through-the-session-bus.md)).
 - **With a test `XDG_CONFIG_HOME`, no Widevine CDM is found**: set `WIDEVINE_CDM`.
-- **In a headless Weston, the debug build's screenshot mode never saves** (2026-11-05, Weston 16;
-  the release build saves): measure and capture there with the release build.
+- **The screenshot mode may never save** ([debt](docs/debt.md)): on 2026-11-05 the debug build
+  never saved in a headless Weston, and later the same day the release build saved neither there
+  nor, most times, on the desktop, old and new code alike; it waits for frames the compositor may
+  not send. To end a test run by the app's own exit path, run it with a session bus of its own
+  (`unshare --user --map-current-user --net dbus-run-session -- …`) and call MPRIS `Quit` on that
+  bus.
 - **End a test process by its own pid**, never by name: `pkill -n weston` once ended another
   agent's headless Weston.
 - **`unshare -rn` breaks D-Bus's authentication**; to cut the network but keep the bus, use

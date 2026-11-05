@@ -9,5 +9,6 @@ items go to the known debt, [`../debt.md`](../debt.md).
 | [2026-10-31](2026-10-31-full.md) | The whole app, before the method; fixed the same day |
 | [2026-11-05](2026-11-05-licence.md) | What stands between Opium and MIT OR Apache-2.0; what Kopuz does badly in the code written again (M1.9) |
 | [2026-11-05](2026-11-05-cenc-clean-room.md) | `cenc` written again in a clean room: the export, the briefs, the questions, the tool calls and the token comparison (M1.10) |
+| [2026-11-05](2026-11-05-widevine-clean-room.md) | `widevine` written again in a clean room: the same evidence, and the first runs on the owner's CDM (M1.11) |
 
 The next is the stage audit that closes Stage 1 ([M1.8](../PLAN.md#m18--the-stage-audit)).
