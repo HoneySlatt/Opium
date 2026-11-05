@@ -22,6 +22,11 @@ own through MediaDrm ([ADR-0004](adr/0004-the-widevine-cdm-borrowed-from-the-bro
 **CENC.** Common Encryption: the encrypted fragmented MP4 in which Apple Music and SoundCloud serve
 their protected audio (`crates/cenc`).
 
+**Clean room.** Code written again by an agent that never read the code it replaces, from a
+specification only, so that the new code owes nothing to the old one's expression; its side that
+read the old code, and wrote the specification, is the *dirty side*
+([ADR-0030](adr/0030-the-kopuz-code-rewritten-in-a-clean-room.md), [method](specs/README.md)).
+
 **Expired.** The standing of a downloaded song that came through a service's DRM once that
 service's subscription was not confirmed in the last 30 days, or the user signed out of it
 (`downloads::store::Standing`, [ADR-0017](adr/0017-downloads-sealed-and-tied-to-the-subscription.md)).
@@ -68,13 +73,11 @@ device keeps its own copy and merges the others' (`synced::Shared`, `synced::Kep
 rate the PipeWire graph runs at, the other programs mixed in and the device's volume on the
 desktop (`player::OutputInfo`, `player::Mixing`); the phone's own chain on Android.
 
-**slime-ui.** SlimeEngine's UI framework, which the desktop window moves to once it runs
-applications, and which may draw the phone's screens if it beats Compose
-([ADR-0026](adr/0026-the-egui-window-frozen-until-the-move.md),
-[ADR-0028](adr/0028-the-phones-compose-screens-frozen-until-measured.md)).
-
 **Spatial Audio.** Apple's binaural rendering of a song's Dolby Atmos mix, for headphones, which
 Opium plays from the song's enhanced HLS ([ADR-0002](adr/0002-apple-music-through-its-web-player.md)).
+
+**Specification.** A file of [`docs/specs/`](specs/README.md) saying what a part of Opium must do
+(formats, requests, steps, errors) apart from its code: the only input of a clean-room rewrite.
 
 **Station.** A radio station: live (on air now), an episode (a show that aired, from its start), or
 a station of songs that the service picks one after the other (`opium_core::model::Station`).
@@ -85,6 +88,14 @@ what a theme file leaves out is Stock's ([ADR-0011](adr/0011-themes-as-toml-file
 **Throwaway profile.** Config, cache and data folders of a test's own, with no session bus and no
 network, on which an agent runs the app without touching the owner's data
 ([CONTRIBUTING.md](../CONTRIBUTING.md#a-throwaway-profile)).
+
+**Token comparison.** The check after a clean-room rewrite: the new code's tokens compared with
+the old code's and Kopuz's, raw and with identifiers made alike, every long shared run read by hand
+([method](specs/README.md)).
+
+**uwui.** The owner's UI framework, formerly slime-ui, made in SlimeEngine's repository and then
+in its own, under MIT OR Apache-2.0. Opium's desktop window and phone screens move to it during
+SlimeEngine's Stage 6d ([ADR-0031](adr/0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md)).
 
 **Wake.** The callback through which the desktop's workings ask the window for a new frame when
 something it shows has changed (`desktop::Wake`, [ADR-0019](adr/0019-the-workings-apart-from-the-drawing.md)).

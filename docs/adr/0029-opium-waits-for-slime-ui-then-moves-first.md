@@ -1,7 +1,10 @@
 # 0029. Opium waits for slime-ui, then moves to it before anything else
 
 - Status: Accepted; amends [0026](0026-the-egui-window-frozen-until-the-move.md) (no work meanwhile)
-  and the ROADMAP's order (Stage 5 comes right after Stage 1)
+  and the ROADMAP's order (Stage 5 comes right after Stage 1); amended by
+  [0030](0030-the-kopuz-code-rewritten-in-a-clean-room.md) (the standby lifted for the clean-room
+  milestones) and [0031](0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md) (the move during
+  Stage 6d)
 - Date: 2026-11-05
 
 ## Context

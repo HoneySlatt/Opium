@@ -12,12 +12,14 @@ with Jetpack Compose, over the same Rust core.
   Stage 2. In daily use by its author on one computer and one phone.
 - The computer: Linux only. The phone: Android 14 or later, arm64.
 - The desktop window and the phone's screens are frozen until they move to
-  SlimeEngine's UI framework, fixes for data loss, crashes and security
+  uwui, the owner's UI framework, fixes for data loss, crashes and security
   aside ([ADR-0026](docs/adr/0026-the-egui-window-frozen-until-the-move.md),
-  [ADR-0028](docs/adr/0028-the-phones-compose-screens-frozen-until-measured.md)).
+  [ADR-0031](docs/adr/0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md)).
 - The APK is signed with Android's debug key.
-- On standby until SlimeEngine's UI framework runs applications; the move to it
-  comes next ([ADR-0029](docs/adr/0029-opium-waits-for-slime-ui-then-moves-first.md)).
+- On standby until SlimeEngine's Stage 6d plans its ports, Opium's first
+  ([ADR-0031](docs/adr/0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md)).
+- Meanwhile, the code adapted from Kopuz is written again, and Opium then moves to MIT OR
+  Apache-2.0 ([ADR-0030](docs/adr/0030-the-kopuz-code-rewritten-in-a-clean-room.md)).
 - What is being worked on: [docs/PLAN.md](docs/PLAN.md).
 
 - **One library, one search:** albums, songs, artists and playlists from every

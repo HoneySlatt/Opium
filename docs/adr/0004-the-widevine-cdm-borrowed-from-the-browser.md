@@ -1,6 +1,7 @@
 # 0004. The Widevine CDM borrowed from the user's browser, through a C++ shim
 
-- Status: Accepted
+- Status: Accepted; amended by [0030](0030-the-kopuz-code-rewritten-in-a-clean-room.md) (the
+  host's shape)
 - Date: 2026-10-29
 
 ## Context

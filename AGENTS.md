@@ -25,15 +25,15 @@ Rules for AI agents working in this repository. Read this file fully at the star
 - Work on the current milestone, or on what the owner asks; a request that changes the plan goes
   into the PLAN.
 - Do not start later stages, nor prepare abstractions for them.
-- Opium is on standby until slime-ui runs applications
-  ([ADR-0029](docs/adr/0029-opium-waits-for-slime-ui-then-moves-first.md)): fix only data loss, a
-  crash, a security flaw or a service that stopped working, unless the owner asks otherwise.
+- Opium is on standby until SlimeEngine's Stage 6d plans its ports
+  ([ADR-0031](docs/adr/0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md)): fix only data
+  loss, a crash, a security flaw or a broken service, unless the owner asks otherwise.
 - When experience contradicts the roadmap, propose a change; once accepted, record it in an ADR.
-- `crates/app-desktop` is frozen until the move to slime-ui, SlimeEngine's UI framework
+- `crates/app-desktop` is frozen until the move to uwui, the owner's UI framework
   ([ADR-0026](docs/adr/0026-the-egui-window-frozen-until-the-move.md)): change it only for data loss,
-  a crash or a security flaw. Start no other interface framework.
+  a crash, a security flaw or M1.14's measuring. Start no other interface framework.
 - The phone's Compose screens (`ui/`) are frozen likewise
-  ([ADR-0028](docs/adr/0028-the-phones-compose-screens-frozen-until-measured.md)); its Kotlin system
+  ([ADR-0031](docs/adr/0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md)); its Kotlin system
   layer is not.
 
 ## Commands

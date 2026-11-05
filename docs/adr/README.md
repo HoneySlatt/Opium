@@ -14,10 +14,10 @@ call the app "Music" ([ADR-0023](0023-the-rename-to-opium.md)).
 
 | ADR | Title | Status |
 |---|---|---|
-| [0001](0001-gpl-3-0-or-later.md) | GPL-3.0-or-later | Accepted |
+| [0001](0001-gpl-3-0-or-later.md) | GPL-3.0-or-later | Accepted; to be amended at M1.13 (ADR-0030) |
 | [0002](0002-apple-music-through-its-web-player.md) | Apple Music through its web player, as Kopuz does | Accepted |
 | [0003](0003-sign-in-through-the-users-browser.md) | Signing in through the user's browser, on a profile of Opium's own | Accepted |
-| [0004](0004-the-widevine-cdm-borrowed-from-the-browser.md) | The Widevine CDM borrowed from the user's browser, through a C++ shim | Accepted |
+| [0004](0004-the-widevine-cdm-borrowed-from-the-browser.md) | The Widevine CDM borrowed from the user's browser, through a C++ shim | Accepted; amended by 0030 |
 | [0005](0005-pipewire-at-each-tracks-own-rate.md) | PipeWire as the only output, at each track's own rate | Accepted |
 | [0006](0006-egui-for-the-desktop-window.md) | egui for the desktop window | Accepted; amended by 0022 and 0026 |
 | [0007](0007-one-library-and-the-best-copy.md) | One library, and the best copy of each song | Accepted |
@@ -35,11 +35,13 @@ call the app "Music" ([ADR-0023](0023-the-rename-to-opium.md)).
 | [0019](0019-the-workings-apart-from-the-drawing.md) | The desktop's workings apart from its drawing, waking it through `Wake` | Accepted |
 | [0020](0020-d-bus-over-async-io.md) | D-Bus spoken over async-io, not tokio | Accepted |
 | [0021](0021-the-exit-watch.md) | The exit watch | Accepted; amended by 0024 |
-| [0022](0022-gpui-tried-and-abandoned.md) | GPUI tried and abandoned; egui stays until SlimeEngine's UI framework runs applications | Accepted; amends 0006 (until the move); amended by 0026 |
+| [0022](0022-gpui-tried-and-abandoned.md) | GPUI tried and abandoned; egui stays until SlimeEngine's UI framework runs applications | Accepted; amends 0006 (until the move); amended by 0026 and 0031 |
 | [0023](0023-the-rename-to-opium.md) | The app is named Opium, everywhere, with no compatibility kept | Accepted |
 | [0024](0024-the-exit-watch-aborts-for-a-core-dump.md) | The exit watch aborts, for a core dump | Accepted; amends 0021 |
 | [0025](0025-the-quality-bar.md) | The quality bar: tiers and budgets | Accepted |
-| [0026](0026-the-egui-window-frozen-until-the-move.md) | The egui window is frozen until the move to SlimeEngine's UI framework | Accepted; amends 0006 and 0022; amended by 0029 |
-| [0027](0027-macrobenchmark-for-the-phones-measurements-at-stage-3.md) | Macrobenchmark for the phone's measurements, at Stage 3 | Accepted |
-| [0028](0028-the-phones-compose-screens-frozen-until-measured.md) | The phone's Compose screens are frozen until slime-ui is measured on Android | Accepted |
-| [0029](0029-opium-waits-for-slime-ui-then-moves-first.md) | Opium waits for slime-ui, then moves to it before anything else | Accepted; amends 0026 (no work meanwhile) and the ROADMAP's order |
+| [0026](0026-the-egui-window-frozen-until-the-move.md) | The egui window is frozen until the move to SlimeEngine's UI framework | Accepted; amends 0006 and 0022; amended by 0029 and 0031 |
+| [0027](0027-macrobenchmark-for-the-phones-measurements-at-stage-3.md) | Macrobenchmark for the phone's measurements, at Stage 3 | Accepted; amended by 0031 |
+| [0028](0028-the-phones-compose-screens-frozen-until-measured.md) | The phone's Compose screens are frozen until slime-ui is measured on Android | Accepted; amended by 0031 |
+| [0029](0029-opium-waits-for-slime-ui-then-moves-first.md) | Opium waits for slime-ui, then moves to it before anything else | Accepted; amends 0026 (no work meanwhile) and the ROADMAP's order; amended by 0030 and 0031 |
+| [0030](0030-the-kopuz-code-rewritten-in-a-clean-room.md) | The code adapted from Kopuz is written again in a clean room | Accepted; amends 0004 (the host's shape) and 0029 (the standby lifted for these milestones) |
+| [0031](0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md) | Opium moves to uwui during SlimeEngine's Stage 6d, on the phone too | Accepted; amends 0022, 0026, 0027, 0028 and 0029 |

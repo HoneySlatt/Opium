@@ -1,9 +1,10 @@
 # What Opium's window needs from a UI framework
 
-Opium's desktop window is drawn with egui and will move to slime-ui, SlimeEngine's UI framework
-([ADR-0026](adr/0026-the-egui-window-frozen-until-the-move.md)). SlimeEngine's Stage 6d, which makes
-slime-ui run applications, ends only when every need marked *indispensable* below exists in
-slime-ui, shown by an example and its tests (SlimeEngine's ADR-0170). This file is that list.
+Opium's desktop window is drawn with egui and will move to uwui, the owner's UI framework, formerly
+slime-ui ([ADR-0026](adr/0026-the-egui-window-frozen-until-the-move.md),
+[ADR-0031](adr/0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md)). SlimeEngine's Stage 6d,
+which makes uwui run applications, ends only when every need marked *indispensable* below exists in
+uwui, shown by an example and its tests (SlimeEngine's ADR-0170). This file is that list.
 
 Each need was found in the code of `crates/app-desktop`; the inventory written for ADR-0170 on
 2026-11-04 was not kept, so this one replaces it.
@@ -20,7 +21,7 @@ Each need was found in the code of `crates/app-desktop`; the inventory written f
   - *Missing*: neither egui nor Opium has it.
 - **Mark**: *Indispensable* when the port would lose a function Opium has, or the look the owner
   approved for one of its built-in themes, or when the [quality bar](ROADMAP.md#quality-bar)
-  requires it once the window is on slime-ui. *Wished* otherwise.
+  requires it once the window is on uwui. *Wished* otherwise.
 
 The owner confirmed this rule and the marks on 2026-11-05, and chose four needs as indispensable
 that the rule left wished: a Korean fallback and colour emoji, tabular figures, WebP and GIF
@@ -33,7 +34,7 @@ word.
 
 ## How the window is built
 
-Three facts shape every row below. A framework with a retained tree, laid out by taffy as slime-ui
+Three facts shape every row below. A framework with a retained tree, laid out by taffy as uwui
 is, must be able to express each of them:
 
 - **Controls are drawn by hand at rectangles Opium computes.** There are 110 `interact` calls and
@@ -48,7 +49,7 @@ is, must be able to express each of them:
 
 ## What stays in Opium
 
-slime-ui takes an application's need only if it is general (ADR-0170). These are Opium's own work.
+uwui takes an application's need only if it is general (ADR-0170). These are Opium's own work.
 They stay in Opium and ask the framework only for what the rows below list:
 
 - The media controls (MPRIS) and the single instance, over D-Bus on threads of their own
@@ -59,10 +60,10 @@ They stay in Opium and ask the framework only for what the rows below list:
   the colours taken from a cover (`opium-core/src/palette.rs`).
 - Decoding animated covers with FFmpeg (`crates/motion`); the framework only shows the frames.
 - The themes as TOML files and the Amane palette, and watching those files: a thread polls them
-  each second (`app.rs:6372-6403`), [known debt](PLAN.md#known-debt).
+  each second (`app.rs:6372-6403`), [known debt](debt.md).
 - The player's state: the window asks for it every 250 ms while music plays (`app.rs:6245`). The
   quality bar wants a frame only when the progress moves a pixel. The player waking the window is
-  [known debt](PLAN.md#known-debt).
+  [known debt](debt.md).
 
 ## The window
 
@@ -87,20 +88,20 @@ They stay in Opium and ask the framework only for what the rows below list:
 | Nothing drawn at rest | the whole window; [measured](measurements.md#1-at-rest-cpu-time-and-wake-ups) | Given: eframe draws only when asked | Indispensable |
 | The application's logic run every time something wakes it, even when the window is not drawn (on another workspace), so that MPRIS, the queue and devices keep going | `app.rs:6176` | Given: `App::logic` apart from `App::ui` | Indispensable |
 | A frame rate capped per animation | `ui/lyrics.rs:280-287` (30 a second while a word fills, 10 between words), `ui/loading.rs:25` (the placeholder at 30), `:51` (the spinner at 20), `ui/tracks.rs:697` (the equaliser at 20), `app.rs:3662` (animated covers at their own rate) | Built: each animation asks for its next frame after a delay. Springs, entrances, the M3E loader and the turning cookie are not capped and draw at the display's rate (`ui/motion.rs:145`, `ui/loading.rs:81`, `ui/fab.rs:32`) | Indispensable |
-| Whether the window has the focus, so decorative animations stop without it | `ui/fab.rs:29`, `ui/toolbar.rs:364`, `ui/tracks.rs:674` | Given: `input.focused`. The lyrics and the loaders still run without the focus ([known debt](PLAN.md#known-debt)) | Indispensable |
+| Whether the window has the focus, so decorative animations stop without it | `ui/fab.rs:29`, `ui/toolbar.rs:364`, `ui/tracks.rs:674` | Given: `input.focused`. The lyrics and the loaders still run without the focus ([known debt](debt.md)) | Indispensable |
 | Whether the window is seen at all (minimised or covered), so animated covers stop and free their decoders | `app.rs:6235-6238` | Unused: `ViewportInfo::minimized`, `occluded`; Opium guesses from 2 s without a frame | Indispensable: the quality bar's "playing, window hidden" |
 | The time and the frame's step, for animations | `ui/grid.rs:426`, `app.rs:6186` | Given: `input.time`, `stable_dt` | Indispensable |
 
 ## Driven and measured
 
-The quality bar measures frame times, input to response and the look through slime-ui. egui offers
+The quality bar measures frame times, input to response and the look through uwui. egui offers
 none of this: it is why those rows of the bar have no figure yet.
 
 | Need | Asked by | egui today | Mark |
 |---|---|---|---|
 | A frame read back as pixels, for the screenshot mode (`OPIUM_SCREENSHOT`) and reference images | `screenshot.rs:137-157` | Given: `request_screenshot` | Indispensable |
 | The window rendered without a display, for reference images in CI and captures off screen | the quality bar's *Rendering* and *The look in one place* | Missing: the window needs a compositor (a headless Weston for tests) | Indispensable |
-| Agents reading the interface and driving it: scroll, click, type | the quality bar's *Input to visible response*; [known debt](PLAN.md#known-debt) | Missing | Indispensable |
+| Agents reading the interface and driving it: scroll, click, type | the quality bar's *Input to visible response*; [known debt](debt.md) | Missing | Indispensable |
 | Each frame's time, recorded, per animation | the quality bar's *Scrolling and animations* | Missing | Indispensable |
 
 ## Input
@@ -120,7 +121,7 @@ none of this: it is why those rows of the bar have no figure yet.
 | Files dropped on the window, as paths | `app.rs:6194-6201` | Given under X11 and Xwayland only: winit 0.30 has no drag and drop on Wayland | Indispensable, on Wayland too |
 
 No row is dragged and dropped, and there is no touch or gamepad input. Space toggles playback again
-on each key repeat while held (`ui/mod.rs:922`): [known debt](PLAN.md#known-debt).
+on each key repeat while held (`ui/mod.rs:922`): [known debt](debt.md).
 
 ## Drawing
 
@@ -151,7 +152,7 @@ on each key repeat while held (`ui/mod.rs:922`): [known debt](PLAN.md#known-debt
 |---|---|---|---|
 | Images from files and from HTTPS, through a loader of Opium's own (requests signed for Navidrome) | `covers.rs:67-148` | Given: a custom `BytesLoader` | Indispensable |
 | An image asked at the size it is drawn, in physical pixels | `ui/shapes.rs:89-95`, `ui/home.rs:566` | Given: `SizeHint::Size` | Indispensable |
-| Images decoded away from the interface's thread, at that size (64 to 1024 px, and 1500 or 3000 px for Now Playing), by a bounded pool of threads | `ui/thumbs.rs:22`, `:88-156`, `ui/now_playing.rs:462-466` | Built: Opium's `ImageLoader` resizes; one thread per cover file, unbounded ([known debt](PLAN.md#known-debt)) | Indispensable |
+| Images decoded away from the interface's thread, at that size (64 to 1024 px, and 1500 or 3000 px for Now Playing), by a bounded pool of threads | `ui/thumbs.rs:22`, `:88-156`, `ui/now_playing.rs:462-466` | Built: Opium's `ImageLoader` resizes; one thread per cover file, unbounded ([known debt](debt.md)) | Indispensable |
 | A cache bounded by Opium (60 s unseen, 400 covers at most) that frees the GPU's copy, keeping no decoded copy once uploaded | `covers.rs:14-54`, `app.rs:852` | Given: `forget_image`, `reduce_texture_memory` | Indispensable |
 | An image with rounded corners, or cropped to cover its box with the focus above centre (faces) | `ui/mod.rs:1378-1390`, `ui/home.rs:586-594`, `ui/artist.rs:1170-1188` | Given for corners; cropping built from texture coordinates | Indispensable |
 | An image inside a vector shape (artist photos in M3E shapes) | `ui/shapes.rs:89-113` | Built: a textured mesh | Indispensable |
@@ -159,7 +160,7 @@ on each key repeat while held (`ui/mod.rs:922`): [known debt](PLAN.md#known-debt
 | A texture updated in place at each frame, for animated covers at 25 frames a second | `app.rs:3612-3690` | Given: `TextureHandle::set_partial` | Indispensable |
 | Knowing whether a rectangle is on screen, so an animated cover out of sight stops | `ui/mod.rs:1445`, `ui/artist.rs:1148` | Given: `is_rect_visible` | Indispensable |
 | JPEG and PNG | `ui/thumbs.rs:144`, `crates/app-desktop/Cargo.toml` (`image`'s features) | Given through the `image` crate | Indispensable |
-| WebP and GIF covers | [known debt](PLAN.md#known-debt) | Unused: `image` is built with JPEG and PNG only; decoding them is Opium's, showing them the framework's | Indispensable: the owner's choice |
+| WebP and GIF covers | [known debt](debt.md) | Unused: `image` is built with JPEG and PNG only; decoding them is Opium's, showing them the framework's | Indispensable: the owner's choice |
 | Mipmaps, for smooth downscaling | `ui/home.rs:574` filters linearly | Unused: `TextureOptions::mipmap_mode` | Indispensable: the owner's choice |
 
 ## Motion
@@ -208,7 +209,7 @@ theme with its own durations (`ui/motion.rs:25-30`).
 |---|---|---|---|
 | Fonts by weight: Geist at 400, 500, 600 and 700 | `fonts.rs:1-56`, `:91-109` | Built: egui has no weights, so each is a family of its own | Indispensable |
 | Fallback fonts per script from the system (Greek, Japanese, which also covers Chinese, Arabic, Hebrew, Thai, Devanagari), added after start-up on a thread, kept upright, variable ones set to the weight asked | `fonts.rs:58-72`, `:99-103`, `:118-182` | Built on `set_fonts` and fontconfig; `FontData`'s axis coordinates given | Indispensable |
-| A Korean fallback, and colour emoji | `fonts.rs:121`, `:85` | Missing: monochrome emoji only ([known debt](PLAN.md#known-debt)) | Indispensable: the owner's choice |
+| A Korean fallback, and colour emoji | `fonts.rs:121`, `:85` | Missing: monochrome emoji only ([known debt](debt.md)) | Indispensable: the owner's choice |
 | Text styled by ranges: in one layout, runs of their own colour and opacity | `ui/lyrics.rs:374-435` | Given: `LayoutJob` sections | Indispensable |
 | Lyrics lit word by word: a soft wipe across the letters of the word being sung, laid out each frame, cached when unchanged | `ui/lyrics.rs:346-435` | Built on `LayoutJob`; the cache is egui's | Indispensable |
 | One line cut with "…" at a width; at most two lines then "…"; wrapping at a width | `ui/mod.rs:1204-1208`, `ui/home.rs:806-822`, `ui/lyrics.rs:433`, `:448` | Given: `TextWrapping` | Indispensable |
@@ -250,9 +251,9 @@ it ([Accessibility](ROADMAP.md#quality-bar)).
 | Components built differently per theme, not only coloured differently: three window layouts, three sidebars, three player bars, two side panels | `theme.rs:20-77`, `opium-core/src/theme.rs` | Built: each component branches on its variant | Indispensable |
 | The theme changed while the window runs, light or dark, the framework's own widgets (scroll bars, fields, selection) recoloured with it | `theme.rs:354-375`, `app.rs:6178-6188`, `opium-core/src/theme.rs:155` | Given: `set_visuals`, `Visuals::light` and `dark` | Indispensable |
 
-## What slime-ui must hold
+## What uwui must hold
 
-The figures the window reaches with egui today, and the budgets the owner set for slime-ui, are in
+The figures the window reaches with egui today, and the budgets the owner set for uwui, are in
 the [quality bar](ROADMAP.md#quality-bar) and [`measurements.md`](measurements.md). Nothing is drawn
 at rest. The display's rate holds while scrolling and animating, on the high tier (4K at 240 Hz)
 and on the lowest (a 2015 laptop with its integrated GPU, at 60 Hz). The bar also sets the start-up

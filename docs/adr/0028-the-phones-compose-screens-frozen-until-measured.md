@@ -1,6 +1,7 @@
 # 0028. The phone's Compose screens are frozen until slime-ui is measured on Android
 
-- Status: Accepted
+- Status: Accepted; amended by [0031](0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md)
+  (uwui on the phone without condition)
 - Date: 2026-11-05
 
 ## Context

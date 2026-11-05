@@ -1,6 +1,7 @@
 # 0027. Macrobenchmark for the phone's measurements, at Stage 3
 
-- Status: Accepted
+- Status: Accepted; amended by [0031](0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md)
+  (the module comes with the phone's prototype, in Stage 5)
 - Date: 2026-11-05
 
 ## Context

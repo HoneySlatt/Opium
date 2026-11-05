@@ -2,7 +2,8 @@
 
 - Status: Accepted; amends [0006](0006-egui-for-the-desktop-window.md) (egui stays the window until
   the move to SlimeEngine's UI framework); amended by [0026](0026-the-egui-window-frozen-until-the-move.md)
-  (the window frozen until then)
+  (the window frozen until then) and [0031](0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md)
+  (the move during SlimeEngine's Stage 6d, before Slatty's)
 - Date: 2026-11-04
 
 ## Context

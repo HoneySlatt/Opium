@@ -176,8 +176,9 @@ Not measured.
 - What would be needed: frame timing recorded in the app (eframe's `Frame::info().cpu_usage` and
   the present times, written as a trace), and a scripted scroll or animation in the screenshot
   mode (an `OPIUM_SCREENSHOT_SCROLL`-like variable), or an input-injection protocol in the
-  compositor. The egui window being frozen, these come with slime-ui's frame statistics and MCP
-  server instead ([ADR-0026](adr/0026-the-egui-window-frozen-until-the-move.md)).
+  compositor. The egui window being frozen, these were left to slime-ui's frame statistics and MCP
+  server ([ADR-0026](adr/0026-the-egui-window-frozen-until-the-move.md)); since ADR-0031, M1.14
+  adds them to the egui window to measure it before the move.
 
 ### Not measured, and why
 
