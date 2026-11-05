@@ -337,13 +337,6 @@ impl Segments {
                 data.extend_from_slice(segment);
                 let (_, samples) =
                     cenc::index(&data).map_err(|e| Error::Playback(e.to_string()))?;
-                let playlist_iv: Option<[u8; 16]> = playlist_iv
-                    .map(|iv| {
-                        iv.try_into().map_err(|_| {
-                            Error::Playback("the station's playlist IV is not 16 bytes".into())
-                        })
-                    })
-                    .transpose()?;
                 let mut out = Vec::with_capacity(segment.len() + samples.len() * 7);
                 // A sample of no bytes is no frame.
                 for sample in samples.iter().filter(|s| s.size > 0) {
@@ -353,7 +346,9 @@ impl Segments {
                     {
                         // The segment's own IV, else the playlist's.
                         let iv = match playlist_iv {
-                            Some(iv) if sample.iv == [0; 16] => iv,
+                            Some(iv) if sample.iv == [0; 16] => iv.try_into().map_err(|_| {
+                                Error::Playback("the station's playlist IV is not 16 bytes".into())
+                            })?,
                             _ => sample.iv,
                         };
                         session
@@ -658,7 +653,8 @@ impl AppleMusic {
                         .await;
                     return;
                 }
-                // A rotated key needs its licence.
+                // A rotated key needs its licence, and decrypts with the key id its PSSH names,
+                // when it names one.
                 if let (Some((uri, _)), Some(licensing)) = (&playlist.key, &licensing)
                     && Some(uri) != key_uri.as_ref()
                     && let Segments::Cmaf {
@@ -666,9 +662,13 @@ impl AppleMusic {
                         ..
                     } = &mut segments
                 {
-                    match licensing.license(&cdm, uri, key_id).await {
+                    let rotated = pssh_key_id(uri)
+                        .filter(|named| *named != [0; 16])
+                        .unwrap_or(*key_id);
+                    match licensing.license(&cdm, uri, &rotated).await {
                         Ok(s) => {
                             *session = s;
+                            *key_id = rotated;
                             key_uri = Some(uri.clone());
                         }
                         Err(e) => {
