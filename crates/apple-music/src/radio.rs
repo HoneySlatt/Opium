@@ -17,6 +17,7 @@ use opium_core::{Error, Result};
 use widevine::{Cdm, Session};
 
 use crate::AppleMusic;
+use crate::playback::cbcs_sample;
 
 /// The Widevine system id, as HLS names its key format.
 const WIDEVINE: &str = "urn:uuid:edef8ba9-79d6-4ace-a3c8-27dcd51d21ed";
@@ -212,18 +213,19 @@ struct Licensing {
 
 impl Licensing {
     /// Ask the radio key server for the key behind `key_uri`, as MusicKit does
-    /// for a live audio station (`event: beats1`).
-    async fn license(&self, cdm: &Cdm, key_uri: &str) -> Result<Session> {
+    /// for a live audio station (`event: beats1`): a session ready once
+    /// `key_id`, the key the samples are decrypted with, is usable.
+    async fn license(&self, cdm: &Cdm, key_uri: &str, key_id: &[u8; 16]) -> Result<Session> {
         let pssh = key_uri
             .rsplit_once("base64,")
             .and_then(|(_, b64)| STANDARD.decode(b64).ok())
             .ok_or_else(|| Error::Playback("the station's key carries no PSSH".into()))?;
         let (session, challenge) = cdm
-            .start_session(&pssh)
+            .open_session(&pssh)
             .map_err(|e| Error::Playback(e.to_string()))?;
         let license = self.request(key_uri, &challenge).await?;
         session
-            .update(&license)
+            .give_licence(&license, key_id)
             .map_err(|e| Error::Playback(e.to_string()))?;
         Ok(session)
     }
@@ -335,30 +337,31 @@ impl Segments {
                 data.extend_from_slice(segment);
                 let (_, samples) =
                     cenc::index(&data).map_err(|e| Error::Playback(e.to_string()))?;
+                let playlist_iv: Option<[u8; 16]> = playlist_iv
+                    .map(|iv| {
+                        iv.try_into().map_err(|_| {
+                            Error::Playback("the station's playlist IV is not 16 bytes".into())
+                        })
+                    })
+                    .transpose()?;
                 let mut out = Vec::with_capacity(segment.len() + samples.len() * 7);
                 // A sample of no bytes is no frame.
                 for sample in samples.iter().filter(|s| s.size > 0) {
-                    let bytes = &data[sample.offset..sample.offset + sample.size];
-                    let clear = match protection {
-                        Some((key_id, session)) if sample.protected => {
-                            // The segment's own IV, else the playlist's.
-                            let iv: &[u8] = if sample.iv != [0; 16] {
-                                &sample.iv
-                            } else {
-                                playlist_iv.unwrap_or(&sample.iv)
-                            };
-                            let pattern = (
-                                u32::from(sample.pattern.crypt),
-                                u32::from(sample.pattern.skip),
-                            );
-                            session
-                                .decrypt_cbcs(bytes, key_id, iv, pattern, sample.subsamples)
-                                .map_err(|e| Error::Playback(e.to_string()))?
-                        }
-                        _ => bytes.to_vec(),
-                    };
-                    out.extend_from_slice(&adts_header(asc, clear.len()));
-                    out.extend_from_slice(&clear);
+                    let bytes = &mut data[sample.offset..sample.offset + sample.size];
+                    if let Some((key_id, session)) = protection
+                        && sample.protected
+                    {
+                        // The segment's own IV, else the playlist's.
+                        let iv = match playlist_iv {
+                            Some(iv) if sample.iv == [0; 16] => iv,
+                            _ => sample.iv,
+                        };
+                        session
+                            .decrypt(bytes, &cbcs_sample(&sample, key_id, &iv))
+                            .map_err(|e| Error::Playback(e.to_string()))?;
+                    }
+                    out.extend_from_slice(&adts_header(asc, bytes.len()));
+                    out.extend_from_slice(bytes);
                 }
                 Ok(out)
             }
@@ -591,7 +594,6 @@ impl AppleMusic {
                 })?;
                 let protection = match (&playlist.key, &licensing) {
                     (Some((uri, _)), Some(licensing)) => {
-                        let session = licensing.license(cdm, uri).await?;
                         let mut key_id = entry
                             .and_then(|e| e.protection.as_ref())
                             .map(|p| p.key_id)
@@ -605,6 +607,7 @@ impl AppleMusic {
                         {
                             key_id = named;
                         }
+                        let session = licensing.license(cdm, uri, &key_id).await?;
                         Some((key_id, session))
                     }
                     (Some(_), None) => {
@@ -659,11 +662,11 @@ impl AppleMusic {
                 if let (Some((uri, _)), Some(licensing)) = (&playlist.key, &licensing)
                     && Some(uri) != key_uri.as_ref()
                     && let Segments::Cmaf {
-                        protection: Some((_, session)),
+                        protection: Some((key_id, session)),
                         ..
                     } = &mut segments
                 {
-                    match licensing.license(&cdm, uri).await {
+                    match licensing.license(&cdm, uri, key_id).await {
                         Ok(s) => {
                             *session = s;
                             key_uri = Some(uri.clone());

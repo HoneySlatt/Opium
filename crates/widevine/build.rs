@@ -1,23 +1,23 @@
-//! Compiles the C++ host for the system Widevine CDM (see `shim/widevine_shim.cc`).
+//! Compiles the C++ layer that implements Chromium's CDM interface (shim/), except on Android,
+//! where the system's MediaDrm decrypts and no C++ is built.
 
 fn main() {
-    // Android has no browser CDM: the system's MediaDrm decrypts there.
+    println!("cargo:rerun-if-changed=shim");
+    println!("cargo:rerun-if-changed=vendor");
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("android") {
         return;
     }
-    println!("cargo:rerun-if-changed=shim/widevine_shim.cc");
-    println!("cargo:rerun-if-changed=vendor/content_decryption_module.h");
-
     cc::Build::new()
         .cpp(true)
-        // The shim is tiny; always optimising keeps glibc's _FORTIFY_SOURCE quiet.
+        .std("c++17")
+        // Optimised in every profile: hardened toolchains (Nix's among them) define
+        // _FORTIFY_SOURCE, which warns without optimisation, and the layer has nothing to debug.
         .opt_level(2)
-        .file("shim/widevine_shim.cc")
         .include("vendor")
-        .flag_if_supported("-std=c++14")
-        .flag_if_supported("-Wno-unused-parameter")
+        .include("shim")
+        .file("shim/cdm_11.cc")
+        .warnings(true)
+        .extra_warnings(true)
+        .warnings_into_errors(true)
         .compile("widevine_shim");
-
-    println!("cargo:rustc-link-lib=dylib=stdc++");
-    println!("cargo:rustc-link-lib=dylib=dl");
 }

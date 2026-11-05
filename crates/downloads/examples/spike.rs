@@ -25,7 +25,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let token = std::fs::read_to_string(config().join("apple-music/media-user-token"))?;
             let am = apple_music::AppleMusic::connect(token.trim()).await?;
             println!("subscribed: {:?}", am.subscribed().await?);
-            let cdm = widevine::Cdm::open(&widevine::locate().ok_or("no Widevine CDM")?)?;
+            let cdm = widevine::Cdm::load(&widevine::find_cdm().ok_or("no Widevine CDM")?)?;
             let track = ItemId::new(ProviderKind::AppleMusic, id.as_str());
             let (stream, kbps, spatial) = am.fetch_track(&cdm, &track, false).await?;
             println!("{kbps:?} kbps, spatial {spatial}");

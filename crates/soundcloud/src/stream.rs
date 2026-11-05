@@ -302,36 +302,36 @@ impl SoundCloud {
         let pssh = widevine_pssh(&playlist)
             .ok_or_else(|| Error::Playback("SoundCloud: no Widevine key in the stream".into()))?;
         let (session, challenge) = cdm
-            .start_session(&pssh)
+            .open_session(&pssh)
             .map_err(|e| Error::Playback(e.to_string()))?;
         let (mut data, license) =
             tokio::try_join!(self.joined(&playlist), self.license(&token, challenge))?;
-        session
-            .update(&license)
-            .map_err(|e| Error::Playback(e.to_string()))?;
         let (movie, samples) = cenc::index(&data)
             .map_err(|e| Error::Playback(format!("SoundCloud: the stream: {e}")))?;
-        if !samples.iter().any(|s| s.protected) {
-            return Err(Error::Playback(
-                "SoundCloud: no encrypted samples in the stream".into(),
-            ));
-        }
+        // The licence is ready once the key the stream's samples name is usable.
+        let key_id = samples
+            .iter()
+            .find(|s| s.protected)
+            .map(|s| s.key_id)
+            .ok_or_else(|| {
+                Error::Playback("SoundCloud: no encrypted samples in the stream".into())
+            })?;
+        session
+            .give_licence(&license, &key_id)
+            .map_err(|e| Error::Playback(e.to_string()))?;
         cenc::make_clear(&mut data, &movie, &samples);
-        // The content key never leaves the CDM: it decrypts each sample, by the key id its
-        // sample entry names.
+        // The content key never leaves the CDM: it decrypts each sample in place, by the key id
+        // its sample entry names.
         let decrypt = Box::new(move |bytes: &mut [u8], sample: &cenc::Sample<'_>| {
-            let clear = session
-                .decrypt(bytes, &sample.key_id, &sample.iv, sample.subsamples)
-                .map_err(|e| e.to_string())?;
-            if clear.len() != bytes.len() {
-                return Err(format!(
-                    "the CDM returned {} bytes for a {}-byte sample",
-                    clear.len(),
-                    bytes.len()
-                ));
-            }
-            bytes.copy_from_slice(&clear);
-            Ok(())
+            let protected = widevine::Protected {
+                key_id: &sample.key_id,
+                iv: &sample.iv,
+                subsamples: sample.subsamples,
+                scheme: widevine::Scheme::Cenc,
+            };
+            session
+                .decrypt(bytes, &protected)
+                .map_err(|e| e.to_string())
         });
         let len = data.len() as u64;
         let stream = cenc::AudioStream::decrypting(data, samples, AAC_FRAME, decrypt);

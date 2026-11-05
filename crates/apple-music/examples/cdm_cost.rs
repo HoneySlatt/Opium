@@ -29,23 +29,23 @@ mod cdm {
     pub use widevine::{Cdm, Session};
 
     pub fn load() -> Result<Cdm, Box<dyn std::error::Error>> {
-        let path = widevine::locate().ok_or("no Widevine CDM found")?;
-        Ok(Cdm::open(&path)?)
+        let path = widevine::find_cdm().ok_or("no Widevine CDM found")?;
+        Ok(Cdm::load(&path)?)
     }
 
     pub fn open_session(
         cdm: &Cdm,
         pssh: &[u8],
     ) -> Result<(Session, Vec<u8>), Box<dyn std::error::Error>> {
-        Ok(cdm.start_session(pssh)?)
+        Ok(cdm.open_session(pssh)?)
     }
 
     pub fn give_licence(
         session: &Session,
         licence: &[u8],
-        _key_id: &[u8; 16],
+        key_id: &[u8; 16],
     ) -> Result<(), Box<dyn std::error::Error>> {
-        Ok(session.update(licence)?)
+        Ok(session.give_licence(licence, key_id)?)
     }
 
     /// One sample decrypted over `bytes` with the playlist's key, as the player's decrypt closure
@@ -56,18 +56,15 @@ mod cdm {
         key_id: &[u8; 16],
         sample: &cenc::Sample<'_>,
     ) -> Result<(), String> {
-        let clear = session
-            .decrypt(bytes, key_id, &sample.iv, sample.subsamples)
-            .map_err(|e| e.to_string())?;
-        if clear.len() != bytes.len() {
-            return Err(format!(
-                "{} bytes for a {}-byte sample",
-                clear.len(),
-                bytes.len()
-            ));
-        }
-        bytes.copy_from_slice(&clear);
-        Ok(())
+        let protected = widevine::Protected {
+            key_id,
+            iv: &sample.iv,
+            subsamples: sample.subsamples,
+            scheme: widevine::Scheme::Cenc,
+        };
+        session
+            .decrypt(bytes, &protected)
+            .map_err(|e| e.to_string())
     }
 }
 

@@ -264,7 +264,7 @@ async fn live(
     seconds: u64,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use std::io::Read;
-    let cdm = widevine::Cdm::open(&widevine::locate().ok_or("no Widevine module")?)?;
+    let cdm = widevine::Cdm::load(&widevine::find_cdm().ok_or("no Widevine module")?)?;
     let id = opium_core::model::ItemId::new(opium_core::model::ProviderKind::AppleMusic, station);
     let stream = am.live_station(&cdm, &id).await?;
     // 256 kbps: about 32 kB a second.
@@ -440,8 +440,8 @@ async fn open_track(
     am: &AppleMusic,
     id: &str,
 ) -> Result<apple_music::AudioStream, Box<dyn std::error::Error>> {
-    let cdm_path = widevine::locate().ok_or("no Widevine CDM found")?;
-    let cdm = widevine::Cdm::open(&cdm_path)?;
+    let cdm_path = widevine::find_cdm().ok_or("no Widevine CDM found")?;
+    let cdm = widevine::Cdm::load(&cdm_path)?;
     let track = opium_core::model::ItemId::new(opium_core::model::ProviderKind::AppleMusic, id);
     // `OPIUM_SPATIAL=1`: Spatial Audio, for a song with a Dolby Atmos mix.
     let spatial = std::env::var_os("OPIUM_SPATIAL").is_some();

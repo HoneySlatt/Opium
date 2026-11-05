@@ -121,17 +121,22 @@ fn select_asset(song: &serde_json::Value) -> Result<Asset> {
         .ok_or_else(|| playback_error("no Widevine asset (only FairPlay's)"))
 }
 
-/// Puts the CDM's cleartext of a sample in place of its ciphertext, `bytes`.
-fn put_in_place(bytes: &mut [u8], clear: Vec<u8>) -> std::result::Result<(), String> {
-    if clear.len() != bytes.len() {
-        return Err(format!(
-            "the CDM returned {} bytes for a {}-byte sample",
-            clear.len(),
-            bytes.len()
-        ));
+/// A `cbcs` sample of Spatial Audio or the live radio, as the CDM decrypts it with `key_id` and
+/// `iv`: its runs, and the pattern its file gives.
+pub(crate) fn cbcs_sample<'a>(
+    sample: &'a cenc::Sample<'_>,
+    key_id: &'a [u8; 16],
+    iv: &'a [u8; 16],
+) -> widevine::Protected<'a> {
+    widevine::Protected {
+        key_id,
+        iv,
+        subsamples: sample.subsamples,
+        scheme: widevine::Scheme::Cbcs {
+            crypt: sample.pattern.crypt,
+            skip: sample.pattern.skip,
+        },
     }
-    bytes.copy_from_slice(&clear);
-    Ok(())
 }
 
 /// The fragmented MP4 `resp` brings, readable from its first fragment on
@@ -199,7 +204,7 @@ struct Key {
     /// The KEY URI: `<prefix>,<base64 key id>` for the legacy flavours, a
     /// `data:` URI holding the `pssh` for the enhanced ones.
     uri: String,
-    id: Vec<u8>,
+    id: [u8; 16],
 }
 
 /// `None` when `body` isn't an encrypted media playlist.
@@ -207,7 +212,11 @@ fn read_media_playlist(playlist_url: &str, body: &[u8]) -> Option<EncryptedFile>
     let playlist = m3u8_rs::parse_media_playlist_res(body).ok()?;
     let first = playlist.segments.first()?;
     let uri = first.key.as_ref()?.uri.as_deref()?;
-    let id = STANDARD.decode(uri.split_once(',')?.1).ok()?;
+    let id = STANDARD
+        .decode(uri.split_once(',')?.1)
+        .ok()?
+        .try_into()
+        .ok()?;
     let map = first.map.as_ref()?.uri.as_str();
     let url = if map.starts_with("http") {
         map.to_owned()
@@ -240,7 +249,7 @@ fn read_enhanced_playlist(playlist_url: &str, body: &str) -> Option<EncryptedFil
         {
             keys.push(Key {
                 uri: uri.to_owned(),
-                id: id.to_vec(),
+                id,
             });
         } else if line.starts_with("#EXT-X-MAP") && map.is_none() {
             map = crate::radio::attribute(line, "URI");
@@ -259,7 +268,7 @@ fn key_pssh(key: &Key) -> Vec<u8> {
         .rsplit_once("base64,")
         .filter(|_| key.uri.starts_with("data:text/plain"))
         .and_then(|(_, pssh)| STANDARD.decode(pssh).ok())
-        .unwrap_or_else(|| widevine::build_pssh(&key.id))
+        .unwrap_or_else(|| widevine::pssh_for_key(&key.id))
 }
 
 /// The variant `group` of an enhanced HLS master playlist: its address.
@@ -400,18 +409,13 @@ impl AppleMusic {
             && let Some(range) = map_range(&body)
             && let Ok(mut init) = self.range(&file.url, range).await
         {
-            // The sample entries' key ids are zero; the playlist names them, in order. An id of
-            // the wrong length names nothing: its entry stays zero.
-            let ids: Vec<[u8; 16]> = file
-                .keys
-                .iter()
-                .map(|k| k.id.as_slice().try_into().unwrap_or([0; 16]))
-                .collect();
+            // The sample entries' key ids are zero; the playlist names them, in order.
+            let ids: Vec<[u8; 16]> = file.keys.iter().map(|k| k.id).collect();
             cenc::write_key_ids(&mut init, &ids);
             let first = &file.keys[0];
             return Ok(Some(Protected {
                 url: file.url.clone(),
-                key_id: first.id.clone(),
+                key_id: first.id.to_vec(),
                 pssh: key_pssh(first),
                 spatial: true,
                 init: Some(init),
@@ -428,13 +432,13 @@ impl AppleMusic {
         let playlist = self.download(&url).await?;
         let file = read_media_playlist(&url, &playlist)
             .ok_or_else(|| playback_error("catalog asset without a Widevine key"))?;
-        let key_id = file.keys[0].id.clone();
-        let pssh = widevine::build_pssh(&key_id);
+        let key_id = file.keys[0].id;
+        let pssh = widevine::pssh_for_key(&key_id);
         Ok(Some(Protected {
             url: file.url.clone(),
             playlist: widevine_playlist(&String::from_utf8_lossy(&playlist), &url, &pssh),
             pssh,
-            key_id,
+            key_id: key_id.to_vec(),
             spatial: false,
             init: None,
             kbps,
@@ -641,7 +645,7 @@ impl AppleMusic {
 
         let key = file.keys[0].clone();
         let (session, challenge) = cdm
-            .start_session(&widevine::build_pssh(&key.id))
+            .open_session(&widevine::pssh_for_key(&key.id))
             .map_err(|e| playback_error(e.to_string()))?;
         let (resp, ()) = tokio::try_join!(
             self.start_download(&file.url),
@@ -651,13 +655,19 @@ impl AppleMusic {
                 &licensed_as,
                 is_library_id(adam_id),
                 &key.uri,
+                &key.id,
             ),
         )?;
         let decrypt = Box::new(move |bytes: &mut [u8], sample: &cenc::Sample<'_>| {
-            let clear = session
-                .decrypt(bytes, &key.id, &sample.iv, sample.subsamples)
-                .map_err(|e| e.to_string())?;
-            put_in_place(bytes, clear)
+            let protected = widevine::Protected {
+                key_id: &key.id,
+                iv: &sample.iv,
+                subsamples: sample.subsamples,
+                scheme: widevine::Scheme::Cenc,
+            };
+            session
+                .decrypt(bytes, &protected)
+                .map_err(|e| e.to_string())
         });
         let again = self.asset_request(&file.url);
         let stream = as_it_downloads(resp, again, AAC_FRAME, decrypt).await?;
@@ -682,9 +692,9 @@ impl AppleMusic {
             let key = key.clone();
             async move {
                 let (session, challenge) = cdm
-                    .start_session(&key_pssh(&key))
+                    .open_session(&key_pssh(&key))
                     .map_err(|e| playback_error(e.to_string()))?;
-                self.load_license(&session, &challenge, adam_id, false, &key.uri)
+                self.load_license(&session, &challenge, adam_id, false, &key.uri, &key.id)
                     .await?;
                 Ok::<_, Error>((session, key.id))
             }
@@ -715,10 +725,6 @@ impl AppleMusic {
         );
         let decrypt = Box::new(move |bytes: &mut [u8], sample: &cenc::Sample<'_>| {
             let entry = sample.entry as usize;
-            let pattern = (
-                u32::from(sample.pattern.crypt),
-                u32::from(sample.pattern.skip),
-            );
             // Each sample entry's key, in the playlist's order; another of
             // them should that not be it.
             let order = keys
@@ -727,8 +733,8 @@ impl AppleMusic {
                 .chain(keys.iter().take(entry.min(keys.len())));
             let mut last = String::from("no key");
             for (session, key_id) in order {
-                match session.decrypt_cbcs(bytes, key_id, &sample.iv, pattern, sample.subsamples) {
-                    Ok(clear) => return put_in_place(bytes, clear),
+                match session.decrypt(bytes, &cbcs_sample(sample, key_id, &sample.iv)) {
+                    Ok(()) => return Ok(()),
                     Err(e) => last = e.to_string(),
                 }
             }
@@ -765,12 +771,13 @@ impl AppleMusic {
         adam_id: &str,
         is_library: bool,
         key_uri: &str,
+        key_id: &[u8; 16],
     ) -> Result<()> {
         let license = self
             .request_license(challenge, adam_id, is_library, key_uri)
             .await?;
         session
-            .update(&license)
+            .give_licence(&license, key_id)
             .map_err(|e| playback_error(e.to_string()))
     }
 

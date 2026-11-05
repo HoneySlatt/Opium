@@ -40,9 +40,13 @@ app in Kotlin with Jetpack Compose, which calls the core through UniFFI
   decryption inputs in a compact table (`Indexer`, `SampleTable`), the file made to read as a plain
   MP4 (`make_clear`); and `AudioStream`, which reads as the plain MP4 while a CDM decrypts ahead in
   the background. Fuzzed by mutation tests and by `cargo fuzz` (`crates/cenc/fuzz`).
-- **`crates/widevine`**: a browser's Widevine CDM loaded and driven through a C++ shim
-  (`shim/widevine_shim.cc`); a stub on Android
-  ([ADR-0004](adr/0004-the-widevine-cdm-borrowed-from-the-browser.md)).
+- **`crates/widevine`**: a browser's Widevine CDM found, loaded and driven, written from
+  [its specification](specs/widevine-host.md): one thread named `cdm` owns the instance, fires its
+  timers in time and serves requests by priority (licences before decrypts), each decrypt one
+  sample in place; a thin C++ layer (`shim/cdm_11.cc`) only passes interface 11's calls across a C
+  boundary (`shim/boundary.h`). Without C++ on Android, where loading fails
+  ([ADR-0004](adr/0004-the-widevine-cdm-borrowed-from-the-browser.md),
+  [ADR-0030](adr/0030-the-kopuz-code-rewritten-in-a-clean-room.md)).
 - **`crates/browser-signin`**: signing in through a Chromium-family browser on a profile of the
   app's own, its cookies read over DevTools pipes ([ADR-0003](adr/0003-sign-in-through-the-users-browser.md)).
 - **`crates/synced`**: what the user's devices keep in common (history, Opium's own playlists, the
@@ -113,7 +117,7 @@ Rules that keep it so:
 
 - Only `app-desktop` names egui types; `desktop` and everything below it know no toolkit.
 - Nothing `opium-ffi` depends on may need the desktop: `player`, `motion`, `desktop` and
-  `app-desktop` stay out of the phone's build, and `widevine` builds a stub for Android.
+  `app-desktop` stay out of the phone's build, and `widevine` builds no C++ for Android.
 - The service crates (`apple-music`, `soundcloud`, `navidrome`, `local`) depend on `opium-core`,
   the leaf crates and `lyrics` only (`local` reads `.lrc` files through it), never on each other
   nor on `services`.

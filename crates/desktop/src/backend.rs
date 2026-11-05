@@ -1150,9 +1150,9 @@ async fn run(
     let mut local: Option<Arc<local::Local>> = None;
     let mut local_folders: Vec<PathBuf> = Vec::new();
     let mut _watching: Option<local::Watching> = None;
-    let cdm = widevine::locate()
+    let cdm = widevine::find_cdm()
         .ok_or_else(|| "no Widevine module found: install Brave, Chrome or Firefox".to_owned())
-        .and_then(|path| widevine::Cdm::open(&path).map_err(|e| e.to_string()));
+        .and_then(|path| widevine::Cdm::load(&path).map_err(|e| e.to_string()));
 
     let http = reqwest::Client::new();
     let finder = Arc::new(lyrics::Finder::new());
