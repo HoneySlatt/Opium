@@ -15,6 +15,7 @@ fn main() {
         .opt_level(2)
         .include("vendor")
         .include("shim")
+        .file("shim/boundary.cc")
         .file("shim/cdm_11.cc")
         .warnings(true)
         .extra_warnings(true)

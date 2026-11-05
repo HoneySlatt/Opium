@@ -1,10 +1,13 @@
-//! The C++ layer, compiled and linked into the tests although no CDM is loaded: its table, and
-//! its `create` driving a stand-in for the library's `CreateCdmInstance`.
+//! The C++ layer, compiled and linked into the tests although no CDM is loaded: its table, the
+//! sizes it gives the boundary's structures, and its `create` driving a stand-in for the
+//! library's `CreateCdmInstance`.
 
 use std::ffi::{c_char, c_int, c_void};
 use std::sync::Mutex;
 
-use crate::boundary::{CdmCalls, HOST_CALLS};
+use crate::boundary::{
+    CdmCalls, DecryptInput, DecryptOutput, HOST_CALLS, HostCalls, KeyInfo, Subsample,
+};
 use crate::library::cpp_calls;
 
 /// `GetCdmHostFunc` of the header.
@@ -46,6 +49,40 @@ unsafe extern "C" fn create_nothing(
     };
     *SEEN.lock().unwrap() = Some(seen);
     std::ptr::null_mut()
+}
+
+/// `WvBoundarySizes` of `shim/boundary.h`.
+#[repr(C)]
+#[derive(Debug, PartialEq)]
+struct BoundarySizes {
+    key_info: u32,
+    subsample: u32,
+    decrypt_input: u32,
+    decrypt_output: u32,
+    host_calls: u32,
+    cdm_calls: u32,
+}
+
+unsafe extern "C" {
+    /// The sizes of the boundary's structures, as the C++ layer lays them out
+    /// (shim/boundary.cc).
+    fn widevine_boundary_sizes() -> BoundarySizes;
+}
+
+#[test]
+fn every_structure_across_the_boundary_has_the_same_size_on_both_sides() {
+    // SAFETY: the C++ function takes nothing and returns six sizes by value.
+    let cpp = unsafe { widevine_boundary_sizes() };
+    let size = |bytes: usize| u32::try_from(bytes).unwrap();
+    let rust = BoundarySizes {
+        key_info: size(size_of::<KeyInfo>()),
+        subsample: size(size_of::<Subsample>()),
+        decrypt_input: size(size_of::<DecryptInput>()),
+        decrypt_output: size(size_of::<DecryptOutput>()),
+        host_calls: size(size_of::<HostCalls>()),
+        cdm_calls: size(size_of::<CdmCalls>()),
+    };
+    assert_eq!(cpp, rust);
 }
 
 #[test]

@@ -3,7 +3,7 @@
 // It names no interface version: each version's C++ file (cdm_11.cc) fills a WvCdmCalls table
 // for its own `ContentDecryptionModule_N` and forwards its `Host_N`'s calls to a WvHostCalls
 // table. The Rust side (src/boundary.rs) declares the same structures, field for field, in the
-// same order; a change here is made there too.
+// same order; a change here is made there too, and a test compares their sizes on both sides.
 
 #ifndef WIDEVINE_SHIM_BOUNDARY_H_
 #define WIDEVINE_SHIM_BOUNDARY_H_
@@ -111,6 +111,19 @@ typedef struct WvCdmCalls {
 
 // The table of interface 11.
 const WvCdmCalls* widevine_cdm_calls_11(void);
+
+// The size of each structure above as the C++ compiler lays it out, so that the Rust side can
+// check that its declarations agree (shim/boundary.cc).
+typedef struct WvBoundarySizes {
+  uint32_t key_info;
+  uint32_t subsample;
+  uint32_t decrypt_input;
+  uint32_t decrypt_output;
+  uint32_t host_calls;
+  uint32_t cdm_calls;
+} WvBoundarySizes;
+
+WvBoundarySizes widevine_boundary_sizes(void);
 
 #ifdef __cplusplus
 }  // extern "C"
