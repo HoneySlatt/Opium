@@ -10,6 +10,18 @@ the desktop runs on a [throwaway profile](../CONTRIBUTING.md#a-throwaway-profile
 cited live in [`scripts/measure/`](../scripts/measure/), each described at its head
 ([CONTRIBUTING.md](../CONTRIBUTING.md#measuring)).
 
+## CI on GitHub (2026-11-05)
+
+Runner: GitHub's `ubuntu-24.04`. Workflow: [`ci.yml`](../.github/workflows/ci.yml) at commit
+`7d4336a`, run `41950023132`, with the disk freed and the tests built without debug info.
+
+| Run | Cache | Duration | Cache saved |
+|---|---|---|---|
+| Cold | None | 24 min 3 s | 1.1 GB |
+| Warm | Hit | Not measured yet | — |
+
+The run before (`41929905546`, without these changes) filled the runner's disk after 31 minutes.
+
 ## Baseline of the desktop app, before any budget (2026-11-05)
 
 Machine: AMD Ryzen 7 5800X (8 cores, 16 threads); AMD Radeon RX 6800/6800 XT/6900 XT (Navi 21,
