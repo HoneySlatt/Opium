@@ -168,8 +168,8 @@ subsample runs, and the scheme with its pattern.
 
 ## 6. Making the file clear
 
-Once every sample is decrypted in place (CENC keeps sizes), the file is made to read as a plain
-MP4, changing only four-byte types and counts, so that every offset stays true:
+The file is made to read as a plain MP4, changing only four-byte types and counts, so that every
+offset stays true; its samples are decrypted in place, before or after (CENC keeps sizes):
 
 - each encrypted sample entry takes back the type its `frma` names;
 - inside it, `sinf` becomes `free`;
@@ -182,13 +182,27 @@ MP4, changing only four-byte types and counts, so that every offset stays true:
 
 Nothing else is rewritten; the bytes of samples are only changed by decryption.
 
+A file that downloads is made clear piece by piece: the same call again, each time with the table
+grown by the fragments just indexed (§7). So making clear:
+
+- changes the movie box, and only the fragments that the table's samples name: never a fragment
+  not yet indexed, whose boxes the indexer has still to read;
+- leaves as it is what an earlier call changed, and takes no harm from it (a `free` stays `free`,
+  an entry already `mp4a` stays so);
+- costs time in proportion to the boxes it visits, not to the bytes of the samples.
+
 ## 7. Reading while the file arrives
 
 A file is indexed as it downloads:
 
 - the init is reported only once the whole `moov` has arrived;
 - each fragment is reported once its `moof` and every byte its samples reference have arrived;
-- indexing resumes from where it stopped, never re-reading earlier fragments;
+- indexing resumes from where it stopped, never re-reading earlier fragments, nor the movie box:
+  the caller may have made them clear meanwhile (§6), and what the indexer needs of the movie it
+  took from the `Movie` it was made from;
+- each step says how far the file is whole: every byte before that offset belongs to the movie
+  box, to a fragment indexed, or to another whole top-level box (`ftyp`, `sidx`, `free`, …); the
+  first box not yet whole, or a `moof` whose samples have not all arrived, starts there;
 - a fragment never complete when the download ends is reported as truncated, the earlier ones
   staying usable.
 
@@ -246,6 +260,20 @@ These names are fixed: the callers are moved to them. Everything not listed here
 | `cenc::write_key_ids(init: &mut [u8], ids: &[[u8; 16]])` | §8: the zero key ids, entry by entry, in order |
 | `cenc::Error { offset: usize, kind: [u8; 4], what: String }` with `Display` | §9: which box, where, what |
 
+What these types are besides:
+
+- every public type is `Send + Sync` and `Debug`: a stream keeps a `Movie` and an `Indexer` behind
+  a lock that two threads take;
+- `Sample`, `Scheme` and `Pattern` are `Clone + Copy + PartialEq + Eq`; `Sample` has exactly the
+  fields above, all public, and nothing else, as the stream builds one to give the CDM;
+- `Movie`, `Track`, `SampleEntry`, `Protection`, `Pssh` and `Error` are `Clone + PartialEq + Eq`;
+  `Error` is a `std::error::Error`;
+- the table holds every sample of every track, in file order, the clear ones too: a clear
+  sample has `protected` false, as does one whose `seig` group says so; nothing of it needs the
+  CDM;
+- `SampleTable::get` and `iter` give `Sample<'_>` by value, borrowing the subsample runs from the
+  table.
+
 Apple's live radio hands each segment over alone, its own `moov`'s movie given: offsets then count
 from the segment's start. A download hands over one growing file: offsets count from the file's
 start.
@@ -263,7 +291,13 @@ An export with no history, built by the dirty side:
 - `crates/cenc/Cargo.toml`, a workspace `Cargo.toml` of its own with the root's
   `[workspace.package]`, and `Cargo.lock`'s part that the crate needs (none: it has no dependency);
 - `crates/cenc/src/stream.rs`, Opium's own, its uses of the old types already renamed to §11's;
-- `crates/cenc/src/lib.rs` emptied of the old exports, and no `fmp4.rs`.
+- `crates/cenc/src/lib.rs` emptied of the old exports, and no `fmp4.rs`;
+- `flake.nix` and `flake.lock`, for the nightly shell of `cargo fuzz` (`nix develop .#fuzz`),
+  built beforehand, and `libfuzzer-sys` 0.4.13 already in Cargo's cache: the clean side works
+  without the network.
+
+`stream.rs`'s tests build their files with the boxes of §2 to §5, so they run only once the new
+code is in.
 
 The callers outside the crate are moved to §11's names by the dirty side, after the clean side's
 code is in: `apple-music` (`playback.rs`, `radio.rs`), `soundcloud` (`stream.rs`) and their
