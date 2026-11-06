@@ -299,10 +299,14 @@ the shared lock, one; restored, all passed.
 - Opium on a throwaway profile, release build, in a headless Weston, no network, no session bus:
   it starts, runs 15 s and ends on SIGTERM, writing only in its folder. It talks to no Apple
   service: that needs the owner's account.
-- Not verified: `take_licence` has no test (it needs a CDM session); no song was played with the
-  new code, nor the radio, Spatial Audio, the library's songs or a station's songs played; the
-  phone's Kotlin, which calls the licence through `opium-ffi`, was not built (Google's repository
-  answers 404, M1.5).
+- **Played by the owner** on 2026-11-06, on the owner's profile, with the release build of
+  `9e713da`, the settings backed up first: asked to play a song in stereo, one in Spatial Audio,
+  the live radio, a library song and a station, the owner reported everything working. Opium's
+  log of the session holds licences taken and the CDM shut down cleanly (169 of 181 timers fired),
+  no error.
+- Not verified: `take_licence` has no test (it needs a CDM session); a playlist's station through
+  Apple, which Opium cannot create; the phone's Kotlin, which calls the licence through
+  `opium-ffi`, was not built (Google's repository answers 404, M1.5).
 
 ## Better than Kopuz
 

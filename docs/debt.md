@@ -93,8 +93,9 @@ work is in [`PLAN.md`](PLAN.md); a stage's audit adds what it leaves open.
   M1.14 lean on it; frozen with `app-desktop` ([pitfall](../CONTRIBUTING.md#known-pitfalls)).
 - **Left by M1.12** (`apple-music`'s derived items written again;
   [evidence](audits/2026-11-06-apple-music-clean-room.md)):
-  - Not played yet on the new code: Apple Music in stereo and Spatial Audio, the live radio, a
-    library song, a station; due with the owner. Measured on the owner's account, without sound.
+  - Played by the owner on 2026-11-06, on the owner's profile, everything working by the owner's
+    report; what was played was not listed one by one. A playlist's station (`ra.cp-pl.u-…`) has
+    no button in Opium: its id's acceptance is tested against the local server only.
   - `take_licence` has no test: it needs a CDM session, which tests never load.
   - `fetch_track`'s check of a song's id has no direct test: it needs a CDM. `protected`'s has,
     and both go through `song_and_binaural`, which takes the checked kind.

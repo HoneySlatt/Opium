@@ -9,19 +9,19 @@ Every milestone ends with the definition of done in [`AGENTS.md`](../AGENTS.md#d
 
 ## Current
 
-- Stage 1 — Under the method, started on 2026-11-04. M1.1, M1.2, M1.3, M1.6, M1.7, M1.9, M1.10
-  and M1.11 are done; M1.12 is done but for playing, which needs the owner.
+- Stage 1 — Under the method, started on 2026-11-04. M1.1, M1.2, M1.3, M1.6, M1.7, M1.9, M1.10,
+  M1.11 and M1.12 are done.
 - **Standby** ([ADR-0031](adr/0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md)), lifted for
   the milestones that leave Kopuz's code behind
   ([ADR-0030](adr/0030-the-kopuz-code-rewritten-in-a-clean-room.md)): M1.10 to M1.13, one a session,
   in that order. Otherwise only a loss of data, a crash, a security flaw or a service that stops
   working is fixed.
 - **Next: M1.13**, nothing of Kopuz's left, the GPL kept
-  ([ADR-0032](adr/0032-the-gpl-kept-and-kopuzs-code-still-written-again.md)). Before it, with the
-  owner: Apple Music played on M1.12's code (below).
+  ([ADR-0032](adr/0032-the-gpl-kept-and-kopuzs-code-still-written-again.md)).
 - Played with the owner on 2026-11-05, on the new `cenc` and `widevine`: Apple Music in stereo and
-  Spatial Audio, the live radio (after a fix to `cenc`). Still due: a SoundCloud song served
-  encrypted, which the owner's account did not get for the album tried.
+  Spatial Audio, the live radio (after a fix to `cenc`); on 2026-11-06, on M1.12's code, by the
+  owner, who reported everything working. Still due: a SoundCloud song served encrypted, which the
+  owner's account did not get for the album tried.
 - The standby ends when SlimeEngine's Stage 6d plans its ports: Opium's desktop is the first of
   four, during the stage, and the phone moves to uwui without condition
   ([ADR-0031](adr/0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md)). Stage 1 closes
@@ -52,7 +52,7 @@ Every milestone ends with the definition of done in [`AGENTS.md`](../AGENTS.md#d
 | [M1.9](#done) | What stops MIT OR Apache-2.0 is known, and the code to write again is specified | Done |
 | [M1.10](#m110-to-m112--kopuzs-code-written-again) | `cenc` written again in a clean room | Done |
 | [M1.11](#m110-to-m112--kopuzs-code-written-again) | `widevine` written again in a clean room | Done |
-| [M1.12](#m110-to-m112--kopuzs-code-written-again) | `apple-music`'s derived items written again in a clean room | Done but for playing, which needs the owner |
+| [M1.12](#m110-to-m112--kopuzs-code-written-again) | `apple-music`'s derived items written again in a clean room | Done |
 | [M1.13](#m113--nothing-of-kopuzs-left) | Nothing of Kopuz's left, the GPL kept | Planned, next |
 | [M1.14](#m114--the-figures-to-beat-on-uwui) | The figures uwui must match: the egui window's and the Compose phone's | Planned |
 
@@ -171,7 +171,7 @@ One milestone each, in this order: `cenc`, then `widevine`, then `apple-music`.
   second with a session open, all accepted by the owner
   ([measurements](measurements.md#the-cdm-m111-2026-11-05),
   [evidence](audits/2026-11-05-widevine-clean-room.md)).
-- **M1.12, done on 2026-11-06 but for playing.** The specification checked against the code and
+- **M1.12, done on 2026-11-06.** The specification checked against the code and
   Apple's public page, and corrected; `apple-music`'s derived items written by four clean agents
   in turn, the later three after the reviews. A station's batch 2 252 → 1 278 ms; a token read
   again before its `exp`, at most once in five minutes; a download without a length plays; the HTTP behaviours
@@ -179,8 +179,8 @@ One milestone each, in this order: `cenc`, then `widevine`, then `apple-music`.
   token's search 1.2 to 1.3 µs slower once warm, within the 4.5 µs the owner accepted; on round
   1's code, the developer token's reading 6.6 ms slower in median, within the network's spread
   ([measurements](measurements.md#apple-musics-steps-m112-2026-11-05-and-2026-11-06),
-  [evidence](audits/2026-11-06-apple-music-clean-room.md)). "Opium plays" is not yet met:
-  Opium starts on a throwaway profile, but playing needs the owner's account.
+  [evidence](audits/2026-11-06-apple-music-clean-room.md)). Opium starts on a throwaway profile;
+  played by the owner on the owner's profile, everything working by the owner's report.
 - Each found nothing owed to Kopuz; what each left is in [debt.md](debt.md).
 
 ### M1.13 — Nothing of Kopuz's left
