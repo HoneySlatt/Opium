@@ -175,7 +175,7 @@ One milestone each, in this order: `cenc`, then `widevine`, then `apple-music`.
   2 252 → 1 278 ms; a token read again before its `exp`; a download without a length plays; the
   HTTP behaviours tested against a local server; `cenc`'s reservation bounded. The token's search
   4.5 µs slower once warm, accepted by the owner
-  ([measurements](measurements.md#apple-musics-steps-m112-2026-11-05),
+  ([measurements](measurements.md#apple-musics-steps-m112-2026-11-05-and-2026-11-06),
   [evidence](audits/2026-11-06-apple-music-clean-room.md)). Not yet played with the owner.
 - Each found nothing owed to Kopuz; what each left is in [debt.md](debt.md).
 

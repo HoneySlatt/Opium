@@ -10,7 +10,7 @@ the desktop runs on a [throwaway profile](../CONTRIBUTING.md#a-throwaway-profile
 cited live in [`scripts/measure/`](../scripts/measure/), each described at its head
 ([CONTRIBUTING.md](../CONTRIBUTING.md#measuring)).
 
-## Apple Music's steps, M1.12 (2026-11-05)
+## Apple Music's steps, M1.12 (2026-11-05 and 2026-11-06)
 
 How long Apple Music's steps take Opium on the owner's account, before and after
 `crates/apple-music`'s derived items were written again
@@ -40,7 +40,7 @@ station batch on the owner's account a run, nothing played, nothing written to d
   held 20 distinct songs on both sides.
 - **The developer token**, alone, ten times each, alternately, on 2026-11-06 (a program calling
   `auth::developer_token` built at both revisions; Apple's public page, no account), at a load
-  average of 17 falling to 6.5: before 487.8 ms (460 to 626), after 494.4 ms (460 to 616). The
+  average of 17 falling to 6.5: median before 487.8 ms (460 to 626), after 494.4 ms (460 to 616). The
   28 ms of the rounds above are the network's: the two sides' spreads overlap, and the search
   itself costs microseconds.
 - The library, its first page and a song's start go through the same requests as before; their

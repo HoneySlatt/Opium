@@ -38,7 +38,7 @@ Apple, against what Apple does. Corrected in `8d3a88e`:
   repository; the token never printed.
 
 The figures before were taken then, with the owner's go
-([measurements](../measurements.md#apple-musics-steps-m112-2026-11-05)), by a program kept in the
+([measurements](../measurements.md#apple-musics-steps-m112-2026-11-05-and-2026-11-06)), by a program kept in the
 repository, [`am_cost.rs`](../../crates/apple-music/examples/am_cost.rs).
 
 ## The export
@@ -191,7 +191,7 @@ Nothing above the thresholds is owed to Kopuz.
 - Measured with the owner's go, alternately with the old code: the same cleartext; a station's
   batch 43 % quicker; the developer token, the library and a song's start the same within the
   network's spread; the token's search 4.5 µs slower once warm, accepted by the owner
-  ([measurements](../measurements.md#apple-musics-steps-m112-2026-11-05)).
+  ([measurements](../measurements.md#apple-musics-steps-m112-2026-11-05-and-2026-11-06)).
 - Opium on a throwaway profile, release build, in a headless Weston, no network, no session bus:
   it starts, runs 15 s and ends on SIGTERM, writing only in its folder. It talks to no Apple
   service: that needs the owner's account.

@@ -201,7 +201,7 @@ Apple's web player carries a developer token, a JWT (RFC 7519), in its main scri
   of 2026-11-05, in a release build, the first search of a process takes about 0.5 ms, before and
   after this rewrite; once its expressions are built, 15 µs before, 19.5 µs after, the checks of
   §9 accepted by the owner for those 4.5 µs
-  ([measurements](../measurements.md#apple-musics-steps-m112-2026-11-05)).
+  ([measurements](../measurements.md#apple-musics-steps-m112-2026-11-05-and-2026-11-06)).
 
 ## 10. Tests
 

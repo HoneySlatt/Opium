@@ -165,8 +165,8 @@ kill -TERM "$wpid"                                            # that pid only
 - The CDM's costs (a licence, a decrypt, wake-ups at rest) and Apple Music's steps (the developer
   token, the library, a station's batch, a song ready) are taken apart from the window, by
   `scripts/measure/cdm-cost.sh` running builds of `crates/apple-music/examples/cdm_cost.rs` or
-  `am_cost.rs` in turn. Each run asks Apple for a licence on the owner's account: with the owner's
-  go only.
+  `am_cost.rs` in turn. Each run asks Apple for a licence on the owner's account, and `am_cost`
+  for a station's batch, which moves that station's place: with the owner's go only.
 
 ### The screenshot mode
 
