@@ -50,8 +50,8 @@ with Jetpack Compose, over the same Rust core.
   player. On the same network they find each other over mDNS and talk on TCP
   port 47820 (so allow 47820/tcp and 5353/udp through the firewall); away
   from home, they reach each other through [iroh](https://www.iroh.computer)'s
-  relays, with the same encryption, which you can turn off or point at your
-  own relay in Settings → Devices.
+  relays, with the same encryption; Settings → Devices can set your own
+  relay in place of n0's.
 - **Offline:** songs can be downloaded, kept sealed with a key held in the
   desktop's keyring or the phone app's vault, and a song that came through a service's DRM plays while
   that service's subscription was confirmed in the last 30 days.
@@ -70,8 +70,7 @@ with Jetpack Compose, over the same Rust core.
 - An Apple Music subscription for Apple Music, a SoundCloud account, and a
   [Navidrome](https://www.navidrome.org) server (or any OpenSubsonic server),
   as you like. Each service can be turned off in Settings.
-- For the phone: Android 14 or later on an arm64 device. Android 14 is the
-  first that plays bit-perfect over USB, which is the point of the app.
+- For the phone: Android 14 or later on an arm64 device.
 
 ## Build
 
