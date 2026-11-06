@@ -9,15 +9,16 @@ Every milestone ends with the definition of done in [`AGENTS.md`](../AGENTS.md#d
 
 ## Current
 
-- Stage 1 — Under the method, started on 2026-11-04. M1.1, M1.2, M1.3, M1.6, M1.7, M1.9, M1.10
-  and M1.11 are done.
+- Stage 1 — Under the method, started on 2026-11-04. M1.1, M1.2, M1.3, M1.6, M1.7, M1.9, M1.10,
+  M1.11 and M1.12 are done.
 - **Standby** ([ADR-0031](adr/0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md)), lifted for
   the milestones that leave Kopuz's code behind
   ([ADR-0030](adr/0030-the-kopuz-code-rewritten-in-a-clean-room.md)): M1.10 to M1.13, one a session,
   in that order. Otherwise only a loss of data, a crash, a security flaw or a service that stops
   working is fixed.
-- **Next: M1.12**, `apple-music`'s derived items written again in a clean room from
-  [`specs/apple-music-playback.md`](specs/apple-music-playback.md).
+- **Next: M1.13**, nothing of Kopuz's left, the GPL kept
+  ([ADR-0032](adr/0032-the-gpl-kept-and-kopuzs-code-still-written-again.md)). Before it, with the
+  owner: Apple Music played on M1.12's code (below).
 - Played with the owner on 2026-11-05, on the new `cenc` and `widevine`: Apple Music in stereo and
   Spatial Audio, the live radio (after a fix to `cenc`). Still due: a SoundCloud song served
   encrypted, which the owner's account did not get for the album tried.
@@ -51,8 +52,8 @@ Every milestone ends with the definition of done in [`AGENTS.md`](../AGENTS.md#d
 | [M1.9](#done) | What stops MIT OR Apache-2.0 is known, and the code to write again is specified | Done |
 | [M1.10](#m110-to-m112--kopuzs-code-written-again) | `cenc` written again in a clean room | Done |
 | [M1.11](#m110-to-m112--kopuzs-code-written-again) | `widevine` written again in a clean room | Done |
-| [M1.12](#m110-to-m112--kopuzs-code-written-again) | `apple-music`'s derived items written again in a clean room | Planned, next |
-| [M1.13](#m113--nothing-of-kopuzs-left) | Nothing of Kopuz's left, the GPL kept | Planned |
+| [M1.12](#m110-to-m112--kopuzs-code-written-again) | `apple-music`'s derived items written again in a clean room | Done |
+| [M1.13](#m113--nothing-of-kopuzs-left) | Nothing of Kopuz's left, the GPL kept | Planned, next |
 | [M1.14](#m114--the-figures-to-beat-on-uwui) | The figures uwui must match: the egui window's and the Compose phone's | Planned |
 
 ## Stage 1 — Under the method
@@ -155,31 +156,28 @@ One milestone each, in this order: `cenc`, then `widevine`, then `apple-music`.
 - **By hand, with the owner.**
   - Before M1.11: the CDM's figures taken again (a licence needs the owner's account).
   - After M1.11 and M1.12: Apple Music and SoundCloud's protected songs played, Spatial Audio and
-    the live radio included. Fakes do not prove a service.
+    the live radio included; after M1.12, a library song and a station's too. Fakes do not prove
+    a service.
   - Re-taking Chromium's CDM header at a pinned revision needs a download, the owner's go.
 - **Measured.** Before and after: indexing and the table's memory (`cenc`); a licence's time, the
   CDM's time per sample and its wake-ups at rest (`widevine`).
-- **M1.10, done on 2026-11-05.** `cenc` written by two clean agents from its specification;
-  `fmp4.rs` and its notice deleted; `apple-music` and `soundcloud` on the new names; mutation tests
-  in `cargo test`, three `cargo fuzz` targets, run weekly by CI (`scripts/fuzz.sh`). Indexing
-  0.45 → 0.33 ms, the table 139 → 46.2 bytes a sample
-  ([measurements](measurements.md#indexing-an-encrypted-track-m110-2026-11-05)). The comparison
-  found nothing owed to Kopuz ([evidence](audits/2026-11-05-cenc-clean-room.md)). A file of FFmpeg's decodes
-  bit for bit; `scripts/check.sh` passes; Opium starts on a throwaway profile. What it left is in
-  [debt.md](debt.md). The protected songs are still to be played with the owner.
-- **M1.11, done on 2026-11-05.** `widevine` written by two clean agents from its specification:
-  one `cdm` thread owns the CDM, fires its timers in time and serves licences before decrypts,
-  each decrypt one sample in place; a thin C++ layer for interface 11. The adapted files and their
-  notices deleted; the callers on the new names; Chromium's headers pinned to `chromium/cdm`
-  `8f62f3b`. Measured with the owner, alternately with the old code: the same cleartext, the
-  song in 14.20 s (the CDM's own pace), a decrypt's median +8.8 µs, one wake-up a second at rest
-  while a session is open, loading +0.8 ms, the last two accepted by the owner
-  ([measurements](measurements.md#the-cdm-m111-2026-11-05)). The first run on the owner's CDM
-  found none: the specification named only some of Brave's folders; fixed. The comparison found
-  nothing owed to Kopuz ([evidence](audits/2026-11-05-widevine-clean-room.md)); `scripts/check.sh`
-  passes; Opium starts on a throwaway profile, loads the CDM and quits cleanly, but plays nothing
-  yet: playing needs the owner's account and speakers, with the protected songs above. A decrypt's
-  p95 grew by 25 µs, also accepted. What it left is in [debt.md](debt.md).
+- **M1.10, done on 2026-11-05.** `cenc` written by two clean agents; mutation tests and three
+  `cargo fuzz` targets, run weekly (`scripts/fuzz.sh`); indexing 0.45 → 0.33 ms
+  ([measurements](measurements.md#indexing-an-encrypted-track-m110-2026-11-05),
+  [evidence](audits/2026-11-05-cenc-clean-room.md)).
+- **M1.11, done on 2026-11-05.** `widevine` written by two clean agents: one `cdm` thread, a thin
+  C++ layer, Chromium's headers pinned; a decrypt's median +8.8 µs and p95 +25 µs, one wake-up a
+  second with a session open, all accepted by the owner
+  ([measurements](measurements.md#the-cdm-m111-2026-11-05),
+  [evidence](audits/2026-11-05-widevine-clean-room.md)).
+- **M1.12, done on 2026-11-06.** The specification checked against the code and Apple's public
+  page, and corrected; `apple-music`'s derived items written by one clean agent. A station's batch
+  2 252 → 1 278 ms; a token read again before its `exp`; a download without a length plays; the
+  HTTP behaviours tested against a local server; `cenc`'s reservation bounded. The token's search
+  4.5 µs slower once warm, accepted by the owner
+  ([measurements](measurements.md#apple-musics-steps-m112-2026-11-05),
+  [evidence](audits/2026-11-06-apple-music-clean-room.md)). Not yet played with the owner.
+- Each found nothing owed to Kopuz; what each left is in [debt.md](debt.md).
 
 ### M1.13 — Nothing of Kopuz's left
 

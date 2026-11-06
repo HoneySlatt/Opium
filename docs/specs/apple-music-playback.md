@@ -185,9 +185,11 @@ Apple's web player carries a developer token, a JWT (RFC 7519), in its main scri
   script out of reach (its status), no token in the script, a payload that does not decode. A
   page or a script out of reach, a failure status included, is a network error: a renewal that
   meets one is tried again at the next request, rather than taken for a sign-out.
-- Searching the page and the script is a scan in time proportional to their length: the code
-  before took 0.08 ms for both (median of 30), on the files of 2026-11-05, in a release build. The
-  new search must be no slower; it is measured afterwards on the same files.
+- Searching the page and the script is a scan in time proportional to their length. On the files
+  of 2026-11-05, in a release build, the first search of a process takes about 0.5 ms, before and
+  after this rewrite; once its expressions are built, 15 µs before, 19.5 µs after, the checks of
+  §9 accepted by the owner for those 4.5 µs
+  ([measurements](../measurements.md#apple-musics-steps-m112-2026-11-05)).
 
 ## 10. Tests
 

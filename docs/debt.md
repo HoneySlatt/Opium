@@ -91,4 +91,17 @@ work is in [`PLAN.md`](PLAN.md); a stage's audit adds what it leaves open.
   runs, on the desktop or in a headless Weston, old code and new alike; it waits for frames the
   compositor may not send. The cause is not known. The visual checks of the definition of done and
   M1.14 lean on it; frozen with `app-desktop` ([pitfall](../CONTRIBUTING.md#known-pitfalls)).
-- **Until M1.12**, in `apple-music`: a download without a `Content-Length` fails the track.
+- **Left by M1.12** (`apple-music`'s derived items written again;
+  [evidence](audits/2026-11-06-apple-music-clean-room.md)):
+  - Not played yet on the new code: Apple Music in stereo and Spatial Audio, the live radio, a
+    library song, a station; due with the owner. Measured on the owner's account, without sound.
+  - `take_licence` has no test: it needs a CDM session, which tests never load.
+  - ADR-0030's `cargo fuzz` targets for the HLS playlists and Apple's answers are not made: the
+    readers are private, and a target needs a public seam. Seeded mutation tests in `cargo test`
+    cover them.
+  - Near the developer token's expiry, while Apple's web player is out of reach, every request
+    tries to read it again first: a renewal that meets a network error is not recorded. The same
+    holds on a 401, older than M1.12.
+  - The token's search takes 4.5 µs more once warm, accepted by the owner.
+  - A station's calls still in flight when enough songs came are dropped: their songs are lost,
+    the station's cursor moved past them, as the rounds of four did before.

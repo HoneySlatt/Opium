@@ -21,8 +21,10 @@ app in Kotlin with Jetpack Compose, which calls the core through UniFFI
   no UI. Its `ffi` feature derives the types for UniFFI.
 - **`crates/apple-music`**: Apple Music through its web player's private API: the developer
   token from the web player (`auth.rs`), the sign-in (`signin`), library, catalog, search, radio,
-  lyrics, animated covers, and playback through `webPlayback`, a Widevine licence and CENC
-  (`playback.rs`) ([ADR-0002](adr/0002-apple-music-through-its-web-player.md)).
+  lyrics, animated covers, a station's next songs (`station.rs`), and playback through
+  `webPlayback`, a Widevine licence and CENC (`playback.rs`)
+  ([ADR-0002](adr/0002-apple-music-through-its-web-player.md)). Its HTTP behaviours are tested
+  against a local server (`test_support.rs`), with mutation tests over what Apple sends.
 - **`crates/soundcloud`**: SoundCloud through `api-v2`: the client id read from soundcloud.com,
   tokens and their renewal, originals, HLS streams clear or encrypted (`stream.rs`), and the
   `Browser` seam through which every change goes ([ADR-0012](adr/0012-soundcloud-changes-through-a-browser-seam.md)).

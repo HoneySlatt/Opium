@@ -22,20 +22,40 @@ station batch on the owner's account a run, nothing played, nothing written to d
 
 - *Before, first*: five runs of the code at `c132830`, ten seconds apart, at a load average of 8.8
   rising to 16.6 (another build ran meanwhile).
+- *Before* and *after*, on 2026-11-06: five rounds, each running the old code (`c132830`) then the
+  new one (`316a8ee`), the same program, at a load average of 0.9 to 0.6.
 
-| What | Before, first (5 runs) |
-|---|---|
-| The developer token, on a client of its own | 507 to 791 ms |
-| Connecting: the token and the storefront | 772 to 886 ms |
-| The library's first page of 100 songs | 1 266 to 1 641 ms |
-| Every song of the library | 7.3 to 12.2 s |
-| A station's batch of 20 | 1 162 to 2 129 ms, 20 distinct songs every run |
-| The song ready to play (webPlayback to the first samples decrypted) | 1 035 to 1 459 ms |
-| Its first MiB of cleartext | the same digest every run, `d467d7d1094aa53a` |
+| What | Before, first (5 runs) | Before (5 rounds), median and range | After (5 rounds), median and range |
+|---|---|---|---|
+| The developer token, on a client of its own | 507 to 791 ms | 506 ms, 495 to 529 | 534 ms, 508 to 646 |
+| Connecting: the token and the storefront | 772 to 886 ms | 780 ms, 728 to 830 | 756 ms, 720 to 891 |
+| The library's first page of 100 songs | 1 266 to 1 641 ms | 1 601 ms, 1 079 to 1 766 | 1 096 ms, 1 070 to 1 689 |
+| Every song of the library | 7.3 to 12.2 s | 11.2 s, 7.6 to 31.6 | 10.3 s, 7.3 to 11.9 |
+| A station's batch of 20 | 1 162 to 2 129 ms | 2 252 ms, 1 525 to 2 608 | **1 278 ms**, 1 065 to 1 395 |
+| The song ready to play (webPlayback to the first samples decrypted) | 1 035 to 1 459 ms | 1 065 ms, 1 009 to 1 257 | 1 027 ms, 987 to 1 211 |
+| Its first MiB of cleartext | `d467d7d1094aa53a` every run | the same | the same |
 
-- **Searching the page and the script for the token**, apart: the two regular expressions of the
-  code before, built and run over Apple's page (2.4 MB) and script (3.3 MB) of 2026-11-05, saved
-  outside the repository: 0.08 ms (median of 30, p95 0.20 ms).
+- **A station's batch is 43 % quicker**: up to six calls in flight, as many as the songs still
+  missing need, instead of rounds of four that each waited for their slowest call. Every batch
+  held 20 distinct songs on both sides.
+- **The developer token**, alone, ten times each, alternately, on 2026-11-06 (a program calling
+  `auth::developer_token` built at both revisions; Apple's public page, no account), at a load
+  average of 17 falling to 6.5: before 487.8 ms (460 to 626), after 494.4 ms (460 to 616). The
+  28 ms of the rounds above are the network's: the two sides' spreads overlap, and the search
+  itself costs microseconds.
+- The library, its first page and a song's start go through the same requests as before; their
+  differences are the network's.
+- **Searching the page and the script for the token**, apart, on Apple's page (2.4 MB) and script
+  (3.3 MB) of 2026-11-05, saved outside the repository, release builds, by
+  [`token-search.sh`](audits/2026-11-06-apple-music-clean-room/token-search.sh), two runs:
+  - a process's first search, its expressions built then, as at Opium's start (30 processes each,
+    alternately): before 459 and 533 µs, after 459 and 521 µs (medians);
+  - once the expressions are built (101 searches each, alternately): before 15.0 and 16.6 µs,
+    after 19.5 and 21.1 µs, p95 16.3 and 17.1 µs before, 21.1 and 21.5 µs after. **4.5 µs more**:
+    the script tag read and the token's header decoded, to check that it is ES256. Accepted by
+    the owner on 2026-11-06; it is paid at a renewal, at most once in five minutes.
+  - The figure first given, 0.08 ms for the code before, built its expressions in every one of 30
+    searches in a row.
 
 ## The CDM, M1.11 (2026-11-05)
 
