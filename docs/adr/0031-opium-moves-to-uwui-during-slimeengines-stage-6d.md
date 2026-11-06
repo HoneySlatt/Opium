@@ -5,7 +5,9 @@
   [0028](0028-the-phones-compose-screens-frozen-until-measured.md) (uwui on the phone without
   condition), [0026](0026-the-egui-window-frozen-until-the-move.md) (the window instrumented to
   measure its frames) and [0027](0027-macrobenchmark-for-the-phones-measurements-at-stage-3.md) (the
-  Macrobenchmark in Stage 5)
+  Macrobenchmark in Stage 5); amended by
+  [0032](0032-the-gpl-kept-and-kopuzs-code-still-written-again.md) (Opium keeps the GPL, which
+  uwui's licence allows it to use)
 - Date: 2026-11-05
 
 ## Context

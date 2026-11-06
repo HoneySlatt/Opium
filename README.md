@@ -18,8 +18,9 @@ with Jetpack Compose, over the same Rust core.
 - The APK is signed with Android's debug key.
 - On standby until SlimeEngine's Stage 6d plans its ports, Opium's first
   ([ADR-0031](docs/adr/0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md)).
-- Meanwhile, the code adapted from Kopuz is written again, and Opium then moves to MIT OR
-  Apache-2.0 ([ADR-0030](docs/adr/0030-the-kopuz-code-rewritten-in-a-clean-room.md)).
+- Meanwhile, the code adapted from Kopuz is written again; Opium stays under GPL-3.0-or-later
+  ([ADR-0030](docs/adr/0030-the-kopuz-code-rewritten-in-a-clean-room.md),
+  [ADR-0032](docs/adr/0032-the-gpl-kept-and-kopuzs-code-still-written-again.md)).
 - What is being worked on: [docs/PLAN.md](docs/PLAN.md).
 
 - **One library, one search:** albums, songs, artists and playlists from every

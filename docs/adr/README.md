@@ -44,5 +44,5 @@ call the app "Music" ([ADR-0023](0023-the-rename-to-opium.md)).
 | [0028](0028-the-phones-compose-screens-frozen-until-measured.md) | The phone's Compose screens are frozen until slime-ui is measured on Android | Accepted; amended by 0031 |
 | [0029](0029-opium-waits-for-slime-ui-then-moves-first.md) | Opium waits for slime-ui, then moves to it before anything else | Accepted; amends 0026 (no work meanwhile) and the ROADMAP's order; amended by 0030 and 0031 |
 | [0030](0030-the-kopuz-code-rewritten-in-a-clean-room.md) | The code adapted from Kopuz is written again in a clean room | Accepted; amends 0004 (the host's shape) and 0029 (the standby lifted for these milestones); amended by 0032 |
-| [0031](0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md) | Opium moves to uwui during SlimeEngine's Stage 6d, on the phone too | Accepted; amends 0022, 0026, 0027, 0028 and 0029 |
-| [0032](0032-the-gpl-kept-and-kopuzs-code-still-written-again.md) | The GPL is kept, and Kopuz's code is still written again | Accepted; amends 0030, confirms 0001 |
+| [0031](0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md) | Opium moves to uwui during SlimeEngine's Stage 6d, on the phone too | Accepted; amends 0022, 0026, 0027, 0028 and 0029; amended by 0032 |
+| [0032](0032-the-gpl-kept-and-kopuzs-code-still-written-again.md) | The GPL is kept, and Kopuz's code is still written again | Accepted; amends 0030 and 0031, confirms 0001 |

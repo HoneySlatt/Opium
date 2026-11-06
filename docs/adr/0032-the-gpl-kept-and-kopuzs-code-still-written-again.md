@@ -1,8 +1,9 @@
 # 0032. The GPL is kept, and Kopuz's code is still written again
 
 - Status: Accepted; amends [0030](0030-the-kopuz-code-rewritten-in-a-clean-room.md) (the licence
-  kept, M1.13 a check that nothing of Kopuz's is left) and confirms
-  [0001](0001-gpl-3-0-or-later.md)
+  kept, M1.13 a check that nothing of Kopuz's is left) and
+  [0031](0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md) (its "Opium's intended licence"),
+  and confirms [0001](0001-gpl-3-0-or-later.md)
 - Date: 2026-11-06
 
 ## Context
