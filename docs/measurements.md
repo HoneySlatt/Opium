@@ -24,9 +24,9 @@ station batch on the owner's account a run, nothing played, nothing written to d
   rising to 16.6 (another build ran meanwhile).
 - *Before* and *after*, on 2026-11-06: five rounds, each running the old code (`c132830`) then the
   new one (`316a8ee`, the clean side's first round), the same program, at a load average of 0.9 to
-  0.6. Its second round, after the review, changed none of these requests: the search of the page
-  and the script, measured apart below, an id's check, and how often the token is read again
-  before its `exp`, which none of these runs came near.
+  0.6. Its second and third rounds, after the reviews, changed none of these requests for Apple's
+  real answers: the search of the page and the script, measured apart below, an id's check, and
+  how often the token is read again near its `exp`, which none of these runs came near.
 
 | What | Before, first (5 runs) | Before (5 rounds), median and range | After (5 rounds), median and range |
 |---|---|---|---|
@@ -41,8 +41,10 @@ station batch on the owner's account a run, nothing played, nothing written to d
 - **A station's batch is 43 % quicker**: up to six calls in flight, as many as the songs still
   missing need, instead of rounds of four that each waited for their slowest call. Every batch
   held 20 distinct songs on both sides.
-- **The developer token**, alone, ten times each, alternately, on 2026-11-06 (a program calling
-  `auth::developer_token` built at both revisions; Apple's public page, no account), at a load
+- **The developer token**, alone, ten times each, alternately, on 2026-11-06, the clean side's
+  first round against `c132830`
+  ([`token-time.sh`](audits/2026-11-06-apple-music-clean-room/token-time.sh); Apple's public
+  page, no account), at a load
   average of 17 falling to 6.5: median before 487.8 ms (460 to 626), after 494.4 ms (460 to 616). The
   28 ms of the rounds above are the network's: the two sides' spreads overlap, and the search
   itself costs microseconds.
@@ -63,9 +65,9 @@ station batch on the owner's account a run, nothing played, nothing written to d
     before, 683 to 772 µs after): **2 to 12 µs more**, the wider expression's building. Once
     warm, medians of 101: 16.3 → 17.6, 17.1 → 18.3 and 17.3 → 18.5 µs, **1.2 to 1.3 µs more**,
     the token's header decoded to check that it is ES256; p95 34.4 → 36.5, 21.7 → 20.4 and
-    23.8 → 24.9 µs, noisy at that load. Within the 4.5 µs the owner accepted. Warm times also
-    fall into two groups, 15 or 28 µs, both sides alike, from one run to the next: where the
-    process runs, not the code.
+    23.8 → 24.9 µs, noisy at that load. Within the 4.5 µs the owner accepted. In round 2's runs,
+    warm times fell into two groups, 15 or 28 µs, both sides alike, from one run to the next:
+    where the process ran, not the code; round 3's runs showed the lower group only.
   - The figure first given, 0.08 ms for the code before, built its expressions in every one of 30
     searches in a row.
 

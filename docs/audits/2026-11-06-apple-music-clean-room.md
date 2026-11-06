@@ -12,9 +12,10 @@
   - dirty side: the session that read Kopuz and the adapted code; it checked the specification
     against the code and Apple's public page, measured before, made the export, answered the
     assumptions, brought the code back, compared it and wrote this file;
-  - clean side, three new agents in turn: round 1 wrote the items; round 2 changed what the
+  - clean side, four new agents in turn: round 1 wrote the items; round 2 changed what the
     milestone's review found and wrote the `cargo fuzz` targets; round 3 changed what the final
-    review found. None had read Kopuz or the adapted files, before or during.
+    review found; round 4 closed the gaps the last review found in the tests. None had read
+    Kopuz or the adapted files, before or during.
 - This is how a team usually shows that new code is its own; it is not legal advice.
 
 ## Before the hand-over
@@ -68,7 +69,8 @@ standard library's.
 Word for word, but for the path of the project's folder:
 [round 1](2026-11-06-apple-music-clean-room/brief.md),
 [round 2](2026-11-06-apple-music-clean-room/brief-round-2.md),
-[round 3](2026-11-06-apple-music-clean-room/brief-round-3.md). Each allows only the export, the public
+[round 3](2026-11-06-apple-music-clean-room/brief-round-3.md),
+[round 4](2026-11-06-apple-music-clean-room/brief-round-4.md). Each allows only the export, the public
 standards the specification cites and the dependencies' documentation built inside the export, and
 forbids the rest of the disk, Opium's repository and its history, `/nix/store` and `~/.cargo`
 read directly, the network but `127.0.0.1`, a CDM, an account, and other agents.
@@ -135,6 +137,7 @@ path and every command that could reach the network:
 | 1 | 81: 67 shell, 10 reads, 4 writes | none | none | Every `nix` call `--offline`, every `cargo` call offline. The absolute paths named outside the export are the tests' addresses (`/v1/me/library/songs`, `/assets/index~ab.js`, …), `/dev/null` and `/usr/bin/env`. Dependencies' interfaces read from `cargo doc --offline` under the export's `target/`. No subagent. |
 | 2 | 67: 63 shell, 2 writes, one tool lookup and one stop | none | none | The same. The stop ended its own fuzz build, which the agent tool had moved to the background. No subagent. |
 | 3 | 40: 38 shell, 1 read, 1 edit | none | none | The same. No subagent. |
+| 4 | 32: 30 shell, 2 edits | none | none | The same. No subagent. |
 
 No call named Kopuz, the adapted files, Opium's folder, a browser profile, a token, a CDM,
 `/nix/store` or `~/.cargo`.
@@ -150,15 +153,15 @@ tree. The full report is [`comparison.md`](2026-11-06-apple-music-clean-room/com
 
 | Against | Raw: runs of 50 or more | Raw: longest below | Normalised: runs of 30 or more | Normalised: longest |
 |---|---|---|---|---|
-| Kopuz `a58c385` | 0 | 27 | 65 | 49 |
-| Kopuz `1d8b323` | 0 | 27 | 65 | 49 |
+| Kopuz `a58c385` | 0 | 27 | 66 | 49 |
+| Kopuz `1d8b323` | 0 | 27 | 66 | 49 |
 | The lines removed for the export | 1 | 49 | 12 | 155 |
 | The adapted files whole | 3 | 49 | 23 | 156 |
 | The rest of the tree | 4 | 49 | 44 | 131 |
 
 Read by hand:
 
-- **Against Kopuz**: no run of 28 raw tokens. Of the 65 normalised runs, 63 fall in code that
+- **Against Kopuz**: no run of 28 raw tokens. Of the 66 normalised runs, 64 fall in code that
   does nothing of the kind (Kopuz's interface, store, database, player, YouTube clients): `use`
   lists, struct literals, `iter().filter(…)` chains. One, 36 tokens, falls in Kopuz's Apple
   lyrics file (`daemon/server/src/lyrics/apple_music.rs`): the head of the tests' local server's
@@ -198,10 +201,12 @@ Read by hand:
   "licence response without a licence", "the station offered no songs") and `apple_id`'s.
 - **The expressions**: the token's, `eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+`,
   resembles Kopuz's `eyJ[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+`: a JWT's shape (RFC
-  7519, a JSON header's `{"` in base64url). The script's, `/assets/index[~-][A-Za-z0-9_-]+\.js`
-  since round 2, resembles Kopuz's `/assets/index~[^/]+\.js`: the address §9 describes. Each is
-  one token to the comparison; both differ in their classes, and the new code checks around
-  them what Kopuz's does not (the header's ES256, the address standing alone).
+  7519, a JSON header's `{"` in base64url). The script's, since round 3,
+  `/assets/index[~-][^/?#"'<>\t\n\x0C\r ]+\.js`, is close to Kopuz's `/assets/index~[^/]+\.js`,
+  a negated class then `.js`: §9 asks, after the final review, to find every form the code before
+  found, and the code before was this expression. Each is one token to the comparison; the new
+  one leaves out the characters no address holds, and the code around them checks what Kopuz's
+  does not (the token's header ES256; the script asked of `music.apple.com` under `/assets/`).
 
 Nothing above the thresholds is owed to Kopuz.
 
@@ -256,7 +261,8 @@ found:
   round 3, with a test across `exp` that failed before;
 - **the main script refused in forms the code before found** (`//music.apple.com/…`, another
   host, `/us/assets/…`, a dotted name such as `index~a1.min.js`), though §9 said "as tolerant".
-  Now every form the code before found is found, and the script is always asked of
+  Now every form the code before found is found, but for names holding a space, a quote, `<`,
+  `>`, `?` or `#`, which no address holds; the script is always asked of
   `https://music.apple.com`; round 3, with tests of each form;
 - **a matched `songId` unchecked**, which goes into an address and the licence: now taken only
   when it is a catalog id; round 3;
@@ -269,6 +275,16 @@ Round 3's assumptions, kept: after `.js` only a query is looked at, so `index~ab
 `index~ab.js`, as the code before read it; a `\` in the script's name is sent as `%5C`, so the
 path stays under `/assets/`; a numeric `songId` is a whole number from 1 to `u64::MAX`, a string
 `"0"` a catalog id by §1's digits; one reading at a time of either kind, under one lock.
+
+## The last review, and round 4
+
+A third reviewer, new, checked round 3. It found no defect: each fix holds, and its test fails
+with the fix undone. It found two gaps in the tests (the 401's five minutes, and one reading at a
+time of either kind, each removable with every test still passing), a test that waited on the
+wall clock, and wording too broad or stale in the documents, since corrected. Round 4 wrote the
+tests, and a test-only seam for the clock (`now`, the real clock in every other build). The dirty
+side then removed each check in turn: without the 401's five minutes, two tests failed; without
+the shared lock, one; restored, all passed.
 
 ## Checked
 

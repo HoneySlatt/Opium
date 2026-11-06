@@ -109,5 +109,8 @@ work is in [`PLAN.md`](PLAN.md); a stage's audit adds what it leaves open.
     other forms Apple may use were not met.
   - A string `songId` of `"0"` counts as a catalog id, as §1 reads digits; the code before took
     it too.
+  - Two tests lean on their machine: one dates a reading 5 minutes back on the monotonic clock,
+    which fails, saying so, on a machine up for less; one counts readings in flight, the second
+    started by `join`'s order of polling.
   - A station's calls still in flight when enough songs came are dropped: their songs are lost,
     the station's cursor moved past them, as the rounds of four did before.

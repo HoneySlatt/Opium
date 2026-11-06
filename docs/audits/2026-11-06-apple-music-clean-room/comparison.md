@@ -38,14 +38,14 @@ Sources:
 | adapted@3d7b225 | 4 | 3 | 141 | 49 |
 | tree | 169 | 4 | 68 | 49 |
 
-### 51 raw tokens: `clean side's lines of src_lib.rs` lines 113 to 117, and removed@3d7b225 `lib.rs` lines 42 to 46
+### 51 raw tokens: `clean side's lines of src_lib.rs` lines 116 to 120, and removed@3d7b225 `lib.rs` lines 42 to 46
 
 ```text
-  113 | . bytes ( ) . all ( | b | b . is_ascii_lowercase ( ) )
-  114 | && ! name . is_empty ( )
-  115 | && name . bytes ( ) . all ( | b | b . is_ascii_alphanumeric ( ) || b == b'-' )
-  116 | } ) ;
-  117 | if catalog ||
+  116 | . bytes ( ) . all ( | b | b . is_ascii_lowercase ( ) )
+  117 | && ! name . is_empty ( )
+  118 | && name . bytes ( ) . all ( | b | b . is_ascii_alphanumeric ( ) || b == b'-' )
+  119 | } ) ;
+  120 | if catalog ||
 ```
 
 
@@ -73,30 +73,30 @@ Sources:
 ```
 
 
-### 62 raw tokens: `clean side's lines of src_lib.rs` lines 366 to 375, and adapted@3d7b225 `lib.rs` lines 414 to 423
+### 62 raw tokens: `clean side's lines of src_lib.rs` lines 408 to 417, and adapted@3d7b225 `lib.rs` lines 414 to 423
 
 ```text
-  366 | ) ,
-  367 | _ if ! status . is_success ( ) => {
-  368 | return Err ( Error :: Protocol ( format ! ( "{path}: HTTP {status}" ) ) ) ;
-  369 | }
-  370 | _ => { }
-  371 | }
-  372 | let body = resp
-  373 | . text ( )
-  374 | . await
-  375 | . map_err ( | e | Error :: Network ( format ! ( "{path}: {e}" ) ) ) ? ;
+  408 | ) ,
+  409 | _ if ! status . is_success ( ) => {
+  410 | return Err ( Error :: Protocol ( format ! ( "{path}: HTTP {status}" ) ) ) ;
+  411 | }
+  412 | _ => { }
+  413 | }
+  414 | let body = resp
+  415 | . text ( )
+  416 | . await
+  417 | . map_err ( | e | Error :: Network ( format ! ( "{path}: {e}" ) ) ) ? ;
 ```
 
 
-### 51 raw tokens: `clean side's lines of src_lib.rs` lines 113 to 117, and adapted@3d7b225 `lib.rs` lines 960 to 964
+### 51 raw tokens: `clean side's lines of src_lib.rs` lines 116 to 120, and adapted@3d7b225 `lib.rs` lines 960 to 964
 
 ```text
-  113 | . bytes ( ) . all ( | b | b . is_ascii_lowercase ( ) )
-  114 | && ! name . is_empty ( )
-  115 | && name . bytes ( ) . all ( | b | b . is_ascii_alphanumeric ( ) || b == b'-' )
-  116 | } ) ;
-  117 | if catalog ||
+  116 | . bytes ( ) . all ( | b | b . is_ascii_lowercase ( ) )
+  117 | && ! name . is_empty ( )
+  118 | && name . bytes ( ) . all ( | b | b . is_ascii_alphanumeric ( ) || b == b'-' )
+  119 | } ) ;
+  120 | if catalog ||
 ```
 
 
@@ -154,8 +154,8 @@ Sources:
 
 | Against | Files | Runs at or above | Longest at or above | Longest below |
 |---|---|---|---|---|
-| kopuz-a58c385 | 764 | 65 | 49 | 29 |
-| kopuz-1d8b323 | 771 | 65 | 49 | 29 |
+| kopuz-a58c385 | 764 | 66 | 49 | 29 |
+| kopuz-1d8b323 | 771 | 66 | 49 | 29 |
 | removed@3d7b225 | 4 | 12 | 155 | 29 |
 | adapted@3d7b225 | 4 | 23 | 156 | 29 |
 | tree | 169 | 44 | 131 | 29 |
@@ -198,27 +198,27 @@ Sources:
 ```
 
 
-### 41 normalised tokens: `clean side's lines of src_lib.rs` lines 496 to 501, and kopuz-a58c385 `daemon/core/src/integrations.rs` lines 7 to 12
+### 41 normalised tokens: `clean side's lines of src_lib.rs` lines 539 to 544, and kopuz-a58c385 `daemon/core/src/integrations.rs` lines 7 to 12
 
 ```text
-  496 | test_support :: {
-  497 | Reply , Request , TestServer , USER_TOKEN , apple_music , apple_server , fake_token , json_reply ,
-  498 | lasting_token , reply , seconds_from_now , test_client , web_player_and_storefront ,
-  499 | } ;
-  500 | use serde_json :: json ;
-  501 | use std :: sync ::
+  539 | test_support :: {
+  540 | Reply , Request , TestServer , USER_TOKEN , apple_music , apple_server , fake_token , json_reply ,
+  541 | lasting_token , reply , seconds_from_now , test_client , web_player_and_storefront ,
+  542 | } ;
+  543 | use serde_json :: json ;
+  544 | use std :: sync ::
 ```
 
 
-### 40 normalised tokens: `clean side's lines of src_lib.rs` lines 497 to 502, and kopuz-a58c385 `apps/legacy/pages/src/home_body.rs` lines 6 to 11
+### 40 normalised tokens: `clean side's lines of src_lib.rs` lines 540 to 545, and kopuz-a58c385 `apps/legacy/pages/src/home_body.rs` lines 6 to 11
 
 ```text
-  497 | USER_TOKEN , apple_music , apple_server , fake_token , json_reply ,
-  498 | lasting_token , reply , seconds_from_now , test_client , web_player_and_storefront ,
-  499 | } ;
-  500 | use serde_json :: json ;
-  501 | use std :: sync :: Arc ;
-  502 | use std :: sync :: atomic
+  540 | USER_TOKEN , apple_music , apple_server , fake_token , json_reply ,
+  541 | lasting_token , reply , seconds_from_now , test_client , web_player_and_storefront ,
+  542 | } ;
+  543 | use serde_json :: json ;
+  544 | use std :: sync :: Arc ;
+  545 | use std :: sync :: atomic
 ```
 
 
@@ -395,14 +395,14 @@ Sources:
 ```
 
 
-### 35 normalised tokens: `clean side's lines of src_lib.rs` lines 495 to 499, and kopuz-a58c385 `daemon/player/src/player.rs` lines 10 to 15
+### 35 normalised tokens: `clean side's lines of src_lib.rs` lines 538 to 542, and kopuz-a58c385 `daemon/player/src/player.rs` lines 10 to 15
 
 ```text
-  495 | ;
-  496 | use crate :: test_support :: {
-  497 | Reply , Request , TestServer , USER_TOKEN , apple_music , apple_server , fake_token , json_reply ,
-  498 | lasting_token , reply , seconds_from_now , test_client , web_player_and_storefront ,
-  499 | } ;
+  538 | ;
+  539 | use crate :: test_support :: {
+  540 | Reply , Request , TestServer , USER_TOKEN , apple_music , apple_server , fake_token , json_reply ,
+  541 | lasting_token , reply , seconds_from_now , test_client , web_player_and_storefront ,
+  542 | } ;
 ```
 
 
@@ -467,6 +467,19 @@ Sources:
 ```
 
 
+### 34 normalised tokens: `clean side's lines of src_lib.rs` lines 684 to 690, and kopuz-a58c385 `daemon/kopuzd/tests/anonymous_source.rs` lines 43 to 49
+
+```text
+  684 | (
+  685 | expiring . clone ( ) ,
+  686 | expiring . clone ( ) ,
+  687 | fresh . clone ( ) ,
+  688 | past_exp . clone ( ) ,
+  689 | ) ;
+  690 | let server = TestServer :: start (
+```
+
+
 ### 34 normalised tokens: `clean side's lines of src_mutation_tests.rs` lines 55 to 56, and kopuz-a58c385 `daemon/server/src/youtube_download.rs` lines 37 to 41
 
 ```text
@@ -521,11 +534,21 @@ Sources:
 ```
 
 
-### 33 normalised tokens: `clean side's lines of src_lib.rs` lines 918 to 919, and kopuz-a58c385 `daemon/db/tests/listing_queries.rs` lines 605 to 608
+### 33 normalised tokens: `clean side's lines of src_lib.rs` lines 820 to 823, and kopuz-a58c385 `daemon/player/src/engine/actor.rs` lines 187 to 190
 
 ```text
-  918 | ) . await . unwrap ( ) ;
-  919 | let ids : Vec < & str > = tracks . iter ( ) . map ( | t | t . id . id
+  820 | ) ;
+  821 | let reading = Arc :: new ( AtomicUsize :: new ( 0 ) ) ;
+  822 | let most_at_once = Arc :: new ( AtomicUsize :: new ( 0 ) ) ;
+  823 | let
+```
+
+
+### 33 normalised tokens: `clean side's lines of src_lib.rs` lines 1054 to 1055, and kopuz-a58c385 `daemon/db/tests/listing_queries.rs` lines 605 to 608
+
+```text
+ 1054 | ) . await . unwrap ( ) ;
+ 1055 | let ids : Vec < & str > = tracks . iter ( ) . map ( | t | t . id . id
 ```
 
 
@@ -587,24 +610,24 @@ Sources:
 ```
 
 
-### 32 normalised tokens: `clean side's lines of src_lib.rs` lines 860 to 867, and kopuz-a58c385 `daemon/core/src/folder_scan.rs` lines 176 to 181
+### 32 normalised tokens: `clean side's lines of src_lib.rs` lines 996 to 1003, and kopuz-a58c385 `daemon/core/src/folder_scan.rs` lines 176 to 181
 
 ```text
-  860 | }
-  862 | # [ tokio :: test ]
-  863 | async fn a_station_is_asked_side_by_side_within_its_bounds ( ) {
-  866 | let arrived = Arc :: new ( AtomicUsize :: new ( 0 ) ) ;
-  867 | let server = station_server
+  996 | }
+  998 | # [ tokio :: test ]
+  999 | async fn a_station_is_asked_side_by_side_within_its_bounds ( ) {
+ 1002 | let arrived = Arc :: new ( AtomicUsize :: new ( 0 ) ) ;
+ 1003 | let server = station_server
 ```
 
 
-### 32 normalised tokens: `clean side's lines of src_lib.rs` lines 987 to 990, and kopuz-a58c385 `daemon/db/tests/typed_queries.rs` lines 196 to 202
+### 32 normalised tokens: `clean side's lines of src_lib.rs` lines 1123 to 1126, and kopuz-a58c385 `daemon/db/tests/typed_queries.rs` lines 196 to 202
 
 ```text
-  987 | ) ;
-  988 | let error = am . station_tracks ( & station , 10 ) . await . unwrap_err ( ) ;
-  989 | assert ! (
-  990 | error . to_string ( ) . contains (
+ 1123 | ) ;
+ 1124 | let error = am . station_tracks ( & station , 10 ) . await . unwrap_err ( ) ;
+ 1125 | assert ! (
+ 1126 | error . to_string ( ) . contains (
 ```
 
 
@@ -652,32 +675,12 @@ Sources:
 ```
 
 
-### 31 normalised tokens: `clean side's lines of src_lib.rs` lines 617 to 628, and kopuz-a58c385 `daemon/db/tests/normalized.rs` lines 856 to 863
+### 31 normalised tokens: `clean side's lines of src_lib.rs` lines 1218 to 1220, and kopuz-a58c385 `daemon/core/src/sources/removable.rs` lines 404 to 408
 
 ```text
-  617 | ;
-  618 | }
-  624 | # [ tokio :: test ]
-  625 | async fn a_refusal_after_expiry_reads_the_token_at_once_whatever_was_read_before ( ) {
-  626 | use std :: time :: { Duration , SystemTime , UNIX_EPOCH } ;
-  628 | let exp = seconds_from_now
-```
-
-
-### 31 normalised tokens: `clean side's lines of src_lib.rs` lines 631 to 632, and kopuz-a58c385 `apps/kopuz/metadata_dialog/src/lib.rs` lines 40 to 41
-
-```text
-  631 | ) ;
-  632 | let ( served , refused , new ) = ( expiring . clone ( ) , expiring . clone ( ) , fresh . clone ( ) ) ;
-```
-
-
-### 31 normalised tokens: `clean side's lines of src_lib.rs` lines 1082 to 1084, and kopuz-a58c385 `daemon/core/src/sources/removable.rs` lines 404 to 408
-
-```text
- 1082 | ) ;
- 1083 | assert ! ( am . lyrics ( & upload ) . await . unwrap ( ) . is_none ( ) ) ;
- 1084 | assert ! ( server . requests (
+ 1218 | ) ;
+ 1219 | assert ! ( am . lyrics ( & upload ) . await . unwrap ( ) . is_none ( ) ) ;
+ 1220 | assert ! ( server . requests (
 ```
 
 
@@ -754,24 +757,33 @@ Sources:
 ```
 
 
-### 30 normalised tokens: `clean side's lines of src_lib.rs` lines 231 to 233, and kopuz-a58c385 `apps/kopuz/page_home/src/ranked.rs` lines 9 to 10
+### 30 normalised tokens: `clean side's lines of src_lib.rs` lines 273 to 275, and kopuz-a58c385 `apps/kopuz/page_home/src/ranked.rs` lines 9 to 10
 
 ```text
-  231 | fn next_page_path ( next : & str , first : & str ) -> String {
-  232 | let resolved = url :: Url :: parse ( API )
-  233 | . ok (
+  273 | fn next_page_path ( next : & str , first : & str ) -> String {
+  274 | let resolved = url :: Url :: parse ( API )
+  275 | . ok (
 ```
 
 
-### 30 normalised tokens: `clean side's lines of src_lib.rs` lines 717 to 723, and kopuz-a58c385 `daemon/core/src/network.rs` lines 281 to 287
+### 30 normalised tokens: `clean side's lines of src_lib.rs` lines 822 to 824, and kopuz-a58c385 `apps/kopuz/now_playing/src/volume.rs` lines 12 to 14
 
 ```text
-  717 | ) ;
-  718 | }
-  720 | # [ tokio :: test ]
-  721 | async fn a_short_wait_asked_for_is_waited_and_the_request_sent_again ( ) {
-  722 | let calls = AtomicUsize :: new ( 0 ) ;
-  723 | let server = apple_server (
+  822 | ) ;
+  823 | let ( in_flight , peak ) = ( reading . clone ( ) , most_at_once . clone ( ) ) ;
+  824 | let server = TestServer :: start (
+```
+
+
+### 30 normalised tokens: `clean side's lines of src_lib.rs` lines 853 to 859, and kopuz-a58c385 `daemon/core/src/network.rs` lines 281 to 287
+
+```text
+  853 | ) ;
+  854 | }
+  856 | # [ tokio :: test ]
+  857 | async fn a_short_wait_asked_for_is_waited_and_the_request_sent_again ( ) {
+  858 | let calls = AtomicUsize :: new ( 0 ) ;
+  859 | let server = apple_server (
 ```
 
 
@@ -921,27 +933,27 @@ Sources:
 ```
 
 
-### 41 normalised tokens: `clean side's lines of src_lib.rs` lines 496 to 501, and kopuz-1d8b323 `daemon/core/src/integrations.rs` lines 7 to 12
+### 41 normalised tokens: `clean side's lines of src_lib.rs` lines 539 to 544, and kopuz-1d8b323 `daemon/core/src/integrations.rs` lines 7 to 12
 
 ```text
-  496 | test_support :: {
-  497 | Reply , Request , TestServer , USER_TOKEN , apple_music , apple_server , fake_token , json_reply ,
-  498 | lasting_token , reply , seconds_from_now , test_client , web_player_and_storefront ,
-  499 | } ;
-  500 | use serde_json :: json ;
-  501 | use std :: sync ::
+  539 | test_support :: {
+  540 | Reply , Request , TestServer , USER_TOKEN , apple_music , apple_server , fake_token , json_reply ,
+  541 | lasting_token , reply , seconds_from_now , test_client , web_player_and_storefront ,
+  542 | } ;
+  543 | use serde_json :: json ;
+  544 | use std :: sync ::
 ```
 
 
-### 40 normalised tokens: `clean side's lines of src_lib.rs` lines 497 to 502, and kopuz-1d8b323 `apps/legacy/pages/src/home_body.rs` lines 6 to 11
+### 40 normalised tokens: `clean side's lines of src_lib.rs` lines 540 to 545, and kopuz-1d8b323 `apps/legacy/pages/src/home_body.rs` lines 6 to 11
 
 ```text
-  497 | USER_TOKEN , apple_music , apple_server , fake_token , json_reply ,
-  498 | lasting_token , reply , seconds_from_now , test_client , web_player_and_storefront ,
-  499 | } ;
-  500 | use serde_json :: json ;
-  501 | use std :: sync :: Arc ;
-  502 | use std :: sync :: atomic
+  540 | USER_TOKEN , apple_music , apple_server , fake_token , json_reply ,
+  541 | lasting_token , reply , seconds_from_now , test_client , web_player_and_storefront ,
+  542 | } ;
+  543 | use serde_json :: json ;
+  544 | use std :: sync :: Arc ;
+  545 | use std :: sync :: atomic
 ```
 
 
@@ -1118,14 +1130,14 @@ Sources:
 ```
 
 
-### 35 normalised tokens: `clean side's lines of src_lib.rs` lines 495 to 499, and kopuz-1d8b323 `daemon/player/src/player.rs` lines 10 to 15
+### 35 normalised tokens: `clean side's lines of src_lib.rs` lines 538 to 542, and kopuz-1d8b323 `daemon/player/src/player.rs` lines 10 to 15
 
 ```text
-  495 | ;
-  496 | use crate :: test_support :: {
-  497 | Reply , Request , TestServer , USER_TOKEN , apple_music , apple_server , fake_token , json_reply ,
-  498 | lasting_token , reply , seconds_from_now , test_client , web_player_and_storefront ,
-  499 | } ;
+  538 | ;
+  539 | use crate :: test_support :: {
+  540 | Reply , Request , TestServer , USER_TOKEN , apple_music , apple_server , fake_token , json_reply ,
+  541 | lasting_token , reply , seconds_from_now , test_client , web_player_and_storefront ,
+  542 | } ;
 ```
 
 
@@ -1190,6 +1202,19 @@ Sources:
 ```
 
 
+### 34 normalised tokens: `clean side's lines of src_lib.rs` lines 684 to 690, and kopuz-1d8b323 `daemon/kopuzd/tests/anonymous_source.rs` lines 43 to 49
+
+```text
+  684 | (
+  685 | expiring . clone ( ) ,
+  686 | expiring . clone ( ) ,
+  687 | fresh . clone ( ) ,
+  688 | past_exp . clone ( ) ,
+  689 | ) ;
+  690 | let server = TestServer :: start (
+```
+
+
 ### 34 normalised tokens: `clean side's lines of src_mutation_tests.rs` lines 55 to 56, and kopuz-1d8b323 `daemon/server/src/youtube_download.rs` lines 37 to 41
 
 ```text
@@ -1244,11 +1269,21 @@ Sources:
 ```
 
 
-### 33 normalised tokens: `clean side's lines of src_lib.rs` lines 918 to 919, and kopuz-1d8b323 `daemon/db/tests/listing_queries.rs` lines 605 to 608
+### 33 normalised tokens: `clean side's lines of src_lib.rs` lines 820 to 823, and kopuz-1d8b323 `daemon/player/src/engine/actor.rs` lines 187 to 190
 
 ```text
-  918 | ) . await . unwrap ( ) ;
-  919 | let ids : Vec < & str > = tracks . iter ( ) . map ( | t | t . id . id
+  820 | ) ;
+  821 | let reading = Arc :: new ( AtomicUsize :: new ( 0 ) ) ;
+  822 | let most_at_once = Arc :: new ( AtomicUsize :: new ( 0 ) ) ;
+  823 | let
+```
+
+
+### 33 normalised tokens: `clean side's lines of src_lib.rs` lines 1054 to 1055, and kopuz-1d8b323 `daemon/db/tests/listing_queries.rs` lines 605 to 608
+
+```text
+ 1054 | ) . await . unwrap ( ) ;
+ 1055 | let ids : Vec < & str > = tracks . iter ( ) . map ( | t | t . id . id
 ```
 
 
@@ -1310,24 +1345,24 @@ Sources:
 ```
 
 
-### 32 normalised tokens: `clean side's lines of src_lib.rs` lines 860 to 867, and kopuz-1d8b323 `daemon/core/src/folder_scan.rs` lines 176 to 181
+### 32 normalised tokens: `clean side's lines of src_lib.rs` lines 996 to 1003, and kopuz-1d8b323 `daemon/core/src/folder_scan.rs` lines 176 to 181
 
 ```text
-  860 | }
-  862 | # [ tokio :: test ]
-  863 | async fn a_station_is_asked_side_by_side_within_its_bounds ( ) {
-  866 | let arrived = Arc :: new ( AtomicUsize :: new ( 0 ) ) ;
-  867 | let server = station_server
+  996 | }
+  998 | # [ tokio :: test ]
+  999 | async fn a_station_is_asked_side_by_side_within_its_bounds ( ) {
+ 1002 | let arrived = Arc :: new ( AtomicUsize :: new ( 0 ) ) ;
+ 1003 | let server = station_server
 ```
 
 
-### 32 normalised tokens: `clean side's lines of src_lib.rs` lines 987 to 990, and kopuz-1d8b323 `daemon/db/tests/typed_queries.rs` lines 196 to 202
+### 32 normalised tokens: `clean side's lines of src_lib.rs` lines 1123 to 1126, and kopuz-1d8b323 `daemon/db/tests/typed_queries.rs` lines 196 to 202
 
 ```text
-  987 | ) ;
-  988 | let error = am . station_tracks ( & station , 10 ) . await . unwrap_err ( ) ;
-  989 | assert ! (
-  990 | error . to_string ( ) . contains (
+ 1123 | ) ;
+ 1124 | let error = am . station_tracks ( & station , 10 ) . await . unwrap_err ( ) ;
+ 1125 | assert ! (
+ 1126 | error . to_string ( ) . contains (
 ```
 
 
@@ -1375,32 +1410,12 @@ Sources:
 ```
 
 
-### 31 normalised tokens: `clean side's lines of src_lib.rs` lines 617 to 628, and kopuz-1d8b323 `daemon/db/tests/normalized.rs` lines 856 to 863
+### 31 normalised tokens: `clean side's lines of src_lib.rs` lines 1218 to 1220, and kopuz-1d8b323 `daemon/core/src/sources/removable.rs` lines 404 to 408
 
 ```text
-  617 | ;
-  618 | }
-  624 | # [ tokio :: test ]
-  625 | async fn a_refusal_after_expiry_reads_the_token_at_once_whatever_was_read_before ( ) {
-  626 | use std :: time :: { Duration , SystemTime , UNIX_EPOCH } ;
-  628 | let exp = seconds_from_now
-```
-
-
-### 31 normalised tokens: `clean side's lines of src_lib.rs` lines 631 to 632, and kopuz-1d8b323 `apps/kopuz/metadata_dialog/src/lib.rs` lines 40 to 41
-
-```text
-  631 | ) ;
-  632 | let ( served , refused , new ) = ( expiring . clone ( ) , expiring . clone ( ) , fresh . clone ( ) ) ;
-```
-
-
-### 31 normalised tokens: `clean side's lines of src_lib.rs` lines 1082 to 1084, and kopuz-1d8b323 `daemon/core/src/sources/removable.rs` lines 404 to 408
-
-```text
- 1082 | ) ;
- 1083 | assert ! ( am . lyrics ( & upload ) . await . unwrap ( ) . is_none ( ) ) ;
- 1084 | assert ! ( server . requests (
+ 1218 | ) ;
+ 1219 | assert ! ( am . lyrics ( & upload ) . await . unwrap ( ) . is_none ( ) ) ;
+ 1220 | assert ! ( server . requests (
 ```
 
 
@@ -1477,24 +1492,33 @@ Sources:
 ```
 
 
-### 30 normalised tokens: `clean side's lines of src_lib.rs` lines 231 to 233, and kopuz-1d8b323 `apps/kopuz/page_home/src/ranked.rs` lines 9 to 10
+### 30 normalised tokens: `clean side's lines of src_lib.rs` lines 273 to 275, and kopuz-1d8b323 `apps/kopuz/page_home/src/ranked.rs` lines 9 to 10
 
 ```text
-  231 | fn next_page_path ( next : & str , first : & str ) -> String {
-  232 | let resolved = url :: Url :: parse ( API )
-  233 | . ok (
+  273 | fn next_page_path ( next : & str , first : & str ) -> String {
+  274 | let resolved = url :: Url :: parse ( API )
+  275 | . ok (
 ```
 
 
-### 30 normalised tokens: `clean side's lines of src_lib.rs` lines 717 to 723, and kopuz-1d8b323 `daemon/core/src/network.rs` lines 281 to 287
+### 30 normalised tokens: `clean side's lines of src_lib.rs` lines 822 to 824, and kopuz-1d8b323 `apps/kopuz/now_playing/src/volume.rs` lines 12 to 14
 
 ```text
-  717 | ) ;
-  718 | }
-  720 | # [ tokio :: test ]
-  721 | async fn a_short_wait_asked_for_is_waited_and_the_request_sent_again ( ) {
-  722 | let calls = AtomicUsize :: new ( 0 ) ;
-  723 | let server = apple_server (
+  822 | ) ;
+  823 | let ( in_flight , peak ) = ( reading . clone ( ) , most_at_once . clone ( ) ) ;
+  824 | let server = TestServer :: start (
+```
+
+
+### 30 normalised tokens: `clean side's lines of src_lib.rs` lines 853 to 859, and kopuz-1d8b323 `daemon/core/src/network.rs` lines 281 to 287
+
+```text
+  853 | ) ;
+  854 | }
+  856 | # [ tokio :: test ]
+  857 | async fn a_short_wait_asked_for_is_waited_and_the_request_sent_again ( ) {
+  858 | let calls = AtomicUsize :: new ( 0 ) ;
+  859 | let server = apple_server (
 ```
 
 
@@ -1606,23 +1630,23 @@ Sources:
 ```
 
 
-### 155 normalised tokens: `clean side's lines of src_lib.rs` lines 99 to 121, and removed@3d7b225 `lib.rs` lines 29 to 50
+### 155 normalised tokens: `clean side's lines of src_lib.rs` lines 102 to 124, and removed@3d7b225 `lib.rs` lines 29 to 50
 
 ```text
-   99 | }
-  109 | fn apple_id ( id : & str ) -> Result < & str > {
-  110 | let catalog = ! id . is_empty ( ) && id . bytes ( ) . all ( | b | b . is_ascii_digit ( ) ) ;
-  111 | let prefixed = id . split_once ( '.' ) . is_some_and ( | ( kind , name ) | {
-  112 | ( 1 ..= 3 ) . contains ( & kind . len ( ) )
-  113 | && kind . bytes ( ) . all ( | b | b . is_ascii_lowercase ( ) )
-  114 | && ! name . is_empty ( )
-  115 | && name . bytes ( ) . all ( | b | b . is_ascii_alphanumeric ( ) || b == b'-' )
-  116 | } ) ;
-  117 | if catalog || prefixed {
-  118 | Ok ( id )
-  119 | } else {
-  120 | Err ( Error :: Protocol ( format ! ( "not an Apple Music id: {id:?}" ) ) )
-  121 | }
+  102 | }
+  112 | fn apple_id ( id : & str ) -> Result < & str > {
+  113 | let catalog = ! id . is_empty ( ) && id . bytes ( ) . all ( | b | b . is_ascii_digit ( ) ) ;
+  114 | let prefixed = id . split_once ( '.' ) . is_some_and ( | ( kind , name ) | {
+  115 | ( 1 ..= 3 ) . contains ( & kind . len ( ) )
+  116 | && kind . bytes ( ) . all ( | b | b . is_ascii_lowercase ( ) )
+  117 | && ! name . is_empty ( )
+  118 | && name . bytes ( ) . all ( | b | b . is_ascii_alphanumeric ( ) || b == b'-' )
+  119 | } ) ;
+  120 | if catalog || prefixed {
+  121 | Ok ( id )
+  122 | } else {
+  123 | Err ( Error :: Protocol ( format ! ( "not an Apple Music id: {id:?}" ) ) )
+  124 | }
 ```
 
 
@@ -1676,17 +1700,17 @@ Sources:
 ```
 
 
-### 53 normalised tokens: `clean side's lines of src_lib.rs` lines 336 to 343, and removed@3d7b225 `lib.rs` lines 118 to 122
+### 53 normalised tokens: `clean side's lines of src_lib.rs` lines 378 to 385, and removed@3d7b225 `lib.rs` lines 118 to 122
 
 ```text
-  336 | , self . storefront ) ;
-  337 | let Some ( answer ) = self . fetch :: < types :: LyricsResponse > ( & path ) . await ? else {
-  338 | continue ;
-  339 | } ;
-  340 | let ttml = answer
-  341 | . data
-  342 | . iter ( )
-  343 | . find_map ( | entry | entry . attributes
+  378 | , self . storefront ) ;
+  379 | let Some ( answer ) = self . fetch :: < types :: LyricsResponse > ( & path ) . await ? else {
+  380 | continue ;
+  381 | } ;
+  382 | let ttml = answer
+  383 | . data
+  384 | . iter ( )
+  385 | . find_map ( | entry | entry . attributes
 ```
 
 
@@ -1745,12 +1769,12 @@ Sources:
 ```
 
 
-### 30 normalised tokens: `clean side's lines of src_lib.rs` lines 231 to 233, and removed@3d7b225 `lib.rs` lines 13 to 14
+### 30 normalised tokens: `clean side's lines of src_lib.rs` lines 273 to 275, and removed@3d7b225 `lib.rs` lines 13 to 14
 
 ```text
-  231 | fn next_page_path ( next : & str , first : & str ) -> String {
-  232 | let resolved = url :: Url :: parse ( API )
-  233 | . ok (
+  273 | fn next_page_path ( next : & str , first : & str ) -> String {
+  274 | let resolved = url :: Url :: parse ( API )
+  275 | . ok (
 ```
 
 
@@ -1763,24 +1787,24 @@ Sources:
 ```
 
 
-### 156 normalised tokens: `clean side's lines of src_lib.rs` lines 99 to 122, and adapted@3d7b225 `lib.rs` lines 947 to 969
+### 156 normalised tokens: `clean side's lines of src_lib.rs` lines 102 to 125, and adapted@3d7b225 `lib.rs` lines 947 to 969
 
 ```text
-   99 | }
-  109 | fn apple_id ( id : & str ) -> Result < & str > {
-  110 | let catalog = ! id . is_empty ( ) && id . bytes ( ) . all ( | b | b . is_ascii_digit ( ) ) ;
-  111 | let prefixed = id . split_once ( '.' ) . is_some_and ( | ( kind , name ) | {
-  112 | ( 1 ..= 3 ) . contains ( & kind . len ( ) )
-  113 | && kind . bytes ( ) . all ( | b | b . is_ascii_lowercase ( ) )
-  114 | && ! name . is_empty ( )
-  115 | && name . bytes ( ) . all ( | b | b . is_ascii_alphanumeric ( ) || b == b'-' )
-  116 | } ) ;
-  117 | if catalog || prefixed {
-  118 | Ok ( id )
-  119 | } else {
-  120 | Err ( Error :: Protocol ( format ! ( "not an Apple Music id: {id:?}" ) ) )
-  121 | }
-  122 | }
+  102 | }
+  112 | fn apple_id ( id : & str ) -> Result < & str > {
+  113 | let catalog = ! id . is_empty ( ) && id . bytes ( ) . all ( | b | b . is_ascii_digit ( ) ) ;
+  114 | let prefixed = id . split_once ( '.' ) . is_some_and ( | ( kind , name ) | {
+  115 | ( 1 ..= 3 ) . contains ( & kind . len ( ) )
+  116 | && kind . bytes ( ) . all ( | b | b . is_ascii_lowercase ( ) )
+  117 | && ! name . is_empty ( )
+  118 | && name . bytes ( ) . all ( | b | b . is_ascii_alphanumeric ( ) || b == b'-' )
+  119 | } ) ;
+  120 | if catalog || prefixed {
+  121 | Ok ( id )
+  122 | } else {
+  123 | Err ( Error :: Protocol ( format ! ( "not an Apple Music id: {id:?}" ) ) )
+  124 | }
+  125 | }
 ```
 
 
@@ -1832,20 +1856,20 @@ Sources:
 ```
 
 
-### 67 normalised tokens: `clean side's lines of src_lib.rs` lines 366 to 376, and adapted@3d7b225 `lib.rs` lines 414 to 424
+### 67 normalised tokens: `clean side's lines of src_lib.rs` lines 408 to 418, and adapted@3d7b225 `lib.rs` lines 414 to 424
 
 ```text
-  366 | NotSignedIn ) ,
-  367 | _ if ! status . is_success ( ) => {
-  368 | return Err ( Error :: Protocol ( format ! ( "{path}: HTTP {status}" ) ) ) ;
-  369 | }
-  370 | _ => { }
-  371 | }
-  372 | let body = resp
-  373 | . text ( )
-  374 | . await
-  375 | . map_err ( | e | Error :: Network ( format ! ( "{path}: {e}" ) ) ) ? ;
-  376 | station :: songs_in (
+  408 | NotSignedIn ) ,
+  409 | _ if ! status . is_success ( ) => {
+  410 | return Err ( Error :: Protocol ( format ! ( "{path}: HTTP {status}" ) ) ) ;
+  411 | }
+  412 | _ => { }
+  413 | }
+  414 | let body = resp
+  415 | . text ( )
+  416 | . await
+  417 | . map_err ( | e | Error :: Network ( format ! ( "{path}: {e}" ) ) ) ? ;
+  418 | station :: songs_in (
 ```
 
 
@@ -1876,17 +1900,17 @@ Sources:
 ```
 
 
-### 53 normalised tokens: `clean side's lines of src_lib.rs` lines 336 to 343, and adapted@3d7b225 `lib.rs` lines 1680 to 1684
+### 53 normalised tokens: `clean side's lines of src_lib.rs` lines 378 to 385, and adapted@3d7b225 `lib.rs` lines 1680 to 1684
 
 ```text
-  336 | , self . storefront ) ;
-  337 | let Some ( answer ) = self . fetch :: < types :: LyricsResponse > ( & path ) . await ? else {
-  338 | continue ;
-  339 | } ;
-  340 | let ttml = answer
-  341 | . data
-  342 | . iter ( )
-  343 | . find_map ( | entry | entry . attributes
+  378 | , self . storefront ) ;
+  379 | let Some ( answer ) = self . fetch :: < types :: LyricsResponse > ( & path ) . await ? else {
+  380 | continue ;
+  381 | } ;
+  382 | let ttml = answer
+  383 | . data
+  384 | . iter ( )
+  385 | . find_map ( | entry | entry . attributes
 ```
 
 
@@ -2012,13 +2036,13 @@ Sources:
 ```
 
 
-### 31 normalised tokens: `clean side's lines of src_lib.rs` lines 497 to 500, and adapted@3d7b225 `lib.rs` lines 27 to 30
+### 31 normalised tokens: `clean side's lines of src_lib.rs` lines 540 to 543, and adapted@3d7b225 `lib.rs` lines 27 to 30
 
 ```text
-  497 | Reply , Request , TestServer , USER_TOKEN , apple_music , apple_server , fake_token , json_reply ,
-  498 | lasting_token , reply , seconds_from_now , test_client , web_player_and_storefront ,
-  499 | } ;
-  500 | use serde_json ::
+  540 | Reply , Request , TestServer , USER_TOKEN , apple_music , apple_server , fake_token , json_reply ,
+  541 | lasting_token , reply , seconds_from_now , test_client , web_player_and_storefront ,
+  542 | } ;
+  543 | use serde_json ::
 ```
 
 
@@ -2036,21 +2060,21 @@ Sources:
 ```
 
 
-### 30 normalised tokens: `clean side's lines of src_lib.rs` lines 231 to 233, and adapted@3d7b225 `lib.rs` lines 931 to 932
+### 30 normalised tokens: `clean side's lines of src_lib.rs` lines 273 to 275, and adapted@3d7b225 `lib.rs` lines 931 to 932
 
 ```text
-  231 | fn next_page_path ( next : & str , first : & str ) -> String {
-  232 | let resolved = url :: Url :: parse ( API )
-  233 | . ok (
+  273 | fn next_page_path ( next : & str , first : & str ) -> String {
+  274 | let resolved = url :: Url :: parse ( API )
+  275 | . ok (
 ```
 
 
-### 30 normalised tokens: `clean side's lines of src_lib.rs` lines 496 to 498, and adapted@3d7b225 `convert.rs` lines 5 to 7
+### 30 normalised tokens: `clean side's lines of src_lib.rs` lines 539 to 541, and adapted@3d7b225 `convert.rs` lines 5 to 7
 
 ```text
-  496 | :: test_support :: {
-  497 | Reply , Request , TestServer , USER_TOKEN , apple_music , apple_server , fake_token , json_reply ,
-  498 | lasting_token , reply , seconds_from_now , test_client , web_player_and_storefront ,
+  539 | :: test_support :: {
+  540 | Reply , Request , TestServer , USER_TOKEN , apple_music , apple_server , fake_token , json_reply ,
+  541 | lasting_token , reply , seconds_from_now , test_client , web_player_and_storefront ,
 ```
 
 
@@ -2290,14 +2314,14 @@ Sources:
 ```
 
 
-### 36 normalised tokens: `clean side's lines of src_lib.rs` lines 497 to 501, and tree `crates/desktop/src/mpris.rs` lines 12 to 16
+### 36 normalised tokens: `clean side's lines of src_lib.rs` lines 540 to 544, and tree `crates/desktop/src/mpris.rs` lines 12 to 16
 
 ```text
-  497 | Request , TestServer , USER_TOKEN , apple_music , apple_server , fake_token , json_reply ,
-  498 | lasting_token , reply , seconds_from_now , test_client , web_player_and_storefront ,
-  499 | } ;
-  500 | use serde_json :: json ;
-  501 | use std :: sync ::
+  540 | Request , TestServer , USER_TOKEN , apple_music , apple_server , fake_token , json_reply ,
+  541 | lasting_token , reply , seconds_from_now , test_client , web_player_and_storefront ,
+  542 | } ;
+  543 | use serde_json :: json ;
+  544 | use std :: sync ::
 ```
 
 
@@ -2316,14 +2340,14 @@ Sources:
 ```
 
 
-### 35 normalised tokens: `clean side's lines of src_lib.rs` lines 496 to 500, and tree `crates/desktop/src/backend.rs` lines 10 to 14
+### 35 normalised tokens: `clean side's lines of src_lib.rs` lines 539 to 543, and tree `crates/desktop/src/backend.rs` lines 10 to 14
 
 ```text
-  496 | :: test_support :: {
-  497 | Reply , Request , TestServer , USER_TOKEN , apple_music , apple_server , fake_token , json_reply ,
-  498 | lasting_token , reply , seconds_from_now , test_client , web_player_and_storefront ,
-  499 | } ;
-  500 | use serde_json ::
+  539 | :: test_support :: {
+  540 | Reply , Request , TestServer , USER_TOKEN , apple_music , apple_server , fake_token , json_reply ,
+  541 | lasting_token , reply , seconds_from_now , test_client , web_player_and_storefront ,
+  542 | } ;
+  543 | use serde_json ::
 ```
 
 
@@ -2384,23 +2408,23 @@ Sources:
 ```
 
 
-### 33 normalised tokens: `clean side's lines of src_lib.rs` lines 495 to 498, and tree `crates/opium-core/src/provider.rs` lines 1 to 5
+### 33 normalised tokens: `clean side's lines of src_lib.rs` lines 538 to 541, and tree `crates/opium-core/src/provider.rs` lines 1 to 5
 
 ```text
-  495 | ;
-  496 | use crate :: test_support :: {
-  497 | Reply , Request , TestServer , USER_TOKEN , apple_music , apple_server , fake_token , json_reply ,
-  498 | lasting_token , reply , seconds_from_now , test_client , web_player_and_storefront ,
+  538 | ;
+  539 | use crate :: test_support :: {
+  540 | Reply , Request , TestServer , USER_TOKEN , apple_music , apple_server , fake_token , json_reply ,
+  541 | lasting_token , reply , seconds_from_now , test_client , web_player_and_storefront ,
 ```
 
 
-### 33 normalised tokens: `clean side's lines of src_lib.rs` lines 497 to 500, and tree `crates/opium-ffi/src/lib.rs` lines 10 to 13
+### 33 normalised tokens: `clean side's lines of src_lib.rs` lines 540 to 543, and tree `crates/opium-ffi/src/lib.rs` lines 10 to 13
 
 ```text
-  497 | Reply , Request , TestServer , USER_TOKEN , apple_music , apple_server , fake_token , json_reply ,
-  498 | lasting_token , reply , seconds_from_now , test_client , web_player_and_storefront ,
-  499 | } ;
-  500 | use serde_json :: json ;
+  540 | Reply , Request , TestServer , USER_TOKEN , apple_music , apple_server , fake_token , json_reply ,
+  541 | lasting_token , reply , seconds_from_now , test_client , web_player_and_storefront ,
+  542 | } ;
+  543 | use serde_json :: json ;
 ```
 
 
@@ -2437,15 +2461,15 @@ Sources:
 ```
 
 
-### 32 normalised tokens: `clean side's lines of src_lib.rs` lines 567 to 574, and tree `crates/lyrics/src/lib.rs` lines 70 to 76
+### 32 normalised tokens: `clean side's lines of src_lib.rs` lines 611 to 618, and tree `crates/lyrics/src/lib.rs` lines 70 to 76
 
 ```text
-  567 | }
-  570 | fn page_readings ( server : & TestServer ) -> usize {
-  571 | server
-  572 | . requests ( )
-  573 | . iter ( )
-  574 | . filter ( | r | r . host_name ( )
+  611 | }
+  614 | fn page_readings ( server : & TestServer ) -> usize {
+  615 | server
+  616 | . requests ( )
+  617 | . iter ( )
+  618 | . filter ( | r | r . host_name ( )
 ```
 
 
@@ -2619,7 +2643,7 @@ Sources:
 ### kopuz-a58c385 signin.rs: `signin.rs`
 
 - Compound identifiers of 6 characters or more: 40; found in the new code: 11.
-  `as_secs` (src_test_support.rs), `from_millis` (src_auth.rs, src_convert.rs, src_lib.rs, src_playback.rs), `into_iter` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_playback.rs, src_station.rs, src_test_support.rs), `is_ascii_alphanumeric` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs, src_station.rs), `is_empty` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `is_none` (fuzz_fuzz_targets_web_playback_entry.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs), `is_some` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_opiums_own_readers.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_playback.rs), `map_err` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_playback.rs, src_station.rs), `ok_or_else` (src_auth.rs, src_playback.rs), `to_string` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `unwrap_or_else` (src_auth.rs, src_lib.rs, src_station.rs, src_test_support.rs)
+  `as_secs` (src_lib.rs, src_test_support.rs), `from_millis` (src_auth.rs, src_convert.rs, src_lib.rs, src_playback.rs), `into_iter` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_playback.rs, src_station.rs, src_test_support.rs), `is_ascii_alphanumeric` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs, src_station.rs), `is_empty` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `is_none` (fuzz_fuzz_targets_web_playback_entry.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs), `is_some` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_opiums_own_readers.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_playback.rs), `map_err` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_playback.rs, src_station.rs), `ok_or_else` (src_auth.rs, src_playback.rs), `to_string` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `unwrap_or_else` (src_auth.rs, src_lib.rs, src_station.rs, src_test_support.rs)
 - String literals of three words or more: 11; found: 0.
 - Comment phrases of six words: 39; found: 0.
 
@@ -2682,7 +2706,7 @@ Sources:
 ### kopuz-1d8b323 signin.rs: `signin.rs`
 
 - Compound identifiers of 6 characters or more: 40; found in the new code: 11.
-  `as_secs` (src_test_support.rs), `from_millis` (src_auth.rs, src_convert.rs, src_lib.rs, src_playback.rs), `into_iter` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_playback.rs, src_station.rs, src_test_support.rs), `is_ascii_alphanumeric` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs, src_station.rs), `is_empty` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `is_none` (fuzz_fuzz_targets_web_playback_entry.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs), `is_some` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_opiums_own_readers.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_playback.rs), `map_err` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_playback.rs, src_station.rs), `ok_or_else` (src_auth.rs, src_playback.rs), `to_string` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `unwrap_or_else` (src_auth.rs, src_lib.rs, src_station.rs, src_test_support.rs)
+  `as_secs` (src_lib.rs, src_test_support.rs), `from_millis` (src_auth.rs, src_convert.rs, src_lib.rs, src_playback.rs), `into_iter` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_playback.rs, src_station.rs, src_test_support.rs), `is_ascii_alphanumeric` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs, src_station.rs), `is_empty` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `is_none` (fuzz_fuzz_targets_web_playback_entry.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs), `is_some` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_opiums_own_readers.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_playback.rs), `map_err` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_playback.rs, src_station.rs), `ok_or_else` (src_auth.rs, src_playback.rs), `to_string` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `unwrap_or_else` (src_auth.rs, src_lib.rs, src_station.rs, src_test_support.rs)
 - String literals of three words or more: 11; found: 0.
 - Comment phrases of six words: 39; found: 0.
 

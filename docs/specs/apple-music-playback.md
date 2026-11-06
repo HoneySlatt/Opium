@@ -180,8 +180,10 @@ Apple's web player carries a developer token, a JWT (RFC 7519), in its main scri
   after it (`?`, then what follows up to a quote, a space, `<` or `>`) is kept. The script is
   always fetched from `https://music.apple.com`, at `/assets/index~<name>.js` (or `-`) and that
   query, whatever host or folder the page wrote before it: the token is never asked of another
-  host. Every form the code before this rewrite found, it finds; the code before found the path
-  anywhere and fetched it from `https://music.apple.com`.
+  host. Every form the code before this rewrite found whose name holds none of the characters
+  above, it finds; the code before found the path anywhere, those characters included, and
+  fetched it from `https://music.apple.com`. A name with a space, a quote, `<`, `>`, `?` or `#`
+  is no script's address.
 - `GET` that script (3.3 MB on 2026-11-05): the token is the first JWT in it, three base64url
   segments joined by dots, whose first segment decodes to a JSON header naming `"alg": "ES256"`.
   Text shaped like a JWT whose header does not decode, or names another algorithm, is passed

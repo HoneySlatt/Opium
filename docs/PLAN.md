@@ -172,9 +172,9 @@ One milestone each, in this order: `cenc`, then `widevine`, then `apple-music`.
   ([measurements](measurements.md#the-cdm-m111-2026-11-05),
   [evidence](audits/2026-11-05-widevine-clean-room.md)).
 - **M1.12, done on 2026-11-06 but for playing.** The specification checked against the code and
-  Apple's public page, and corrected; `apple-music`'s derived items written by three clean agents
-  in turn, the second and third after the two reviews. A station's batch 2 252 → 1 278 ms; a token read again before its
-  `exp`, at most once in five minutes; a download without a length plays; the HTTP behaviours
+  Apple's public page, and corrected; `apple-music`'s derived items written by four clean agents
+  in turn, the later three after the reviews. A station's batch 2 252 → 1 278 ms; a token read
+  again before its `exp`, at most once in five minutes; a download without a length plays; the HTTP behaviours
   tested against a local server; eight `cargo fuzz` targets; `cenc`'s reservation bounded. The
   token's search 1.2 to 1.3 µs slower once warm, within the 4.5 µs the owner accepted; on round
   1's code, the developer token's reading 6.6 ms slower in median, within the network's spread
