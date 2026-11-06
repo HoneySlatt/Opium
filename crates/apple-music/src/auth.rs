@@ -1,9 +1,9 @@
 //! The developer token, read from Apple's web player as it carries it.
 //!
 //! The web player's page names its main script, anywhere in it, and the script is always
-//! asked of the web player's own host; that script holds the token, a JWT (RFC 7519) signed ES256, among the rest of its code. Both are searched in one
-//! pass each, in time proportional to their length: the script is about 3.3 MB and the token
-//! lies about 0.9 MB into it.
+//! asked of the web player's own host; that script holds the token, a JWT (RFC 7519) signed
+//! ES256, among the rest of its code. Both are searched in one pass each, in time proportional
+//! to their length: the script is about 3.3 MB and the token lies about 0.9 MB into it.
 
 use std::sync::LazyLock;
 use std::time::{Duration, SystemTime};
