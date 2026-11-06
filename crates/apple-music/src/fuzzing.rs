@@ -8,7 +8,7 @@
 //! crate's root and in `station`; the readers of `playback` and `auth` are their files' own
 //! `fuzzing` modules, re-exported.
 
-pub use crate::auth::fuzzing::{first_token, main_script, names_es256};
+pub use crate::auth::fuzzing::{first_token, main_script, names_es256, script_url};
 pub use crate::playback::fuzzing::{
     Asset, CatalogFile, Chosen, Entry, aac_rate, catalog_file, enhanced_file, exoplayer_playlist,
     id_kind, licence, map_range, playback_request, song_id, variant, web_playback_entry,

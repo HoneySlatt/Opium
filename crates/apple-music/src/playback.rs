@@ -50,12 +50,14 @@ fn playback_error(msg: impl Into<String>) -> Error {
     Error::Playback(msg.into())
 }
 
-/// The catalog song a `songList` entry plays, when it names one: a user's
-/// own upload says -1.
+/// The catalog song a `songList` entry plays, when it names one: its `songId`, a whole
+/// number above 0, or a string that is a catalog id. Anything else is none, a user's own
+/// upload (which says -1) among them: the id goes into addresses and the licence's body, so
+/// it is checked as the id asked for is.
 fn song_id(song: &serde_json::Value) -> Option<String> {
     match &song["songId"] {
-        serde_json::Value::String(id) if !id.is_empty() && id != "-1" => Some(id.clone()),
-        serde_json::Value::Number(n) if n.as_i64().is_some_and(|n| n > 0) => Some(n.to_string()),
+        serde_json::Value::String(id) if id_kind(id) == Some(IdKind::Catalog) => Some(id.clone()),
+        serde_json::Value::Number(n) if n.as_u64().is_some_and(|n| n > 0) => Some(n.to_string()),
         _ => None,
     }
 }
@@ -1221,6 +1223,45 @@ mod tests {
         assert_eq!(super::song_id(&serde_json::json!({})), None);
     }
 
+    #[test]
+    fn a_matched_song_id_is_taken_only_when_it_is_a_catalog_id() {
+        let song_id = |id: serde_json::Value| super::song_id(&serde_json::json!({ "songId": id }));
+        assert_eq!(
+            song_id(serde_json::json!(900000004)).as_deref(),
+            Some("900000004")
+        );
+        assert_eq!(
+            song_id(serde_json::json!(u64::MAX)).as_deref(),
+            Some("18446744073709551615")
+        );
+        // A decimal number, as §1 has it.
+        assert_eq!(song_id(serde_json::json!("0")).as_deref(), Some("0"));
+        for none in [
+            serde_json::json!(""),
+            serde_json::json!("-1"),
+            serde_json::json!("i.AbC9-x"),
+            serde_json::json!("pl.u-1b2"),
+            serde_json::json!("12a"),
+            serde_json::json!(" 12"),
+            serde_json::json!("12 "),
+            serde_json::json!("+12"),
+            serde_json::json!("-12"),
+            serde_json::json!("1.5"),
+            serde_json::json!("1/../x"),
+            serde_json::json!("1?a=b"),
+            serde_json::json!("１２"),
+            serde_json::json!(0),
+            serde_json::json!(-3),
+            serde_json::json!(1.5),
+            serde_json::json!(true),
+            serde_json::json!(null),
+            serde_json::json!(["1"]),
+            serde_json::json!({ "id": "1" }),
+        ] {
+            assert_eq!(song_id(none.clone()), None, "{none}");
+        }
+    }
+
     use super::*;
 
     #[test]
@@ -1952,7 +1993,7 @@ mod mutation_tests {
         let mut outcomes = [0; 3];
         for entry in damaged_json(0xE27, &entries()) {
             if let Some(id) = song_id(&entry) {
-                assert!(!id.is_empty() && id != "-1", "{id:?}");
+                assert_eq!(id_kind(&id), Some(IdKind::Catalog), "{id:?}");
             }
             let assets = entry["assets"].as_array();
             let source = choose_source(&entry);
@@ -2099,10 +2140,12 @@ mod mutation_tests {
             json!({ "songId": "900000003" }),
             json!({ "songId": 900000004 }),
             json!({ "songId": -1 }),
+            json!({ "songId": "i.AbC9-x" }),
+            json!({ "songId": u64::MAX }),
         ];
         for entry in damaged_json(0x50D, &seeds) {
             if let Some(id) = song_id(&entry) {
-                assert!(!id.is_empty() && id != "-1");
+                assert_eq!(id_kind(&id), Some(IdKind::Catalog), "{id:?}");
             }
         }
     }

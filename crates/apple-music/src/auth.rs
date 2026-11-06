@@ -1,7 +1,7 @@
 //! The developer token, read from Apple's web player as it carries it.
 //!
-//! The web player's page names its main script, anywhere in it; that script holds the
-//! token, a JWT (RFC 7519) signed ES256, among the rest of its code. Both are searched in one
+//! The web player's page names its main script, anywhere in it, and the script is always
+//! asked of the web player's own host; that script holds the token, a JWT (RFC 7519) signed ES256, among the rest of its code. Both are searched in one
 //! pass each, in time proportional to their length: the script is about 3.3 MB and the token
 //! lies about 0.9 MB into it.
 
@@ -17,11 +17,14 @@ use regex::Regex;
 /// answer is not the web player's.
 const LARGEST_FILE: usize = 64 * 1024 * 1024;
 
-/// The main script's path, `/assets/index~<hash>.js` or `/assets/index-<hash>.js`, wherever
-/// it is written. The regex crate looks for its literal start with SIMD, which keeps the
-/// search of a page of megabytes well under a millisecond.
+/// The main script's path, `/assets/index~<name>.js` or `/assets/index-<name>.js`, wherever
+/// it is written and whatever is written before it: `<name>` is one or more characters but
+/// those that end an address's path or that address (`/`, `?`, `#`, a quote, `<`, `>`, an
+/// ASCII space), dots included, as long as a `.js` can follow (`index~a1.min.js`). The regex
+/// crate looks for its literal start with SIMD, which keeps the search of a page of megabytes
+/// well under a millisecond.
 static MAIN_SCRIPT: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"/assets/index[~-][A-Za-z0-9_-]+\.js").expect("a constant, valid pattern")
+    Regex::new(r#"/assets/index[~-][^/?#"'<>\t\n\x0C\r ]+\.js"#).expect("a constant, valid pattern")
 });
 
 /// Text shaped like a JWT whose header is a JSON object: `{"` in base64url, then three
@@ -55,10 +58,9 @@ pub(crate) async fn developer_token_at(http: &reqwest::Client, web_player: &str)
     let page = read(http, &format!("{web_player}/"), "the web player's page").await?;
     let script = main_script(&page)
         .ok_or_else(|| Error::Protocol("the web player's page names no main script".into()))?;
-    // The web player's own host, whatever the page names: `script` is a path and a query.
     let script = read(
         http,
-        &format!("{web_player}{script}"),
+        &script_address(web_player, script),
         "the web player's main script",
     )
     .await?;
@@ -152,61 +154,56 @@ async fn read(http: &reqwest::Client, url: &str, what: &str) -> Result<String> {
     Ok(String::from_utf8_lossy(&body).into_owned())
 }
 
-/// The path and query of the main script `page` names, on the web player's host: the first
-/// text anywhere in `page`, in a tag or not, of the form `/assets/index~<hash>.js` or
-/// `/assets/index-<hash>.js` (`<hash>` one or more ASCII letters, digits, `_` or `-`), with
-/// the query right after it, if any: a `?`, then what follows up to a quote, a space, `<`
-/// or `>`.
+/// The path and query of the main script `page` names: the first text anywhere in `page`, in
+/// a tag or not, of the form `/assets/index~<name>.js` or `/assets/index-<name>.js` (see
+/// [`MAIN_SCRIPT`]), with the query right after it, if any: a `?`, then what follows up to a
+/// quote, a space, `<` or `>`.
 ///
-/// The path counts written alone, or right after `https://music.apple.com`; not as the end
-/// of another address or path (`https://elsewhere.example/assets/…`, `x/assets/…`), nor as
-/// the start of a longer one (`….jsx`, `….js/x`). One pass over `page`.
+/// Whatever comes before the path (a scheme and a host, `//`, `.`, a folder) is not part of
+/// it: the script is asked of the web player's own host ([`script_address`]). What comes
+/// after `.js`, but a query, is not looked at. One pass over `page`.
 fn main_script(page: &str) -> Option<&str> {
+    let found = MAIN_SCRIPT.find(page)?;
     let bytes = page.as_bytes();
-    MAIN_SCRIPT.find_iter(page).find_map(|found| {
-        let before = &page[..found.start()];
-        let alone = before
-            .as_bytes()
-            .last()
-            .is_none_or(|&b| !continues_an_address(b));
-        let after = bytes.get(found.end()).copied();
-        if !(alone || before.ends_with(crate::WEB_PLAYER)) || after.is_some_and(continues_a_path) {
-            return None;
-        }
-        let mut end = found.end();
-        if after == Some(b'?') {
-            end += bytes[end..]
-                .iter()
-                .position(|&b| matches!(b, b'"' | b'\'' | b'<' | b'>') || b.is_ascii_whitespace())
-                .unwrap_or(bytes.len() - end);
-        }
-        Some(&page[found.start()..end])
-    })
+    let mut end = found.end();
+    if bytes.get(end) == Some(&b'?') {
+        end += bytes[end..]
+            .iter()
+            .position(|&b| matches!(b, b'"' | b'\'' | b'<' | b'>') || b.is_ascii_whitespace())
+            .unwrap_or(bytes.len() - end);
+    }
+    Some(&page[found.start()..end])
 }
 
-/// Whether `b`, just before a path, makes it the end of another address or path: a
-/// character of a host, a port or a path.
-fn continues_an_address(b: u8) -> bool {
-    b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~' | b'%' | b'/' | b':' | b'@')
+/// The address the main script is asked at: `script`, a path and a query [`main_script`]
+/// found, on `web_player`'s host, whatever host the page wrote before it.
+///
+/// A `\` in the path is written `%5C`: an address's parser takes it for a `/` on `https`,
+/// which would let the name step out of `/assets/` (`index~a\..\x.js`). With no `/` in the
+/// name, the path is then `/assets/` and one segment, never a dot segment, starting with
+/// `index`. The query is kept as the page writes it.
+fn script_address(web_player: &str, script: &str) -> String {
+    let (path, query) = match script.find('?') {
+        Some(at) => script.split_at(at),
+        None => (script, ""),
+    };
+    format!("{web_player}{}{query}", path.replace('\\', "%5C"))
 }
 
-/// Whether `b`, just after a path's `.js`, makes it the start of a longer path.
-fn continues_a_path(b: u8) -> bool {
-    b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~' | b'%' | b'/')
-}
-
-/// Whether `path` is `/assets/index~<hash>.js` or `/assets/index-<hash>.js`, the hash one or
-/// more ASCII letters, digits, `_` or `-`.
+/// Whether `path` is `/assets/index~<name>.js` or `/assets/index-<name>.js`, the name one or
+/// more characters but `/`, `?`, `#`, a quote, `<`, `>` or an ASCII space.
 #[cfg(test)]
 fn is_main_script(path: &str) -> bool {
-    let Some(hash) = path
+    let Some(name) = path
         .strip_prefix("/assets/index")
         .and_then(|rest| rest.strip_prefix('~').or_else(|| rest.strip_prefix('-')))
         .and_then(|rest| rest.strip_suffix(".js"))
     else {
         return false;
     };
-    !hash.is_empty() && hash.bytes().all(is_base64url)
+    !name.is_empty()
+        && !name.contains(['/', '?', '#', '"', '\'', '<', '>'])
+        && !name.contains(|c: char| c.is_ascii_whitespace())
 }
 
 /// The first JWT of `script` whose header names `"alg": "ES256"`: three base64url segments
@@ -253,6 +250,18 @@ pub(crate) mod fuzzing {
     /// The path and query of the main script `page` names.
     pub fn main_script(page: &str) -> Option<&str> {
         super::main_script(page)
+    }
+
+    /// The host, the path and the query, as an address's parser reads them, of the address
+    /// the main script `script` names is asked at, on Apple's web player; `None` when that
+    /// address does not parse.
+    pub fn script_url(script: &str) -> Option<(String, String, Option<String>)> {
+        let url = url::Url::parse(&super::script_address(crate::WEB_PLAYER, script)).ok()?;
+        Some((
+            url.host_str()?.to_owned(),
+            url.path().to_owned(),
+            url.query().map(str::to_owned),
+        ))
     }
 
     /// The first ES256 JWT of `script`.
@@ -325,7 +334,7 @@ mod tests {
             ("/assets/index~ab.js#x", "/assets/index~ab.js"),
             // Past text that is not it.
             (
-                "https://elsewhere.example/assets/index~no.js /assets/index~yes.js",
+                "/assets/vendor~no.js /assets/index~/assets/index~yes.js",
                 "/assets/index~yes.js",
             ),
         ] {
@@ -343,17 +352,148 @@ mod tests {
             "<script type=\"module\" src=\"/assets/index.js\">",
             "<script type=\"module\" src=\"/assets/index_ab.js\">",
             "<script type=\"module\" src=\"/assets/index~ab/c.js\">",
-            "<script type=\"module\" src=\"/assets/index~ab.c.js\">",
-            "<script type=\"module\" src=\"https://elsewhere.example/assets/index~ab.js\">",
-            "<script type=\"module\" src=\"//elsewhere.example/assets/index~ab.js\">",
-            "<script type=\"module\" src=\"/cdn/assets/index~ab.js\">",
-            "<script type=\"module\" src=\"x/assets/index~ab.js\">",
-            "<script type=\"module\" src=\"/assets/index~ab.jsx\">",
-            "<script type=\"module\" src=\"/assets/index~ab.js/x\">",
-            "<script type=\"module\" src=\"/assets/index~ab.js.map\">",
-            "<script type=\"module\" src=\"/assets/index~ab.js%20\">",
+            "<script type=\"module\" src=\"/asset/index~ab.js\">",
+            "<script type=\"module\" src=\"/assets/index~a\"b.js\">",
+            "<script type=\"module\" src='/assets/index~a'b.js'>",
+            "<script type=\"module\" src=\"/assets/index~a b.js\">",
+            "<script type=\"module\" src=\"/assets/index~a\tb.js\">",
+            "<script type=\"module\" src=\"/assets/index~a?b.js\">",
+            "<script type=\"module\" src=\"/assets/index~a#b.js\">",
+            "<script type=\"module\" src=\"/assets/index~a<b.js\">",
+            "<script type=\"module\" src=\"/assets/index~a>b.js\">",
         ] {
             assert_eq!(main_script(page), None, "{page}");
+        }
+    }
+
+    #[test]
+    fn the_main_script_is_found_whatever_comes_before_it() {
+        for (page, expected) in [
+            (
+                "//music.apple.com/assets/index~ab.js",
+                "/assets/index~ab.js",
+            ),
+            (
+                "http://music.apple.com/assets/index~ab.js",
+                "/assets/index~ab.js",
+            ),
+            (
+                "https://js-cdn.music.apple.com/assets/index~ab.js?v=1",
+                "/assets/index~ab.js?v=1",
+            ),
+            ("src=\"./assets/index-ab.js\"", "/assets/index-ab.js"),
+            ("src=\"/us/assets/index~ab.js\"", "/assets/index~ab.js"),
+            ("src=\"x/assets/index~ab.js\"", "/assets/index~ab.js"),
+            (
+                "src=\"https://elsewhere.example/assets/index~ab.js\"",
+                "/assets/index~ab.js",
+            ),
+            (
+                "src=\"//elsewhere.example:8080/cdn/assets/index~ab.js?x=1\"",
+                "/assets/index~ab.js?x=1",
+            ),
+        ] {
+            assert_eq!(main_script(page), Some(expected), "{page}");
+        }
+    }
+
+    #[test]
+    fn the_main_script_is_asked_of_the_web_players_host_at_its_path() {
+        for (script, expected) in [
+            (
+                "/assets/index~ab.js",
+                "https://music.apple.com/assets/index~ab.js",
+            ),
+            (
+                "/assets/index-a1.min.js?v=1&x=/y",
+                "https://music.apple.com/assets/index-a1.min.js?v=1&x=/y",
+            ),
+            (
+                "/assets/index~a\\..\\..\\x.js?a\\b",
+                "https://music.apple.com/assets/index~a%5C..%5C..%5Cx.js?a\\b",
+            ),
+        ] {
+            let address = script_address(crate::WEB_PLAYER, script);
+            assert_eq!(address, expected);
+            let url = url::Url::parse(&address).unwrap();
+            assert_eq!(url.host_str(), Some("music.apple.com"));
+            assert!(url.path().starts_with("/assets/index"), "{}", url.path());
+        }
+    }
+
+    #[test]
+    fn the_main_scripts_name_may_hold_dots() {
+        for (page, expected) in [
+            ("src=\"/assets/index~a.b.js\"", "/assets/index~a.b.js"),
+            ("src=\"/assets/index~a1.min.js\"", "/assets/index~a1.min.js"),
+            (
+                "src=/assets/index-a1.min.js?v=2>",
+                "/assets/index-a1.min.js?v=2",
+            ),
+            ("src=\"/assets/index~..js\"", "/assets/index~..js"),
+            // Any character but those that end an address's path.
+            (
+                "src=\"/assets/index~a%2Eb,c;d.js\"",
+                "/assets/index~a%2Eb,c;d.js",
+            ),
+            ("src=\"/assets/index~été.js\"", "/assets/index~été.js"),
+        ] {
+            assert_eq!(main_script(page), Some(expected), "{page}");
+        }
+    }
+
+    /// A web player whose page names its script as `named`, and serves the script at
+    /// `/assets/index~a1.min.js?v=1` only, on its own host only.
+    fn web_player_naming(named: &'static str, token: String) -> TestServer {
+        TestServer::start(
+            move |request| match (request.host_name(), request.path.as_str()) {
+                ("music.apple.com", "/") => reply(
+                    200,
+                    &format!("<script type=module src=\"{named}\"></script>"),
+                ),
+                ("music.apple.com", "/assets/index~a1.min.js?v=1") => {
+                    reply(200, &format!("t=\"{token}\""))
+                }
+                _ => reply(404, ""),
+            },
+        )
+    }
+
+    #[tokio::test]
+    async fn the_main_script_is_always_asked_of_the_web_player() {
+        let token = fake_token(1_900_000_000);
+        for named in [
+            "/assets/index~a1.min.js?v=1",
+            "//music.apple.com/assets/index~a1.min.js?v=1",
+            "http://music.apple.com/assets/index~a1.min.js?v=1",
+            "https://music.apple.com/assets/index~a1.min.js?v=1",
+            "https://js-cdn.music.apple.com/assets/index~a1.min.js?v=1",
+            "https://elsewhere.example/assets/index~a1.min.js?v=1",
+            "//elsewhere.example/assets/index~a1.min.js?v=1",
+            "./assets/index~a1.min.js?v=1",
+            "/us/assets/index~a1.min.js?v=1",
+        ] {
+            let server = web_player_naming(named, token.clone());
+            let read = developer_token_at(&test_client(server.port()), &server.web_player())
+                .await
+                .unwrap_or_else(|e| panic!("{named}: {e}"));
+            assert_eq!(read, token, "{named}");
+            let asked: Vec<(String, String)> = server
+                .requests()
+                .into_iter()
+                .map(|r| (r.host_name().to_owned(), r.path))
+                .collect();
+            assert_eq!(
+                asked,
+                [
+                    ("music.apple.com".to_owned(), "/".to_owned()),
+                    (
+                        "music.apple.com".to_owned(),
+                        "/assets/index~a1.min.js?v=1".to_owned()
+                    ),
+                ],
+                "{named}"
+            );
         }
     }
 
@@ -674,6 +814,8 @@ mod mutation_tests {
             "<!doctype html><html><head><meta charset=utf-8><script type=\"module\" crossorigin src=\"/assets/index~a1b2c3.js\"></script></head></html>".to_owned(),
             "<script src=x></script><SCRIPT TYPE=module SRC='/assets/index-Zz_9.js'>".to_owned(),
             "<script src=\"https://music.apple.com/assets/index~q1.js?v=3&l=en\" async>".to_owned(),
+            "<script src=\"https://js-cdn.music.apple.com/us/assets/index~a1.min.js?v=1\">".to_owned(),
+            "<link href=//elsewhere.example/assets/index-x.y.js><script src=./assets/index~a\\b.js>".to_owned(),
         ];
         let mut named = 0;
         for page in damaged_texts(0x9A6E, &pages) {
@@ -683,13 +825,17 @@ mod mutation_tests {
                 let (path, query) = script.split_once('?').unwrap_or((script, ""));
                 assert!(is_main_script(path), "{script}");
                 assert!(
-                    !query.contains(['"', '\'', '<', '>']) && !query.contains(char::is_whitespace),
+                    !query.contains(['"', '\'', '<', '>'])
+                        && !query.contains(|c: char| c.is_ascii_whitespace()),
                     "{script}"
                 );
-                // On the web player's host, whatever the page says.
-                let url =
-                    url::Url::parse(&format!("{}{script}", crate::WEB_PLAYER)).expect("an address");
+                // On the web player's host, at the path the page names, whatever the page
+                // writes before it.
+                let url = url::Url::parse(&script_address(crate::WEB_PLAYER, script))
+                    .expect("an address");
                 assert_eq!(url.host_str(), Some("music.apple.com"), "{script}");
+                let file = url.path().strip_prefix("/assets/").expect("in /assets/");
+                assert!(file.starts_with("index") && !file.contains('/'), "{script}");
             }
         }
         assert!(named > 0, "some pages still name their script");

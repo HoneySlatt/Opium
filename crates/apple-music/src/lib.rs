@@ -256,7 +256,8 @@ pub struct AppleMusic {
     /// when Apple turns it down.
     developer_token: std::sync::RwLock<String>,
     /// When it was last read again on a refusal and the web player answered, so a run of
-    /// refusals reads it once.
+    /// refusals reads it once; a reading before it expires leaves it as it is. Its lock is
+    /// held through every reading, of either kind, so that one runs at a time.
     renewed: tokio::sync::Mutex<Option<std::time::Instant>>,
     /// When a reading before it expires was last begun, whatever its outcome: one in
     /// [`RENEW_EVERY`] at most, while the old token is still good.
@@ -447,7 +448,7 @@ impl AppleMusic {
         // The old token goes on being sent when the web player can't be read.
         if expires_soon(&token)
             && self.may_read_before_expiry()
-            && matches!(self.renew_developer_token(&token).await, Ok(true))
+            && self.read_before_expiry(&token).await
         {
             token = self.developer_token();
         }
@@ -483,6 +484,21 @@ impl AppleMusic {
         true
     }
 
+    /// Read the developer token again before `expiring`, the token in use, expires; whether
+    /// there is a new one to send. Never counts towards [`renew_developer_token`]'s
+    /// five minutes: Apple may serve the old token until its `exp`, and the first refusal
+    /// after it must still read the new one at once.
+    ///
+    /// [`renew_developer_token`]: Self::renew_developer_token
+    async fn read_before_expiry(&self, expiring: &str) -> bool {
+        // One reading at a time, of either kind.
+        let _reading = self.renewed.lock().await;
+        if self.developer_token() != expiring {
+            return true;
+        }
+        matches!(self.read_token_in_place_of(expiring).await, Ok(true))
+    }
+
     /// Read the developer token again, unless another request just did, in
     /// place of `refused`; whether there is a new one to try. The web player
     /// out of reach is said as such, and tried again on the next refusal,
@@ -495,16 +511,31 @@ impl AppleMusic {
         if renewed.is_some_and(|at| at.elapsed() < RENEW_EVERY) {
             return Ok(false);
         }
-        let token = match auth::developer_token_at(&self.http, &self.hosts.web_player).await {
-            Ok(token) => token,
-            Err(e @ Error::Network(_)) => return Err(e),
+        match self.read_token_in_place_of(refused).await {
+            Err(e @ Error::Network(_)) => Err(e),
+            // The page or the script answered, though not with a token: wait before asking
+            // again rather than read the page at every refusal.
             Err(_) => {
                 *renewed = Some(std::time::Instant::now());
-                return Ok(false);
+                Ok(false)
             }
-        };
-        *renewed = Some(std::time::Instant::now());
-        if token == refused {
+            Ok(new) => {
+                *renewed = Some(std::time::Instant::now());
+                Ok(new)
+            }
+        }
+    }
+
+    /// Read the developer token from the web player, and put it in place of `old` when it is
+    /// another; whether it is. The caller holds `renewed`'s lock, so that one reading runs at a
+    /// time.
+    ///
+    /// # Errors
+    ///
+    /// As [`auth::developer_token`]'s; the token in use is kept.
+    async fn read_token_in_place_of(&self, old: &str) -> Result<bool> {
+        let token = auth::developer_token_at(&self.http, &self.hosts.web_player).await?;
+        if token == old {
             return Ok(false);
         }
         *self
@@ -2271,6 +2302,50 @@ mod http_tests {
         let expiring = fake_token(seconds_from_now(120));
         let server = rotating(vec![expiring], |_| profile());
         read_once_in_five_minutes(&server).await;
+    }
+
+    /// Across the token's `exp`: Apple's web player serves the expiring token until then, and
+    /// a new one after; its API takes the old token until then, and refuses it after. The
+    /// reading before `exp`, which got the old token, must not hold back the reading the
+    /// first refusal after `exp` asks for.
+    #[tokio::test]
+    async fn a_refusal_after_expiry_reads_the_token_at_once_whatever_was_read_before() {
+        use std::time::{Duration, SystemTime, UNIX_EPOCH};
+        // Two to three seconds ahead: within the ten minutes, so read again before it.
+        let exp = seconds_from_now(3);
+        let expired = move || SystemTime::now() >= UNIX_EPOCH + Duration::from_secs(exp);
+        let expiring = fake_token(exp);
+        let fresh = lasting_token();
+        let (served, refused, new) = (expiring.clone(), expiring.clone(), fresh.clone());
+        let server = TestServer::start(move |request| {
+            let token = if expired() { &new } else { &served };
+            web_player_and_storefront(request, token).unwrap_or_else(|| {
+                if expired() && request.bearer() == Some(refused.as_str()) {
+                    reply(401, "")
+                } else {
+                    profile()
+                }
+            })
+        });
+        let am = apple_music(&server).await;
+        am.profile().await.unwrap();
+        assert!(!expired(), "the requests before exp were sent before it");
+        // At the connection, then before the storefront's request: the old token both times.
+        assert_eq!(page_readings(&server), 2);
+        while !expired() {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        am.profile().await.unwrap();
+        assert_eq!(page_readings(&server), 3);
+        let bearers: Vec<Option<String>> = server
+            .requests_to(PROFILE)
+            .iter()
+            .map(|r| r.bearer().map(str::to_owned))
+            .collect();
+        assert_eq!(
+            bearers,
+            [Some(expiring.clone()), Some(expiring), Some(fresh)]
+        );
     }
 
     #[tokio::test]

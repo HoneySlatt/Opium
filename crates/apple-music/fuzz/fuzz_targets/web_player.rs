@@ -1,7 +1,8 @@
 //! The web player's page and main script: whatever the text, no panic; the script named is
-//! a path of the main script's form on the web player's host, with a query that holds no
-//! quote, space, `<` or `>`, as the page writes it; the token found is three base64url
-//! segments whose header names ES256, as the script writes it, not inside a longer run.
+//! a path of the main script's form, with a query that holds no quote, space, `<` or `>`, as
+//! the page writes it, and is asked of the web player's own host, at `/assets/` and one
+//! segment, whatever the page writes before it; the token found is three base64url segments
+//! whose header names ES256, as the script writes it, not inside a longer run.
 
 #![no_main]
 
@@ -11,12 +12,17 @@ fn is_base64url(b: u8) -> bool {
     b.is_ascii_alphanumeric() || b == b'-' || b == b'_'
 }
 
-/// Whether `path` is `/assets/index~<hash>.js` or `/assets/index-<hash>.js`.
+/// Whether `path` is `/assets/index~<name>.js` or `/assets/index-<name>.js`, the name one or
+/// more characters but `/`, `?`, `#`, a quote, `<`, `>` or an ASCII space.
 fn is_main_script(path: &str) -> bool {
     path.strip_prefix("/assets/index")
         .and_then(|rest| rest.strip_prefix(['~', '-']))
         .and_then(|rest| rest.strip_suffix(".js"))
-        .is_some_and(|hash| !hash.is_empty() && hash.bytes().all(is_base64url))
+        .is_some_and(|name| {
+            !name.is_empty()
+                && !name.contains(['/', '?', '#', '"', '\'', '<', '>'])
+                && !name.contains(|c: char| c.is_ascii_whitespace())
+        })
 }
 
 fuzz_target!(|data: &[u8]| {
@@ -31,6 +37,11 @@ fuzz_target!(|data: &[u8]| {
                 && !query.contains(|c: char| c.is_ascii_whitespace()),
             "{script:?}"
         );
+        let (host, path, _) =
+            apple_music::fuzzing::script_url(script).expect("an address that parses");
+        assert_eq!(host, "music.apple.com", "{script:?}");
+        let file = path.strip_prefix("/assets/").expect("in /assets/");
+        assert!(file.starts_with("index") && !file.contains('/'), "{script:?}");
     }
     if let Some(token) = apple_music::fuzzing::first_token(&text) {
         let segments: Vec<&str> = token.split('.').collect();

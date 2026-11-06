@@ -1,7 +1,7 @@
-//! A `webPlayback` entry, as JSON: no panic; its `songId` is never empty nor `-1`; an upload
-//! is its one asset without a flavour; an encode is the first asset of the highest bit rate
-//! that Widevine can open, its bit rate read from its flavour; no choice only when no asset
-//! is a candidate.
+//! A `webPlayback` entry, as JSON: no panic; its `songId` is taken only when it is a catalog
+//! id; an upload is its one asset without a flavour; an encode is the first asset of the
+//! highest bit rate that Widevine can open, its bit rate read from its flavour; no choice only
+//! when no asset is a candidate.
 
 #![no_main]
 
@@ -21,7 +21,7 @@ fn kbps_of(asset: &Asset) -> Option<u32> {
 
 fuzz_target!(|data: &[u8]| {
     if let Some(id) = apple_music::fuzzing::song_id(data) {
-        assert!(!id.is_empty() && id != "-1", "{id:?}");
+        assert_eq!(apple_music::fuzzing::id_kind(&id), Some("catalog"), "{id:?}");
     }
     let Some(entry) = apple_music::fuzzing::web_playback_entry(data) else {
         return;
