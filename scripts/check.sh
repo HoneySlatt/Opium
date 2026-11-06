@@ -42,6 +42,8 @@ cargo fmt --all --check
 
 step "lints"
 cargo clippy --workspace --all-targets --locked -- -D warnings
+# apple-music's entry points for its fuzz targets, built only with this feature (ADR-0030).
+cargo clippy -p apple-music --all-targets --features fuzzing --locked -- -D warnings
 
 step "build and tests"
 cargo test --workspace --locked
