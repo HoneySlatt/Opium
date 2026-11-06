@@ -27,8 +27,8 @@ out = [
 ]
 for name in ["MAIN_SCRIPT", "JWT_SHAPED"]:
     out.append(re.search(r"static " + name + r":.*?\);\n", source, re.S).group(0))
-for name in ["claims", "decoded_json", "main_script", "continues_an_address", "continues_a_path",
-             "first_token", "first_token_counting", "names_es256", "is_base64url"]:
+for name in ["claims", "decoded_json", "main_script", "first_token", "first_token_counting",
+             "names_es256", "is_base64url"]:
     out.append("pub " + re.search(r"^fn " + name + r"\b.*?^\}\n", source, re.S | re.M).group(0))
 open(sys.argv[2], "w").write("\n".join(out))
 PY

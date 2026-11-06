@@ -103,7 +103,11 @@ work is in [`PLAN.md`](PLAN.md); a stage's audit adds what it leaves open.
     recorded. Older than M1.12; the reading before `exp` is now bounded.
   - Between encodes of the same bit rate, the first is played, where the code before played the
     last; the answers seen had one of each rate.
-  - The token's search takes 1.0 to 1.6 µs more once warm, within the 4.5 µs the owner
-    accepted.
+  - The token's search takes 1.2 to 1.3 µs more once warm, within the 4.5 µs the owner
+    accepted; a process's first, 2 to 12 µs more.
+  - Station ids are checked as one path segment: `ra.<number>`, `ra.cp-pl.u-…` and `ra.q-…` pass;
+    other forms Apple may use were not met.
+  - A string `songId` of `"0"` counts as a catalog id, as §1 reads digits; the code before took
+    it too.
   - A station's calls still in flight when enough songs came are dropped: their songs are lost,
     the station's cursor moved past them, as the rounds of four did before.

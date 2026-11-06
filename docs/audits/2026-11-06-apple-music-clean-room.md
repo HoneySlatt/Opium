@@ -12,9 +12,9 @@
   - dirty side: the session that read Kopuz and the adapted code; it checked the specification
     against the code and Apple's public page, measured before, made the export, answered the
     assumptions, brought the code back, compared it and wrote this file;
-  - clean side, two new agents in turn: round 1 wrote the items; round 2 changed what the
-    milestone's review found and wrote the `cargo fuzz` targets. Neither had read Kopuz or the
-    adapted files, before or during.
+  - clean side, three new agents in turn: round 1 wrote the items; round 2 changed what the
+    milestone's review found and wrote the `cargo fuzz` targets; round 3 changed what the final
+    review found. None had read Kopuz or the adapted files, before or during.
 - This is how a team usually shows that new code is its own; it is not legal advice.
 
 ## Before the hand-over
@@ -67,7 +67,8 @@ standard library's.
 
 Word for word, but for the path of the project's folder:
 [round 1](2026-11-06-apple-music-clean-room/brief.md),
-[round 2](2026-11-06-apple-music-clean-room/brief-round-2.md). Each allows only the export, the public
+[round 2](2026-11-06-apple-music-clean-room/brief-round-2.md),
+[round 3](2026-11-06-apple-music-clean-room/brief-round-3.md). Each allows only the export, the public
 standards the specification cites and the dependencies' documentation built inside the export, and
 forbids the rest of the disk, Opium's repository and its history, `/nix/store` and `~/.cargo`
 read directly, the network but `127.0.0.1`, a CDM, an account, and other agents.
@@ -133,6 +134,7 @@ path and every command that could reach the network:
 |---|---|---|---|---|
 | 1 | 81: 67 shell, 10 reads, 4 writes | none | none | Every `nix` call `--offline`, every `cargo` call offline. The absolute paths named outside the export are the tests' addresses (`/v1/me/library/songs`, `/assets/index~ab.js`, …), `/dev/null` and `/usr/bin/env`. Dependencies' interfaces read from `cargo doc --offline` under the export's `target/`. No subagent. |
 | 2 | 67: 63 shell, 2 writes, one tool lookup and one stop | none | none | The same. The stop ended its own fuzz build, which the agent tool had moved to the background. No subagent. |
+| 3 | 40: 38 shell, 1 read, 1 edit | none | none | The same. No subagent. |
 
 No call named Kopuz, the adapted files, Opium's folder, a browser profile, a token, a CDM,
 `/nix/store` or `~/.cargo`.
@@ -148,22 +150,25 @@ tree. The full report is [`comparison.md`](2026-11-06-apple-music-clean-room/com
 
 | Against | Raw: runs of 50 or more | Raw: longest below | Normalised: runs of 30 or more | Normalised: longest |
 |---|---|---|---|---|
-| Kopuz `a58c385` | 0 | 27 | 63 | 49 |
-| Kopuz `1d8b323` | 0 | 27 | 63 | 49 |
+| Kopuz `a58c385` | 0 | 27 | 65 | 49 |
+| Kopuz `1d8b323` | 0 | 27 | 65 | 49 |
 | The lines removed for the export | 1 | 49 | 12 | 155 |
-| The adapted files whole | 3 | 49 | 22 | 156 |
+| The adapted files whole | 3 | 49 | 23 | 156 |
 | The rest of the tree | 4 | 49 | 44 | 131 |
 
 Read by hand:
 
-- **Against Kopuz**: no run of 28 raw tokens. Of the 63 normalised runs, 62 fall in code that
+- **Against Kopuz**: no run of 28 raw tokens. Of the 65 normalised runs, 63 fall in code that
   does nothing of the kind (Kopuz's interface, store, database, player, YouTube clients): `use`
   lists, struct literals, `iter().filter(…)` chains. One, 36 tokens, falls in Kopuz's Apple
   lyrics file (`daemon/server/src/lyrics/apple_music.rs`): the head of the tests' local server's
   request reader against a reader of Kopuz's, `fn …(stream: &TcpStream) -> Option<…> { let mut
   reader = BufReader::new(stream); let mut line = String::new();`, the standard library's way to
-  read an HTTP request line. No string and no comment phrase in common; the comparison searches
-  that file's names too.
+  read an HTTP request line. Another, 37 tokens, falls in Kopuz's `api.rs`: the head of round 3's
+  `script_address` against that of Kopuz's paging merge, `fn …(…: &str, …: &str) -> String { let
+  (…, …) = match ….…('?') { Some(…) =>`, a function of two strings that splits one at its `?`;
+  the two do different jobs, and their bodies share nothing. No string and no comment phrase in
+  common; the comparison searches the lyrics file's names too.
 - **Against the lines removed**:
   - `apple_id` (51 raw, 155 normalised): nearly the same as the stopgap the dirty side wrote on
     2026-11-05. Its error message, "not an Apple Music id: {id:?}", is the stopgap's word for
@@ -238,6 +243,33 @@ reading that got an answer; a station's id refused is a protocol error. `fetch_t
 no direct test (it needs a CDM); `song_and_binaural` takes the checked kind, so no path goes
 around it.
 
+## The final review, and round 3
+
+A second reviewer, new, read the milestone again after round 2. It re-ran the comparison to the
+same report, built and ran the fuzz targets, found every finding of the first review fixed, and
+found:
+
+- **a defect**: the reading before `exp` went through the 401's renewal and started its five
+  minutes, so when Apple serves the old token until its `exp`, the first refusal after it read
+  nothing, and Opium stayed signed out up to five minutes. Shown by a test of its own. The
+  specification was corrected (a reading before `exp` never counts towards a 401's five minutes),
+  round 3, with a test across `exp` that failed before;
+- **the main script refused in forms the code before found** (`//music.apple.com/…`, another
+  host, `/us/assets/…`, a dotted name such as `index~a1.min.js`), though §9 said "as tolerant".
+  Now every form the code before found is found, and the script is always asked of
+  `https://music.apple.com`; round 3, with tests of each form;
+- **a matched `songId` unchecked**, which goes into an address and the licence: now taken only
+  when it is a catalog id; round 3;
+- the `fuzzing` feature linted only weekly: now in `scripts/check.sh`; the PLAN calling M1.12 done
+  in one place and not another; a figure given as 1.6 µs that was 1.7, and a p95 of 2.4 µs more
+  unsaid; the token's timer unnamed and not kept: fixed, the timer now
+  [`token-time.sh`](2026-11-06-apple-music-clean-room/token-time.sh).
+
+Round 3's assumptions, kept: after `.js` only a query is looked at, so `index~ab.jsx` reads as
+`index~ab.js`, as the code before read it; a `\` in the script's name is sent as `%5C`, so the
+path stays under `/assets/`; a numeric `songId` is a whole number from 1 to `u64::MAX`, a string
+`"0"` a catalog id by §1's digits; one reading at a time of either kind, under one lock.
+
 ## Checked
 
 - `scripts/check.sh` passes: the crate's tests, `cenc`'s, every other test, lints, documentation
@@ -245,8 +277,8 @@ around it.
   crates without a crash (35 thousand to 3.5 million runs each).
 - Measured with the owner's go, alternately with the old code: the same cleartext; a station's
   batch 43 % quicker; the developer token, the library and a song's start the same within the
-  network's spread; the token's search, after round 2, 1.0 to 1.6 µs slower once warm, within the
-  4.5 µs the owner accepted, and a third quicker at a process's first
+  network's spread; the token's search, final code, 1.2 to 1.3 µs slower once warm and 2 to 12 µs
+  at a process's first, within the 4.5 µs the owner accepted
   ([measurements](../measurements.md#apple-musics-steps-m112-2026-11-05-and-2026-11-06)).
 - Opium on a throwaway profile, release build, in a headless Weston, no network, no session bus:
   it starts, runs 15 s and ends on SIGTERM, writing only in its folder. It talks to no Apple

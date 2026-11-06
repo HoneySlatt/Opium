@@ -54,13 +54,18 @@ station batch on the owner's account a run, nothing played, nothing written to d
   - round 1's code, which read the page's `<script>` tags: a process's first search the same as
     before (459 and 533 µs before, 459 and 521 µs after, medians of 30), and once warm 4.5 µs more
     (15.0 → 19.5 and 16.6 → 21.1 µs, p95 16.3 → 21.1 and 17.1 → 21.5 µs); accepted by the owner;
-  - the final code, after the review, which finds the script's address anywhere in the page:
-    three runs. A process's first search, as at Opium's start: 459 to 470 µs before, **280 to
-    311 µs** after (medians of 30; p95 549 to 565 µs before, 342 to 410 µs after). Once warm,
-    medians of 101: 15.1 → 16.1 µs and 28.2 → 29.7, 28.5 → 30.2 µs, p95 15.3 → 16.4,
-    28.6 → 31.0 and 28.8 → 30.3 µs: **1.0 to 1.6 µs more**, the token's header decoded to check
-    that it is ES256, within the 4.5 µs accepted. Warm times fall into two groups, 15 or 28 µs,
-    both sides alike, from one run to the next: where the process runs, not the code.
+  - round 2's code, which found the address standing alone anywhere in the page: a process's
+    first search 459 to 470 µs before, 280 to 311 µs after; once warm 1.0 to 1.7 µs more in
+    median (p95 up to 2.4 µs more).
+  - **The final code**, round 3's, which finds the address after whatever precedes it, its name
+    with dots: three runs at a load average of 7 to 8 (other work on the machine). A process's
+    first search: 577 to 588 µs before, 583 to 597 µs after (medians of 30; p95 683 to 759 µs
+    before, 683 to 772 µs after): **2 to 12 µs more**, the wider expression's building. Once
+    warm, medians of 101: 16.3 → 17.6, 17.1 → 18.3 and 17.3 → 18.5 µs, **1.2 to 1.3 µs more**,
+    the token's header decoded to check that it is ES256; p95 34.4 → 36.5, 21.7 → 20.4 and
+    23.8 → 24.9 µs, noisy at that load. Within the 4.5 µs the owner accepted. Warm times also
+    fall into two groups, 15 or 28 µs, both sides alike, from one run to the next: where the
+    process runs, not the code.
   - The figure first given, 0.08 ms for the code before, built its expressions in every one of 30
     searches in a row.
 

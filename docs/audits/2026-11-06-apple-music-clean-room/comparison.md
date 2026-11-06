@@ -38,14 +38,14 @@ Sources:
 | adapted@3d7b225 | 4 | 3 | 141 | 49 |
 | tree | 169 | 4 | 68 | 49 |
 
-### 51 raw tokens: `clean side's lines of src_lib.rs` lines 112 to 116, and removed@3d7b225 `lib.rs` lines 42 to 46
+### 51 raw tokens: `clean side's lines of src_lib.rs` lines 113 to 117, and removed@3d7b225 `lib.rs` lines 42 to 46
 
 ```text
-  112 | . bytes ( ) . all ( | b | b . is_ascii_lowercase ( ) )
-  113 | && ! name . is_empty ( )
-  114 | && name . bytes ( ) . all ( | b | b . is_ascii_alphanumeric ( ) || b == b'-' )
-  115 | } ) ;
-  116 | if catalog ||
+  113 | . bytes ( ) . all ( | b | b . is_ascii_lowercase ( ) )
+  114 | && ! name . is_empty ( )
+  115 | && name . bytes ( ) . all ( | b | b . is_ascii_alphanumeric ( ) || b == b'-' )
+  116 | } ) ;
+  117 | if catalog ||
 ```
 
 
@@ -73,30 +73,30 @@ Sources:
 ```
 
 
-### 62 raw tokens: `clean side's lines of src_lib.rs` lines 329 to 338, and adapted@3d7b225 `lib.rs` lines 414 to 423
+### 62 raw tokens: `clean side's lines of src_lib.rs` lines 366 to 375, and adapted@3d7b225 `lib.rs` lines 414 to 423
 
 ```text
-  329 | ) ,
-  330 | _ if ! status . is_success ( ) => {
-  331 | return Err ( Error :: Protocol ( format ! ( "{path}: HTTP {status}" ) ) ) ;
-  332 | }
-  333 | _ => { }
-  334 | }
-  335 | let body = resp
-  336 | . text ( )
-  337 | . await
-  338 | . map_err ( | e | Error :: Network ( format ! ( "{path}: {e}" ) ) ) ? ;
+  366 | ) ,
+  367 | _ if ! status . is_success ( ) => {
+  368 | return Err ( Error :: Protocol ( format ! ( "{path}: HTTP {status}" ) ) ) ;
+  369 | }
+  370 | _ => { }
+  371 | }
+  372 | let body = resp
+  373 | . text ( )
+  374 | . await
+  375 | . map_err ( | e | Error :: Network ( format ! ( "{path}: {e}" ) ) ) ? ;
 ```
 
 
-### 51 raw tokens: `clean side's lines of src_lib.rs` lines 112 to 116, and adapted@3d7b225 `lib.rs` lines 960 to 964
+### 51 raw tokens: `clean side's lines of src_lib.rs` lines 113 to 117, and adapted@3d7b225 `lib.rs` lines 960 to 964
 
 ```text
-  112 | . bytes ( ) . all ( | b | b . is_ascii_lowercase ( ) )
-  113 | && ! name . is_empty ( )
-  114 | && name . bytes ( ) . all ( | b | b . is_ascii_alphanumeric ( ) || b == b'-' )
-  115 | } ) ;
-  116 | if catalog ||
+  113 | . bytes ( ) . all ( | b | b . is_ascii_lowercase ( ) )
+  114 | && ! name . is_empty ( )
+  115 | && name . bytes ( ) . all ( | b | b . is_ascii_alphanumeric ( ) || b == b'-' )
+  116 | } ) ;
+  117 | if catalog ||
 ```
 
 
@@ -154,10 +154,10 @@ Sources:
 
 | Against | Files | Runs at or above | Longest at or above | Longest below |
 |---|---|---|---|---|
-| kopuz-a58c385 | 764 | 63 | 49 | 29 |
-| kopuz-1d8b323 | 771 | 63 | 49 | 29 |
+| kopuz-a58c385 | 764 | 65 | 49 | 29 |
+| kopuz-1d8b323 | 771 | 65 | 49 | 29 |
 | removed@3d7b225 | 4 | 12 | 155 | 29 |
-| adapted@3d7b225 | 4 | 22 | 156 | 29 |
+| adapted@3d7b225 | 4 | 23 | 156 | 29 |
 | tree | 169 | 44 | 131 | 29 |
 
 ### 49 normalised tokens: `clean side's lines of src_test_support.rs` lines 105 to 111, and kopuz-a58c385 `apps/kopuz/components/src/fields.rs` lines 137 to 144
@@ -172,13 +172,13 @@ Sources:
 ```
 
 
-### 48 normalised tokens: `clean side's lines of src_playback.rs` lines 1230 to 1233, and kopuz-a58c385 `daemon/kopuzd/tests/contract.rs` lines 2091 to 2094
+### 48 normalised tokens: `clean side's lines of src_playback.rs` lines 1275 to 1278, and kopuz-a58c385 `daemon/kopuzd/tests/contract.rs` lines 2091 to 2094
 
 ```text
- 1230 | ) ;
- 1231 | let mut uris : Vec < & str > = file . keys . iter ( ) . map ( | k | k . uri . as_str ( ) ) . collect ( ) ;
- 1232 | uris . dedup ( ) ;
- 1233 | assert_eq ! ( uris
+ 1275 | ) ;
+ 1276 | let mut uris : Vec < & str > = file . keys . iter ( ) . map ( | k | k . uri . as_str ( ) ) . collect ( ) ;
+ 1277 | uris . dedup ( ) ;
+ 1278 | assert_eq ! ( uris
 ```
 
 
@@ -198,49 +198,49 @@ Sources:
 ```
 
 
-### 41 normalised tokens: `clean side's lines of src_lib.rs` lines 459 to 464, and kopuz-a58c385 `daemon/core/src/integrations.rs` lines 7 to 12
+### 41 normalised tokens: `clean side's lines of src_lib.rs` lines 496 to 501, and kopuz-a58c385 `daemon/core/src/integrations.rs` lines 7 to 12
 
 ```text
-  459 | test_support :: {
-  460 | Reply , Request , TestServer , USER_TOKEN , apple_music , apple_server , fake_token , json_reply ,
-  461 | lasting_token , reply , seconds_from_now , test_client , web_player_and_storefront ,
-  462 | } ;
-  463 | use serde_json :: json ;
-  464 | use std :: sync ::
+  496 | test_support :: {
+  497 | Reply , Request , TestServer , USER_TOKEN , apple_music , apple_server , fake_token , json_reply ,
+  498 | lasting_token , reply , seconds_from_now , test_client , web_player_and_storefront ,
+  499 | } ;
+  500 | use serde_json :: json ;
+  501 | use std :: sync ::
 ```
 
 
-### 40 normalised tokens: `clean side's lines of src_lib.rs` lines 460 to 465, and kopuz-a58c385 `apps/legacy/pages/src/home_body.rs` lines 6 to 11
+### 40 normalised tokens: `clean side's lines of src_lib.rs` lines 497 to 502, and kopuz-a58c385 `apps/legacy/pages/src/home_body.rs` lines 6 to 11
 
 ```text
-  460 | USER_TOKEN , apple_music , apple_server , fake_token , json_reply ,
-  461 | lasting_token , reply , seconds_from_now , test_client , web_player_and_storefront ,
-  462 | } ;
-  463 | use serde_json :: json ;
-  464 | use std :: sync :: Arc ;
-  465 | use std :: sync :: atomic
+  497 | USER_TOKEN , apple_music , apple_server , fake_token , json_reply ,
+  498 | lasting_token , reply , seconds_from_now , test_client , web_player_and_storefront ,
+  499 | } ;
+  500 | use serde_json :: json ;
+  501 | use std :: sync :: Arc ;
+  502 | use std :: sync :: atomic
 ```
 
 
-### 39 normalised tokens: `clean side's lines of src_playback.rs` lines 723 to 728, and kopuz-a58c385 `apps/common/client/src/lib.rs` lines 23 to 28
+### 39 normalised tokens: `clean side's lines of src_playback.rs` lines 768 to 773, and kopuz-a58c385 `apps/common/client/src/lib.rs` lines 23 to 28
 
 ```text
-  723 | Reply , Request , USER_TOKEN , apple_music , apple_server , encrypted_track , json_reply , reply ,
-  724 | xor_decrypt ,
-  725 | } ;
-  726 | use opium_core :: model :: ProviderKind ;
-  727 | use serde_json :: json ;
-  728 | use std :: io :: Read ;
+  768 | Reply , Request , USER_TOKEN , apple_music , apple_server , encrypted_track , json_reply , reply ,
+  769 | xor_decrypt ,
+  770 | } ;
+  771 | use opium_core :: model :: ProviderKind ;
+  772 | use serde_json :: json ;
+  773 | use std :: io :: Read ;
 ```
 
 
-### 38 normalised tokens: `clean side's lines of src_auth.rs` lines 133 to 138, and kopuz-a58c385 `daemon/core/src/video.rs` lines 145 to 148
+### 38 normalised tokens: `clean side's lines of src_auth.rs` lines 135 to 140, and kopuz-a58c385 `daemon/core/src/video.rs` lines 145 to 148
 
 ```text
-  133 | . send ( ) . await . map_err ( out_of_reach ) ? ;
-  134 | let status = resp . status ( ) ;
-  137 | if ! status . is_success ( ) {
-  138 | return Err ( Error :: Protocol ( format
+  135 | . send ( ) . await . map_err ( out_of_reach ) ? ;
+  136 | let status = resp . status ( ) ;
+  139 | if ! status . is_success ( ) {
+  140 | return Err ( Error :: Protocol ( format
 ```
 
 
@@ -251,6 +251,15 @@ Sources:
    13 | Asset , CatalogFile , Chosen , Entry , aac_rate , catalog_file , enhanced_file , exoplayer_playlist ,
    14 | id_kind , licence , map_range , playback_request , song_id , variant , web_playback_entry ,
    15 | widevine_playlist ,
+```
+
+
+### 37 normalised tokens: `clean side's lines of src_auth.rs` lines 185 to 187, and kopuz-a58c385 `daemon/server/src/applemusic/api.rs` lines 87 to 89
+
+```text
+  185 | fn script_address ( web_player : & str , script : & str ) -> String {
+  186 | let ( path , query ) = match script . find ( '?' ) {
+  187 | Some ( at ) => script
 ```
 
 
@@ -275,18 +284,18 @@ Sources:
 ```
 
 
-### 36 normalised tokens: `clean side's lines of src_playback.rs` lines 464 to 475, and kopuz-a58c385 `daemon/server/src/ytmusic/actions.rs` lines 228 to 238
+### 36 normalised tokens: `clean side's lines of src_playback.rs` lines 509 to 519, and kopuz-a58c385 `daemon/server/src/ytmusic/actions.rs` lines 228 to 238
 
 ```text
-  464 | }
-  466 | }
-  468 | # [ cfg ( test ) ]
-  469 | mod reading_tests {
-  470 | use super :: * ;
-  471 | use serde_json :: json ;
-  473 | # [ test ]
-  474 | fn ids_are_of_one_kind_or_neither ( ) {
-  475 | assert_eq ! ( id_kind (
+  509 | }
+  511 | }
+  512 | # [ cfg ( test ) ]
+  513 | mod reading_tests {
+  514 | use super :: * ;
+  515 | use serde_json :: json ;
+  517 | # [ test ]
+  518 | fn ids_are_of_one_kind_or_neither ( ) {
+  519 | assert_eq ! ( id_kind (
 ```
 
 
@@ -360,18 +369,18 @@ Sources:
 ```
 
 
-### 35 normalised tokens: `clean side's lines of src_auth.rs` lines 660 to 671, and kopuz-a58c385 `apps/kopuz/store/src/nav.rs` lines 294 to 304
+### 35 normalised tokens: `clean side's lines of src_auth.rs` lines 800 to 811, and kopuz-a58c385 `apps/kopuz/store/src/nav.rs` lines 294 to 304
 
 ```text
-  660 | ) ;
-  661 | }
-  662 | }
-  665 | # [ cfg ( test ) ]
-  666 | mod mutation_tests {
-  667 | use super :: * ;
-  668 | use crate :: mutation_tests :: damaged_texts ;
-  670 | # [ test ]
-  671 | fn web_player_pages_and_scripts ( ) {
+  800 | ) ;
+  801 | }
+  802 | }
+  805 | # [ cfg ( test ) ]
+  806 | mod mutation_tests {
+  807 | use super :: * ;
+  808 | use crate :: mutation_tests :: damaged_texts ;
+  810 | # [ test ]
+  811 | fn web_player_pages_and_scripts ( ) {
 ```
 
 
@@ -386,14 +395,14 @@ Sources:
 ```
 
 
-### 35 normalised tokens: `clean side's lines of src_lib.rs` lines 458 to 462, and kopuz-a58c385 `daemon/player/src/player.rs` lines 10 to 15
+### 35 normalised tokens: `clean side's lines of src_lib.rs` lines 495 to 499, and kopuz-a58c385 `daemon/player/src/player.rs` lines 10 to 15
 
 ```text
-  458 | ;
-  459 | use crate :: test_support :: {
-  460 | Reply , Request , TestServer , USER_TOKEN , apple_music , apple_server , fake_token , json_reply ,
-  461 | lasting_token , reply , seconds_from_now , test_client , web_player_and_storefront ,
-  462 | } ;
+  495 | ;
+  496 | use crate :: test_support :: {
+  497 | Reply , Request , TestServer , USER_TOKEN , apple_music , apple_server , fake_token , json_reply ,
+  498 | lasting_token , reply , seconds_from_now , test_client , web_player_and_storefront ,
+  499 | } ;
 ```
 
 
@@ -428,22 +437,22 @@ Sources:
 ```
 
 
-### 34 normalised tokens: `clean side's lines of src_auth.rs` lines 447 to 448, and kopuz-a58c385 `apps/legacy/components/src/common/controls/sort_control.rs` lines 185 to 186
+### 34 normalised tokens: `clean side's lines of src_auth.rs` lines 587 to 588, and kopuz-a58c385 `apps/legacy/components/src/common/controls/sort_control.rs` lines 185 to 186
 
 ```text
-  447 | ) ;
-  448 | let paths : Vec < String > = server . requests ( ) . into_iter ( ) . map ( | r | r . path ) . collect ( ) ;
+  587 | ) ;
+  588 | let paths : Vec < String > = server . requests ( ) . into_iter ( ) . map ( | r | r . path ) . collect ( ) ;
 ```
 
 
-### 34 normalised tokens: `clean side's lines of src_auth.rs` lines 709 to 713, and kopuz-a58c385 `daemon/server/src/youtube_download.rs` lines 37 to 42
+### 34 normalised tokens: `clean side's lines of src_auth.rs` lines 855 to 859, and kopuz-a58c385 `daemon/server/src/youtube_download.rs` lines 37 to 42
 
 ```text
-  709 | {
-  710 | ! s . is_empty ( )
-  711 | && s . bytes ( )
-  712 | . all ( | b | b . is_ascii_alphanumeric ( ) || b == b'-' || b == b'_' )
-  713 | }
+  855 | {
+  856 | ! s . is_empty ( )
+  857 | && s . bytes ( )
+  858 | . all ( | b | b . is_ascii_alphanumeric ( ) || b == b'-' || b == b'_' )
+  859 | }
 ```
 
 
@@ -466,12 +475,12 @@ Sources:
 ```
 
 
-### 34 normalised tokens: `clean side's lines of src_playback.rs` lines 132 to 134, and kopuz-a58c385 `apps/kopuz/store/src/palette.rs` lines 69 to 71
+### 34 normalised tokens: `clean side's lines of src_playback.rs` lines 138 to 140, and kopuz-a58c385 `apps/kopuz/store/src/palette.rs` lines 69 to 71
 
 ```text
-  132 | body : & [ u8 ] ) -> Option < EncryptedFile > {
-  133 | let playlist = m3u8_rs :: parse_media_playlist_res ( body ) . ok ( ) ? ;
-  134 | let first = playlist . segments
+  138 | body : & [ u8 ] ) -> Option < EncryptedFile > {
+  139 | let playlist = m3u8_rs :: parse_media_playlist_res ( body ) . ok ( ) ? ;
+  140 | let first = playlist . segments
 ```
 
 
@@ -512,35 +521,35 @@ Sources:
 ```
 
 
-### 33 normalised tokens: `clean side's lines of src_lib.rs` lines 837 to 838, and kopuz-a58c385 `daemon/db/tests/listing_queries.rs` lines 605 to 608
+### 33 normalised tokens: `clean side's lines of src_lib.rs` lines 918 to 919, and kopuz-a58c385 `daemon/db/tests/listing_queries.rs` lines 605 to 608
 
 ```text
-  837 | ) . await . unwrap ( ) ;
-  838 | let ids : Vec < & str > = tracks . iter ( ) . map ( | t | t . id . id
+  918 | ) . await . unwrap ( ) ;
+  919 | let ids : Vec < & str > = tracks . iter ( ) . map ( | t | t . id . id
 ```
 
 
-### 33 normalised tokens: `clean side's lines of src_playback.rs` lines 722 to 727, and kopuz-a58c385 `apps/kopuz/library/src/grid.rs` lines 6 to 10
+### 33 normalised tokens: `clean side's lines of src_playback.rs` lines 767 to 772, and kopuz-a58c385 `apps/kopuz/library/src/grid.rs` lines 6 to 10
 
 ```text
-  722 | test_support :: {
-  723 | Reply , Request , USER_TOKEN , apple_music , apple_server , encrypted_track , json_reply , reply ,
-  724 | xor_decrypt ,
-  725 | } ;
-  726 | use opium_core :: model :: ProviderKind ;
-  727 | use serde_json ::
+  767 | test_support :: {
+  768 | Reply , Request , USER_TOKEN , apple_music , apple_server , encrypted_track , json_reply , reply ,
+  769 | xor_decrypt ,
+  770 | } ;
+  771 | use opium_core :: model :: ProviderKind ;
+  772 | use serde_json ::
 ```
 
 
-### 33 normalised tokens: `clean side's lines of src_playback.rs` lines 1009 to 1014, and kopuz-a58c385 `apps/kopuz/components/src/fields.rs` lines 37 to 42
+### 33 normalised tokens: `clean side's lines of src_playback.rs` lines 1054 to 1059, and kopuz-a58c385 `apps/kopuz/components/src/fields.rs` lines 37 to 42
 
 ```text
- 1009 | {
- 1010 | url : url . clone ( ) ,
- 1011 | key_id : KEY_ID_BYTES . to_vec ( ) ,
- 1012 | pssh : Vec :: new ( ) ,
- 1013 | spatial : false ,
- 1014 | init : None ,
+ 1054 | {
+ 1055 | url : url . clone ( ) ,
+ 1056 | key_id : KEY_ID_BYTES . to_vec ( ) ,
+ 1057 | pssh : Vec :: new ( ) ,
+ 1058 | spatial : false ,
+ 1059 | init : None ,
 ```
 
 
@@ -578,24 +587,24 @@ Sources:
 ```
 
 
-### 32 normalised tokens: `clean side's lines of src_lib.rs` lines 779 to 786, and kopuz-a58c385 `daemon/core/src/folder_scan.rs` lines 176 to 181
+### 32 normalised tokens: `clean side's lines of src_lib.rs` lines 860 to 867, and kopuz-a58c385 `daemon/core/src/folder_scan.rs` lines 176 to 181
 
 ```text
-  779 | }
-  781 | # [ tokio :: test ]
-  782 | async fn a_station_is_asked_side_by_side_within_its_bounds ( ) {
-  785 | let arrived = Arc :: new ( AtomicUsize :: new ( 0 ) ) ;
-  786 | let server = station_server
+  860 | }
+  862 | # [ tokio :: test ]
+  863 | async fn a_station_is_asked_side_by_side_within_its_bounds ( ) {
+  866 | let arrived = Arc :: new ( AtomicUsize :: new ( 0 ) ) ;
+  867 | let server = station_server
 ```
 
 
-### 32 normalised tokens: `clean side's lines of src_lib.rs` lines 906 to 909, and kopuz-a58c385 `daemon/db/tests/typed_queries.rs` lines 196 to 202
+### 32 normalised tokens: `clean side's lines of src_lib.rs` lines 987 to 990, and kopuz-a58c385 `daemon/db/tests/typed_queries.rs` lines 196 to 202
 
 ```text
-  906 | ) ;
-  907 | let error = am . station_tracks ( & station , 10 ) . await . unwrap_err ( ) ;
-  908 | assert ! (
-  909 | error . to_string ( ) . contains (
+  987 | ) ;
+  988 | let error = am . station_tracks ( & station , 10 ) . await . unwrap_err ( ) ;
+  989 | assert ! (
+  990 | error . to_string ( ) . contains (
 ```
 
 
@@ -633,22 +642,42 @@ Sources:
 ```
 
 
-### 31 normalised tokens: `clean side's lines of src_auth.rs` lines 140 to 143, and kopuz-a58c385 `daemon/core/src/artwork.rs` lines 505 to 508
+### 31 normalised tokens: `clean side's lines of src_auth.rs` lines 142 to 145, and kopuz-a58c385 `daemon/core/src/artwork.rs` lines 505 to 508
 
 ```text
-  140 | ) ) ;
-  141 | }
-  142 | let mut body = Vec :: new ( ) ;
-  143 | while let Some ( chunk ) = resp . chunk ( ) . await . map_err (
+  142 | ) ) ;
+  143 | }
+  144 | let mut body = Vec :: new ( ) ;
+  145 | while let Some ( chunk ) = resp . chunk ( ) . await . map_err (
 ```
 
 
-### 31 normalised tokens: `clean side's lines of src_lib.rs` lines 1001 to 1003, and kopuz-a58c385 `daemon/core/src/sources/removable.rs` lines 404 to 408
+### 31 normalised tokens: `clean side's lines of src_lib.rs` lines 617 to 628, and kopuz-a58c385 `daemon/db/tests/normalized.rs` lines 856 to 863
 
 ```text
- 1001 | ) ;
- 1002 | assert ! ( am . lyrics ( & upload ) . await . unwrap ( ) . is_none ( ) ) ;
- 1003 | assert ! ( server . requests (
+  617 | ;
+  618 | }
+  624 | # [ tokio :: test ]
+  625 | async fn a_refusal_after_expiry_reads_the_token_at_once_whatever_was_read_before ( ) {
+  626 | use std :: time :: { Duration , SystemTime , UNIX_EPOCH } ;
+  628 | let exp = seconds_from_now
+```
+
+
+### 31 normalised tokens: `clean side's lines of src_lib.rs` lines 631 to 632, and kopuz-a58c385 `apps/kopuz/metadata_dialog/src/lib.rs` lines 40 to 41
+
+```text
+  631 | ) ;
+  632 | let ( served , refused , new ) = ( expiring . clone ( ) , expiring . clone ( ) , fresh . clone ( ) ) ;
+```
+
+
+### 31 normalised tokens: `clean side's lines of src_lib.rs` lines 1082 to 1084, and kopuz-a58c385 `daemon/core/src/sources/removable.rs` lines 404 to 408
+
+```text
+ 1082 | ) ;
+ 1083 | assert ! ( am . lyrics ( & upload ) . await . unwrap ( ) . is_none ( ) ) ;
+ 1084 | assert ! ( server . requests (
 ```
 
 
@@ -725,54 +754,44 @@ Sources:
 ```
 
 
-### 30 normalised tokens: `clean side's lines of src_auth.rs` lines 152 to 165, and kopuz-a58c385 `shared/utils/build.rs` lines 17 to 21
+### 30 normalised tokens: `clean side's lines of src_lib.rs` lines 231 to 233, and kopuz-a58c385 `apps/kopuz/page_home/src/ranked.rs` lines 9 to 10
 
 ```text
-  152 | . into_owned ( ) )
-  153 | }
-  164 | fn main_script ( page : & str ) -> Option < & str > {
-  165 | let bytes = page . as_bytes ( ) ;
+  231 | fn next_page_path ( next : & str , first : & str ) -> String {
+  232 | let resolved = url :: Url :: parse ( API )
+  233 | . ok (
 ```
 
 
-### 30 normalised tokens: `clean side's lines of src_lib.rs` lines 194 to 196, and kopuz-a58c385 `apps/kopuz/page_home/src/ranked.rs` lines 9 to 10
+### 30 normalised tokens: `clean side's lines of src_lib.rs` lines 717 to 723, and kopuz-a58c385 `daemon/core/src/network.rs` lines 281 to 287
 
 ```text
-  194 | fn next_page_path ( next : & str , first : & str ) -> String {
-  195 | let resolved = url :: Url :: parse ( API )
-  196 | . ok (
+  717 | ) ;
+  718 | }
+  720 | # [ tokio :: test ]
+  721 | async fn a_short_wait_asked_for_is_waited_and_the_request_sent_again ( ) {
+  722 | let calls = AtomicUsize :: new ( 0 ) ;
+  723 | let server = apple_server (
 ```
 
 
-### 30 normalised tokens: `clean side's lines of src_lib.rs` lines 636 to 642, and kopuz-a58c385 `daemon/core/src/network.rs` lines 281 to 287
+### 30 normalised tokens: `clean side's lines of src_playback.rs` lines 767 to 771, and kopuz-a58c385 `shared/proto/src/pipe.rs` lines 32 to 36
 
 ```text
-  636 | ) ;
-  637 | }
-  639 | # [ tokio :: test ]
-  640 | async fn a_short_wait_asked_for_is_waited_and_the_request_sent_again ( ) {
-  641 | let calls = AtomicUsize :: new ( 0 ) ;
-  642 | let server = apple_server (
+  767 | :: test_support :: {
+  768 | Reply , Request , USER_TOKEN , apple_music , apple_server , encrypted_track , json_reply , reply ,
+  769 | xor_decrypt ,
+  770 | } ;
+  771 | use opium_core :: model :: ProviderKind
 ```
 
 
-### 30 normalised tokens: `clean side's lines of src_playback.rs` lines 722 to 726, and kopuz-a58c385 `shared/proto/src/pipe.rs` lines 32 to 36
+### 30 normalised tokens: `clean side's lines of src_playback.rs` lines 994 to 996, and kopuz-a58c385 `daemon/db/tests/persistence.rs` lines 761 to 764
 
 ```text
-  722 | :: test_support :: {
-  723 | Reply , Request , USER_TOKEN , apple_music , apple_server , encrypted_track , json_reply , reply ,
-  724 | xor_decrypt ,
-  725 | } ;
-  726 | use opium_core :: model :: ProviderKind
-```
-
-
-### 30 normalised tokens: `clean side's lines of src_playback.rs` lines 949 to 951, and kopuz-a58c385 `daemon/db/tests/persistence.rs` lines 761 to 764
-
-```text
-  949 | ) ;
-  950 | let resp = am . start_download ( & url ) . await . unwrap ( ) ;
-  951 | assert_eq ! ( resp . content_length ( ) . is_some (
+  994 | ) ;
+  995 | let resp = am . start_download ( & url ) . await . unwrap ( ) ;
+  996 | assert_eq ! ( resp . content_length ( ) . is_some (
 ```
 
 
@@ -876,13 +895,13 @@ Sources:
 ```
 
 
-### 48 normalised tokens: `clean side's lines of src_playback.rs` lines 1230 to 1233, and kopuz-1d8b323 `daemon/kopuzd/tests/contract.rs` lines 2092 to 2095
+### 48 normalised tokens: `clean side's lines of src_playback.rs` lines 1275 to 1278, and kopuz-1d8b323 `daemon/kopuzd/tests/contract.rs` lines 2092 to 2095
 
 ```text
- 1230 | ) ;
- 1231 | let mut uris : Vec < & str > = file . keys . iter ( ) . map ( | k | k . uri . as_str ( ) ) . collect ( ) ;
- 1232 | uris . dedup ( ) ;
- 1233 | assert_eq ! ( uris
+ 1275 | ) ;
+ 1276 | let mut uris : Vec < & str > = file . keys . iter ( ) . map ( | k | k . uri . as_str ( ) ) . collect ( ) ;
+ 1277 | uris . dedup ( ) ;
+ 1278 | assert_eq ! ( uris
 ```
 
 
@@ -902,49 +921,49 @@ Sources:
 ```
 
 
-### 41 normalised tokens: `clean side's lines of src_lib.rs` lines 459 to 464, and kopuz-1d8b323 `daemon/core/src/integrations.rs` lines 7 to 12
+### 41 normalised tokens: `clean side's lines of src_lib.rs` lines 496 to 501, and kopuz-1d8b323 `daemon/core/src/integrations.rs` lines 7 to 12
 
 ```text
-  459 | test_support :: {
-  460 | Reply , Request , TestServer , USER_TOKEN , apple_music , apple_server , fake_token , json_reply ,
-  461 | lasting_token , reply , seconds_from_now , test_client , web_player_and_storefront ,
-  462 | } ;
-  463 | use serde_json :: json ;
-  464 | use std :: sync ::
+  496 | test_support :: {
+  497 | Reply , Request , TestServer , USER_TOKEN , apple_music , apple_server , fake_token , json_reply ,
+  498 | lasting_token , reply , seconds_from_now , test_client , web_player_and_storefront ,
+  499 | } ;
+  500 | use serde_json :: json ;
+  501 | use std :: sync ::
 ```
 
 
-### 40 normalised tokens: `clean side's lines of src_lib.rs` lines 460 to 465, and kopuz-1d8b323 `apps/legacy/pages/src/home_body.rs` lines 6 to 11
+### 40 normalised tokens: `clean side's lines of src_lib.rs` lines 497 to 502, and kopuz-1d8b323 `apps/legacy/pages/src/home_body.rs` lines 6 to 11
 
 ```text
-  460 | USER_TOKEN , apple_music , apple_server , fake_token , json_reply ,
-  461 | lasting_token , reply , seconds_from_now , test_client , web_player_and_storefront ,
-  462 | } ;
-  463 | use serde_json :: json ;
-  464 | use std :: sync :: Arc ;
-  465 | use std :: sync :: atomic
+  497 | USER_TOKEN , apple_music , apple_server , fake_token , json_reply ,
+  498 | lasting_token , reply , seconds_from_now , test_client , web_player_and_storefront ,
+  499 | } ;
+  500 | use serde_json :: json ;
+  501 | use std :: sync :: Arc ;
+  502 | use std :: sync :: atomic
 ```
 
 
-### 39 normalised tokens: `clean side's lines of src_playback.rs` lines 723 to 728, and kopuz-1d8b323 `apps/common/client/src/lib.rs` lines 23 to 28
+### 39 normalised tokens: `clean side's lines of src_playback.rs` lines 768 to 773, and kopuz-1d8b323 `apps/common/client/src/lib.rs` lines 23 to 28
 
 ```text
-  723 | Reply , Request , USER_TOKEN , apple_music , apple_server , encrypted_track , json_reply , reply ,
-  724 | xor_decrypt ,
-  725 | } ;
-  726 | use opium_core :: model :: ProviderKind ;
-  727 | use serde_json :: json ;
-  728 | use std :: io :: Read ;
+  768 | Reply , Request , USER_TOKEN , apple_music , apple_server , encrypted_track , json_reply , reply ,
+  769 | xor_decrypt ,
+  770 | } ;
+  771 | use opium_core :: model :: ProviderKind ;
+  772 | use serde_json :: json ;
+  773 | use std :: io :: Read ;
 ```
 
 
-### 38 normalised tokens: `clean side's lines of src_auth.rs` lines 133 to 138, and kopuz-1d8b323 `daemon/core/src/video.rs` lines 145 to 148
+### 38 normalised tokens: `clean side's lines of src_auth.rs` lines 135 to 140, and kopuz-1d8b323 `daemon/core/src/video.rs` lines 145 to 148
 
 ```text
-  133 | . send ( ) . await . map_err ( out_of_reach ) ? ;
-  134 | let status = resp . status ( ) ;
-  137 | if ! status . is_success ( ) {
-  138 | return Err ( Error :: Protocol ( format
+  135 | . send ( ) . await . map_err ( out_of_reach ) ? ;
+  136 | let status = resp . status ( ) ;
+  139 | if ! status . is_success ( ) {
+  140 | return Err ( Error :: Protocol ( format
 ```
 
 
@@ -955,6 +974,15 @@ Sources:
    13 | Asset , CatalogFile , Chosen , Entry , aac_rate , catalog_file , enhanced_file , exoplayer_playlist ,
    14 | id_kind , licence , map_range , playback_request , song_id , variant , web_playback_entry ,
    15 | widevine_playlist ,
+```
+
+
+### 37 normalised tokens: `clean side's lines of src_auth.rs` lines 185 to 187, and kopuz-1d8b323 `daemon/server/src/applemusic/api.rs` lines 87 to 89
+
+```text
+  185 | fn script_address ( web_player : & str , script : & str ) -> String {
+  186 | let ( path , query ) = match script . find ( '?' ) {
+  187 | Some ( at ) => script
 ```
 
 
@@ -979,18 +1007,18 @@ Sources:
 ```
 
 
-### 36 normalised tokens: `clean side's lines of src_playback.rs` lines 464 to 475, and kopuz-1d8b323 `daemon/server/src/ytmusic/actions.rs` lines 228 to 238
+### 36 normalised tokens: `clean side's lines of src_playback.rs` lines 509 to 519, and kopuz-1d8b323 `daemon/server/src/ytmusic/actions.rs` lines 228 to 238
 
 ```text
-  464 | }
-  466 | }
-  468 | # [ cfg ( test ) ]
-  469 | mod reading_tests {
-  470 | use super :: * ;
-  471 | use serde_json :: json ;
-  473 | # [ test ]
-  474 | fn ids_are_of_one_kind_or_neither ( ) {
-  475 | assert_eq ! ( id_kind (
+  509 | }
+  511 | }
+  512 | # [ cfg ( test ) ]
+  513 | mod reading_tests {
+  514 | use super :: * ;
+  515 | use serde_json :: json ;
+  517 | # [ test ]
+  518 | fn ids_are_of_one_kind_or_neither ( ) {
+  519 | assert_eq ! ( id_kind (
 ```
 
 
@@ -1064,18 +1092,18 @@ Sources:
 ```
 
 
-### 35 normalised tokens: `clean side's lines of src_auth.rs` lines 660 to 671, and kopuz-1d8b323 `apps/kopuz/store/src/nav.rs` lines 294 to 304
+### 35 normalised tokens: `clean side's lines of src_auth.rs` lines 800 to 811, and kopuz-1d8b323 `apps/kopuz/store/src/nav.rs` lines 294 to 304
 
 ```text
-  660 | ) ;
-  661 | }
-  662 | }
-  665 | # [ cfg ( test ) ]
-  666 | mod mutation_tests {
-  667 | use super :: * ;
-  668 | use crate :: mutation_tests :: damaged_texts ;
-  670 | # [ test ]
-  671 | fn web_player_pages_and_scripts ( ) {
+  800 | ) ;
+  801 | }
+  802 | }
+  805 | # [ cfg ( test ) ]
+  806 | mod mutation_tests {
+  807 | use super :: * ;
+  808 | use crate :: mutation_tests :: damaged_texts ;
+  810 | # [ test ]
+  811 | fn web_player_pages_and_scripts ( ) {
 ```
 
 
@@ -1090,14 +1118,14 @@ Sources:
 ```
 
 
-### 35 normalised tokens: `clean side's lines of src_lib.rs` lines 458 to 462, and kopuz-1d8b323 `daemon/player/src/player.rs` lines 10 to 15
+### 35 normalised tokens: `clean side's lines of src_lib.rs` lines 495 to 499, and kopuz-1d8b323 `daemon/player/src/player.rs` lines 10 to 15
 
 ```text
-  458 | ;
-  459 | use crate :: test_support :: {
-  460 | Reply , Request , TestServer , USER_TOKEN , apple_music , apple_server , fake_token , json_reply ,
-  461 | lasting_token , reply , seconds_from_now , test_client , web_player_and_storefront ,
-  462 | } ;
+  495 | ;
+  496 | use crate :: test_support :: {
+  497 | Reply , Request , TestServer , USER_TOKEN , apple_music , apple_server , fake_token , json_reply ,
+  498 | lasting_token , reply , seconds_from_now , test_client , web_player_and_storefront ,
+  499 | } ;
 ```
 
 
@@ -1132,22 +1160,22 @@ Sources:
 ```
 
 
-### 34 normalised tokens: `clean side's lines of src_auth.rs` lines 447 to 448, and kopuz-1d8b323 `apps/legacy/components/src/common/controls/sort_control.rs` lines 185 to 186
+### 34 normalised tokens: `clean side's lines of src_auth.rs` lines 587 to 588, and kopuz-1d8b323 `apps/legacy/components/src/common/controls/sort_control.rs` lines 185 to 186
 
 ```text
-  447 | ) ;
-  448 | let paths : Vec < String > = server . requests ( ) . into_iter ( ) . map ( | r | r . path ) . collect ( ) ;
+  587 | ) ;
+  588 | let paths : Vec < String > = server . requests ( ) . into_iter ( ) . map ( | r | r . path ) . collect ( ) ;
 ```
 
 
-### 34 normalised tokens: `clean side's lines of src_auth.rs` lines 709 to 713, and kopuz-1d8b323 `daemon/server/src/youtube_download.rs` lines 37 to 42
+### 34 normalised tokens: `clean side's lines of src_auth.rs` lines 855 to 859, and kopuz-1d8b323 `daemon/server/src/youtube_download.rs` lines 37 to 42
 
 ```text
-  709 | {
-  710 | ! s . is_empty ( )
-  711 | && s . bytes ( )
-  712 | . all ( | b | b . is_ascii_alphanumeric ( ) || b == b'-' || b == b'_' )
-  713 | }
+  855 | {
+  856 | ! s . is_empty ( )
+  857 | && s . bytes ( )
+  858 | . all ( | b | b . is_ascii_alphanumeric ( ) || b == b'-' || b == b'_' )
+  859 | }
 ```
 
 
@@ -1170,12 +1198,12 @@ Sources:
 ```
 
 
-### 34 normalised tokens: `clean side's lines of src_playback.rs` lines 132 to 134, and kopuz-1d8b323 `apps/kopuz/store/src/palette.rs` lines 69 to 71
+### 34 normalised tokens: `clean side's lines of src_playback.rs` lines 138 to 140, and kopuz-1d8b323 `apps/kopuz/store/src/palette.rs` lines 69 to 71
 
 ```text
-  132 | body : & [ u8 ] ) -> Option < EncryptedFile > {
-  133 | let playlist = m3u8_rs :: parse_media_playlist_res ( body ) . ok ( ) ? ;
-  134 | let first = playlist . segments
+  138 | body : & [ u8 ] ) -> Option < EncryptedFile > {
+  139 | let playlist = m3u8_rs :: parse_media_playlist_res ( body ) . ok ( ) ? ;
+  140 | let first = playlist . segments
 ```
 
 
@@ -1216,35 +1244,35 @@ Sources:
 ```
 
 
-### 33 normalised tokens: `clean side's lines of src_lib.rs` lines 837 to 838, and kopuz-1d8b323 `daemon/db/tests/listing_queries.rs` lines 605 to 608
+### 33 normalised tokens: `clean side's lines of src_lib.rs` lines 918 to 919, and kopuz-1d8b323 `daemon/db/tests/listing_queries.rs` lines 605 to 608
 
 ```text
-  837 | ) . await . unwrap ( ) ;
-  838 | let ids : Vec < & str > = tracks . iter ( ) . map ( | t | t . id . id
+  918 | ) . await . unwrap ( ) ;
+  919 | let ids : Vec < & str > = tracks . iter ( ) . map ( | t | t . id . id
 ```
 
 
-### 33 normalised tokens: `clean side's lines of src_playback.rs` lines 722 to 727, and kopuz-1d8b323 `apps/kopuz/library/src/grid.rs` lines 6 to 10
+### 33 normalised tokens: `clean side's lines of src_playback.rs` lines 767 to 772, and kopuz-1d8b323 `apps/kopuz/library/src/grid.rs` lines 6 to 10
 
 ```text
-  722 | test_support :: {
-  723 | Reply , Request , USER_TOKEN , apple_music , apple_server , encrypted_track , json_reply , reply ,
-  724 | xor_decrypt ,
-  725 | } ;
-  726 | use opium_core :: model :: ProviderKind ;
-  727 | use serde_json ::
+  767 | test_support :: {
+  768 | Reply , Request , USER_TOKEN , apple_music , apple_server , encrypted_track , json_reply , reply ,
+  769 | xor_decrypt ,
+  770 | } ;
+  771 | use opium_core :: model :: ProviderKind ;
+  772 | use serde_json ::
 ```
 
 
-### 33 normalised tokens: `clean side's lines of src_playback.rs` lines 1009 to 1014, and kopuz-1d8b323 `apps/kopuz/components/src/fields.rs` lines 37 to 42
+### 33 normalised tokens: `clean side's lines of src_playback.rs` lines 1054 to 1059, and kopuz-1d8b323 `apps/kopuz/components/src/fields.rs` lines 37 to 42
 
 ```text
- 1009 | {
- 1010 | url : url . clone ( ) ,
- 1011 | key_id : KEY_ID_BYTES . to_vec ( ) ,
- 1012 | pssh : Vec :: new ( ) ,
- 1013 | spatial : false ,
- 1014 | init : None ,
+ 1054 | {
+ 1055 | url : url . clone ( ) ,
+ 1056 | key_id : KEY_ID_BYTES . to_vec ( ) ,
+ 1057 | pssh : Vec :: new ( ) ,
+ 1058 | spatial : false ,
+ 1059 | init : None ,
 ```
 
 
@@ -1282,24 +1310,24 @@ Sources:
 ```
 
 
-### 32 normalised tokens: `clean side's lines of src_lib.rs` lines 779 to 786, and kopuz-1d8b323 `daemon/core/src/folder_scan.rs` lines 176 to 181
+### 32 normalised tokens: `clean side's lines of src_lib.rs` lines 860 to 867, and kopuz-1d8b323 `daemon/core/src/folder_scan.rs` lines 176 to 181
 
 ```text
-  779 | }
-  781 | # [ tokio :: test ]
-  782 | async fn a_station_is_asked_side_by_side_within_its_bounds ( ) {
-  785 | let arrived = Arc :: new ( AtomicUsize :: new ( 0 ) ) ;
-  786 | let server = station_server
+  860 | }
+  862 | # [ tokio :: test ]
+  863 | async fn a_station_is_asked_side_by_side_within_its_bounds ( ) {
+  866 | let arrived = Arc :: new ( AtomicUsize :: new ( 0 ) ) ;
+  867 | let server = station_server
 ```
 
 
-### 32 normalised tokens: `clean side's lines of src_lib.rs` lines 906 to 909, and kopuz-1d8b323 `daemon/db/tests/typed_queries.rs` lines 196 to 202
+### 32 normalised tokens: `clean side's lines of src_lib.rs` lines 987 to 990, and kopuz-1d8b323 `daemon/db/tests/typed_queries.rs` lines 196 to 202
 
 ```text
-  906 | ) ;
-  907 | let error = am . station_tracks ( & station , 10 ) . await . unwrap_err ( ) ;
-  908 | assert ! (
-  909 | error . to_string ( ) . contains (
+  987 | ) ;
+  988 | let error = am . station_tracks ( & station , 10 ) . await . unwrap_err ( ) ;
+  989 | assert ! (
+  990 | error . to_string ( ) . contains (
 ```
 
 
@@ -1337,22 +1365,42 @@ Sources:
 ```
 
 
-### 31 normalised tokens: `clean side's lines of src_auth.rs` lines 140 to 143, and kopuz-1d8b323 `daemon/core/src/artwork.rs` lines 505 to 508
+### 31 normalised tokens: `clean side's lines of src_auth.rs` lines 142 to 145, and kopuz-1d8b323 `daemon/core/src/artwork.rs` lines 505 to 508
 
 ```text
-  140 | ) ) ;
-  141 | }
-  142 | let mut body = Vec :: new ( ) ;
-  143 | while let Some ( chunk ) = resp . chunk ( ) . await . map_err (
+  142 | ) ) ;
+  143 | }
+  144 | let mut body = Vec :: new ( ) ;
+  145 | while let Some ( chunk ) = resp . chunk ( ) . await . map_err (
 ```
 
 
-### 31 normalised tokens: `clean side's lines of src_lib.rs` lines 1001 to 1003, and kopuz-1d8b323 `daemon/core/src/sources/removable.rs` lines 404 to 408
+### 31 normalised tokens: `clean side's lines of src_lib.rs` lines 617 to 628, and kopuz-1d8b323 `daemon/db/tests/normalized.rs` lines 856 to 863
 
 ```text
- 1001 | ) ;
- 1002 | assert ! ( am . lyrics ( & upload ) . await . unwrap ( ) . is_none ( ) ) ;
- 1003 | assert ! ( server . requests (
+  617 | ;
+  618 | }
+  624 | # [ tokio :: test ]
+  625 | async fn a_refusal_after_expiry_reads_the_token_at_once_whatever_was_read_before ( ) {
+  626 | use std :: time :: { Duration , SystemTime , UNIX_EPOCH } ;
+  628 | let exp = seconds_from_now
+```
+
+
+### 31 normalised tokens: `clean side's lines of src_lib.rs` lines 631 to 632, and kopuz-1d8b323 `apps/kopuz/metadata_dialog/src/lib.rs` lines 40 to 41
+
+```text
+  631 | ) ;
+  632 | let ( served , refused , new ) = ( expiring . clone ( ) , expiring . clone ( ) , fresh . clone ( ) ) ;
+```
+
+
+### 31 normalised tokens: `clean side's lines of src_lib.rs` lines 1082 to 1084, and kopuz-1d8b323 `daemon/core/src/sources/removable.rs` lines 404 to 408
+
+```text
+ 1082 | ) ;
+ 1083 | assert ! ( am . lyrics ( & upload ) . await . unwrap ( ) . is_none ( ) ) ;
+ 1084 | assert ! ( server . requests (
 ```
 
 
@@ -1429,54 +1477,44 @@ Sources:
 ```
 
 
-### 30 normalised tokens: `clean side's lines of src_auth.rs` lines 152 to 165, and kopuz-1d8b323 `shared/utils/build.rs` lines 17 to 21
+### 30 normalised tokens: `clean side's lines of src_lib.rs` lines 231 to 233, and kopuz-1d8b323 `apps/kopuz/page_home/src/ranked.rs` lines 9 to 10
 
 ```text
-  152 | . into_owned ( ) )
-  153 | }
-  164 | fn main_script ( page : & str ) -> Option < & str > {
-  165 | let bytes = page . as_bytes ( ) ;
+  231 | fn next_page_path ( next : & str , first : & str ) -> String {
+  232 | let resolved = url :: Url :: parse ( API )
+  233 | . ok (
 ```
 
 
-### 30 normalised tokens: `clean side's lines of src_lib.rs` lines 194 to 196, and kopuz-1d8b323 `apps/kopuz/page_home/src/ranked.rs` lines 9 to 10
+### 30 normalised tokens: `clean side's lines of src_lib.rs` lines 717 to 723, and kopuz-1d8b323 `daemon/core/src/network.rs` lines 281 to 287
 
 ```text
-  194 | fn next_page_path ( next : & str , first : & str ) -> String {
-  195 | let resolved = url :: Url :: parse ( API )
-  196 | . ok (
+  717 | ) ;
+  718 | }
+  720 | # [ tokio :: test ]
+  721 | async fn a_short_wait_asked_for_is_waited_and_the_request_sent_again ( ) {
+  722 | let calls = AtomicUsize :: new ( 0 ) ;
+  723 | let server = apple_server (
 ```
 
 
-### 30 normalised tokens: `clean side's lines of src_lib.rs` lines 636 to 642, and kopuz-1d8b323 `daemon/core/src/network.rs` lines 281 to 287
+### 30 normalised tokens: `clean side's lines of src_playback.rs` lines 767 to 771, and kopuz-1d8b323 `shared/proto/src/pipe.rs` lines 32 to 36
 
 ```text
-  636 | ) ;
-  637 | }
-  639 | # [ tokio :: test ]
-  640 | async fn a_short_wait_asked_for_is_waited_and_the_request_sent_again ( ) {
-  641 | let calls = AtomicUsize :: new ( 0 ) ;
-  642 | let server = apple_server (
+  767 | :: test_support :: {
+  768 | Reply , Request , USER_TOKEN , apple_music , apple_server , encrypted_track , json_reply , reply ,
+  769 | xor_decrypt ,
+  770 | } ;
+  771 | use opium_core :: model :: ProviderKind
 ```
 
 
-### 30 normalised tokens: `clean side's lines of src_playback.rs` lines 722 to 726, and kopuz-1d8b323 `shared/proto/src/pipe.rs` lines 32 to 36
+### 30 normalised tokens: `clean side's lines of src_playback.rs` lines 994 to 996, and kopuz-1d8b323 `daemon/db/tests/persistence.rs` lines 761 to 764
 
 ```text
-  722 | :: test_support :: {
-  723 | Reply , Request , USER_TOKEN , apple_music , apple_server , encrypted_track , json_reply , reply ,
-  724 | xor_decrypt ,
-  725 | } ;
-  726 | use opium_core :: model :: ProviderKind
-```
-
-
-### 30 normalised tokens: `clean side's lines of src_playback.rs` lines 949 to 951, and kopuz-1d8b323 `daemon/db/tests/persistence.rs` lines 761 to 764
-
-```text
-  949 | ) ;
-  950 | let resp = am . start_download ( & url ) . await . unwrap ( ) ;
-  951 | assert_eq ! ( resp . content_length ( ) . is_some (
+  994 | ) ;
+  995 | let resp = am . start_download ( & url ) . await . unwrap ( ) ;
+  996 | assert_eq ! ( resp . content_length ( ) . is_some (
 ```
 
 
@@ -1568,103 +1606,103 @@ Sources:
 ```
 
 
-### 155 normalised tokens: `clean side's lines of src_lib.rs` lines 98 to 120, and removed@3d7b225 `lib.rs` lines 29 to 50
+### 155 normalised tokens: `clean side's lines of src_lib.rs` lines 99 to 121, and removed@3d7b225 `lib.rs` lines 29 to 50
 
 ```text
-   98 | }
-  108 | fn apple_id ( id : & str ) -> Result < & str > {
-  109 | let catalog = ! id . is_empty ( ) && id . bytes ( ) . all ( | b | b . is_ascii_digit ( ) ) ;
-  110 | let prefixed = id . split_once ( '.' ) . is_some_and ( | ( kind , name ) | {
-  111 | ( 1 ..= 3 ) . contains ( & kind . len ( ) )
-  112 | && kind . bytes ( ) . all ( | b | b . is_ascii_lowercase ( ) )
-  113 | && ! name . is_empty ( )
-  114 | && name . bytes ( ) . all ( | b | b . is_ascii_alphanumeric ( ) || b == b'-' )
-  115 | } ) ;
-  116 | if catalog || prefixed {
-  117 | Ok ( id )
-  118 | } else {
-  119 | Err ( Error :: Protocol ( format ! ( "not an Apple Music id: {id:?}" ) ) )
-  120 | }
+   99 | }
+  109 | fn apple_id ( id : & str ) -> Result < & str > {
+  110 | let catalog = ! id . is_empty ( ) && id . bytes ( ) . all ( | b | b . is_ascii_digit ( ) ) ;
+  111 | let prefixed = id . split_once ( '.' ) . is_some_and ( | ( kind , name ) | {
+  112 | ( 1 ..= 3 ) . contains ( & kind . len ( ) )
+  113 | && kind . bytes ( ) . all ( | b | b . is_ascii_lowercase ( ) )
+  114 | && ! name . is_empty ( )
+  115 | && name . bytes ( ) . all ( | b | b . is_ascii_alphanumeric ( ) || b == b'-' )
+  116 | } ) ;
+  117 | if catalog || prefixed {
+  118 | Ok ( id )
+  119 | } else {
+  120 | Err ( Error :: Protocol ( format ! ( "not an Apple Music id: {id:?}" ) ) )
+  121 | }
 ```
 
 
-### 94 normalised tokens: `clean side's lines of src_playback.rs` lines 297 to 312, and removed@3d7b225 `playback.rs` lines 110 to 125
+### 94 normalised tokens: `clean side's lines of src_playback.rs` lines 303 to 318, and removed@3d7b225 `playback.rs` lines 110 to 125
 
 ```text
-  297 | async fn take_licence (
-  298 | & self ,
-  299 | session : & Session ,
-  300 | challenge : & [ u8 ] ,
-  301 | adam_id : & str ,
-  302 | is_library : bool ,
-  303 | key_uri : & str ,
-  304 | key_id : & [ u8 ; 16 ] ,
-  305 | ) -> Result < ( ) > {
-  306 | let licence = self
-  307 | . ask_licence ( challenge , adam_id , is_library , key_uri )
-  308 | . await ? ;
-  309 | session
-  310 | . give_licence ( & licence , key_id )
-  311 | . map_err ( | e | playback_error ( e . to_string ( ) ) )
-  312 | }
+  303 | async fn take_licence (
+  304 | & self ,
+  305 | session : & Session ,
+  306 | challenge : & [ u8 ] ,
+  307 | adam_id : & str ,
+  308 | is_library : bool ,
+  309 | key_uri : & str ,
+  310 | key_id : & [ u8 ; 16 ] ,
+  311 | ) -> Result < ( ) > {
+  312 | let licence = self
+  313 | . ask_licence ( challenge , adam_id , is_library , key_uri )
+  314 | . await ? ;
+  315 | session
+  316 | . give_licence ( & licence , key_id )
+  317 | . map_err ( | e | playback_error ( e . to_string ( ) ) )
+  318 | }
 ```
 
 
-### 61 normalised tokens: `clean side's lines of src_playback.rs` lines 121 to 135, and removed@3d7b225 `playback.rs` lines 62 to 69
+### 61 normalised tokens: `clean side's lines of src_playback.rs` lines 127 to 141, and removed@3d7b225 `playback.rs` lines 62 to 69
 
 ```text
-  121 | )
-  122 | }
-  132 | fn catalog_file ( playlist_url : & str , body : & [ u8 ] ) -> Option < EncryptedFile > {
-  133 | let playlist = m3u8_rs :: parse_media_playlist_res ( body ) . ok ( ) ? ;
-  134 | let first = playlist . segments . first ( ) ? ;
-  135 | let key = first . key . as_ref ( ) ?
+  127 | )
+  128 | }
+  138 | fn catalog_file ( playlist_url : & str , body : & [ u8 ] ) -> Option < EncryptedFile > {
+  139 | let playlist = m3u8_rs :: parse_media_playlist_res ( body ) . ok ( ) ? ;
+  140 | let first = playlist . segments . first ( ) ? ;
+  141 | let key = first . key . as_ref ( ) ?
 ```
 
 
-### 57 normalised tokens: `clean side's lines of src_playback.rs` lines 262 to 271, and removed@3d7b225 `playback.rs` lines 128 to 137
+### 57 normalised tokens: `clean side's lines of src_playback.rs` lines 268 to 277, and removed@3d7b225 `playback.rs` lines 128 to 137
 
 ```text
-  262 | async fn ask_licence (
-  263 | & self ,
-  264 | challenge : & [ u8 ] ,
-  265 | adam_id : & str ,
-  266 | is_library : bool ,
-  267 | key_uri : & str ,
-  268 | ) -> Result < Vec < u8 >> {
-  269 | let body = serde_json :: json ! ( {
-  270 | "challenge" : STANDARD . encode ( challenge ) ,
-  271 | "key-system" :
+  268 | async fn ask_licence (
+  269 | & self ,
+  270 | challenge : & [ u8 ] ,
+  271 | adam_id : & str ,
+  272 | is_library : bool ,
+  273 | key_uri : & str ,
+  274 | ) -> Result < Vec < u8 >> {
+  275 | let body = serde_json :: json ! ( {
+  276 | "challenge" : STANDARD . encode ( challenge ) ,
+  277 | "key-system" :
 ```
 
 
-### 53 normalised tokens: `clean side's lines of src_lib.rs` lines 299 to 306, and removed@3d7b225 `lib.rs` lines 118 to 122
+### 53 normalised tokens: `clean side's lines of src_lib.rs` lines 336 to 343, and removed@3d7b225 `lib.rs` lines 118 to 122
 
 ```text
-  299 | , self . storefront ) ;
-  300 | let Some ( answer ) = self . fetch :: < types :: LyricsResponse > ( & path ) . await ? else {
-  301 | continue ;
-  302 | } ;
-  303 | let ttml = answer
-  304 | . data
-  305 | . iter ( )
-  306 | . find_map ( | entry | entry . attributes
+  336 | , self . storefront ) ;
+  337 | let Some ( answer ) = self . fetch :: < types :: LyricsResponse > ( & path ) . await ? else {
+  338 | continue ;
+  339 | } ;
+  340 | let ttml = answer
+  341 | . data
+  342 | . iter ( )
+  343 | . find_map ( | entry | entry . attributes
 ```
 
 
-### 34 normalised tokens: `clean side's lines of src_playback.rs` lines 271 to 280, and removed@3d7b225 `playback.rs` lines 137 to 146
+### 34 normalised tokens: `clean side's lines of src_playback.rs` lines 277 to 286, and removed@3d7b225 `playback.rs` lines 137 to 146
 
 ```text
-  271 | ,
-  272 | "uri" : key_uri ,
-  273 | "adamId" : adam_id ,
-  274 | "isLibrary" : is_library ,
-  275 | "user-initiated" : true ,
-  276 | } ) ;
-  277 | let resp = self
-  278 | . send (
-  279 | self . http
-  280 | . post ( format
+  277 | ,
+  278 | "uri" : key_uri ,
+  279 | "adamId" : adam_id ,
+  280 | "isLibrary" : is_library ,
+  281 | "user-initiated" : true ,
+  282 | } ) ;
+  283 | let resp = self
+  284 | . send (
+  285 | self . http
+  286 | . post ( format
 ```
 
 
@@ -1685,64 +1723,64 @@ Sources:
 ```
 
 
-### 32 normalised tokens: `clean side's lines of src_playback.rs` lines 64 to 78, and removed@3d7b225 `playback.rs` lines 32 to 38
+### 32 normalised tokens: `clean side's lines of src_playback.rs` lines 70 to 84, and removed@3d7b225 `playback.rs` lines 32 to 38
 
 ```text
-   64 | ,
-   65 | }
-   75 | fn choose_source ( entry : & serde_json :: Value ) -> Result < Source > {
-   76 | let assets = entry [ "assets" ]
-   77 | . as_array ( )
-   78 | . filter (
+   70 | ,
+   71 | }
+   81 | fn choose_source ( entry : & serde_json :: Value ) -> Result < Source > {
+   82 | let assets = entry [ "assets" ]
+   83 | . as_array ( )
+   84 | . filter (
 ```
 
 
-### 32 normalised tokens: `clean side's lines of src_playback.rs` lines 78 to 81, and removed@3d7b225 `playback.rs` lines 37 to 41
+### 32 normalised tokens: `clean side's lines of src_playback.rs` lines 84 to 87, and removed@3d7b225 `playback.rs` lines 37 to 41
 
 ```text
-   78 | )
-   79 | . ok_or_else ( || playback_error ( "webPlayback returned no assets" ) ) ? ;
-   80 | if let [ only ] = assets . as_slice ( )
-   81 | && only [ "flavor" ] . is_null ( )
+   84 | )
+   85 | . ok_or_else ( || playback_error ( "webPlayback returned no assets" ) ) ? ;
+   86 | if let [ only ] = assets . as_slice ( )
+   87 | && only [ "flavor" ] . is_null ( )
 ```
 
 
-### 30 normalised tokens: `clean side's lines of src_lib.rs` lines 194 to 196, and removed@3d7b225 `lib.rs` lines 13 to 14
+### 30 normalised tokens: `clean side's lines of src_lib.rs` lines 231 to 233, and removed@3d7b225 `lib.rs` lines 13 to 14
 
 ```text
-  194 | fn next_page_path ( next : & str , first : & str ) -> String {
-  195 | let resolved = url :: Url :: parse ( API )
-  196 | . ok (
+  231 | fn next_page_path ( next : & str , first : & str ) -> String {
+  232 | let resolved = url :: Url :: parse ( API )
+  233 | . ok (
 ```
 
 
-### 30 normalised tokens: `clean side's lines of src_playback.rs` lines 27 to 29, and removed@3d7b225 `lib.rs` lines 42 to 44
+### 30 normalised tokens: `clean side's lines of src_playback.rs` lines 33 to 35, and removed@3d7b225 `lib.rs` lines 42 to 44
 
 ```text
-   27 | )
-   28 | && ! name . is_empty ( )
-   29 | && name . bytes ( ) . all ( | b | b . is_ascii_alphanumeric ( ) || b == b'-' )
+   33 | )
+   34 | && ! name . is_empty ( )
+   35 | && name . bytes ( ) . all ( | b | b . is_ascii_alphanumeric ( ) || b == b'-' )
 ```
 
 
-### 156 normalised tokens: `clean side's lines of src_lib.rs` lines 98 to 121, and adapted@3d7b225 `lib.rs` lines 947 to 969
+### 156 normalised tokens: `clean side's lines of src_lib.rs` lines 99 to 122, and adapted@3d7b225 `lib.rs` lines 947 to 969
 
 ```text
-   98 | }
-  108 | fn apple_id ( id : & str ) -> Result < & str > {
-  109 | let catalog = ! id . is_empty ( ) && id . bytes ( ) . all ( | b | b . is_ascii_digit ( ) ) ;
-  110 | let prefixed = id . split_once ( '.' ) . is_some_and ( | ( kind , name ) | {
-  111 | ( 1 ..= 3 ) . contains ( & kind . len ( ) )
-  112 | && kind . bytes ( ) . all ( | b | b . is_ascii_lowercase ( ) )
-  113 | && ! name . is_empty ( )
-  114 | && name . bytes ( ) . all ( | b | b . is_ascii_alphanumeric ( ) || b == b'-' )
-  115 | } ) ;
-  116 | if catalog || prefixed {
-  117 | Ok ( id )
-  118 | } else {
-  119 | Err ( Error :: Protocol ( format ! ( "not an Apple Music id: {id:?}" ) ) )
-  120 | }
+   99 | }
+  109 | fn apple_id ( id : & str ) -> Result < & str > {
+  110 | let catalog = ! id . is_empty ( ) && id . bytes ( ) . all ( | b | b . is_ascii_digit ( ) ) ;
+  111 | let prefixed = id . split_once ( '.' ) . is_some_and ( | ( kind , name ) | {
+  112 | ( 1 ..= 3 ) . contains ( & kind . len ( ) )
+  113 | && kind . bytes ( ) . all ( | b | b . is_ascii_lowercase ( ) )
+  114 | && ! name . is_empty ( )
+  115 | && name . bytes ( ) . all ( | b | b . is_ascii_alphanumeric ( ) || b == b'-' )
+  116 | } ) ;
+  117 | if catalog || prefixed {
+  118 | Ok ( id )
+  119 | } else {
+  120 | Err ( Error :: Protocol ( format ! ( "not an Apple Music id: {id:?}" ) ) )
   121 | }
+  122 | }
 ```
 
 
@@ -1770,85 +1808,93 @@ Sources:
 ```
 
 
-### 96 normalised tokens: `clean side's lines of src_playback.rs` lines 286 to 312, and adapted@3d7b225 `playback.rs` lines 762 to 782
+### 96 normalised tokens: `clean side's lines of src_playback.rs` lines 292 to 318, and adapted@3d7b225 `playback.rs` lines 762 to 782
 
 ```text
-  286 | )
-  287 | }
-  297 | async fn take_licence (
-  298 | & self ,
-  299 | session : & Session ,
-  300 | challenge : & [ u8 ] ,
-  301 | adam_id : & str ,
-  302 | is_library : bool ,
-  303 | key_uri : & str ,
-  304 | key_id : & [ u8 ; 16 ] ,
-  305 | ) -> Result < ( ) > {
-  306 | let licence = self
-  307 | . ask_licence ( challenge , adam_id , is_library , key_uri )
-  308 | . await ? ;
-  309 | session
-  310 | . give_licence ( & licence , key_id )
-  311 | . map_err ( | e | playback_error ( e . to_string ( ) ) )
-  312 | }
+  292 | )
+  293 | }
+  303 | async fn take_licence (
+  304 | & self ,
+  305 | session : & Session ,
+  306 | challenge : & [ u8 ] ,
+  307 | adam_id : & str ,
+  308 | is_library : bool ,
+  309 | key_uri : & str ,
+  310 | key_id : & [ u8 ; 16 ] ,
+  311 | ) -> Result < ( ) > {
+  312 | let licence = self
+  313 | . ask_licence ( challenge , adam_id , is_library , key_uri )
+  314 | . await ? ;
+  315 | session
+  316 | . give_licence ( & licence , key_id )
+  317 | . map_err ( | e | playback_error ( e . to_string ( ) ) )
+  318 | }
 ```
 
 
-### 67 normalised tokens: `clean side's lines of src_lib.rs` lines 329 to 339, and adapted@3d7b225 `lib.rs` lines 414 to 424
+### 67 normalised tokens: `clean side's lines of src_lib.rs` lines 366 to 376, and adapted@3d7b225 `lib.rs` lines 414 to 424
 
 ```text
-  329 | NotSignedIn ) ,
-  330 | _ if ! status . is_success ( ) => {
-  331 | return Err ( Error :: Protocol ( format ! ( "{path}: HTTP {status}" ) ) ) ;
-  332 | }
-  333 | _ => { }
-  334 | }
-  335 | let body = resp
-  336 | . text ( )
-  337 | . await
-  338 | . map_err ( | e | Error :: Network ( format ! ( "{path}: {e}" ) ) ) ? ;
-  339 | station :: songs_in (
+  366 | NotSignedIn ) ,
+  367 | _ if ! status . is_success ( ) => {
+  368 | return Err ( Error :: Protocol ( format ! ( "{path}: HTTP {status}" ) ) ) ;
+  369 | }
+  370 | _ => { }
+  371 | }
+  372 | let body = resp
+  373 | . text ( )
+  374 | . await
+  375 | . map_err ( | e | Error :: Network ( format ! ( "{path}: {e}" ) ) ) ? ;
+  376 | station :: songs_in (
 ```
 
 
-### 60 normalised tokens: `clean side's lines of src_playback.rs` lines 122 to 135, and adapted@3d7b225 `playback.rs` lines 208 to 214
+### 60 normalised tokens: `clean side's lines of src_playback.rs` lines 128 to 141, and adapted@3d7b225 `playback.rs` lines 208 to 214
 
 ```text
-  122 | }
-  132 | fn catalog_file ( playlist_url : & str , body : & [ u8 ] ) -> Option < EncryptedFile > {
-  133 | let playlist = m3u8_rs :: parse_media_playlist_res ( body ) . ok ( ) ? ;
-  134 | let first = playlist . segments . first ( ) ? ;
-  135 | let key = first . key . as_ref ( ) ?
+  128 | }
+  138 | fn catalog_file ( playlist_url : & str , body : & [ u8 ] ) -> Option < EncryptedFile > {
+  139 | let playlist = m3u8_rs :: parse_media_playlist_res ( body ) . ok ( ) ? ;
+  140 | let first = playlist . segments . first ( ) ? ;
+  141 | let key = first . key . as_ref ( ) ?
 ```
 
 
-### 57 normalised tokens: `clean side's lines of src_playback.rs` lines 262 to 271, and adapted@3d7b225 `playback.rs` lines 785 to 794
+### 57 normalised tokens: `clean side's lines of src_playback.rs` lines 268 to 277, and adapted@3d7b225 `playback.rs` lines 785 to 794
 
 ```text
-  262 | async fn ask_licence (
-  263 | & self ,
-  264 | challenge : & [ u8 ] ,
-  265 | adam_id : & str ,
-  266 | is_library : bool ,
-  267 | key_uri : & str ,
-  268 | ) -> Result < Vec < u8 >> {
-  269 | let body = serde_json :: json ! ( {
-  270 | "challenge" : STANDARD . encode ( challenge ) ,
-  271 | "key-system" :
+  268 | async fn ask_licence (
+  269 | & self ,
+  270 | challenge : & [ u8 ] ,
+  271 | adam_id : & str ,
+  272 | is_library : bool ,
+  273 | key_uri : & str ,
+  274 | ) -> Result < Vec < u8 >> {
+  275 | let body = serde_json :: json ! ( {
+  276 | "challenge" : STANDARD . encode ( challenge ) ,
+  277 | "key-system" :
 ```
 
 
-### 53 normalised tokens: `clean side's lines of src_lib.rs` lines 299 to 306, and adapted@3d7b225 `lib.rs` lines 1680 to 1684
+### 53 normalised tokens: `clean side's lines of src_lib.rs` lines 336 to 343, and adapted@3d7b225 `lib.rs` lines 1680 to 1684
 
 ```text
-  299 | , self . storefront ) ;
-  300 | let Some ( answer ) = self . fetch :: < types :: LyricsResponse > ( & path ) . await ? else {
-  301 | continue ;
-  302 | } ;
-  303 | let ttml = answer
-  304 | . data
-  305 | . iter ( )
-  306 | . find_map ( | entry | entry . attributes
+  336 | , self . storefront ) ;
+  337 | let Some ( answer ) = self . fetch :: < types :: LyricsResponse > ( & path ) . await ? else {
+  338 | continue ;
+  339 | } ;
+  340 | let ttml = answer
+  341 | . data
+  342 | . iter ( )
+  343 | . find_map ( | entry | entry . attributes
+```
+
+
+### 44 normalised tokens: `clean side's lines of src_playback.rs` lines 15 to 16, and adapted@3d7b225 `playback.rs` lines 70 to 71
+
+```text
+   15 | => Some ( id . clone ( ) ) ,
+   16 | serde_json :: Value :: Number ( n ) if n . as_u64 ( ) . is_some_and ( | n | n > 0 ) => Some ( n . to_string ( ) ) ,
 ```
 
 
@@ -1872,31 +1918,31 @@ Sources:
 ```
 
 
-### 34 normalised tokens: `clean side's lines of src_playback.rs` lines 190 to 195, and adapted@3d7b225 `playback.rs` lines 146 to 151
+### 34 normalised tokens: `clean side's lines of src_playback.rs` lines 196 to 201, and adapted@3d7b225 `playback.rs` lines 146 to 151
 
 ```text
-  190 | resp : reqwest :: Response ,
-  191 | again : reqwest :: RequestBuilder ,
-  192 | frame : std :: time :: Duration ,
-  193 | decrypt : cenc :: Decrypt ,
-  194 | ) -> Result < AudioStream > {
-  195 | let
+  196 | resp : reqwest :: Response ,
+  197 | again : reqwest :: RequestBuilder ,
+  198 | frame : std :: time :: Duration ,
+  199 | decrypt : cenc :: Decrypt ,
+  200 | ) -> Result < AudioStream > {
+  201 | let
 ```
 
 
-### 34 normalised tokens: `clean side's lines of src_playback.rs` lines 271 to 280, and adapted@3d7b225 `playback.rs` lines 794 to 803
+### 34 normalised tokens: `clean side's lines of src_playback.rs` lines 277 to 286, and adapted@3d7b225 `playback.rs` lines 794 to 803
 
 ```text
-  271 | ,
-  272 | "uri" : key_uri ,
-  273 | "adamId" : adam_id ,
-  274 | "isLibrary" : is_library ,
-  275 | "user-initiated" : true ,
-  276 | } ) ;
-  277 | let resp = self
-  278 | . send (
-  279 | self . http
-  280 | . post ( format
+  277 | ,
+  278 | "uri" : key_uri ,
+  279 | "adamId" : adam_id ,
+  280 | "isLibrary" : is_library ,
+  281 | "user-initiated" : true ,
+  282 | } ) ;
+  283 | let resp = self
+  284 | . send (
+  285 | self . http
+  286 | . post ( format
 ```
 
 
@@ -1929,25 +1975,25 @@ Sources:
 ```
 
 
-### 32 normalised tokens: `clean side's lines of src_playback.rs` lines 64 to 78, and adapted@3d7b225 `playback.rs` lines 91 to 97
+### 32 normalised tokens: `clean side's lines of src_playback.rs` lines 70 to 84, and adapted@3d7b225 `playback.rs` lines 91 to 97
 
 ```text
-   64 | ,
-   65 | }
-   75 | fn choose_source ( entry : & serde_json :: Value ) -> Result < Source > {
-   76 | let assets = entry [ "assets" ]
-   77 | . as_array ( )
-   78 | . filter (
+   70 | ,
+   71 | }
+   81 | fn choose_source ( entry : & serde_json :: Value ) -> Result < Source > {
+   82 | let assets = entry [ "assets" ]
+   83 | . as_array ( )
+   84 | . filter (
 ```
 
 
-### 32 normalised tokens: `clean side's lines of src_playback.rs` lines 78 to 81, and adapted@3d7b225 `playback.rs` lines 96 to 100
+### 32 normalised tokens: `clean side's lines of src_playback.rs` lines 84 to 87, and adapted@3d7b225 `playback.rs` lines 96 to 100
 
 ```text
-   78 | )
-   79 | . ok_or_else ( || playback_error ( "webPlayback returned no assets" ) ) ? ;
-   80 | if let [ only ] = assets . as_slice ( )
-   81 | && only [ "flavor" ] . is_null ( )
+   84 | )
+   85 | . ok_or_else ( || playback_error ( "webPlayback returned no assets" ) ) ? ;
+   86 | if let [ only ] = assets . as_slice ( )
+   87 | && only [ "flavor" ] . is_null ( )
 ```
 
 
@@ -1966,54 +2012,54 @@ Sources:
 ```
 
 
-### 31 normalised tokens: `clean side's lines of src_lib.rs` lines 460 to 463, and adapted@3d7b225 `lib.rs` lines 27 to 30
+### 31 normalised tokens: `clean side's lines of src_lib.rs` lines 497 to 500, and adapted@3d7b225 `lib.rs` lines 27 to 30
 
 ```text
-  460 | Reply , Request , TestServer , USER_TOKEN , apple_music , apple_server , fake_token , json_reply ,
-  461 | lasting_token , reply , seconds_from_now , test_client , web_player_and_storefront ,
-  462 | } ;
-  463 | use serde_json ::
+  497 | Reply , Request , TestServer , USER_TOKEN , apple_music , apple_server , fake_token , json_reply ,
+  498 | lasting_token , reply , seconds_from_now , test_client , web_player_and_storefront ,
+  499 | } ;
+  500 | use serde_json ::
 ```
 
 
-### 31 normalised tokens: `clean side's lines of src_playback.rs` lines 145 to 159, and adapted@3d7b225 `playback.rs` lines 230 to 240
+### 31 normalised tokens: `clean side's lines of src_playback.rs` lines 151 to 165, and adapted@3d7b225 `playback.rs` lines 230 to 240
 
 ```text
-  145 | ,
-  146 | keys : vec ! [ Key {
-  147 | uri : uri . clone ( ) ,
-  148 | id ,
-  149 | } ] ,
-  150 | } )
-  151 | }
-  159 | fn licence_in ( answer : & serde_json
+  151 | ,
+  152 | keys : vec ! [ Key {
+  153 | uri : uri . clone ( ) ,
+  154 | id ,
+  155 | } ] ,
+  156 | } )
+  157 | }
+  165 | fn licence_in ( answer : & serde_json
 ```
 
 
-### 30 normalised tokens: `clean side's lines of src_lib.rs` lines 194 to 196, and adapted@3d7b225 `lib.rs` lines 931 to 932
+### 30 normalised tokens: `clean side's lines of src_lib.rs` lines 231 to 233, and adapted@3d7b225 `lib.rs` lines 931 to 932
 
 ```text
-  194 | fn next_page_path ( next : & str , first : & str ) -> String {
-  195 | let resolved = url :: Url :: parse ( API )
-  196 | . ok (
+  231 | fn next_page_path ( next : & str , first : & str ) -> String {
+  232 | let resolved = url :: Url :: parse ( API )
+  233 | . ok (
 ```
 
 
-### 30 normalised tokens: `clean side's lines of src_lib.rs` lines 459 to 461, and adapted@3d7b225 `convert.rs` lines 5 to 7
+### 30 normalised tokens: `clean side's lines of src_lib.rs` lines 496 to 498, and adapted@3d7b225 `convert.rs` lines 5 to 7
 
 ```text
-  459 | :: test_support :: {
-  460 | Reply , Request , TestServer , USER_TOKEN , apple_music , apple_server , fake_token , json_reply ,
-  461 | lasting_token , reply , seconds_from_now , test_client , web_player_and_storefront ,
+  496 | :: test_support :: {
+  497 | Reply , Request , TestServer , USER_TOKEN , apple_music , apple_server , fake_token , json_reply ,
+  498 | lasting_token , reply , seconds_from_now , test_client , web_player_and_storefront ,
 ```
 
 
-### 30 normalised tokens: `clean side's lines of src_playback.rs` lines 27 to 29, and adapted@3d7b225 `lib.rs` lines 960 to 962
+### 30 normalised tokens: `clean side's lines of src_playback.rs` lines 33 to 35, and adapted@3d7b225 `lib.rs` lines 960 to 962
 
 ```text
-   27 | )
-   28 | && ! name . is_empty ( )
-   29 | && name . bytes ( ) . all ( | b | b . is_ascii_alphanumeric ( ) || b == b'-' )
+   33 | )
+   34 | && ! name . is_empty ( )
+   35 | && name . bytes ( ) . all ( | b | b . is_ascii_alphanumeric ( ) || b == b'-' )
 ```
 
 
@@ -2189,14 +2235,14 @@ Sources:
 ```
 
 
-### 40 normalised tokens: `clean side's lines of src_playback.rs` lines 118 to 122, and tree `crates/widevine/src/find.rs` lines 170 to 174
+### 40 normalised tokens: `clean side's lines of src_playback.rs` lines 124 to 128, and tree `crates/widevine/src/find.rs` lines 170 to 174
 
 ```text
-  118 | if rest . is_empty ( ) || ! rest . bytes ( ) . all ( | b | b . is_ascii_digit ( ) ) {
-  119 | return None ;
-  120 | }
-  121 | rest . parse ( ) . ok ( )
-  122 | }
+  124 | if rest . is_empty ( ) || ! rest . bytes ( ) . all ( | b | b . is_ascii_digit ( ) ) {
+  125 | return None ;
+  126 | }
+  127 | rest . parse ( ) . ok ( )
+  128 | }
 ```
 
 
@@ -2244,14 +2290,14 @@ Sources:
 ```
 
 
-### 36 normalised tokens: `clean side's lines of src_lib.rs` lines 460 to 464, and tree `crates/desktop/src/mpris.rs` lines 12 to 16
+### 36 normalised tokens: `clean side's lines of src_lib.rs` lines 497 to 501, and tree `crates/desktop/src/mpris.rs` lines 12 to 16
 
 ```text
-  460 | Request , TestServer , USER_TOKEN , apple_music , apple_server , fake_token , json_reply ,
-  461 | lasting_token , reply , seconds_from_now , test_client , web_player_and_storefront ,
-  462 | } ;
-  463 | use serde_json :: json ;
-  464 | use std :: sync ::
+  497 | Request , TestServer , USER_TOKEN , apple_music , apple_server , fake_token , json_reply ,
+  498 | lasting_token , reply , seconds_from_now , test_client , web_player_and_storefront ,
+  499 | } ;
+  500 | use serde_json :: json ;
+  501 | use std :: sync ::
 ```
 
 
@@ -2270,14 +2316,14 @@ Sources:
 ```
 
 
-### 35 normalised tokens: `clean side's lines of src_lib.rs` lines 459 to 463, and tree `crates/desktop/src/backend.rs` lines 10 to 14
+### 35 normalised tokens: `clean side's lines of src_lib.rs` lines 496 to 500, and tree `crates/desktop/src/backend.rs` lines 10 to 14
 
 ```text
-  459 | :: test_support :: {
-  460 | Reply , Request , TestServer , USER_TOKEN , apple_music , apple_server , fake_token , json_reply ,
-  461 | lasting_token , reply , seconds_from_now , test_client , web_player_and_storefront ,
-  462 | } ;
-  463 | use serde_json ::
+  496 | :: test_support :: {
+  497 | Reply , Request , TestServer , USER_TOKEN , apple_music , apple_server , fake_token , json_reply ,
+  498 | lasting_token , reply , seconds_from_now , test_client , web_player_and_storefront ,
+  499 | } ;
+  500 | use serde_json ::
 ```
 
 
@@ -2338,23 +2384,23 @@ Sources:
 ```
 
 
-### 33 normalised tokens: `clean side's lines of src_lib.rs` lines 458 to 461, and tree `crates/opium-core/src/provider.rs` lines 1 to 5
+### 33 normalised tokens: `clean side's lines of src_lib.rs` lines 495 to 498, and tree `crates/opium-core/src/provider.rs` lines 1 to 5
 
 ```text
-  458 | ;
-  459 | use crate :: test_support :: {
-  460 | Reply , Request , TestServer , USER_TOKEN , apple_music , apple_server , fake_token , json_reply ,
-  461 | lasting_token , reply , seconds_from_now , test_client , web_player_and_storefront ,
+  495 | ;
+  496 | use crate :: test_support :: {
+  497 | Reply , Request , TestServer , USER_TOKEN , apple_music , apple_server , fake_token , json_reply ,
+  498 | lasting_token , reply , seconds_from_now , test_client , web_player_and_storefront ,
 ```
 
 
-### 33 normalised tokens: `clean side's lines of src_lib.rs` lines 460 to 463, and tree `crates/opium-ffi/src/lib.rs` lines 10 to 13
+### 33 normalised tokens: `clean side's lines of src_lib.rs` lines 497 to 500, and tree `crates/opium-ffi/src/lib.rs` lines 10 to 13
 
 ```text
-  460 | Reply , Request , TestServer , USER_TOKEN , apple_music , apple_server , fake_token , json_reply ,
-  461 | lasting_token , reply , seconds_from_now , test_client , web_player_and_storefront ,
-  462 | } ;
-  463 | use serde_json :: json ;
+  497 | Reply , Request , TestServer , USER_TOKEN , apple_music , apple_server , fake_token , json_reply ,
+  498 | lasting_token , reply , seconds_from_now , test_client , web_player_and_storefront ,
+  499 | } ;
+  500 | use serde_json :: json ;
 ```
 
 
@@ -2391,25 +2437,25 @@ Sources:
 ```
 
 
-### 32 normalised tokens: `clean side's lines of src_lib.rs` lines 530 to 537, and tree `crates/lyrics/src/lib.rs` lines 70 to 76
+### 32 normalised tokens: `clean side's lines of src_lib.rs` lines 567 to 574, and tree `crates/lyrics/src/lib.rs` lines 70 to 76
 
 ```text
-  530 | }
-  533 | fn page_readings ( server : & TestServer ) -> usize {
-  534 | server
-  535 | . requests ( )
-  536 | . iter ( )
-  537 | . filter ( | r | r . host_name ( )
+  567 | }
+  570 | fn page_readings ( server : & TestServer ) -> usize {
+  571 | server
+  572 | . requests ( )
+  573 | . iter ( )
+  574 | . filter ( | r | r . host_name ( )
 ```
 
 
-### 32 normalised tokens: `clean side's lines of src_playback.rs` lines 110 to 117, and tree `crates/lyrics/src/lrc.rs` lines 24 to 29
+### 32 normalised tokens: `clean side's lines of src_playback.rs` lines 116 to 123, and tree `crates/lyrics/src/lrc.rs` lines 24 to 29
 
 ```text
-  110 | url . is_empty ( ) )
-  111 | }
-  116 | fn ctr_kbps ( flavor : & str ) -> Option < u32 > {
-  117 | let ( _ , rest ) = flavor . split_once (
+  116 | url . is_empty ( ) )
+  117 | }
+  122 | fn ctr_kbps ( flavor : & str ) -> Option < u32 > {
+  123 | let ( _ , rest ) = flavor . split_once (
 ```
 
 
@@ -2441,20 +2487,20 @@ Sources:
 ```
 
 
-### 31 normalised tokens: `clean side's lines of src_playback.rs` lines 429 to 434, and tree `crates/local/src/tags.rs` lines 192 to 198
+### 31 normalised tokens: `clean side's lines of src_playback.rs` lines 435 to 440, and tree `crates/local/src/tags.rs` lines 192 to 198
 
 ```text
-  429 | ) . map_err ( | e | e . to_string ( ) )
-  430 | }
-  434 | pub fn enhanced_file ( playlist_url : & str , body : & str ) -> Option <
+  435 | ) . map_err ( | e | e . to_string ( ) )
+  436 | }
+  440 | pub fn enhanced_file ( playlist_url : & str , body : & str ) -> Option <
 ```
 
 
-### 31 normalised tokens: `clean side's lines of src_playback.rs` lines 1231 to 1232, and tree `crates/app-desktop/src/ui/playlist_dialog.rs` lines 262 to 267
+### 31 normalised tokens: `clean side's lines of src_playback.rs` lines 1276 to 1277, and tree `crates/app-desktop/src/ui/playlist_dialog.rs` lines 262 to 267
 
 ```text
- 1231 | = file . keys . iter ( ) . map ( | k | k . uri . as_str ( ) ) . collect ( ) ;
- 1232 | uris . dedup (
+ 1276 | = file . keys . iter ( ) . map ( | k | k . uri . as_str ( ) ) . collect ( ) ;
+ 1277 | uris . dedup (
 ```
 
 
@@ -2490,14 +2536,14 @@ Sources:
 ```
 
 
-### 30 normalised tokens: `clean side's lines of src_playback.rs` lines 723 to 727, and tree `crates/local/src/lib.rs` lines 15 to 19
+### 30 normalised tokens: `clean side's lines of src_playback.rs` lines 768 to 772, and tree `crates/local/src/lib.rs` lines 15 to 19
 
 ```text
-  723 | Reply , Request , USER_TOKEN , apple_music , apple_server , encrypted_track , json_reply , reply ,
-  724 | xor_decrypt ,
-  725 | } ;
-  726 | use opium_core :: model :: ProviderKind ;
-  727 | use serde_json ::
+  768 | Reply , Request , USER_TOKEN , apple_music , apple_server , encrypted_track , json_reply , reply ,
+  769 | xor_decrypt ,
+  770 | } ;
+  771 | use opium_core :: model :: ProviderKind ;
+  772 | use serde_json ::
 ```
 
 
@@ -2538,7 +2584,7 @@ Sources:
 ### kopuz-a58c385 api.rs: `api.rs`
 
 - Compound identifiers of 6 characters or more: 125; found in the new code: 34.
-  `DeserializeOwned` (src_convert.rs), `HashSet` (src_lib.rs, src_mutation_tests.rs, src_station.rs), `USER_AGENT` (src_lib.rs), `and_then` (fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_test_support.rs), `as_array` (src_playback.rs), `as_deref` (fuzz_fuzz_targets_web_playback_entry.rs, src_convert.rs, src_lib.rs, src_playback.rs), `as_ref` (src_lib.rs, src_playback.rs), `as_str` (fuzz_fuzz_targets_web_playback_entry.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_test_support.rs), `as_u16` (src_lib.rs), `assert_eq` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_station_answer.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs), `catalog_id` (src_convert.rs), `from_str` (src_station.rs), `from_value` (src_convert.rs), `futures_util` (src_lib.rs), `into_iter` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_playback.rs, src_station.rs, src_test_support.rs), `into_owned` (src_auth.rs, src_lib.rs, src_test_support.rs), `is_ascii_digit` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_web_playback_entry.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs), `is_empty` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `is_none` (fuzz_fuzz_targets_web_playback_entry.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs), `is_some` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_opiums_own_readers.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_playback.rs), `is_some_and` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs), `is_success` (src_auth.rs, src_lib.rs), `join_all` (src_lib.rs), `map_err` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_playback.rs, src_station.rs), `map_or` (src_lib.rs), `ok_or_else` (src_auth.rs, src_playback.rs), `serde_json` (src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `split_once` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_next_page.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs, src_test_support.rs), `starts_with` (fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_next_page.rs, fuzz_fuzz_targets_opiums_own_readers.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs), `station_id` (fuzz_fuzz_targets_ids.rs, src_fuzzing.rs, src_lib.rs, src_mutation_tests.rs, src_station.rs), `strip_prefix` (fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_test_support.rs), `to_string` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `unwrap_or` (fuzz_fuzz_targets_next_page.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs, src_test_support.rs), `unwrap_or_default` (fuzz_fuzz_targets_web_playback_entry.rs, src_test_support.rs)
+  `DeserializeOwned` (src_convert.rs), `HashSet` (src_lib.rs, src_mutation_tests.rs, src_station.rs), `USER_AGENT` (src_lib.rs), `and_then` (fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_test_support.rs), `as_array` (src_playback.rs), `as_deref` (fuzz_fuzz_targets_web_playback_entry.rs, src_convert.rs, src_lib.rs, src_playback.rs), `as_ref` (src_lib.rs, src_playback.rs), `as_str` (fuzz_fuzz_targets_web_playback_entry.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_test_support.rs), `as_u16` (src_lib.rs), `assert_eq` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_station_answer.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs), `catalog_id` (src_convert.rs), `from_str` (src_station.rs), `from_value` (src_convert.rs), `futures_util` (src_lib.rs), `into_iter` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_playback.rs, src_station.rs, src_test_support.rs), `into_owned` (src_auth.rs, src_lib.rs, src_test_support.rs), `is_ascii_digit` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_web_playback_entry.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs), `is_empty` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `is_none` (fuzz_fuzz_targets_web_playback_entry.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs), `is_some` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_opiums_own_readers.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_playback.rs), `is_some_and` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs), `is_success` (src_auth.rs, src_lib.rs), `join_all` (src_lib.rs), `map_err` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_playback.rs, src_station.rs), `map_or` (src_lib.rs), `ok_or_else` (src_auth.rs, src_playback.rs), `serde_json` (src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `split_once` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_next_page.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs, src_test_support.rs), `starts_with` (fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_next_page.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs), `station_id` (fuzz_fuzz_targets_ids.rs, src_fuzzing.rs, src_lib.rs, src_mutation_tests.rs, src_station.rs), `strip_prefix` (fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_test_support.rs), `to_string` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `unwrap_or` (fuzz_fuzz_targets_next_page.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs, src_test_support.rs), `unwrap_or_default` (fuzz_fuzz_targets_web_playback_entry.rs, src_test_support.rs)
 - String literals of three words or more: 116; found: 0.
 - Comment phrases of six words: 787; found: 0.
 
@@ -2552,14 +2598,14 @@ Sources:
 ### kopuz-a58c385 cenc.rs: `cenc.rs`
 
 - Compound identifiers of 6 characters or more: 135; found in the new code: 19.
-  `PartialEq` (src_playback.rs), `and_then` (fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_test_support.rs), `as_ref` (src_lib.rs, src_playback.rs), `assert_eq` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_station_answer.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs), `checked_add` (src_auth.rs, src_playback.rs), `extend_from_slice` (src_auth.rs, src_playback.rs), `is_empty` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `is_none` (fuzz_fuzz_targets_web_playback_entry.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs), `is_some_and` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs), `key_id` (fuzz_fuzz_targets_media_playlist.rs, src_playback.rs), `saturating_sub` (src_station.rs, src_test_support.rs), `to_be_bytes` (src_test_support.rs), `to_string` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `to_vec` (fuzz_fuzz_targets_station_answer.rs, src_playback.rs, src_test_support.rs), `try_into` (src_playback.rs), `unwrap_or` (fuzz_fuzz_targets_next_page.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs, src_test_support.rs), `unwrap_or_default` (fuzz_fuzz_targets_web_playback_entry.rs, src_test_support.rs), `unwrap_or_else` (src_lib.rs, src_station.rs, src_test_support.rs), `with_capacity` (fuzz_fuzz_targets_common_mod.rs)
+  `PartialEq` (src_playback.rs), `and_then` (fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_test_support.rs), `as_ref` (src_lib.rs, src_playback.rs), `assert_eq` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_station_answer.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs), `checked_add` (src_auth.rs, src_playback.rs), `extend_from_slice` (src_auth.rs, src_playback.rs), `is_empty` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `is_none` (fuzz_fuzz_targets_web_playback_entry.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs), `is_some_and` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs), `key_id` (fuzz_fuzz_targets_media_playlist.rs, src_playback.rs), `saturating_sub` (src_station.rs, src_test_support.rs), `to_be_bytes` (src_test_support.rs), `to_string` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `to_vec` (fuzz_fuzz_targets_station_answer.rs, src_playback.rs, src_test_support.rs), `try_into` (src_playback.rs), `unwrap_or` (fuzz_fuzz_targets_next_page.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs, src_test_support.rs), `unwrap_or_default` (fuzz_fuzz_targets_web_playback_entry.rs, src_test_support.rs), `unwrap_or_else` (src_auth.rs, src_lib.rs, src_station.rs, src_test_support.rs), `with_capacity` (fuzz_fuzz_targets_common_mod.rs)
 - String literals of three words or more: 23; found: 0.
 - Comment phrases of six words: 408; found: 0.
 
 ### kopuz-a58c385 mod.rs: `mod.rs`
 
 - Compound identifiers of 6 characters or more: 57; found in the new code: 19.
-  `AppleMusic` (src_convert.rs, src_lib.rs, src_playback.rs, src_station.rs, src_test_support.rs), `adam_id` (src_playback.rs), `album_id` (src_convert.rs, src_station.rs), `and_then` (fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_test_support.rs), `artist_id` (src_convert.rs), `as_deref` (fuzz_fuzz_targets_web_playback_entry.rs, src_convert.rs, src_lib.rs, src_playback.rs), `as_ref` (src_lib.rs, src_playback.rs), `as_str` (fuzz_fuzz_targets_web_playback_entry.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_test_support.rs), `assert_eq` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_station_answer.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs), `catalog_id` (src_convert.rs), `disc_number` (src_convert.rs, src_station.rs), `from_value` (src_convert.rs), `is_empty` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `serde_json` (src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `to_string` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `track_number` (src_convert.rs, src_station.rs), `unwrap_or` (fuzz_fuzz_targets_next_page.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs, src_test_support.rs), `unwrap_or_default` (fuzz_fuzz_targets_web_playback_entry.rs, src_test_support.rs), `unwrap_or_else` (src_lib.rs, src_station.rs, src_test_support.rs)
+  `AppleMusic` (src_convert.rs, src_lib.rs, src_playback.rs, src_station.rs, src_test_support.rs), `adam_id` (src_playback.rs), `album_id` (src_convert.rs, src_station.rs), `and_then` (fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_test_support.rs), `artist_id` (src_convert.rs), `as_deref` (fuzz_fuzz_targets_web_playback_entry.rs, src_convert.rs, src_lib.rs, src_playback.rs), `as_ref` (src_lib.rs, src_playback.rs), `as_str` (fuzz_fuzz_targets_web_playback_entry.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_test_support.rs), `assert_eq` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_station_answer.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs), `catalog_id` (src_convert.rs), `disc_number` (src_convert.rs, src_station.rs), `from_value` (src_convert.rs), `is_empty` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `serde_json` (src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `to_string` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `track_number` (src_convert.rs, src_station.rs), `unwrap_or` (fuzz_fuzz_targets_next_page.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs, src_test_support.rs), `unwrap_or_default` (fuzz_fuzz_targets_web_playback_entry.rs, src_test_support.rs), `unwrap_or_else` (src_auth.rs, src_lib.rs, src_station.rs, src_test_support.rs)
 - String literals of three words or more: 4; found: 0.
 - Comment phrases of six words: 130; found: 0.
 
@@ -2573,14 +2619,14 @@ Sources:
 ### kopuz-a58c385 signin.rs: `signin.rs`
 
 - Compound identifiers of 6 characters or more: 40; found in the new code: 11.
-  `as_secs` (src_test_support.rs), `from_millis` (src_auth.rs, src_convert.rs, src_lib.rs, src_playback.rs), `into_iter` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_playback.rs, src_station.rs, src_test_support.rs), `is_ascii_alphanumeric` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs, src_station.rs), `is_empty` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `is_none` (fuzz_fuzz_targets_web_playback_entry.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs), `is_some` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_opiums_own_readers.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_playback.rs), `map_err` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_playback.rs, src_station.rs), `ok_or_else` (src_auth.rs, src_playback.rs), `to_string` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `unwrap_or_else` (src_lib.rs, src_station.rs, src_test_support.rs)
+  `as_secs` (src_test_support.rs), `from_millis` (src_auth.rs, src_convert.rs, src_lib.rs, src_playback.rs), `into_iter` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_playback.rs, src_station.rs, src_test_support.rs), `is_ascii_alphanumeric` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs, src_station.rs), `is_empty` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `is_none` (fuzz_fuzz_targets_web_playback_entry.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs), `is_some` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_opiums_own_readers.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_playback.rs), `map_err` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_playback.rs, src_station.rs), `ok_or_else` (src_auth.rs, src_playback.rs), `to_string` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `unwrap_or_else` (src_auth.rs, src_lib.rs, src_station.rs, src_test_support.rs)
 - String literals of three words or more: 11; found: 0.
 - Comment phrases of six words: 39; found: 0.
 
 ### kopuz-a58c385 stream.rs: `stream.rs`
 
 - Compound identifiers of 6 characters or more: 131; found in the new code: 42.
-  `PartialEq` (src_playback.rs), `USER_AGENT` (src_lib.rs), `adam_id` (src_playback.rs), `and_then` (fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_test_support.rs), `as_array` (src_playback.rs), `as_bytes` (fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_test_support.rs), `as_deref` (fuzz_fuzz_targets_web_playback_entry.rs, src_convert.rs, src_lib.rs, src_playback.rs), `as_i64` (src_auth.rs), `as_object` (src_playback.rs), `as_ref` (src_lib.rs, src_playback.rs), `as_slice` (src_playback.rs), `as_str` (fuzz_fuzz_targets_web_playback_entry.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_test_support.rs), `assert_eq` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_station_answer.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs), `asset_url` (src_playback.rs), `content_length` (src_playback.rs), `from_slice` (src_auth.rs, src_mutation_tests.rs, src_playback.rs, src_test_support.rs), `from_str` (src_station.rs), `general_purpose` (src_auth.rs, src_lib.rs, src_test_support.rs), `is_ascii_alphanumeric` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs, src_station.rs), `is_empty` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `is_err` (src_playback.rs), `is_none` (fuzz_fuzz_targets_web_playback_entry.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs), `is_some_and` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs), `is_success` (src_auth.rs, src_lib.rs), `key_id` (fuzz_fuzz_targets_media_playlist.rs, src_playback.rs), `key_uri` (fuzz_fuzz_targets_media_playlist.rs, src_playback.rs), `m3u8_rs` (src_playback.rs), `map_err` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_playback.rs, src_station.rs), `media_playlist` (src_playback.rs), `ok_or_else` (src_auth.rs, src_playback.rs), `serde_json` (src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `spawn_blocking` (src_playback.rs), `split_once` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_next_page.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs, src_test_support.rs), `starts_with` (fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_next_page.rs, fuzz_fuzz_targets_opiums_own_readers.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs), `then_some` (src_playback.rs), `to_string` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `to_vec` (fuzz_fuzz_targets_station_answer.rs, src_playback.rs, src_test_support.rs), `unwrap_or` (fuzz_fuzz_targets_next_page.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs, src_test_support.rs), `unwrap_or_default` (fuzz_fuzz_targets_web_playback_entry.rs, src_test_support.rs), `unwrap_or_else` (src_lib.rs, src_station.rs, src_test_support.rs), `without_url` (src_auth.rs), `write_all` (src_test_support.rs)
+  `PartialEq` (src_playback.rs), `USER_AGENT` (src_lib.rs), `adam_id` (src_playback.rs), `and_then` (fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_test_support.rs), `as_array` (src_playback.rs), `as_bytes` (fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_test_support.rs), `as_deref` (fuzz_fuzz_targets_web_playback_entry.rs, src_convert.rs, src_lib.rs, src_playback.rs), `as_i64` (src_auth.rs), `as_object` (src_playback.rs), `as_ref` (src_lib.rs, src_playback.rs), `as_slice` (src_playback.rs), `as_str` (fuzz_fuzz_targets_web_playback_entry.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_test_support.rs), `assert_eq` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_station_answer.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs), `asset_url` (src_playback.rs), `content_length` (src_playback.rs), `from_slice` (src_auth.rs, src_mutation_tests.rs, src_playback.rs, src_test_support.rs), `from_str` (src_station.rs), `general_purpose` (src_auth.rs, src_lib.rs, src_test_support.rs), `is_ascii_alphanumeric` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs, src_station.rs), `is_empty` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `is_err` (src_playback.rs), `is_none` (fuzz_fuzz_targets_web_playback_entry.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs), `is_some_and` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs), `is_success` (src_auth.rs, src_lib.rs), `key_id` (fuzz_fuzz_targets_media_playlist.rs, src_playback.rs), `key_uri` (fuzz_fuzz_targets_media_playlist.rs, src_playback.rs), `m3u8_rs` (src_playback.rs), `map_err` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_playback.rs, src_station.rs), `media_playlist` (src_playback.rs), `ok_or_else` (src_auth.rs, src_playback.rs), `serde_json` (src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `spawn_blocking` (src_playback.rs), `split_once` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_next_page.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs, src_test_support.rs), `starts_with` (fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_next_page.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs), `then_some` (src_playback.rs), `to_string` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `to_vec` (fuzz_fuzz_targets_station_answer.rs, src_playback.rs, src_test_support.rs), `unwrap_or` (fuzz_fuzz_targets_next_page.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs, src_test_support.rs), `unwrap_or_default` (fuzz_fuzz_targets_web_playback_entry.rs, src_test_support.rs), `unwrap_or_else` (src_auth.rs, src_lib.rs, src_station.rs, src_test_support.rs), `without_url` (src_auth.rs), `write_all` (src_test_support.rs)
 - String literals of three words or more: 78; found: 0.
 - Comment phrases of six words: 595; found: 0.
 
@@ -2593,15 +2639,15 @@ Sources:
 
 ### kopuz-a58c385 apple_music.rs: `apple_music.rs`
 
-- Compound identifiers of 6 characters or more: 79; found in the new code: 27.
-  `PartialEq` (src_playback.rs), `USER_AGENT` (src_lib.rs), `and_then` (fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_test_support.rs), `as_array` (src_playback.rs), `as_deref` (fuzz_fuzz_targets_web_playback_entry.rs, src_convert.rs, src_lib.rs, src_playback.rs), `as_object` (src_playback.rs), `as_ref` (src_lib.rs, src_playback.rs), `as_str` (fuzz_fuzz_targets_web_playback_entry.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_test_support.rs), `assert_eq` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_station_answer.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs), `catalog_id` (src_convert.rs), `from_secs` (src_auth.rs, src_lib.rs, src_test_support.rs), `from_str` (src_station.rs), `from_utf8` (fuzz_fuzz_targets_ids.rs), `is_ascii_digit` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_web_playback_entry.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs), `is_empty` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `is_none` (fuzz_fuzz_targets_web_playback_entry.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs), `is_success` (src_auth.rs, src_lib.rs), `is_whitespace` (src_auth.rs), `map_err` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_playback.rs, src_station.rs), `map_or` (src_lib.rs), `or_else` (src_auth.rs), `parse_ttml` (src_lib.rs), `push_str` (src_lib.rs, src_test_support.rs), `serde_json` (src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `to_string` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `to_vec` (fuzz_fuzz_targets_station_answer.rs, src_playback.rs, src_test_support.rs), `unwrap_or` (fuzz_fuzz_targets_next_page.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs, src_test_support.rs)
+- Compound identifiers of 6 characters or more: 79; found in the new code: 26.
+  `PartialEq` (src_playback.rs), `USER_AGENT` (src_lib.rs), `and_then` (fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_test_support.rs), `as_array` (src_playback.rs), `as_deref` (fuzz_fuzz_targets_web_playback_entry.rs, src_convert.rs, src_lib.rs, src_playback.rs), `as_object` (src_playback.rs), `as_ref` (src_lib.rs, src_playback.rs), `as_str` (fuzz_fuzz_targets_web_playback_entry.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_test_support.rs), `assert_eq` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_station_answer.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs), `catalog_id` (src_convert.rs), `from_secs` (src_auth.rs, src_lib.rs, src_test_support.rs), `from_str` (src_station.rs), `from_utf8` (fuzz_fuzz_targets_ids.rs), `is_ascii_digit` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_web_playback_entry.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs), `is_empty` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `is_none` (fuzz_fuzz_targets_web_playback_entry.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs), `is_success` (src_auth.rs, src_lib.rs), `map_err` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_playback.rs, src_station.rs), `map_or` (src_lib.rs), `or_else` (src_auth.rs), `parse_ttml` (src_lib.rs), `push_str` (src_lib.rs, src_test_support.rs), `serde_json` (src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `to_string` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `to_vec` (fuzz_fuzz_targets_station_answer.rs, src_playback.rs, src_test_support.rs), `unwrap_or` (fuzz_fuzz_targets_next_page.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs, src_test_support.rs)
 - String literals of three words or more: 18; found: 0.
 - Comment phrases of six words: 78; found: 0.
 
 ### kopuz-1d8b323 api.rs: `api.rs`
 
 - Compound identifiers of 6 characters or more: 125; found in the new code: 34.
-  `DeserializeOwned` (src_convert.rs), `HashSet` (src_lib.rs, src_mutation_tests.rs, src_station.rs), `USER_AGENT` (src_lib.rs), `and_then` (fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_test_support.rs), `as_array` (src_playback.rs), `as_deref` (fuzz_fuzz_targets_web_playback_entry.rs, src_convert.rs, src_lib.rs, src_playback.rs), `as_ref` (src_lib.rs, src_playback.rs), `as_str` (fuzz_fuzz_targets_web_playback_entry.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_test_support.rs), `as_u16` (src_lib.rs), `assert_eq` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_station_answer.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs), `catalog_id` (src_convert.rs), `from_str` (src_station.rs), `from_value` (src_convert.rs), `futures_util` (src_lib.rs), `into_iter` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_playback.rs, src_station.rs, src_test_support.rs), `into_owned` (src_auth.rs, src_lib.rs, src_test_support.rs), `is_ascii_digit` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_web_playback_entry.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs), `is_empty` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `is_none` (fuzz_fuzz_targets_web_playback_entry.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs), `is_some` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_opiums_own_readers.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_playback.rs), `is_some_and` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs), `is_success` (src_auth.rs, src_lib.rs), `join_all` (src_lib.rs), `map_err` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_playback.rs, src_station.rs), `map_or` (src_lib.rs), `ok_or_else` (src_auth.rs, src_playback.rs), `serde_json` (src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `split_once` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_next_page.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs, src_test_support.rs), `starts_with` (fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_next_page.rs, fuzz_fuzz_targets_opiums_own_readers.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs), `station_id` (fuzz_fuzz_targets_ids.rs, src_fuzzing.rs, src_lib.rs, src_mutation_tests.rs, src_station.rs), `strip_prefix` (fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_test_support.rs), `to_string` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `unwrap_or` (fuzz_fuzz_targets_next_page.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs, src_test_support.rs), `unwrap_or_default` (fuzz_fuzz_targets_web_playback_entry.rs, src_test_support.rs)
+  `DeserializeOwned` (src_convert.rs), `HashSet` (src_lib.rs, src_mutation_tests.rs, src_station.rs), `USER_AGENT` (src_lib.rs), `and_then` (fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_test_support.rs), `as_array` (src_playback.rs), `as_deref` (fuzz_fuzz_targets_web_playback_entry.rs, src_convert.rs, src_lib.rs, src_playback.rs), `as_ref` (src_lib.rs, src_playback.rs), `as_str` (fuzz_fuzz_targets_web_playback_entry.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_test_support.rs), `as_u16` (src_lib.rs), `assert_eq` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_station_answer.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs), `catalog_id` (src_convert.rs), `from_str` (src_station.rs), `from_value` (src_convert.rs), `futures_util` (src_lib.rs), `into_iter` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_playback.rs, src_station.rs, src_test_support.rs), `into_owned` (src_auth.rs, src_lib.rs, src_test_support.rs), `is_ascii_digit` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_web_playback_entry.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs), `is_empty` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `is_none` (fuzz_fuzz_targets_web_playback_entry.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs), `is_some` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_opiums_own_readers.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_playback.rs), `is_some_and` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs), `is_success` (src_auth.rs, src_lib.rs), `join_all` (src_lib.rs), `map_err` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_playback.rs, src_station.rs), `map_or` (src_lib.rs), `ok_or_else` (src_auth.rs, src_playback.rs), `serde_json` (src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `split_once` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_next_page.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs, src_test_support.rs), `starts_with` (fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_next_page.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs), `station_id` (fuzz_fuzz_targets_ids.rs, src_fuzzing.rs, src_lib.rs, src_mutation_tests.rs, src_station.rs), `strip_prefix` (fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_test_support.rs), `to_string` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `unwrap_or` (fuzz_fuzz_targets_next_page.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs, src_test_support.rs), `unwrap_or_default` (fuzz_fuzz_targets_web_playback_entry.rs, src_test_support.rs)
 - String literals of three words or more: 116; found: 0.
 - Comment phrases of six words: 787; found: 0.
 
@@ -2615,14 +2661,14 @@ Sources:
 ### kopuz-1d8b323 cenc.rs: `cenc.rs`
 
 - Compound identifiers of 6 characters or more: 135; found in the new code: 19.
-  `PartialEq` (src_playback.rs), `and_then` (fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_test_support.rs), `as_ref` (src_lib.rs, src_playback.rs), `assert_eq` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_station_answer.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs), `checked_add` (src_auth.rs, src_playback.rs), `extend_from_slice` (src_auth.rs, src_playback.rs), `is_empty` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `is_none` (fuzz_fuzz_targets_web_playback_entry.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs), `is_some_and` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs), `key_id` (fuzz_fuzz_targets_media_playlist.rs, src_playback.rs), `saturating_sub` (src_station.rs, src_test_support.rs), `to_be_bytes` (src_test_support.rs), `to_string` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `to_vec` (fuzz_fuzz_targets_station_answer.rs, src_playback.rs, src_test_support.rs), `try_into` (src_playback.rs), `unwrap_or` (fuzz_fuzz_targets_next_page.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs, src_test_support.rs), `unwrap_or_default` (fuzz_fuzz_targets_web_playback_entry.rs, src_test_support.rs), `unwrap_or_else` (src_lib.rs, src_station.rs, src_test_support.rs), `with_capacity` (fuzz_fuzz_targets_common_mod.rs)
+  `PartialEq` (src_playback.rs), `and_then` (fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_test_support.rs), `as_ref` (src_lib.rs, src_playback.rs), `assert_eq` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_station_answer.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs), `checked_add` (src_auth.rs, src_playback.rs), `extend_from_slice` (src_auth.rs, src_playback.rs), `is_empty` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `is_none` (fuzz_fuzz_targets_web_playback_entry.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs), `is_some_and` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs), `key_id` (fuzz_fuzz_targets_media_playlist.rs, src_playback.rs), `saturating_sub` (src_station.rs, src_test_support.rs), `to_be_bytes` (src_test_support.rs), `to_string` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `to_vec` (fuzz_fuzz_targets_station_answer.rs, src_playback.rs, src_test_support.rs), `try_into` (src_playback.rs), `unwrap_or` (fuzz_fuzz_targets_next_page.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs, src_test_support.rs), `unwrap_or_default` (fuzz_fuzz_targets_web_playback_entry.rs, src_test_support.rs), `unwrap_or_else` (src_auth.rs, src_lib.rs, src_station.rs, src_test_support.rs), `with_capacity` (fuzz_fuzz_targets_common_mod.rs)
 - String literals of three words or more: 23; found: 0.
 - Comment phrases of six words: 408; found: 0.
 
 ### kopuz-1d8b323 mod.rs: `mod.rs`
 
 - Compound identifiers of 6 characters or more: 57; found in the new code: 19.
-  `AppleMusic` (src_convert.rs, src_lib.rs, src_playback.rs, src_station.rs, src_test_support.rs), `adam_id` (src_playback.rs), `album_id` (src_convert.rs, src_station.rs), `and_then` (fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_test_support.rs), `artist_id` (src_convert.rs), `as_deref` (fuzz_fuzz_targets_web_playback_entry.rs, src_convert.rs, src_lib.rs, src_playback.rs), `as_ref` (src_lib.rs, src_playback.rs), `as_str` (fuzz_fuzz_targets_web_playback_entry.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_test_support.rs), `assert_eq` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_station_answer.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs), `catalog_id` (src_convert.rs), `disc_number` (src_convert.rs, src_station.rs), `from_value` (src_convert.rs), `is_empty` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `serde_json` (src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `to_string` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `track_number` (src_convert.rs, src_station.rs), `unwrap_or` (fuzz_fuzz_targets_next_page.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs, src_test_support.rs), `unwrap_or_default` (fuzz_fuzz_targets_web_playback_entry.rs, src_test_support.rs), `unwrap_or_else` (src_lib.rs, src_station.rs, src_test_support.rs)
+  `AppleMusic` (src_convert.rs, src_lib.rs, src_playback.rs, src_station.rs, src_test_support.rs), `adam_id` (src_playback.rs), `album_id` (src_convert.rs, src_station.rs), `and_then` (fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_test_support.rs), `artist_id` (src_convert.rs), `as_deref` (fuzz_fuzz_targets_web_playback_entry.rs, src_convert.rs, src_lib.rs, src_playback.rs), `as_ref` (src_lib.rs, src_playback.rs), `as_str` (fuzz_fuzz_targets_web_playback_entry.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_test_support.rs), `assert_eq` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_station_answer.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs), `catalog_id` (src_convert.rs), `disc_number` (src_convert.rs, src_station.rs), `from_value` (src_convert.rs), `is_empty` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `serde_json` (src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `to_string` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `track_number` (src_convert.rs, src_station.rs), `unwrap_or` (fuzz_fuzz_targets_next_page.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs, src_test_support.rs), `unwrap_or_default` (fuzz_fuzz_targets_web_playback_entry.rs, src_test_support.rs), `unwrap_or_else` (src_auth.rs, src_lib.rs, src_station.rs, src_test_support.rs)
 - String literals of three words or more: 4; found: 0.
 - Comment phrases of six words: 130; found: 0.
 
@@ -2636,14 +2682,14 @@ Sources:
 ### kopuz-1d8b323 signin.rs: `signin.rs`
 
 - Compound identifiers of 6 characters or more: 40; found in the new code: 11.
-  `as_secs` (src_test_support.rs), `from_millis` (src_auth.rs, src_convert.rs, src_lib.rs, src_playback.rs), `into_iter` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_playback.rs, src_station.rs, src_test_support.rs), `is_ascii_alphanumeric` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs, src_station.rs), `is_empty` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `is_none` (fuzz_fuzz_targets_web_playback_entry.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs), `is_some` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_opiums_own_readers.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_playback.rs), `map_err` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_playback.rs, src_station.rs), `ok_or_else` (src_auth.rs, src_playback.rs), `to_string` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `unwrap_or_else` (src_lib.rs, src_station.rs, src_test_support.rs)
+  `as_secs` (src_test_support.rs), `from_millis` (src_auth.rs, src_convert.rs, src_lib.rs, src_playback.rs), `into_iter` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_playback.rs, src_station.rs, src_test_support.rs), `is_ascii_alphanumeric` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs, src_station.rs), `is_empty` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `is_none` (fuzz_fuzz_targets_web_playback_entry.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs), `is_some` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_opiums_own_readers.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_playback.rs), `map_err` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_playback.rs, src_station.rs), `ok_or_else` (src_auth.rs, src_playback.rs), `to_string` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `unwrap_or_else` (src_auth.rs, src_lib.rs, src_station.rs, src_test_support.rs)
 - String literals of three words or more: 11; found: 0.
 - Comment phrases of six words: 39; found: 0.
 
 ### kopuz-1d8b323 stream.rs: `stream.rs`
 
 - Compound identifiers of 6 characters or more: 131; found in the new code: 42.
-  `PartialEq` (src_playback.rs), `USER_AGENT` (src_lib.rs), `adam_id` (src_playback.rs), `and_then` (fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_test_support.rs), `as_array` (src_playback.rs), `as_bytes` (fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_test_support.rs), `as_deref` (fuzz_fuzz_targets_web_playback_entry.rs, src_convert.rs, src_lib.rs, src_playback.rs), `as_i64` (src_auth.rs), `as_object` (src_playback.rs), `as_ref` (src_lib.rs, src_playback.rs), `as_slice` (src_playback.rs), `as_str` (fuzz_fuzz_targets_web_playback_entry.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_test_support.rs), `assert_eq` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_station_answer.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs), `asset_url` (src_playback.rs), `content_length` (src_playback.rs), `from_slice` (src_auth.rs, src_mutation_tests.rs, src_playback.rs, src_test_support.rs), `from_str` (src_station.rs), `general_purpose` (src_auth.rs, src_lib.rs, src_test_support.rs), `is_ascii_alphanumeric` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs, src_station.rs), `is_empty` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `is_err` (src_playback.rs), `is_none` (fuzz_fuzz_targets_web_playback_entry.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs), `is_some_and` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs), `is_success` (src_auth.rs, src_lib.rs), `key_id` (fuzz_fuzz_targets_media_playlist.rs, src_playback.rs), `key_uri` (fuzz_fuzz_targets_media_playlist.rs, src_playback.rs), `m3u8_rs` (src_playback.rs), `map_err` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_playback.rs, src_station.rs), `media_playlist` (src_playback.rs), `ok_or_else` (src_auth.rs, src_playback.rs), `serde_json` (src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `spawn_blocking` (src_playback.rs), `split_once` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_next_page.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs, src_test_support.rs), `starts_with` (fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_next_page.rs, fuzz_fuzz_targets_opiums_own_readers.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs), `then_some` (src_playback.rs), `to_string` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `to_vec` (fuzz_fuzz_targets_station_answer.rs, src_playback.rs, src_test_support.rs), `unwrap_or` (fuzz_fuzz_targets_next_page.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs, src_test_support.rs), `unwrap_or_default` (fuzz_fuzz_targets_web_playback_entry.rs, src_test_support.rs), `unwrap_or_else` (src_lib.rs, src_station.rs, src_test_support.rs), `without_url` (src_auth.rs), `write_all` (src_test_support.rs)
+  `PartialEq` (src_playback.rs), `USER_AGENT` (src_lib.rs), `adam_id` (src_playback.rs), `and_then` (fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_test_support.rs), `as_array` (src_playback.rs), `as_bytes` (fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_test_support.rs), `as_deref` (fuzz_fuzz_targets_web_playback_entry.rs, src_convert.rs, src_lib.rs, src_playback.rs), `as_i64` (src_auth.rs), `as_object` (src_playback.rs), `as_ref` (src_lib.rs, src_playback.rs), `as_slice` (src_playback.rs), `as_str` (fuzz_fuzz_targets_web_playback_entry.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_test_support.rs), `assert_eq` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_station_answer.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs), `asset_url` (src_playback.rs), `content_length` (src_playback.rs), `from_slice` (src_auth.rs, src_mutation_tests.rs, src_playback.rs, src_test_support.rs), `from_str` (src_station.rs), `general_purpose` (src_auth.rs, src_lib.rs, src_test_support.rs), `is_ascii_alphanumeric` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs, src_station.rs), `is_empty` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `is_err` (src_playback.rs), `is_none` (fuzz_fuzz_targets_web_playback_entry.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs), `is_some_and` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs), `is_success` (src_auth.rs, src_lib.rs), `key_id` (fuzz_fuzz_targets_media_playlist.rs, src_playback.rs), `key_uri` (fuzz_fuzz_targets_media_playlist.rs, src_playback.rs), `m3u8_rs` (src_playback.rs), `map_err` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_playback.rs, src_station.rs), `media_playlist` (src_playback.rs), `ok_or_else` (src_auth.rs, src_playback.rs), `serde_json` (src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `spawn_blocking` (src_playback.rs), `split_once` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_next_page.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs, src_test_support.rs), `starts_with` (fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_next_page.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs), `then_some` (src_playback.rs), `to_string` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `to_vec` (fuzz_fuzz_targets_station_answer.rs, src_playback.rs, src_test_support.rs), `unwrap_or` (fuzz_fuzz_targets_next_page.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs, src_test_support.rs), `unwrap_or_default` (fuzz_fuzz_targets_web_playback_entry.rs, src_test_support.rs), `unwrap_or_else` (src_auth.rs, src_lib.rs, src_station.rs, src_test_support.rs), `without_url` (src_auth.rs), `write_all` (src_test_support.rs)
 - String literals of three words or more: 78; found: 0.
 - Comment phrases of six words: 595; found: 0.
 
@@ -2656,8 +2702,8 @@ Sources:
 
 ### kopuz-1d8b323 apple_music.rs: `apple_music.rs`
 
-- Compound identifiers of 6 characters or more: 79; found in the new code: 27.
-  `PartialEq` (src_playback.rs), `USER_AGENT` (src_lib.rs), `and_then` (fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_test_support.rs), `as_array` (src_playback.rs), `as_deref` (fuzz_fuzz_targets_web_playback_entry.rs, src_convert.rs, src_lib.rs, src_playback.rs), `as_object` (src_playback.rs), `as_ref` (src_lib.rs, src_playback.rs), `as_str` (fuzz_fuzz_targets_web_playback_entry.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_test_support.rs), `assert_eq` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_station_answer.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs), `catalog_id` (src_convert.rs), `from_secs` (src_auth.rs, src_lib.rs, src_test_support.rs), `from_str` (src_station.rs), `from_utf8` (fuzz_fuzz_targets_ids.rs), `is_ascii_digit` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_web_playback_entry.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs), `is_empty` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `is_none` (fuzz_fuzz_targets_web_playback_entry.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs), `is_success` (src_auth.rs, src_lib.rs), `is_whitespace` (src_auth.rs), `map_err` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_playback.rs, src_station.rs), `map_or` (src_lib.rs), `or_else` (src_auth.rs), `parse_ttml` (src_lib.rs), `push_str` (src_lib.rs, src_test_support.rs), `serde_json` (src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `to_string` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `to_vec` (fuzz_fuzz_targets_station_answer.rs, src_playback.rs, src_test_support.rs), `unwrap_or` (fuzz_fuzz_targets_next_page.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs, src_test_support.rs)
+- Compound identifiers of 6 characters or more: 79; found in the new code: 26.
+  `PartialEq` (src_playback.rs), `USER_AGENT` (src_lib.rs), `and_then` (fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_test_support.rs), `as_array` (src_playback.rs), `as_deref` (fuzz_fuzz_targets_web_playback_entry.rs, src_convert.rs, src_lib.rs, src_playback.rs), `as_object` (src_playback.rs), `as_ref` (src_lib.rs, src_playback.rs), `as_str` (fuzz_fuzz_targets_web_playback_entry.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_test_support.rs), `assert_eq` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_station_answer.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs), `catalog_id` (src_convert.rs), `from_secs` (src_auth.rs, src_lib.rs, src_test_support.rs), `from_str` (src_station.rs), `from_utf8` (fuzz_fuzz_targets_ids.rs), `is_ascii_digit` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_web_playback_entry.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs), `is_empty` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `is_none` (fuzz_fuzz_targets_web_playback_entry.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs), `is_success` (src_auth.rs, src_lib.rs), `map_err` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_playback.rs, src_station.rs), `map_or` (src_lib.rs), `or_else` (src_auth.rs), `parse_ttml` (src_lib.rs), `push_str` (src_lib.rs, src_test_support.rs), `serde_json` (src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `to_string` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `to_vec` (fuzz_fuzz_targets_station_answer.rs, src_playback.rs, src_test_support.rs), `unwrap_or` (fuzz_fuzz_targets_next_page.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs, src_test_support.rs)
 - String literals of three words or more: 18; found: 0.
 - Comment phrases of six words: 78; found: 0.
 
@@ -2678,7 +2724,7 @@ Sources:
 ### removed@3d7b225 lib.rs: `lib.rs`
 
 - Compound identifiers of 6 characters or more: 34; found in the new code: 25.
-  `LyricsResponse` (src_lib.rs), `and_then` (fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_test_support.rs), `apple_id` (fuzz_fuzz_targets_ids.rs, src_fuzzing.rs, src_lib.rs, src_mutation_tests.rs), `as_deref` (fuzz_fuzz_targets_web_playback_entry.rs, src_convert.rs, src_lib.rs, src_playback.rs), `assert_eq` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_station_answer.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs), `at_offset` (fuzz_fuzz_targets_next_page.rs, src_fuzzing.rs, src_lib.rs, src_mutation_tests.rs), `ends_with` (src_auth.rs, src_lib.rs), `find_map` (src_auth.rs, src_lib.rs), `get_or_insert` (src_station.rs), `into_iter` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_playback.rs, src_station.rs, src_test_support.rs), `into_owned` (src_auth.rs, src_lib.rs, src_test_support.rs), `is_ascii_alphanumeric` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs, src_station.rs), `is_ascii_digit` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_web_playback_entry.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs), `is_ascii_lowercase` (fuzz_fuzz_targets_ids.rs, src_lib.rs), `is_empty` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `is_err` (src_playback.rs), `is_some_and` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs), `is_success` (src_auth.rs, src_lib.rs), `map_err` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_playback.rs, src_station.rs), `parse_ttml` (src_lib.rs), `query_pairs` (src_lib.rs), `split_once` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_next_page.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs, src_test_support.rs), `to_owned` (src_auth.rs, src_lib.rs, src_playback.rs, src_test_support.rs), `unwrap_or_else` (src_lib.rs, src_station.rs, src_test_support.rs), `user_token` (src_lib.rs, src_playback.rs)
+  `LyricsResponse` (src_lib.rs), `and_then` (fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_test_support.rs), `apple_id` (fuzz_fuzz_targets_ids.rs, src_fuzzing.rs, src_lib.rs, src_mutation_tests.rs), `as_deref` (fuzz_fuzz_targets_web_playback_entry.rs, src_convert.rs, src_lib.rs, src_playback.rs), `assert_eq` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_station_answer.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs), `at_offset` (fuzz_fuzz_targets_next_page.rs, src_fuzzing.rs, src_lib.rs, src_mutation_tests.rs), `ends_with` (src_lib.rs), `find_map` (src_lib.rs), `get_or_insert` (src_station.rs), `into_iter` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_playback.rs, src_station.rs, src_test_support.rs), `into_owned` (src_auth.rs, src_lib.rs, src_test_support.rs), `is_ascii_alphanumeric` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs, src_station.rs), `is_ascii_digit` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_web_playback_entry.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs), `is_ascii_lowercase` (fuzz_fuzz_targets_ids.rs, src_lib.rs), `is_empty` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `is_err` (src_playback.rs), `is_some_and` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs), `is_success` (src_auth.rs, src_lib.rs), `map_err` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_playback.rs, src_station.rs), `parse_ttml` (src_lib.rs), `query_pairs` (src_lib.rs), `split_once` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_next_page.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs, src_test_support.rs), `to_owned` (src_auth.rs, src_lib.rs, src_playback.rs, src_test_support.rs), `unwrap_or_else` (src_auth.rs, src_lib.rs, src_station.rs, src_test_support.rs), `user_token` (src_lib.rs, src_playback.rs)
 - String literals of three words or more: 3; found: 2.
   - `"not an Apple Music id: {id:?}"`
   - `"the station offered no songs"`
@@ -2687,7 +2733,7 @@ Sources:
 ### removed@3d7b225 playback.rs: `playback.rs`
 
 - Compound identifiers of 6 characters or more: 49; found in the new code: 35.
-  `AudioStream` (src_playback.rs), `EncryptedFile` (src_playback.rs), `PartialEq` (src_playback.rs), `adam_id` (src_playback.rs), `and_then` (fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_test_support.rs), `as_array` (src_playback.rs), `as_deref` (fuzz_fuzz_targets_web_playback_entry.rs, src_convert.rs, src_lib.rs, src_playback.rs), `as_i64` (src_auth.rs), `as_ref` (src_lib.rs, src_playback.rs), `as_slice` (src_playback.rs), `as_str` (fuzz_fuzz_targets_web_playback_entry.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_test_support.rs), `assert_eq` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_station_answer.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs), `filter_map` (fuzz_fuzz_targets_web_playback_entry.rs, src_lib.rs, src_playback.rs), `give_licence` (src_playback.rs), `is_ascii_alphanumeric` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs, src_station.rs), `is_empty` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `is_library` (src_playback.rs), `is_none` (fuzz_fuzz_targets_web_playback_entry.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs), `json_body` (src_playback.rs), `key_id` (fuzz_fuzz_targets_media_playlist.rs, src_playback.rs), `key_uri` (fuzz_fuzz_targets_media_playlist.rs, src_playback.rs), `m3u8_rs` (src_playback.rs), `map_err` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_playback.rs, src_station.rs), `map_or` (src_lib.rs), `ok_or_else` (src_auth.rs, src_playback.rs), `parse_media_playlist_res` (src_playback.rs), `playback_error` (src_playback.rs), `playlist_url` (src_playback.rs), `serde_json` (src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `split_once` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_next_page.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs, src_test_support.rs), `starts_with` (fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_next_page.rs, fuzz_fuzz_targets_opiums_own_readers.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs), `to_owned` (src_auth.rs, src_lib.rs, src_playback.rs, src_test_support.rs), `to_string` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `try_into` (src_playback.rs), `user_token` (src_lib.rs, src_playback.rs)
+  `AudioStream` (src_playback.rs), `EncryptedFile` (src_playback.rs), `PartialEq` (src_playback.rs), `adam_id` (src_playback.rs), `and_then` (fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_test_support.rs), `as_array` (src_playback.rs), `as_deref` (fuzz_fuzz_targets_web_playback_entry.rs, src_convert.rs, src_lib.rs, src_playback.rs), `as_i64` (src_auth.rs), `as_ref` (src_lib.rs, src_playback.rs), `as_slice` (src_playback.rs), `as_str` (fuzz_fuzz_targets_web_playback_entry.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_test_support.rs), `assert_eq` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_station_answer.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs), `filter_map` (fuzz_fuzz_targets_web_playback_entry.rs, src_lib.rs, src_playback.rs), `give_licence` (src_playback.rs), `is_ascii_alphanumeric` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs, src_station.rs), `is_empty` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_licence_answer.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `is_library` (src_playback.rs), `is_none` (fuzz_fuzz_targets_web_playback_entry.rs, src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs), `json_body` (src_playback.rs), `key_id` (fuzz_fuzz_targets_media_playlist.rs, src_playback.rs), `key_uri` (fuzz_fuzz_targets_media_playlist.rs, src_playback.rs), `m3u8_rs` (src_playback.rs), `map_err` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_playback.rs, src_station.rs), `map_or` (src_lib.rs), `ok_or_else` (src_auth.rs, src_playback.rs), `parse_media_playlist_res` (src_playback.rs), `playback_error` (src_playback.rs), `playlist_url` (src_playback.rs), `serde_json` (src_auth.rs, src_convert.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `split_once` (fuzz_fuzz_targets_ids.rs, fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_next_page.rs, fuzz_fuzz_targets_web_playback_entry.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_playback.rs, src_test_support.rs), `starts_with` (fuzz_fuzz_targets_media_playlist.rs, fuzz_fuzz_targets_next_page.rs, fuzz_fuzz_targets_opiums_own_readers.rs, fuzz_fuzz_targets_web_player.rs, src_auth.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs), `to_owned` (src_auth.rs, src_lib.rs, src_playback.rs, src_test_support.rs), `to_string` (src_auth.rs, src_fuzzing.rs, src_lib.rs, src_mutation_tests.rs, src_playback.rs, src_station.rs, src_test_support.rs), `try_into` (src_playback.rs), `user_token` (src_lib.rs, src_playback.rs)
 - String literals of three words or more: 6; found: 4.
   - `"licence refused (errorCode {code})"`
   - `"licence response without a licence"`
