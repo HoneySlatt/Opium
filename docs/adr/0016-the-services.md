@@ -1,6 +1,7 @@
 # 0016. The services: Apple Music, SoundCloud, Navidrome and the device's own files
 
-- Status: Accepted
+- Status: Accepted; amended by [0034](0034-what-opium-is-to-become.md)
+  (Jellyfin and Plex to come; each online service an optional piece)
 - Date: 2026-11-02
 
 ## Context

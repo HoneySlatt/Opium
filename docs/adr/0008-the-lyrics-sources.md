@@ -1,6 +1,7 @@
 # 0008. Lyrics: the song's own source first, then the sites, LRCLIB alone by default
 
-- Status: Accepted
+- Status: Accepted; amended by [0034](0034-what-opium-is-to-become.md)
+  (word by word, translated, offline; the other sites an optional piece)
 - Date: 2026-10-30; LRCLIB alone by default since 2026-10-31
 
 ## Context

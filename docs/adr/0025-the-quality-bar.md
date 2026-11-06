@@ -1,6 +1,7 @@
 # 0025. The quality bar: tiers and budgets
 
-- Status: Accepted
+- Status: Accepted; amended by [0034](0034-what-opium-is-to-become.md)
+  (the lowest desktop named after a real machine; a tier without a screen; 100,000 songs)
 - Date: 2026-11-05
 
 ## Context

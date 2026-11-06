@@ -22,6 +22,17 @@ work is in [`PLAN.md`](PLAN.md); a stage's audit adds what it leaves open.
   - the exit hang inside eframe's teardown ([ADR-0021](adr/0021-the-exit-watch.md),
     [ADR-0024](adr/0024-the-exit-watch-aborts-for-a-core-dump.md));
   - the interface's state and logic mixed with egui in `app.rs`, taken out as part of the move.
+- **Tags are written in place**: `local::write_tags` on the desktop, and `local::write_tags_to` on
+  the phone (through `opium-ffi`), rewrite the user's file where it is, so a crash or a full disk
+  during the write can damage the song, against the rule that writes go aside and are renamed. On
+  the phone, Android's file access may not allow a rename. Found on 2026-11-06 while recording
+  [ADR-0034](adr/0034-what-opium-is-to-become.md). A loss of data, which the standby allows fixing:
+  it stays until the owner's go, the next fix the [PLAN](PLAN.md#current) proposes.
+- **Away from home cannot be turned off**: the desktop always asks for it (`desktop::devices`,
+  `set_away(true)`), so n0's relays and address lookup are reached even before any device is paired;
+  Settings only changes the relay. The README said it could be turned off until 2026-11-06. It stays
+  until the owner decides whether it may be turned off, open in the [ROADMAP](ROADMAP.md#open) for
+  Stage 8.
 - **The dependencies are not checked**: `cargo deny` finds three advisories against `zstd`
   (RUSTSEC-2026-0391, -0398, -0403), six unmaintained crates and a yanked `async-executor`; a
   passing `deny.toml` would ignore them or update `Cargo.lock`, the owner's call at Stage 2.

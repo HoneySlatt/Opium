@@ -1,7 +1,8 @@
 # 0010. Opium Connect on the local network: mDNS, TCP 47820, SPAKE2 and Noise
 
 - Status: Accepted; amended by [0015](0015-away-from-home-through-iroh.md) (paired devices also
-  reach each other away from home)
+  reach each other away from home) and [0034](0034-what-opium-is-to-become.md) (resuming and
+  handing over at their best; a guest on the local network, its trust designed first)
 - Date: 2026-10-30
 
 ## Context

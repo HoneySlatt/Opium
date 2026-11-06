@@ -8,6 +8,9 @@ uwui, shown by an example and its tests (SlimeEngine's ADR-0170). This file is t
 
 Each need was found in the code of `crates/app-desktop`; the inventory written for ADR-0170 on
 2026-11-04 was not kept, so this one replaces it.
+[Its last section](#what-adr-0034-asks-of-uwui) adds what the owner's requirements ask beyond
+today's window ([ADR-0034](adr/0034-what-opium-is-to-become.md)); its needs are counted
+apart from the 113 below.
 
 ## How to read it
 
@@ -222,7 +225,7 @@ theme with its own durations (`ui/motion.rs:25-30`).
 | A field limited in length (the six-digit pairing code), centred | `ui/pairing.rs:153-167` | Given: `char_limit`, `align` | Indispensable |
 | Copying and pasting in fields, and copying to the clipboard from code | `app.rs:6189`, `ui/window_bar.rs:162` | Given: `copy_text`, `TextEdit` | Indispensable |
 | Input methods in fields, for Japanese or Chinese searches | `ui/window_bar.rs:162` and every field | Given: `TextEdit` takes IME input | Indispensable |
-| Right-to-left text laid out right to left | none | Missing | Wished: the quality bar asks it only if Opium is translated |
+| Right-to-left text laid out right to left | none | Missing | Wished: Opium is to be translated, English and French first ([ADR-0034](adr/0034-what-opium-is-to-become.md)); this becomes indispensable once a right-to-left language is planned |
 | Drawn text selected and copied | none | Unused: `Label::selectable`, but Opium paints its text by hand | Wished: nothing asks it |
 
 ## The system
@@ -253,8 +256,91 @@ it ([Accessibility](ROADMAP.md#quality-bar)).
 
 ## What uwui must hold
 
-The figures the window reaches with egui today, and the budgets the owner set for uwui, are in
-the [quality bar](ROADMAP.md#quality-bar) and [`measurements.md`](measurements.md). Nothing is drawn
-at rest. The display's rate holds while scrolling and animating, on the high tier (4K at 240 Hz)
-and on the lowest (a 2015 laptop with its integrated GPU, at 60 Hz). The bar also sets the start-up
-time and the memory at rest and while scrolling the whole library.
+The figures the window reaches with egui today, and the budgets the owner set for uwui, are in the
+[quality bar](ROADMAP.md#quality-bar) and [`measurements.md`](measurements.md). Nothing is drawn at
+rest. The display's rate holds while scrolling and animating, on the high tier (4K at 240 Hz) and on
+the lowest (the owner's very modest laptop, an HP Laptop 17-ca2xxx with an Athlon Silver 3050U, the
+one uwui measures first; [ADR-0034](adr/0034-what-opium-is-to-become.md)). The bar also sets the
+start-up time and the memory at rest and while scrolling the whole library.
+
+## What ADR-0034 asks of uwui
+
+The rows above come from today's window. The owner's requirements of 2026-11-06
+([ADR-0034](adr/0034-what-opium-is-to-become.md)) ask more of uwui: a few for the move itself, the
+rest for Opium's later stages. uwui takes an application's need only if it is general (SlimeEngine's
+ADR-0170), so the needs are split in two. The third column says whether uwui's own requirements
+(SlimeEngine's ADR-0190 and ADR-0199, uwui's ROADMAP) hold the need already, as read on 2026-11-06;
+*precision* means they hold it in general terms and Opium says what it needs exactly.
+
+### Opium's state, for M6d.1b3b
+
+SlimeEngine's M6d.1b3b chooses how an application's state changes its interface, on the bench that
+M6d.1b2 builds and M6d.1b3a extends. These are the changes Opium makes, from the most frequent to
+the rarest. Each must leave the window's thread free and draw nothing once it is over.
+
+- **Every frame while something moves**: the progress (the wave), the word filling in the lyrics,
+  springs, a gesture's drag. Only a few drawn properties change; no view of the page should be
+  built again for them.
+- **Every second**: the time played.
+- **In bursts, from other threads**: search results arriving service by service, within 100 ms to
+  2 s; a library sync changing thousands of rows at once; covers decoded while the user scrolls;
+  a download's progress.
+- **From another device**: a paired device editing the queue or the history, playback handed over
+  to this device.
+- **By the user**: a sort, a filter or a selection over 100,000 rows; a song dragged in the queue.
+- **Rarely**: the theme or the language changed, which touches every element.
+
+In each case the screen changes in place, animated, the item the user looks at and the selection
+kept: an insertion above the visible rows does not move them. SlimeEngine's ADR-0202 scripts Opium's
+table (scroll, the wave, a sort, the selection, the theme), which covers the frequent and the user's
+changes; it does not yet insert or change rows from another thread while the table is scrolled, nor
+keep its anchor and selection then. That case is the one most likely to separate the four ways of
+changing state that M6d.1b compares: rebuilding by keys (today's, the control), signals, views that
+say they changed, and messages.
+
+### General needs
+
+The mark follows this file's rule, against the quality bar of 0.1.0, as the owner chose on
+2026-11-06: of these 20 needs, 5 are indispensable to the end of Stage 6d; the others are wished,
+each with the stage of Opium's that asks it where there is one.
+
+| Need | Opium's use | In uwui's requirements | Mark |
+|---|---|---|---|
+| A list or table of 100,000 rows changed in place: rows inserted, removed, moved and updated by key, at the cost of the change and not of the list, animated, the visible item and the selection kept by identity | A library syncing, search results, the queue edited from another device | Precision: ADR-0190 has a table of millions of rows, not its live changes | Indispensable: the quality bar's 100,000 songs |
+| State changed from other threads and tasks, in bursts, gathered into the next frame, the window's thread never waiting | Every service, Connect, the covers, the downloads | Precision: ADR-0190's two executors; the state model decides how | Indispensable: with the row above |
+| Values that change every frame bound to drawn properties alone, without building views again | The wave, the lyrics, springs | Precision: the state model | Wished |
+| A text range's style animated over time without laying the text out again | A word filling as it is sung | New | Wished |
+| The window's state restored at start: the navigation's stack, each list's scroll by the item shown rather than by pixels, the selection, the panels, the size | Opium returns where the user was, its library changed meanwhile | Precision: ADR-0190 restores size, place, panels, tabs and scroll | Wished: Stage 6 |
+| An element flying from one screen to the next; animations driven by a finger or the touchpad, interrupted without a jump; predictive back | The cover from the grid to the album to the player | Yes: ADR-0190's motion | Wished: Stage 6 |
+| Glass: the application's own content blurred behind a bar or a panel, lightened on the lowest tier, on battery and under reduced transparency | The player bar and the sidebar | Yes: ADR-0190's Glass theme and effects lightened | Wished: Stage 6 |
+| Haptics on Android | The volume's steps, a list's end | Yes: uwui's ROADMAP | Wished: Stage 6 |
+| uwui's high-contrast theme applied to an application whose own themes build components differently, those components staying readable | One high-contrast theme for Opium's three | Precision: ADR-0190 ships a high-contrast theme | Indispensable: the quality bar's accessibility |
+| Translation through Fluent, the language changed live; layouts that hold longer text | English and French at 0.1.0 | Yes: ADR-0190 | Indispensable: the quality bar's translation |
+| WCAG 2.2 AA checked; every shortcut remapped by the user, a single-key one also turned off | The whole app | Yes: ADR-0190 | Indispensable: the quality bar's accessibility |
+| Shortcuts with chords; a palette of commands | The whole app | Yes: ADR-0190 | Wished: Stage 6 |
+| A second, small window kept above the others | The mini-player | New: Wayland has no common protocol for it; where the compositor refuses, an ordinary window | Wished: Stage 6 |
+| An icon in the tray, notifications with an image, a start with the session | The tray, the song changed, the start with the session | Yes: ADR-0190's system around it | Wished: Stage 6 |
+| A theme format users write by hand, choosing a component's variant (its structure, not only its colours), reloaded live, its errors reported without a crash | Opium decides at Stage 5 whether users' themes move to uwui's format | Precision: ADR-0190 lets a theme build a component differently | Wished: Stage 5's decision |
+| The application updating itself on Windows and macOS | Opium's Stages 4 and 10 | Deferred: ADR-0199 decides the optional crate "when a pilot needs it"; Opium needs it at Stage 4 | Wished: Stage 4 |
+| The lowest Android version uwui supports, stated early | Opium decides its own at Stage 3, as low as uwui allows, aiming at Android 10 or 12 | New: uwui names its lowest phone (Android 14), not its lowest Android | Wished: Stage 3 |
+| Charts | The statistics and the year in review | Yes: ADR-0190's optional crate | Wished: Stage 7 |
+| A canvas of paths and shapes | The signal path drawn as a chain | Yes: ADR-0190 | Wished: Stage 6 |
+| A desktop interface and a phone interface over one application's model, each written for its platform | Opium keeps two interfaces | Yes: ADR-0190 allows screens of one platform | Wished |
+
+### Opium's own
+
+These stay in Opium; uwui gives them only the general pieces above.
+
+- Opium Connect: playback resumed and handed over, the guest on the local network, UPnP and DLNA.
+- `opium-headless`, the player without a screen: no uwui at all.
+- The sound: the levelling, the crossfade, the equaliser and AutoEq's profiles, the signal path's
+  data, bit-perfect USB on Android (in the Kotlin layer).
+- The lyrics' sources, word timings and translations; scrobbling; MusicBrainz; Discord.
+- The `opium` command, over the session bus on Linux, another way on Windows (Stage 4); MPRIS until
+  uwui's crate for the system's integrations exists (ADR-0190).
+- The tokens in the keyring; the downloads and the offline mode; the browser sign-in and the CDM,
+  from inside Flatpak's sandbox.
+- On Android, the home-screen widget, the quick-settings tile, sharing a link and Android Auto, all
+  in the Kotlin layer: the system draws them, not uwui.
+- The themes' content (Stock, the renamed Spotify theme, M3E) and the colours taken from covers.
+- The smart playlists' rules and their editor, built from uwui's forms.

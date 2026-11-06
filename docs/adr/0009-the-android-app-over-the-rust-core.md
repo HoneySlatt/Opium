@@ -1,6 +1,7 @@
 # 0009. The Android app: Kotlin and Compose over the Rust core, through UniFFI
 
-- Status: Accepted
+- Status: Accepted; amended by [0034](0034-what-opium-is-to-become.md)
+  (the lowest Android decided at Stage 3; bit-perfect USB as an option)
 - Date: 2026-10-30
 
 ## Context

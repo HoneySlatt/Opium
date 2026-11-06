@@ -1,6 +1,7 @@
 # 0017. Downloads sealed with the app's key, and tied to the subscription
 
-- Status: Accepted
+- Status: Accepted; amended by [0034](0034-what-opium-is-to-become.md)
+  (a collection's available part shown; an offline mode by hand)
 - Date: 2026-11-03
 
 ## Context

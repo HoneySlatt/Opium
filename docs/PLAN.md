@@ -27,8 +27,18 @@ Every milestone ends with the definition of done in [`AGENTS.md`](../AGENTS.md#d
   ([ADR-0031](adr/0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md)). Stage 1 closes
   between the wake and the first port.
 - At the wake: M1.4's phone and M1.5, M1.14, then M1.8, the stage audit, which closes the stage;
-  then Stage 5, the move to uwui. On 2026-11-05 Google's Android repository still answered 404, for
-  the SDK's command-line tools too.
+  then Stage 5, the move to uwui, and the stages after it in the [ROADMAP's
+  order](ROADMAP.md#4-stages). On 2026-11-05 Google's Android repository still answered 404, for the
+  SDK's command-line tools too.
+- **What Opium is to become**, decided by the owner on 2026-11-06 in a design session that built
+  nothing ([ADR-0034](adr/0034-what-opium-is-to-become.md)): the general public, the platforms, the
+  services, Connect, the library, the sound, the interface, the order of stages 6 to 10. The owner
+  lifted the standby for it, documents only. The ROADMAP follows it, and
+  [`ui-framework-needs.md`](ui-framework-needs.md#what-adr-0034-asks-of-uwui) lists what it asks of
+  uwui; the owner carries that list to SlimeEngine's M6d.1b3b, which chooses how state changes an
+  application's interface.
+- **Next, on the owner's go**: tags written aside then renamed, on the desktop and the phone, a
+  loss of data the standby allows fixing ([known debt](debt.md)).
 - The egui window is frozen until the move
   ([ADR-0026](adr/0026-the-egui-window-frozen-until-the-move.md)), but for M1.14's instruments; the
   phone's Compose screens until uwui replaces them
@@ -227,11 +237,8 @@ For the owner to pick; none is planned.
   captures, reference images for CI. On the desktop, with uwui.
 - **A crash report of the app's own**: a panic hook writing what the user can attach to an issue;
   the phone's now, the desktop window's with uwui.
-- **The text ready for translation**, if Opium is to be translated: both apps write their strings in
-  the code; with uwui on the desktop and the phone.
 - **What Kopuz has and Opium lacks** ([licence audit](audits/2026-11-05-licence.md)): stations
-  seeded by a playlist, translated lyrics, Apple's requests in the user's language (Opium asks in
-  English).
+  seeded by a playlist, and Apple's requests in the user's language (Opium asks in English).
 - Driving Opium by an agent comes with uwui's MCP server
   ([ADR-0026](adr/0026-the-egui-window-frozen-until-the-move.md)); a Macrobenchmark module for the
   phone is decided for Stage 3

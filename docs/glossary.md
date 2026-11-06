@@ -31,6 +31,10 @@ read the old code, and wrote the specification, is the *dirty side*
 service's subscription was not confirmed in the last 30 days, or the user signed out of it
 (`downloads::store::Standing`, [ADR-0017](adr/0017-downloads-sealed-and-tied-to-the-subscription.md)).
 
+**Guest.** Someone on the local network who joins the queue by a code, without pairing and without
+seeing the owner's data; planned at Stage 8, its trust decided by an ADR first
+([ADR-0034](adr/0034-what-opium-is-to-become.md)).
+
 **Handoff.** A queue handed from one device to another, or kept for later: its songs, their order,
 the song playing and where in it, shuffle and repeat (`opium_core::Handoff`). The *session* is the
 last handoff kept.
@@ -49,6 +53,11 @@ away from home (`crates/connect`, [ADR-0010](adr/0010-opium-connect-on-the-local
 **Opium's own playlists.** Playlists made in Opium itself, of songs from any service, kept alike on
 every paired device (`ProviderKind::Opium`, [ADR-0014](adr/0014-shared-state-merged-field-by-field.md)).
 
+**Optional piece.** A part of Opium that a build can leave out whole, as a Cargo feature, planned at
+Stage 2: each online service, the Widevine layer, and six more pieces that talk beyond Opium, which
+[ADR-0034](adr/0034-what-opium-is-to-become.md) lists. *Native* parts are always built, perhaps off
+by default ([ADR-0034](adr/0034-what-opium-is-to-become.md)).
+
 **Pairing.** Making two devices trust each other once: one shows a six-digit code, the user types
 it on the other, and the two derive a key of their own with SPAKE2
 ([ADR-0010](adr/0010-opium-connect-on-the-local-network.md)).
@@ -56,6 +65,10 @@ it on the other, and the two derive a key of their own with SPAKE2
 **Playable.** What the desktop's backend hands the player for a song: an Apple Music stream
 decrypting ahead, a file still downloading, a file of the computer, a station's stream, or a sealed
 download (`desktop::backend::Playable`).
+
+**Player without a screen.** `opium-headless`, a program on the same core without uwui, playing in
+a room on a Raspberry Pi and driven by the other devices through Opium Connect; planned at Stage 8
+([ADR-0034](adr/0034-what-opium-is-to-become.md)).
 
 **Provider.** A source of music as the core sees it: a crate implementing `opium_core::Provider`
 (Apple Music, SoundCloud, Navidrome, the device's files), with the `ProviderKind` that names it.

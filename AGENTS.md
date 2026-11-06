@@ -9,7 +9,8 @@ Rules for AI agents working in this repository. Read this file fully at the star
 - Desktop: Rust, egui, Linux, PipeWire at each track's rate. Phone: Kotlin and Compose over the same
   Rust core.
 - Paired devices share history and playlists (Opium Connect); downloads stay sealed.
-- GPL-3.0-or-later. In daily use by its owner; never released.
+- GPL-3.0-or-later. In daily use by its owner, aimed at the general public
+  ([ADR-0034](docs/adr/0034-what-opium-is-to-become.md)); never released.
 - Opium handles people's accounts and sign-ins: **safety and honesty towards the services come
   before features**.
 
