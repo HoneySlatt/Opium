@@ -905,7 +905,7 @@ mod tests {
     }
 
     #[test]
-    fn a_length_announced_too_large_reserves_no_memory_for_it() {
+    fn a_length_announced_too_large_is_not_reserved_whole() {
         // A server may announce any length: the stream holds what comes, not what is said.
         let (clear, file) = encrypted(ending_in_an_open_moof(3, 40));
         let (mut stream, feed) = AudioStream::downloading(u64::MAX, Duration::from_secs(1), xor());
