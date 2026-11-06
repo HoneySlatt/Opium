@@ -198,9 +198,9 @@ Apple's web player carries a developer token, a JWT (RFC 7519), in its main scri
   error naming the status, as before this rewrite: the renewal on a 401 then waits its five
   minutes instead of reading the page again at every request.
 - Searching the page and the script is a scan in time proportional to their length. On the files
-  of 2026-11-05, in a release build, the first search of a process takes about 0.5 ms, before and
-  after this rewrite; once its expressions are built, 15 µs before, 19.5 µs after, the checks of
-  §9 accepted by the owner for those 4.5 µs
+  of 2026-11-05, in a release build: a process's first search 0.46 ms before this rewrite,
+  0.28 to 0.31 ms after; once its expressions are built, 15.1 µs before, 16.1 µs after, the ES256
+  check's cost, within the 4.5 µs the owner accepted
   ([measurements](../measurements.md#apple-musics-steps-m112-2026-11-05-and-2026-11-06)).
 
 ## 10. Tests

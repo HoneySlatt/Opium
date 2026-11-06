@@ -2,6 +2,8 @@
 // `cold old|new page script`.
 #[path = "../new_search.rs"]
 mod new_search;
+/// What auth.rs's search names as the web player, `crate::WEB_PLAYER` in the crate.
+pub const WEB_PLAYER: &str = "https://music.apple.com";
 use std::time::Instant;
 fn main() {
     let a: Vec<String> = std::env::args().skip(1).collect();

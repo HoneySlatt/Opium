@@ -52,7 +52,7 @@ Every milestone ends with the definition of done in [`AGENTS.md`](../AGENTS.md#d
 | [M1.9](#done) | What stops MIT OR Apache-2.0 is known, and the code to write again is specified | Done |
 | [M1.10](#m110-to-m112--kopuzs-code-written-again) | `cenc` written again in a clean room | Done |
 | [M1.11](#m110-to-m112--kopuzs-code-written-again) | `widevine` written again in a clean room | Done |
-| [M1.12](#m110-to-m112--kopuzs-code-written-again) | `apple-music`'s derived items written again in a clean room | Done |
+| [M1.12](#m110-to-m112--kopuzs-code-written-again) | `apple-music`'s derived items written again in a clean room | Done but for playing, which needs the owner |
 | [M1.13](#m113--nothing-of-kopuzs-left) | Nothing of Kopuz's left, the GPL kept | Planned, next |
 | [M1.14](#m114--the-figures-to-beat-on-uwui) | The figures uwui must match: the egui window's and the Compose phone's | Planned |
 
@@ -160,7 +160,8 @@ One milestone each, in this order: `cenc`, then `widevine`, then `apple-music`.
     a service.
   - Re-taking Chromium's CDM header at a pinned revision needs a download, the owner's go.
 - **Measured.** Before and after: indexing and the table's memory (`cenc`); a licence's time, the
-  CDM's time per sample and its wake-ups at rest (`widevine`).
+  CDM's time per sample and its wake-ups at rest (`widevine`); the developer token, the library, a
+  station's batch and a song's start, and the token's search (`apple-music`).
 - **M1.10, done on 2026-11-05.** `cenc` written by two clean agents; mutation tests and three
   `cargo fuzz` targets, run weekly (`scripts/fuzz.sh`); indexing 0.45 → 0.33 ms
   ([measurements](measurements.md#indexing-an-encrypted-track-m110-2026-11-05),
@@ -170,13 +171,16 @@ One milestone each, in this order: `cenc`, then `widevine`, then `apple-music`.
   second with a session open, all accepted by the owner
   ([measurements](measurements.md#the-cdm-m111-2026-11-05),
   [evidence](audits/2026-11-05-widevine-clean-room.md)).
-- **M1.12, done on 2026-11-06.** The specification checked against the code and Apple's public
-  page, and corrected; `apple-music`'s derived items written by one clean agent. A station's batch
-  2 252 → 1 278 ms; a token read again before its `exp`; a download without a length plays; the
-  HTTP behaviours tested against a local server; `cenc`'s reservation bounded. The token's search
-  4.5 µs slower once warm, accepted by the owner
+- **M1.12, done on 2026-11-06 but for playing.** The specification checked against the code and
+  Apple's public page, and corrected; `apple-music`'s derived items written by two clean agents,
+  the second after the review. A station's batch 2 252 → 1 278 ms; a token read again before its
+  `exp`, at most once in five minutes; a download without a length plays; the HTTP behaviours
+  tested against a local server; eight `cargo fuzz` targets; `cenc`'s reservation bounded. The
+  token's search 1.0 to 1.6 µs slower once warm, within the 4.5 µs the owner accepted; on round
+  1's code, the developer token's reading 6.6 ms slower in median, within the network's spread
   ([measurements](measurements.md#apple-musics-steps-m112-2026-11-05-and-2026-11-06),
-  [evidence](audits/2026-11-06-apple-music-clean-room.md)). Not yet played with the owner.
+  [evidence](audits/2026-11-06-apple-music-clean-room.md)). "Opium plays" is not yet met:
+  Opium starts on a throwaway profile, but playing needs the owner's account.
 - Each found nothing owed to Kopuz; what each left is in [debt.md](debt.md).
 
 ### M1.13 — Nothing of Kopuz's left

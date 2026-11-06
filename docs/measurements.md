@@ -23,7 +23,10 @@ station batch on the owner's account a run, nothing played, nothing written to d
 - *Before, first*: five runs of the code at `c132830`, ten seconds apart, at a load average of 8.8
   rising to 16.6 (another build ran meanwhile).
 - *Before* and *after*, on 2026-11-06: five rounds, each running the old code (`c132830`) then the
-  new one (`316a8ee`), the same program, at a load average of 0.9 to 0.6.
+  new one (`316a8ee`, the clean side's first round), the same program, at a load average of 0.9 to
+  0.6. Its second round, after the review, changed none of these requests: the search of the page
+  and the script, measured apart below, an id's check, and how often the token is read again
+  before its `exp`, which none of these runs came near.
 
 | What | Before, first (5 runs) | Before (5 rounds), median and range | After (5 rounds), median and range |
 |---|---|---|---|
@@ -47,13 +50,17 @@ station batch on the owner's account a run, nothing played, nothing written to d
   differences are the network's.
 - **Searching the page and the script for the token**, apart, on Apple's page (2.4 MB) and script
   (3.3 MB) of 2026-11-05, saved outside the repository, release builds, by
-  [`token-search.sh`](audits/2026-11-06-apple-music-clean-room/token-search.sh), two runs:
-  - a process's first search, its expressions built then, as at Opium's start (30 processes each,
-    alternately): before 459 and 533 µs, after 459 and 521 µs (medians);
-  - once the expressions are built (101 searches each, alternately): before 15.0 and 16.6 µs,
-    after 19.5 and 21.1 µs, p95 16.3 and 17.1 µs before, 21.1 and 21.5 µs after. **4.5 µs more**:
-    the script tag read and the token's header decoded, to check that it is ES256. Accepted by
-    the owner on 2026-11-06; it is paid at a renewal, at most once in five minutes.
+  [`token-search.sh`](audits/2026-11-06-apple-music-clean-room/token-search.sh), alternately:
+  - round 1's code, which read the page's `<script>` tags: a process's first search the same as
+    before (459 and 533 µs before, 459 and 521 µs after, medians of 30), and once warm 4.5 µs more
+    (15.0 → 19.5 and 16.6 → 21.1 µs, p95 16.3 → 21.1 and 17.1 → 21.5 µs); accepted by the owner;
+  - the final code, after the review, which finds the script's address anywhere in the page:
+    three runs. A process's first search, as at Opium's start: 459 to 470 µs before, **280 to
+    311 µs** after (medians of 30; p95 549 to 565 µs before, 342 to 410 µs after). Once warm,
+    medians of 101: 15.1 → 16.1 µs and 28.2 → 29.7, 28.5 → 30.2 µs, p95 15.3 → 16.4,
+    28.6 → 31.0 and 28.8 → 30.3 µs: **1.0 to 1.6 µs more**, the token's header decoded to check
+    that it is ES256, within the 4.5 µs accepted. Warm times fall into two groups, 15 or 28 µs,
+    both sides alike, from one run to the next: where the process runs, not the code.
   - The figure first given, 0.08 ms for the code before, built its expressions in every one of 30
     searches in a row.
 

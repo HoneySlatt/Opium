@@ -1,6 +1,8 @@
 // Times the token's search on Apple's page and script, the code before (two regular
 // expressions, built once as its LazyLock did) against the new auth.rs's searches.
 mod new_search;
+/// What auth.rs's search names as the web player, `crate::WEB_PLAYER` in the crate.
+pub const WEB_PLAYER: &str = "https://music.apple.com";
 use std::time::{Duration, Instant};
 fn median_p95(mut t: Vec<Duration>) -> (Duration, Duration) {
     t.sort();

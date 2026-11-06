@@ -96,12 +96,14 @@ work is in [`PLAN.md`](PLAN.md); a stage's audit adds what it leaves open.
   - Not played yet on the new code: Apple Music in stereo and Spatial Audio, the live radio, a
     library song, a station; due with the owner. Measured on the owner's account, without sound.
   - `take_licence` has no test: it needs a CDM session, which tests never load.
-  - ADR-0030's `cargo fuzz` targets for the HLS playlists and Apple's answers are not made: the
-    readers are private, and a target needs a public seam. Seeded mutation tests in `cargo test`
-    cover them.
-  - Near the developer token's expiry, while Apple's web player is out of reach, every request
-    tries to read it again first: a renewal that meets a network error is not recorded. The same
-    holds on a 401, older than M1.12.
-  - The token's search takes 4.5 µs more once warm, accepted by the owner.
+  - `fetch_track`'s check of a song's id has no direct test: it needs a CDM. `protected`'s has,
+    and both go through `song_and_binaural`, which takes the checked kind.
+  - On a 401, while Apple's web player cannot be reached at all, each request reads it again and
+    may wait the ten-second connection timeout in turn: a renewal that meets no connection is not
+    recorded. Older than M1.12; the reading before `exp` is now bounded.
+  - Between encodes of the same bit rate, the first is played, where the code before played the
+    last; the answers seen had one of each rate.
+  - The token's search takes 1.0 to 1.6 µs more once warm, within the 4.5 µs the owner
+    accepted.
   - A station's calls still in flight when enough songs came are dropped: their songs are lost,
     the station's cursor moved past them, as the rounds of four did before.

@@ -125,8 +125,10 @@ The parsers of untrusted data are fuzzed two ways
 
 - deterministic mutation tests inside `cargo test`, at every push: a seeded generator mutates the
   test files, and the parser's steps and allocations are counted, never timed;
-- `cargo fuzz` targets, in a crate of their own beside the crate they fuzz (`crates/cenc/fuzz`),
-  outside the workspace and on `libfuzzer-sys`, run by hand and weekly in CI.
+- `cargo fuzz` targets, in a crate of their own beside the crate they fuzz (`crates/cenc/fuzz`,
+  `crates/apple-music/fuzz`), outside the workspace and on `libfuzzer-sys`, run by hand and weekly
+  in CI. `apple-music`'s readers are private: its `fuzzing` feature, off but for this crate,
+  exposes entry points to them.
 
 ```sh
 nix develop .#fuzz -c scripts/fuzz.sh 60           # every target, 60 s each, as CI does with 300

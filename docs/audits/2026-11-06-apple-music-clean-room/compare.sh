@@ -32,8 +32,9 @@ trap 'rm -rf "$work"' EXIT
 # The clean side's lines: what its commits added, by file (a whole new file is all added).
 mkdir -p "$work/new"
 for file in $(git -C "$export_repo" diff --name-only "$given" HEAD -- crates/apple-music | grep '\.rs$'); do
+    name=${file#crates/apple-music/}
     git -C "$export_repo" diff --unified=0 "$given" HEAD -- "$file" |
-        sed -n 's/^+//p' | grep -v '^++ ' >"$work/new/$(basename "$file")" || true
+        sed -n 's/^+//p' | grep -v '^++ ' >"$work/new/${name//\//_}" || true
 done
 
 # The adapted files as they were last, before the rewrite, and the lines removed from them.
@@ -54,7 +55,7 @@ origins=()
 for revision in a58c385 1d8b323; do
     root=$cited
     [ "$revision" = 1d8b323 ] && root=$latest
-    for file in "$root"/daemon/server/src/applemusic/*.rs; do
+    for file in "$root"/daemon/server/src/applemusic/*.rs "$root"/daemon/server/src/lyrics/apple_music.rs; do
         origins+=("kopuz-$revision $(basename "$file")=$file")
     done
 done

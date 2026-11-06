@@ -19,16 +19,16 @@ cp "$here/../../../Cargo.lock" "$work/"
 python3 -I - "$here/../../../crates/apple-music/src/auth.rs" "$work/src/new_search.rs" <<'PY'
 import re, sys
 source = open(sys.argv[1]).read()
-source = source[: source.index("#[cfg(test)]")]
+source = source[: source.index("#[cfg(feature = \"fuzzing\")]")]
 out = [
     "// Copied from crates/apple-music/src/auth.rs for timing only: the searches, made public.\n",
     "use std::sync::LazyLock;\nuse base64::Engine;\n"
     "use base64::engine::general_purpose::URL_SAFE_NO_PAD;\nuse regex::Regex;\n",
 ]
-for name in ["SCRIPT_TAG", "JWT_SHAPED"]:
+for name in ["MAIN_SCRIPT", "JWT_SHAPED"]:
     out.append(re.search(r"static " + name + r":.*?\);\n", source, re.S).group(0))
-for name in ["claims", "decoded_json", "main_script", "main_script_counting", "tag_attributes",
-             "is_main_script", "first_token", "first_token_counting", "names_es256", "is_base64url"]:
+for name in ["claims", "decoded_json", "main_script", "continues_an_address", "continues_a_path",
+             "first_token", "first_token_counting", "names_es256", "is_base64url"]:
     out.append("pub " + re.search(r"^fn " + name + r"\b.*?^\}\n", source, re.S | re.M).group(0))
 open(sys.argv[2], "w").write("\n".join(out))
 PY

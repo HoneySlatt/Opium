@@ -12,8 +12,9 @@
   - dirty side: the session that read Kopuz and the adapted code; it checked the specification
     against the code and Apple's public page, measured before, made the export, answered the
     assumptions, brought the code back, compared it and wrote this file;
-  - clean side: one new agent, which had read neither Kopuz nor the adapted files, before or
-    during.
+  - clean side, two new agents in turn: round 1 wrote the items; round 2 changed what the
+    milestone's review found and wrote the `cargo fuzz` targets. Neither had read Kopuz or the
+    adapted files, before or during.
 - This is how a team usually shows that new code is its own; it is not legal advice.
 
 ## Before the hand-over
@@ -62,10 +63,11 @@ credit Kopuz with facts about Apple's service (`lib.rs`'s requests' forms, `conv
 fields in snake case (`adam_id`, `key_uri`, `is_library`), `m3u8-rs`'s (`media_playlist`) and the
 standard library's.
 
-## The brief
+## The briefs
 
 Word for word, but for the path of the project's folder:
-[brief.md](2026-11-06-apple-music-clean-room/brief.md). It allows only the export, the public
+[round 1](2026-11-06-apple-music-clean-room/brief.md),
+[round 2](2026-11-06-apple-music-clean-room/brief-round-2.md). Each allows only the export, the public
 standards the specification cites and the dependencies' documentation built inside the export, and
 forbids the rest of the disk, Opium's repository and its history, `/nix/store` and `~/.cargo`
 read directly, the network but `127.0.0.1`, a CDM, an account, and other agents.
@@ -78,8 +80,8 @@ silent, each kept by the dirty side, the first five written into the specificati
 
 - `isLibrary` says whether the song was asked for by a library id, as Opium's callers pass it, even
   with a catalog `adamId`: §5's "that id" read the other way.
-- A page or a script answering a failure status is out of reach, a network error: a renewal that
-  meets one is tried again at the next request, rather than taken for a sign-out.
+- A page or a script answering a failure status is out of reach, a network error: kept in round 1,
+  then undone after the review (below), for the readings it made repeat.
 - A `next` that does not resolve gets a `/` before it, instead of staying as it is: put after the
   API's address, `evil.example:99` would change the host. The specification was wrong.
 - A `null` flavour is no flavour; an empty `license` is none; an `errorCode` of any number but 0,
@@ -112,6 +114,9 @@ All in the crate, as §12 allows, each read by the dirty side in the export's hi
   subtract with overflow"): `range` with a length of 0 or past the largest offset, `padding_of` and
   `lesser_kbps` on playlists whose ranges overflow.
 - `thiserror` removed from the crate's dependencies: nothing used it.
+- Round 2: the reading before `exp` bounded by its own time stamp beside `renew_developer_token`;
+  `protected` and `fetch_track` check the song's id first, and `song_and_binaural` takes the
+  kind checked; the crate's `fuzzing` feature and its `#[doc(hidden)]` module.
 - Two lines reflowed by `rustfmt`.
 
 The clean side also found that `cenc`'s `AudioStream::downloading` reserved memory for whatever
@@ -124,9 +129,10 @@ reservation in the tree takes a length from a server.
 Read by the dirty side from the transcript, with a script that lists every call, every absolute
 path and every command that could reach the network:
 
-| Calls | Reads outside the export | Network | Notes |
-|---|---|---|---|
-| 81: 67 shell, 10 reads, 4 writes | none | none | Every `nix` call `--offline`, every `cargo` call offline. The absolute paths named outside the export are the tests' addresses (`/v1/me/library/songs`, `/assets/index~ab.js`, …), `/dev/null` and `/usr/bin/env`. Dependencies' interfaces read from `cargo doc --offline` under the export's `target/`. No subagent. |
+| Round | Calls | Reads outside the export | Network | Notes |
+|---|---|---|---|---|
+| 1 | 81: 67 shell, 10 reads, 4 writes | none | none | Every `nix` call `--offline`, every `cargo` call offline. The absolute paths named outside the export are the tests' addresses (`/v1/me/library/songs`, `/assets/index~ab.js`, …), `/dev/null` and `/usr/bin/env`. Dependencies' interfaces read from `cargo doc --offline` under the export's `target/`. No subagent. |
+| 2 | 67: 63 shell, 2 writes, one tool lookup and one stop | none | none | The same. The stop ended its own fuzz build, which the agent tool had moved to the background. No subagent. |
 
 No call named Kopuz, the adapted files, Opium's folder, a browser profile, a token, a CDM,
 `/nix/store` or `~/.cargo`.
@@ -142,24 +148,31 @@ tree. The full report is [`comparison.md`](2026-11-06-apple-music-clean-room/com
 
 | Against | Raw: runs of 50 or more | Raw: longest below | Normalised: runs of 30 or more | Normalised: longest |
 |---|---|---|---|---|
-| Kopuz `a58c385` | 0 | 27 | 58 | 49 |
-| Kopuz `1d8b323` | 0 | 27 | 58 | 49 |
-| The lines removed for the export | 1 | 49 | 10 | 155 |
-| The adapted files whole | 3 | 49 | 18 | 156 |
-| The rest of the tree | 4 | 49 | 38 | 131 |
+| Kopuz `a58c385` | 0 | 27 | 63 | 49 |
+| Kopuz `1d8b323` | 0 | 27 | 63 | 49 |
+| The lines removed for the export | 1 | 49 | 12 | 155 |
+| The adapted files whole | 3 | 49 | 22 | 156 |
+| The rest of the tree | 4 | 49 | 44 | 131 |
 
 Read by hand:
 
-- **Against Kopuz**: no run of 28 raw tokens. The 58 normalised runs fall in code that does
-  nothing of the kind (Kopuz's interface, store, database, player, YouTube clients): `use` lists,
-  a test server's `BufReader::new(stream)` and `String::new()`, struct literals,
-  `iter().filter(…)` chains. None falls in Kopuz's Apple Music code. No string and no comment
-  phrase in common.
+- **Against Kopuz**: no run of 28 raw tokens. Of the 63 normalised runs, 62 fall in code that
+  does nothing of the kind (Kopuz's interface, store, database, player, YouTube clients): `use`
+  lists, struct literals, `iter().filter(…)` chains. One, 36 tokens, falls in Kopuz's Apple
+  lyrics file (`daemon/server/src/lyrics/apple_music.rs`): the head of the tests' local server's
+  request reader against a reader of Kopuz's, `fn …(stream: &TcpStream) -> Option<…> { let mut
+  reader = BufReader::new(stream); let mut line = String::new();`, the standard library's way to
+  read an HTTP request line. No string and no comment phrase in common; the comparison searches
+  that file's names too.
 - **Against the lines removed**:
   - `apple_id` (51 raw, 155 normalised): nearly the same as the stopgap the dirty side wrote on
-    2026-11-05, the error message included. That stopgap was not Kopuz's (Kopuz guards an empty
-    id only, and shares no run of 28 raw tokens with the new code); §12 gives its rule word for
-    word, and both are a model's plainest form of it.
+    2026-11-05. Its error message, "not an Apple Music id: {id:?}", is the stopgap's word for
+    word, though it was not among the clean side's inputs: the export holds it nowhere, the
+    specification included. Both sides are agents of the same kind given the same rule, and
+    wrote it the same way. The stopgap was the dirty side's own, not Kopuz's (Kopuz guards an
+    empty id only, and shares no run of 28 raw tokens with the new code): nothing of Kopuz's
+    reached the clean side this way. It is the one place where the clean side's text matches
+    text it was not given. The fuzz target `ids` restates the same rule (33 and 32 normalised).
   - `take_licence` (94 normalised) and `ask_licence`'s head and body (57 and 34): signatures that
     §12 fixes, the JSON keys of §5 in the order §5 lists them, and the one call `widevine`'s
     interface allows, its error wrapped as §5 says.
@@ -169,7 +182,8 @@ Read by hand:
   - `choose_source`'s head (32 and 32), `next_page_path`'s (30) and `id_kind`'s rule (30): §12's
     signatures, §3's error message, §1's rule.
 - **Against the adapted files whole**: the same, and the client's building moved out of `connect`
-  unchanged (141 raw), the renewal's call in `send` (62 raw).
+  unchanged (141 raw); `next_station_songs` reading a status and a body as `fetch`, Opium's own,
+  does (62 raw).
 - **Against the tree**: `test_support.rs`'s fragmented MP4 builder follows `cenc`'s own test
   builders (68, 66, 65 and 52 raw), which the clean side read in the export; Opium's idioms.
 - **Names** shared with Kopuz's Apple Music files: the standard library's, `serde_json`'s,
@@ -177,20 +191,62 @@ Read by hand:
 - **Strings**: with Kopuz none; with the removed lines, the specification's own error messages
   ("webPlayback returned no assets", "no Widevine asset (only FairPlay's)", "licence refused",
   "licence response without a licence", "the station offered no songs") and `apple_id`'s.
-- **The token's expression**: `eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+` resembles
-  Kopuz's `eyJ[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+`: a JWT's shape (RFC 7519, a JSON
-  header's `{"` in base64url), one token to the comparison. The page's search is a tag reader,
-  not Kopuz's expression.
+- **The expressions**: the token's, `eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+`,
+  resembles Kopuz's `eyJ[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+`: a JWT's shape (RFC
+  7519, a JSON header's `{"` in base64url). The script's, `/assets/index[~-][A-Za-z0-9_-]+\.js`
+  since round 2, resembles Kopuz's `/assets/index~[^/]+\.js`: the address §9 describes. Each is
+  one token to the comparison; both differ in their classes, and the new code checks around
+  them what Kopuz's does not (the header's ES256, the address standing alone).
 
 Nothing above the thresholds is owed to Kopuz.
 
+## The milestone's review, and round 2
+
+A reviewer that wrote neither side read the milestone against `AGENTS.md`, ADR-0030 and ADR-0032,
+the specification and this evidence, re-ran the comparison to the same report, and compared the
+next page's addresses of the old and new code on thirteen Apple-shaped `next`s: the same. It found
+nothing owed to Kopuz, nothing that would stop Apple Music from playing, and:
+
+- **the token's renewal could repeat at every request**: a failure status of the web player was
+  made a network error, which the renewal never records, so near the token's `exp` each request
+  read the page again, a library's 85 pages up to 200 MB. The specification was corrected (a
+  status is a protocol error again, as before; a reading before `exp` at most once in five
+  minutes, whatever comes of it); round 2, with tests of a web player failing by status, by
+  connection, and serving the same token;
+- **a playlist's station refused**: `ra.cp-pl.u-…` has a dot after its prefix, which `apple_id`
+  refuses, as the dirty side's specification asked. Now a station's id must be one path segment;
+  round 2;
+- **the main script found only in one tag's form**, stricter than the code before: now its address
+  anywhere in the page, a query kept; round 2;
+- **an id of no known kind reached the catalog's Spatial Audio lookup and a warm-up**: now refused
+  before any request, with `spatial` on and off; round 2;
+- ADR-0030's `cargo fuzz` targets left as debt without the owner's decision: put to the owner, who
+  chose to make them; round 2, eight targets in `crates/apple-music/fuzz`, through a `fuzzing`
+  feature off by default;
+- the evidence: the 62-token run and the run in Kopuz's lyrics file explained wrongly, the
+  `apple_id` message's origin said too softly: corrected above. A behaviour change unsaid: between
+  encodes of the same bit rate, the first is played, where the code before played the last; the
+  answers seen had one encode of each rate, but that was not checked for every song;
+- the documents: the README and ADR-0031 still on MIT, M1.12 called done before playing, two
+  constants told apart by one letter, a date and a median unsaid, smaller points: fixed.
+
+Round 2's assumptions, kept: a script's address counts only standing alone (not after a letter,
+digit or `- . _ ~ % / : @`, nor before a letter, digit or `- . _ ~ % /`), its query ends at a
+quote, `<`, `>` or any space, a fragment dropped, entities left as written; a reading before
+`exp` goes through the existing renewal, so it is skipped too within five minutes of a 401's
+reading that got an answer; a station's id refused is a protocol error. `fetch_track`'s check has
+no direct test (it needs a CDM); `song_and_binaural` takes the checked kind, so no path goes
+around it.
+
 ## Checked
 
-- `scripts/check.sh` passes: the crate's 118 tests, `cenc`'s 76, every other test, lints,
-  documentation and links.
+- `scripts/check.sh` passes: the crate's tests, `cenc`'s, every other test, lints, documentation
+  and links; clippy with the `fuzzing` feature; `scripts/fuzz.sh 20` ran every target of both fuzz
+  crates without a crash (35 thousand to 3.5 million runs each).
 - Measured with the owner's go, alternately with the old code: the same cleartext; a station's
   batch 43 % quicker; the developer token, the library and a song's start the same within the
-  network's spread; the token's search 4.5 µs slower once warm, accepted by the owner
+  network's spread; the token's search, after round 2, 1.0 to 1.6 µs slower once warm, within the
+  4.5 µs the owner accepted, and a third quicker at a process's first
   ([measurements](../measurements.md#apple-musics-steps-m112-2026-11-05-and-2026-11-06)).
 - Opium on a throwaway profile, release build, in a headless Weston, no network, no session bus:
   it starts, runs 15 s and ends on SIGTERM, writing only in its folder. It talks to no Apple
@@ -211,8 +267,9 @@ found in Apple Music, and the specification's §11:
 - mutation tests, seeded, over everything that reads Apple's answers and Opium's readers beside
   them;
 - a download without a `Content-Length` plays;
-- a song's id of no known kind, and a station's id that is not an Apple id, are refused before any
-  request; the developer token's text is checked to be an ES256 token; a `next` cannot change the
-  host;
+- `cargo fuzz` targets over the same readers, run weekly;
+- a song's id of no known kind, and a station's id that is not one path segment, are refused before
+  any request; the developer token's text is checked to be an ES256 token; a `next` cannot change
+  the host; a reading of the token before its `exp` is bounded to one in five minutes;
 - a station gathers with up to six calls in flight, bounded to 32, and ends early when it repeats
   itself.
