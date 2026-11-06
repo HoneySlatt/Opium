@@ -30,8 +30,9 @@ Standards cited: **RFC 8216** (HLS), **RFC 3986** (resolving a relative address)
 - The answer's `songList` is an array; its first entry is the song. An empty or missing list is
   the error "webPlayback returned no song".
 - The entry's `songId` names the catalog song a library song was matched to: a number above 0, or
-  a string neither empty nor `-1`. Anything else, or none, means there is none (an upload). It is
-  read by `playback.rs`'s own code, given in the export.
+  a string that is a catalog id (§1). Anything else, or none, means there is none (an upload): it
+  goes into addresses and the licence's body, so it is checked as the id asked for is. It is
+  read by `playback.rs`'s own `song_id`, which may be changed for this.
 - An id that is neither kind (§1) is refused with an error naming it before any request of the
   song's: before `webPlayback`, the catalog's lookup of its Spatial Audio, and the licence host's
   warm-up (`protected` and `fetch_track`, Opium's own, given in the export).
@@ -172,12 +173,15 @@ Apple's web player carries a developer token, a JWT (RFC 7519), in its main scri
   redirect policy, `lib.rs`'s own code). On 2026-11-05 Apple answered a 301 to a storefront's page
   (`/us/new`), which the client follows, then a page of 2.4 MB.
 - The page names its main script: on 2026-11-05 in a `<script type="module" … src="…">`. It is
-  the first text anywhere in the page, in a tag or not, of the form `/assets/index~<hash>.js`
-  (Apple has also used `index-<hash>.js`; both are looked for), `<hash>` one or more ASCII
-  letters, digits, `_` or `-`; written alone, or right after `https://music.apple.com`; a query
-  right after it (`?`, then what follows up to a quote, a space, `<` or `>`) is kept. The script
-  is fetched from `https://music.apple.com` at that path, with that query. As tolerant as the
-  code before, which found the path anywhere: the tag's form may change.
+  the first text anywhere in the page, in a tag or not, of the form `/assets/index~<name>.js`
+  (Apple has also used `index-<name>.js`; both are looked for), whatever comes before it (a
+  scheme and a host, `//`, `.`, a folder such as `/us`), `<name>` one or more characters but
+  `/`, `?`, `#`, a quote, `<`, `>` or a space (dots included: `index~a1.min.js`); a query right
+  after it (`?`, then what follows up to a quote, a space, `<` or `>`) is kept. The script is
+  always fetched from `https://music.apple.com`, at `/assets/index~<name>.js` (or `-`) and that
+  query, whatever host or folder the page wrote before it: the token is never asked of another
+  host. Every form the code before this rewrite found, it finds; the code before found the path
+  anywhere and fetched it from `https://music.apple.com`.
 - `GET` that script (3.3 MB on 2026-11-05): the token is the first JWT in it, three base64url
   segments joined by dots, whose first segment decodes to a JSON header naming `"alg": "ES256"`.
   Text shaped like a JWT whose header does not decode, or names another algorithm, is passed
@@ -190,8 +194,10 @@ Apple's web player carries a developer token, a JWT (RFC 7519), in its main scri
   and at most one every five minutes, whatever its outcome, a failed connection included: the old
   token is still good until its `exp`, and a web player out of reach must not cost every request
   a reading. A token without a readable `exp` is renewed on a 401 only. The renewal on a 401 is
-  `lib.rs`'s own, unchanged: one reading at a time, at most one every five minutes after the page
-  or the script answered.
+  `lib.rs`'s own: one reading at a time, at most one every five minutes after the page or the
+  script answered. A reading before `exp` never counts towards a 401's five minutes: when Apple
+  still serves the old token until its `exp`, then a new one, the first 401 after `exp` must read
+  the page at once and get it, and is tested so, across `exp`.
 - Each step that fails names itself: the page out of reach, no script named, the script out of
   reach, no token in the script, a payload that does not decode. No connection, or an answer cut
   short, is a network error; a page or a script that answers a failure status is a protocol
@@ -282,6 +288,7 @@ says where in its report:
 - `send` in `lib.rs`, and the renewal's bookkeeping beside `renew_developer_token`: the renewal
   before the token expires and its bounds (§9);
 - `protected` and `fetch_track` in `playback.rs`: a song's id checked before any request (§2);
+- `song_id` in `playback.rs`: a matched `songId` taken only when it is a catalog id (§2);
 - `as_it_downloads` in `playback.rs`: a download without a length (§11);
 - the crate's `Cargo.toml` and a `fuzzing` module for the `cargo fuzz` targets, and the fuzz crate
   itself (§10);
