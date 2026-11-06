@@ -75,11 +75,13 @@ jobs:
           key: ${{ steps.cache.outputs.cache-primary-key }}
   # The parsers of untrusted data fuzzed with `cargo fuzz`, in the nightly shell (ADR-0030): on the
   # weekly run only, as fuzzing takes time and finds little from one push to the next; the
-  # deterministic mutation tests of `cargo test` run at every push. Five minutes a target.
+  # deterministic mutation tests of `cargo test` run at every push. Five minutes a target, twelve
+  # targets (cenc's and apple-music's): an hour of fuzzing, its builds besides; the limit only
+  # stops a hung run.
   fuzz:
     if: github.event_name == 'schedule'
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
