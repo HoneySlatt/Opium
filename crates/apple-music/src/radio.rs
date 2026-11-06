@@ -817,7 +817,8 @@ https://a.example/index_2.m3u8\n";
 
     /// A box: its size, its type, its body.
     fn boxed(kind: &[u8; 4], body: &[u8]) -> Vec<u8> {
-        [&((body.len() + 8) as u32).to_be_bytes()[..], kind, body].concat()
+        let size = u32::try_from(8 + body.len()).expect("a small box");
+        [&size.to_be_bytes()[..], kind, body].concat()
     }
 
     /// An episode's init segment: one AAC track, scheme `cbcs`, a constant IV, its key id zero.

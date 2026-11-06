@@ -188,10 +188,8 @@ mod tests {
     use super::*;
 
     fn boxed(kind: &[u8; 4], body: &[u8]) -> Vec<u8> {
-        let mut b = ((body.len() + 8) as u32).to_be_bytes().to_vec();
-        b.extend_from_slice(kind);
-        b.extend_from_slice(body);
-        b
+        let size = u32::try_from(8 + body.len()).expect("a small box");
+        [&size.to_be_bytes()[..], kind, body].concat()
     }
 
     fn full(version: u8, rest: &[u8]) -> Vec<u8> {
