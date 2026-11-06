@@ -1,9 +1,9 @@
 //! The developer token, read from Apple's web player as it carries it.
 //!
-//! The web player's page names its main script; that script holds the token, a JWT
-//! (RFC 7519) signed ES256, among the rest of its code. Both are searched in one pass each,
-//! in time proportional to their length: the script is about 3.3 MB and the token lies
-//! about 0.9 MB into it.
+//! The web player's page names its main script, anywhere in it; that script holds the
+//! token, a JWT (RFC 7519) signed ES256, among the rest of its code. Both are searched in one
+//! pass each, in time proportional to their length: the script is about 3.3 MB and the token
+//! lies about 0.9 MB into it.
 
 use std::sync::LazyLock;
 use std::time::{Duration, SystemTime};
@@ -17,10 +17,12 @@ use regex::Regex;
 /// answer is not the web player's.
 const LARGEST_FILE: usize = 64 * 1024 * 1024;
 
-/// Where a `<script` tag starts. The regex crate looks for the literal with SIMD, which keeps
-/// the search of a page of megabytes well under a millisecond.
-static SCRIPT_TAG: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)<script").expect("a constant, valid pattern"));
+/// The main script's path, `/assets/index~<hash>.js` or `/assets/index-<hash>.js`, wherever
+/// it is written. The regex crate looks for its literal start with SIMD, which keeps the
+/// search of a page of megabytes well under a millisecond.
+static MAIN_SCRIPT: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"/assets/index[~-][A-Za-z0-9_-]+\.js").expect("a constant, valid pattern")
+});
 
 /// Text shaped like a JWT whose header is a JSON object: `{"` in base64url, then three
 /// base64url segments joined by dots. The regex crate finds it with a SIMD search for `eyJ`
@@ -38,10 +40,11 @@ static JWT_SHAPED: LazyLock<Regex> = LazyLock::new(|| {
 ///
 /// # Errors
 ///
-/// Each step that fails says which it is: the page out of reach ([`Error::Network`], with
-/// its status when it answered one), a page naming no main script, the script out of reach
-/// ([`Error::Network`]), a script holding no token, or a token whose payload does not decode
-/// ([`Error::Protocol`] for these three). No message carries the token.
+/// Each step that fails says which it is: the page out of reach, a page naming no main
+/// script, the script out of reach, a script holding no token, or a token whose payload does
+/// not decode. No connection, or an answer cut short, is an [`Error::Network`]; every other
+/// failure, a page or a script answering a failure status (named) included, is an
+/// [`Error::Protocol`]. No message carries the token.
 pub async fn developer_token(http: &reqwest::Client) -> Result<String> {
     developer_token_at(http, crate::WEB_PLAYER).await
 }
@@ -52,6 +55,7 @@ pub(crate) async fn developer_token_at(http: &reqwest::Client, web_player: &str)
     let page = read(http, &format!("{web_player}/"), "the web player's page").await?;
     let script = main_script(&page)
         .ok_or_else(|| Error::Protocol("the web player's page names no main script".into()))?;
+    // The web player's own host, whatever the page names: `script` is a path and a query.
     let script = read(
         http,
         &format!("{web_player}{script}"),
@@ -118,13 +122,20 @@ fn decoded_json(segment: &str) -> Option<serde_json::Value> {
 
 /// The body of `url`, a page or a script of the web player, as text. `what` names it in
 /// errors.
+///
+/// # Errors
+///
+/// [`Error::Network`] when the connection fails or the answer is cut short;
+/// [`Error::Protocol`] for a failure status, named, or a body over [`LARGEST_FILE`].
 async fn read(http: &reqwest::Client, url: &str, what: &str) -> Result<String> {
     let out_of_reach =
         |e: reqwest::Error| Error::Network(format!("{what} is out of reach: {}", e.without_url()));
     let mut resp = http.get(url).send().await.map_err(out_of_reach)?;
     let status = resp.status();
+    // An answer, though a failure: a protocol error, which the renewal on a 401 waits after
+    // rather than read the page again at every request.
     if !status.is_success() {
-        return Err(Error::Network(format!(
+        return Err(Error::Protocol(format!(
             "{what} is out of reach: HTTP {status}"
         )));
     }
@@ -141,117 +152,54 @@ async fn read(http: &reqwest::Client, url: &str, what: &str) -> Result<String> {
     Ok(String::from_utf8_lossy(&body).into_owned())
 }
 
-/// The path of the main script `page` names: the `src` of its first
-/// `<script type="module">` that is `/assets/index~<hash>.js` or `/assets/index-<hash>.js`.
-/// The path is on the web player's host.
+/// The path and query of the main script `page` names, on the web player's host: the first
+/// text anywhere in `page`, in a tag or not, of the form `/assets/index~<hash>.js` or
+/// `/assets/index-<hash>.js` (`<hash>` one or more ASCII letters, digits, `_` or `-`), with
+/// the query right after it, if any: a `?`, then what follows up to a quote, a space, `<`
+/// or `>`.
+///
+/// The path counts written alone, or right after `https://music.apple.com`; not as the end
+/// of another address or path (`https://elsewhere.example/assets/…`, `x/assets/…`), nor as
+/// the start of a longer one (`….jsx`, `….js/x`). One pass over `page`.
 fn main_script(page: &str) -> Option<&str> {
-    main_script_counting(page, &mut 0)
-}
-
-/// [`main_script`], adding to `steps` how many bytes of `page` its own loops looked at:
-/// tests bound it by the page's length.
-fn main_script_counting<'a>(page: &'a str, steps: &mut usize) -> Option<&'a str> {
-    let mut from = 0;
-    while let Some(tag) = SCRIPT_TAG.find_at(page, from) {
-        from = tag.end();
-        // `<scripts`, say, is another tag.
-        let name_ends = page
-            .as_bytes()
-            .get(tag.end())
-            .is_none_or(|&b| b.is_ascii_whitespace() || b == b'>' || b == b'/');
-        if !name_ends {
-            continue;
-        }
-        let (attributes, end) = tag_attributes(page, tag.end(), steps);
-        from = end;
-        // A tag the page cuts short names nothing.
-        let Some(attributes) = attributes else {
-            continue;
-        };
-        let module = attributes.iter().any(|(name, value)| {
-            name.eq_ignore_ascii_case("type") && value.eq_ignore_ascii_case("module")
-        });
-        let src = attributes
-            .iter()
-            .find(|(name, _)| name.eq_ignore_ascii_case("src"))
-            .map(|(_, value)| *value);
-        if module && let Some(path) = src.filter(|src| is_main_script(src)) {
-            return Some(path);
-        }
-    }
-    None
-}
-
-/// The attributes of the tag whose name ends at `from` in `page`, and where the tag ends:
-/// just past its `>`. A tag that never closes has none, and ends with `page`. A value is
-/// quoted with `"` or `'`, and may then hold a `>`, or runs to the next space or `>`. Adds the
-/// bytes looked at to `steps`.
-fn tag_attributes<'a>(
-    page: &'a str,
-    from: usize,
-    steps: &mut usize,
-) -> (Option<Vec<(&'a str, &'a str)>>, usize) {
     let bytes = page.as_bytes();
-    let mut attributes = Vec::new();
-    let mut at = from;
-    // Every turn of each loop moves `at` forward, so the tag is read once.
-    loop {
-        while at < bytes.len() && (bytes[at].is_ascii_whitespace() || bytes[at] == b'/') {
-            at += 1;
-            *steps += 1;
+    MAIN_SCRIPT.find_iter(page).find_map(|found| {
+        let before = &page[..found.start()];
+        let alone = before
+            .as_bytes()
+            .last()
+            .is_none_or(|&b| !continues_an_address(b));
+        let after = bytes.get(found.end()).copied();
+        if !(alone || before.ends_with(crate::WEB_PLAYER)) || after.is_some_and(continues_a_path) {
+            return None;
         }
-        if at >= bytes.len() {
-            return (None, bytes.len());
+        let mut end = found.end();
+        if after == Some(b'?') {
+            end += bytes[end..]
+                .iter()
+                .position(|&b| matches!(b, b'"' | b'\'' | b'<' | b'>') || b.is_ascii_whitespace())
+                .unwrap_or(bytes.len() - end);
         }
-        if bytes[at] == b'>' {
-            return (Some(attributes), at + 1);
-        }
-        let name_start = at;
-        while at < bytes.len()
-            && !matches!(bytes[at], b'=' | b'>' | b'/')
-            && !bytes[at].is_ascii_whitespace()
-        {
-            at += 1;
-            *steps += 1;
-        }
-        let name = &page[name_start..at];
-        if at >= bytes.len() || bytes[at] != b'=' {
-            // An attribute without a value (`async`, `crossorigin`), or a lone `/`.
-            if at < bytes.len() && bytes[at] == b'/' {
-                at += 1;
-            }
-            attributes.push((name, ""));
-            continue;
-        }
-        at += 1;
-        let value = match bytes.get(at) {
-            Some(&quote @ (b'"' | b'\'')) => {
-                let start = at + 1;
-                let end = bytes[start..]
-                    .iter()
-                    .position(|&b| b == quote)
-                    .map_or(bytes.len(), |n| start + n);
-                *steps += end - at;
-                at = (end + 1).min(bytes.len());
-                &page[start..end]
-            }
-            _ => {
-                let start = at;
-                while at < bytes.len() && bytes[at] != b'>' && !bytes[at].is_ascii_whitespace() {
-                    at += 1;
-                    *steps += 1;
-                }
-                &page[start..at]
-            }
-        };
-        attributes.push((name, value));
-    }
+        Some(&page[found.start()..end])
+    })
 }
 
-/// Whether `src` is `/assets/index~<hash>.js` or `/assets/index-<hash>.js`, the hash one or
+/// Whether `b`, just before a path, makes it the end of another address or path: a
+/// character of a host, a port or a path.
+fn continues_an_address(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~' | b'%' | b'/' | b':' | b'@')
+}
+
+/// Whether `b`, just after a path's `.js`, makes it the start of a longer path.
+fn continues_a_path(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~' | b'%' | b'/')
+}
+
+/// Whether `path` is `/assets/index~<hash>.js` or `/assets/index-<hash>.js`, the hash one or
 /// more ASCII letters, digits, `_` or `-`.
-fn is_main_script(src: &str) -> bool {
-    let Some(hash) = src
+#[cfg(test)]
+fn is_main_script(path: &str) -> bool {
+    let Some(hash) = path
         .strip_prefix("/assets/index")
         .and_then(|rest| rest.strip_prefix('~').or_else(|| rest.strip_prefix('-')))
         .and_then(|rest| rest.strip_suffix(".js"))
@@ -298,6 +246,27 @@ fn is_base64url(b: u8) -> bool {
     b.is_ascii_alphanumeric() || b == b'-' || b == b'_'
 }
 
+/// Entry points to this file's searches for the `cargo fuzz` targets, through
+/// [`crate::fuzzing`].
+#[cfg(feature = "fuzzing")]
+pub(crate) mod fuzzing {
+    /// The path and query of the main script `page` names.
+    pub fn main_script(page: &str) -> Option<&str> {
+        super::main_script(page)
+    }
+
+    /// The first ES256 JWT of `script`.
+    pub fn first_token(script: &str) -> Option<&str> {
+        super::first_token(script)
+    }
+
+    /// Whether `header`, a JWT's first segment, decodes to a JSON header naming
+    /// `"alg": "ES256"`.
+    pub fn names_es256(header: &str) -> bool {
+        super::names_es256(header)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -308,33 +277,84 @@ mod tests {
     }
 
     #[test]
-    fn the_main_script_is_the_module_one_in_either_form() {
-        let page = r#"<html><head><script src="/assets/index~old.js"></script>
+    fn the_main_script_is_the_first_named_in_either_form() {
+        let page = r#"<html><head><link rel="modulepreload" href="/assets/vendor~v1.js">
 <script crossorigin type="module" src="/assets/index~a1B2-c_3.js"></script></head></html>"#;
         assert_eq!(main_script(page), Some("/assets/index~a1B2-c_3.js"));
         let dashed = r#"<SCRIPT TYPE='module' defer src=/assets/index-Zx9.js>"#;
         assert_eq!(main_script(dashed), Some("/assets/index-Zx9.js"));
+        // The first one named, whatever names it.
+        let two = r#"<script src="/assets/index~first.js"></script>
+<script type="module" src="/assets/index~second.js"></script>"#;
+        assert_eq!(main_script(two), Some("/assets/index~first.js"));
     }
 
     #[test]
-    fn other_scripts_and_malformed_tags_name_none() {
+    fn the_main_script_is_found_anywhere_with_its_query() {
+        for (page, expected) in [
+            // In no tag at all, or in one cut short.
+            ("import(\"/assets/index~ab.js\")", "/assets/index~ab.js"),
+            (
+                "<script type=\"module\" src=\"/assets/index~ab.js",
+                "/assets/index~ab.js",
+            ),
+            ("<scripts src='/assets/index-ab.js'>", "/assets/index-ab.js"),
+            (
+                "<script type=\"text/javascript\" src=\"/assets/index~ab.js\">",
+                "/assets/index~ab.js",
+            ),
+            ("/assets/index~ab.js", "/assets/index~ab.js"),
+            // Right after the web player's address.
+            (
+                "<script src=\"https://music.apple.com/assets/index~ab.js\">",
+                "/assets/index~ab.js",
+            ),
+            // Its query, up to a quote, a space, `<` or `>`.
+            (
+                "src=\"/assets/index~ab.js?v=2&x=%20\"",
+                "/assets/index~ab.js?v=2&x=%20",
+            ),
+            ("src='/assets/index~ab.js?v=2'", "/assets/index~ab.js?v=2"),
+            (
+                "src=/assets/index~ab.js?v=2 async",
+                "/assets/index~ab.js?v=2",
+            ),
+            ("src=/assets/index~ab.js?v=2>", "/assets/index~ab.js?v=2"),
+            ("src=/assets/index~ab.js?v=2<", "/assets/index~ab.js?v=2"),
+            ("/assets/index~ab.js?", "/assets/index~ab.js?"),
+            ("/assets/index~ab.js#x", "/assets/index~ab.js"),
+            // Past text that is not it.
+            (
+                "https://elsewhere.example/assets/index~no.js /assets/index~yes.js",
+                "/assets/index~yes.js",
+            ),
+        ] {
+            assert_eq!(main_script(page), Some(expected), "{page}");
+        }
+    }
+
+    #[test]
+    fn other_scripts_name_none() {
         for page in [
             "",
             "<script",
             "<script type=\"module\" src=\"/assets/vendor~abc.js\">",
             "<script type=\"module\" src=\"/assets/index~.js\">",
+            "<script type=\"module\" src=\"/assets/index.js\">",
+            "<script type=\"module\" src=\"/assets/index_ab.js\">",
             "<script type=\"module\" src=\"/assets/index~ab/c.js\">",
+            "<script type=\"module\" src=\"/assets/index~ab.c.js\">",
             "<script type=\"module\" src=\"https://elsewhere.example/assets/index~ab.js\">",
-            "<script type=\"text/javascript\" src=\"/assets/index~ab.js\">",
-            "<script type=\"module\" src=\"/assets/index~ab.js",
-            "<scripts type=\"module\" src=\"/assets/index~ab.js\"",
-            "<script type=\"module\" data-x=\"a>b\" src=\"/assets/index~ab.jsx\">",
+            "<script type=\"module\" src=\"//elsewhere.example/assets/index~ab.js\">",
+            "<script type=\"module\" src=\"/cdn/assets/index~ab.js\">",
+            "<script type=\"module\" src=\"x/assets/index~ab.js\">",
+            "<script type=\"module\" src=\"/assets/index~ab.jsx\">",
+            "<script type=\"module\" src=\"/assets/index~ab.js/x\">",
+            "<script type=\"module\" src=\"/assets/index~ab.js.map\">",
+            "<script type=\"module\" src=\"/assets/index~ab.js%20\">",
         ] {
             assert_eq!(main_script(page), None, "{page}");
         }
-        // A quoted `>` does not end the tag.
-        let quoted = "<script data-x=\"a>b\" type=module src=\"/assets/index~ab.js\">";
-        assert_eq!(main_script(quoted), Some("/assets/index~ab.js"));
     }
 
     #[test]
@@ -437,7 +457,7 @@ mod tests {
             (
                 "names no main script",
                 200,
-                "<script src=\"/assets/index~t.js\">",
+                "<script type=module src=\"/assets/vendor~t.js\">",
                 200,
                 String::new(),
             ),
@@ -472,10 +492,51 @@ mod tests {
             });
             let error = developer_token_at(&test_client(server.port()), &server.web_player())
                 .await
-                .unwrap_err()
-                .to_string();
+                .unwrap_err();
+            // A failure status too: the page or the script answered.
+            assert!(matches!(error, Error::Protocol(_)), "{error}");
+            let error = error.to_string();
             assert!(error.contains(expected), "{error} names {expected}");
         }
+    }
+
+    #[tokio::test]
+    async fn a_script_out_of_reach_is_a_network_error() {
+        let server = TestServer::start(|request| match request.path.as_str() {
+            "/" => reply(200, "<script type=module src=/assets/index~t.js>"),
+            _ => Reply::hang_up(),
+        });
+        let error = developer_token_at(&test_client(server.port()), &server.web_player())
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(&error, Error::Network(m) if m.starts_with("the web player's main script is out of reach")),
+            "{error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_script_is_asked_at_the_path_and_query_the_page_names() {
+        let token = fake_token(1_900_000_000);
+        let script = format!("t=\"{token}\"");
+        let server = TestServer::start(move |request| match request.path.as_str() {
+            "/" => reply(
+                200,
+                "<link rel=preload href=\"https://music.apple.com/assets/index~q1.js?v=3&amp=1\">",
+            ),
+            "/assets/index~q1.js?v=3&amp=1" => reply(200, &script),
+            _ => reply(404, ""),
+        });
+        let read = developer_token_at(&test_client(server.port()), &server.web_player())
+            .await
+            .unwrap();
+        assert_eq!(read, token);
+        assert!(
+            server
+                .requests()
+                .iter()
+                .all(|r| r.host_name() == "music.apple.com")
+        );
     }
 
     #[tokio::test]
@@ -516,17 +577,13 @@ mod tests {
     }
 
     #[test]
-    fn the_searches_look_at_each_byte_a_bounded_number_of_times() {
+    fn the_token_search_looks_at_each_byte_a_bounded_number_of_times() {
         let es256 = segment(r#"{"alg":"ES256"}"#);
-        // Runs of headers that each fail a little further on, and tags that never close.
+        // Runs of headers that each fail a little further on.
         let script = format!("{}{es256}.a.b", "eyJeyJ.eyJ.".repeat(20_000));
         let mut steps = 0;
         assert!(first_token_counting(&script, &mut steps).is_some());
         assert!(steps <= 3 * script.len(), "{steps} for {}", script.len());
-        let page = "<script a=\"".to_owned() + &"<script ".repeat(20_000);
-        let mut steps = 0;
-        assert_eq!(main_script_counting(&page, &mut steps), None);
-        assert!(steps <= 2 * page.len(), "{steps} for {}", page.len());
     }
     /// A synthetic text of `len` bytes, read like minified JavaScript; with `decoys`, two
     /// strings in every 140 bytes that start like a JWT but are none.
@@ -616,19 +673,24 @@ mod mutation_tests {
         let pages = [
             "<!doctype html><html><head><meta charset=utf-8><script type=\"module\" crossorigin src=\"/assets/index~a1b2c3.js\"></script></head></html>".to_owned(),
             "<script src=x></script><SCRIPT TYPE=module SRC='/assets/index-Zz_9.js'>".to_owned(),
+            "<script src=\"https://music.apple.com/assets/index~q1.js?v=3&l=en\" async>".to_owned(),
         ];
         let mut named = 0;
         for page in damaged_texts(0x9A6E, &pages) {
-            let mut steps = 0;
-            if let Some(path) = main_script_counting(&page, &mut steps) {
+            if let Some(script) = main_script(&page) {
                 named += 1;
-                assert!(is_main_script(path), "{path}");
+                assert!(page.contains(script), "{script}");
+                let (path, query) = script.split_once('?').unwrap_or((script, ""));
+                assert!(is_main_script(path), "{script}");
+                assert!(
+                    !query.contains(['"', '\'', '<', '>']) && !query.contains(char::is_whitespace),
+                    "{script}"
+                );
+                // On the web player's host, whatever the page says.
+                let url =
+                    url::Url::parse(&format!("{}{script}", crate::WEB_PLAYER)).expect("an address");
+                assert_eq!(url.host_str(), Some("music.apple.com"), "{script}");
             }
-            assert!(
-                steps <= 2 * page.len() + 16,
-                "{steps} steps for {} bytes",
-                page.len()
-            );
         }
         assert!(named > 0, "some pages still name their script");
         let scripts = [

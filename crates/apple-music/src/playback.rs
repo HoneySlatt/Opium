@@ -17,15 +17,15 @@ use crate::AppleMusic;
 use cenc::AudioStream;
 
 /// The web player's playback service, connected to ahead of a song.
-pub(crate) const PLAY: &str = "https://play.music.apple.com";
-/// Its path that names a song's assets.
-const WEB_PLAYBACK: &str = "/WebObjects/MZPlay.woa/wa/webPlayback";
+pub(crate) const PLAY_HOST: &str = "https://play.music.apple.com";
+/// The playback service's path that names a song's assets.
+const WEB_PLAYBACK_PATH: &str = "/WebObjects/MZPlay.woa/wa/webPlayback";
 /// Where the songs' playlists and files are.
 pub const ASSET_HOST: &str = "https://aod-ssl.itunes.apple.com/";
 /// The licence server, connected to ahead of the licence.
-pub(crate) const LICENCE: &str = "https://play.itunes.apple.com";
-/// Its path that answers a Widevine challenge.
-const LICENSE: &str = "/WebObjects/MZPlay.woa/wa/acquireWebPlaybackLicense";
+pub(crate) const LICENCE_HOST: &str = "https://play.itunes.apple.com";
+/// The licence server's path that answers a Widevine challenge.
+const LICENCE_PATH: &str = "/WebObjects/MZPlay.woa/wa/acquireWebPlaybackLicense";
 /// The key system the licence is asked for.
 const KEY_SYSTEM: &str = "com.widevine.alpha";
 /// The enhanced HLS variant of Spatial Audio: the Dolby Atmos mix rendered
@@ -89,12 +89,21 @@ fn id_kind(id: &str) -> Option<IdKind> {
 ///
 /// A playback error naming `id` when it is neither kind: nothing is asked.
 fn playback_request(id: &str) -> Result<serde_json::Value> {
-    let key = match id_kind(id) {
-        Some(IdKind::Catalog) => "salableAdamId",
-        Some(IdKind::Library) => "universalLibraryId",
-        None => return Err(playback_error(format!("not a song id: {id:?}"))),
+    let key = match song_kind(id)? {
+        IdKind::Catalog => "salableAdamId",
+        IdKind::Library => "universalLibraryId",
     };
     Ok(serde_json::json!({ key: id }))
+}
+
+/// Which kind of song id `id` is, checked before any request of the song's: it goes into
+/// addresses and bodies.
+///
+/// # Errors
+///
+/// A playback error naming `id` when it is neither kind.
+fn song_kind(id: &str) -> Result<IdKind> {
+    id_kind(id).ok_or_else(|| playback_error(format!("not a song id: {id:?}")))
 }
 
 /// What a song plays, as its `webPlayback` entry says.
@@ -507,6 +516,8 @@ impl AppleMusic {
     /// a Dolby Atmos mix comes as its binaural rendering.
     pub async fn protected(&self, track: &ItemId, spatial: bool) -> Result<Option<Protected>> {
         let adam_id = track.id.as_str();
+        // Before anything is sent: the id goes into addresses.
+        let kind = song_kind(adam_id)?;
         // The licence comes next, from another host: its connection opens
         // meanwhile.
         let http = self.http.clone();
@@ -514,7 +525,7 @@ impl AppleMusic {
         tokio::spawn(async move {
             let _ = http.head(licence_host).send().await;
         });
-        let (song, binaural) = self.song_and_binaural(adam_id, spatial).await?;
+        let (song, binaural) = self.song_and_binaural(adam_id, kind, spatial).await?;
         // A library song Apple matched to the catalog is licensed by the
         // catalog's id, said here, though asked for as the library's.
         let licensed_as = song_id(&song).unwrap_or_else(|| adam_id.to_owned());
@@ -561,24 +572,25 @@ impl AppleMusic {
             init: None,
             kbps,
             licensed_as,
-            is_library: id_kind(adam_id) == Some(IdKind::Library),
+            is_library: kind == IdKind::Library,
             file,
         }))
     }
 
-    /// The web player's entry for `adam_id`, and with `spatial` the
-    /// binaural playlist of its Dolby Atmos mix when it has one, looked for
+    /// The web player's entry for `adam_id`, of the `kind` [`song_kind`] found, and with
+    /// `spatial` the binaural playlist of its Dolby Atmos mix when it has one, looked for
     /// side by side when the catalog id is known already. Spatial Audio
     /// that can't be found plays in stereo.
     async fn song_and_binaural(
         &self,
         adam_id: &str,
+        kind: IdKind,
         spatial: bool,
     ) -> Result<(serde_json::Value, Option<(String, String)>)> {
         if !spatial {
             return Ok((self.web_playback(adam_id).await?, None));
         }
-        if id_kind(adam_id) != Some(IdKind::Library) {
+        if kind == IdKind::Catalog {
             let (song, binaural) = tokio::join!(self.web_playback(adam_id), self.binaural(adam_id));
             return Ok((song?, binaural.ok().flatten()));
         }
@@ -733,7 +745,9 @@ impl AppleMusic {
         spatial: bool,
     ) -> Result<(AudioStream, Option<u32>, bool)> {
         let adam_id = track.id.as_str();
-        let (song, binaural) = self.song_and_binaural(adam_id, spatial).await?;
+        // Before anything is sent: the id goes into addresses.
+        let kind = song_kind(adam_id)?;
+        let (song, binaural) = self.song_and_binaural(adam_id, kind, spatial).await?;
         // A library song Apple matched to the catalog is licensed by the
         // catalog's id, said here, though asked for as the library's.
         let licensed_as = song_id(&song).unwrap_or_else(|| adam_id.to_owned());
@@ -770,7 +784,7 @@ impl AppleMusic {
                 &session,
                 &challenge,
                 &licensed_as,
-                id_kind(adam_id) == Some(IdKind::Library),
+                kind == IdKind::Library,
                 &key.uri,
                 &key.id,
             ),
@@ -888,7 +902,7 @@ impl AppleMusic {
         let resp = self
             .send(
                 self.http
-                    .post(format!("{}{LICENSE}", self.hosts.licence))
+                    .post(format!("{}{LICENCE_PATH}", self.hosts.licence))
                     .header("x-apple-music-user-token", &self.user_token)
                     .json(&body),
                 "licence",
@@ -926,7 +940,7 @@ impl AppleMusic {
         let resp = self
             .send(
                 self.http
-                    .post(format!("{}{WEB_PLAYBACK}", self.hosts.play))
+                    .post(format!("{}{WEB_PLAYBACK_PATH}", self.hosts.play))
                     .header("x-apple-music-user-token", &self.user_token)
                     .json(&playback_request(adam_id)?),
                 "webPlayback",
@@ -1027,6 +1041,148 @@ async fn json_body(resp: reqwest::Response, what: &str) -> Result<serde_json::Va
     resp.json()
         .await
         .map_err(|e| Error::Protocol(format!("{what}: {e}")))
+}
+
+/// Entry points to this file's readers for the `cargo fuzz` targets, through
+/// [`crate::fuzzing`]: each takes what Apple sends as it comes, and answers what the reader
+/// made of it in plain types.
+#[cfg(feature = "fuzzing")]
+pub(crate) mod fuzzing {
+    /// A `webPlayback` entry's asset, as the entry gives it: what the targets check the
+    /// choice against.
+    #[derive(Debug)]
+    pub struct Asset {
+        /// Its `flavor`, when it is a string.
+        pub flavor: Option<String>,
+        /// Whether it has no `flavor`, or a `null` one.
+        pub no_flavor: bool,
+        /// Its `URL`, when it is a string.
+        pub url: Option<String>,
+    }
+
+    /// What an entry plays, as [`web_playback_entry`] chose it.
+    #[derive(Debug)]
+    pub enum Chosen {
+        /// A user's upload: its one asset's address.
+        Upload(String),
+        /// A catalog song's encode: its media playlist's address, and its bit rate.
+        Encode { playlist: String, kbps: u32 },
+    }
+
+    /// A `webPlayback` entry read: its assets as it gives them, and what plays.
+    #[derive(Debug)]
+    pub struct Entry {
+        /// The entry's `assets`, when it is an array.
+        pub assets: Option<Vec<Asset>>,
+        /// The choice, or the error's message.
+        pub chosen: Result<Chosen, String>,
+    }
+
+    /// A catalog song's file, as its media playlist names it.
+    #[derive(Debug)]
+    pub struct CatalogFile {
+        /// The whole fragmented MP4's address.
+        pub url: String,
+        /// The key's `URI`, kept whole for the licence.
+        pub key_uri: String,
+        /// The key id read from it.
+        pub key_id: [u8; 16],
+    }
+
+    /// Which kind of song id `id` is: `"catalog"`, `"library"`, or `None` for neither.
+    pub fn id_kind(id: &str) -> Option<&'static str> {
+        super::id_kind(id).map(|kind| match kind {
+            super::IdKind::Catalog => "catalog",
+            super::IdKind::Library => "library",
+        })
+    }
+
+    /// The `webPlayback` request's body for the song `id`, as JSON text: `None` when `id`
+    /// is refused.
+    pub fn playback_request(id: &str) -> Option<String> {
+        super::playback_request(id)
+            .ok()
+            .map(|body| body.to_string())
+    }
+
+    /// The catalog song an `entry` (JSON) names: `None` for none, or for text that is not
+    /// JSON.
+    pub fn song_id(entry: &[u8]) -> Option<String> {
+        super::song_id(&serde_json::from_slice(entry).ok()?)
+    }
+
+    /// What `entry` (JSON), a `songList` entry, plays: `None` for text that is not JSON.
+    pub fn web_playback_entry(entry: &[u8]) -> Option<Entry> {
+        let entry: serde_json::Value = serde_json::from_slice(entry).ok()?;
+        let assets = entry["assets"].as_array().map(|assets| {
+            assets
+                .iter()
+                .map(|asset| Asset {
+                    flavor: asset["flavor"].as_str().map(str::to_owned),
+                    no_flavor: asset["flavor"].is_null(),
+                    url: asset["URL"].as_str().map(str::to_owned),
+                })
+                .collect()
+        });
+        let chosen = match super::choose_source(&entry) {
+            Ok(super::Source::Upload(url)) => Ok(Chosen::Upload(url)),
+            Ok(super::Source::Encode { playlist, kbps }) => Ok(Chosen::Encode { playlist, kbps }),
+            Err(e) => Err(e.to_string()),
+        };
+        Some(Entry { assets, chosen })
+    }
+
+    /// The catalog song's file and key that `body`, its media playlist at `playlist_url`,
+    /// names: `None` when it names none.
+    pub fn catalog_file(playlist_url: &str, body: &[u8]) -> Option<CatalogFile> {
+        let mut file = super::catalog_file(playlist_url, body)?;
+        let key = file.keys.pop()?;
+        Some(CatalogFile {
+            url: file.url,
+            key_uri: key.uri,
+            key_id: key.id,
+        })
+    }
+
+    /// The licence in `answer`, the licence server's body, or the error's message.
+    pub fn licence(answer: &[u8]) -> Result<Vec<u8>, String> {
+        let answer: serde_json::Value =
+            serde_json::from_slice(answer).map_err(|e| format!("licence: {e}"))?;
+        super::licence_in(&answer).map_err(|e| e.to_string())
+    }
+
+    /// The enhanced playlist `body` at `playlist_url` read: its file's address and its
+    /// Widevine keys' `URI`s, in order.
+    pub fn enhanced_file(playlist_url: &str, body: &str) -> Option<(String, Vec<String>)> {
+        let file = super::read_enhanced_playlist(playlist_url, body)?;
+        Some((file.url, file.keys.into_iter().map(|key| key.uri).collect()))
+    }
+
+    /// The enhanced playlist `body` at `playlist_url`, as ExoPlayer is given it.
+    pub fn exoplayer_playlist(body: &str, playlist_url: &str) -> String {
+        super::enhanced_playlist(body, playlist_url)
+    }
+
+    /// A catalog song's playlist `body` at `playlist_url`, as players of Widevine CENC are
+    /// given it with `pssh`.
+    pub fn widevine_playlist(body: &str, playlist_url: &str, pssh: &[u8]) -> String {
+        super::widevine_playlist(body, playlist_url, pssh)
+    }
+
+    /// Where the init segment of the media playlist `body` is: `(offset, length)`.
+    pub fn map_range(body: &str) -> Option<(u64, u64)> {
+        super::map_range(body)
+    }
+
+    /// The address of the variant `group` of the master playlist `master` at `master_url`.
+    pub fn variant(master_url: &str, master: &str, group: &str) -> Option<String> {
+        super::variant(master_url, master, group)
+    }
+
+    /// The sample rate the AAC `AudioSpecificConfig` `asc` says.
+    pub fn aac_rate(asc: &[u8]) -> Option<u32> {
+        super::aac_rate(asc)
+    }
 }
 
 #[cfg(test)]
@@ -1427,7 +1583,7 @@ mod http_tests {
     ) -> crate::test_support::TestServer {
         apple_server(
             move |request| match (request.host_name(), request.path.as_str()) {
-                ("play.music.apple.com", WEB_PLAYBACK) => {
+                ("play.music.apple.com", WEB_PLAYBACK_PATH) => {
                     let asked = request.json();
                     let song_id = if asked["universalLibraryId"] == "i.Lib-1" {
                         json!(555)
@@ -1450,7 +1606,7 @@ mod http_tests {
                     }]}))
                 }
                 ("aod-ssl.itunes.apple.com", "/x/song.m3u8") => reply(200, &playlist),
-                ("play.itunes.apple.com", LICENSE) => licence(),
+                ("play.itunes.apple.com", LICENCE_PATH) => licence(),
                 _ => reply(404, ""),
             },
         )
@@ -1482,7 +1638,7 @@ mod http_tests {
         assert_eq!(protected.licensed_as, "1234");
         assert!(!protected.is_library);
 
-        let asked = &server.requests_to(WEB_PLAYBACK)[0];
+        let asked = &server.requests_to(WEB_PLAYBACK_PATH)[0];
         assert_eq!(asked.method, "POST");
         assert_eq!(asked.json(), json!({ "salableAdamId": "1234" }));
         assert!(asked.bearer().is_some());
@@ -1512,7 +1668,7 @@ mod http_tests {
             "playback failed: licence refused (errorCode 3)"
         );
 
-        let asked = &server.requests_to(LICENSE)[0];
+        let asked = &server.requests_to(LICENCE_PATH)[0];
         assert_eq!(asked.host_name(), "play.itunes.apple.com");
         assert_eq!(
             asked.json(),
@@ -1586,15 +1742,20 @@ mod http_tests {
         let server = playback_server(String::new(), || reply(500, ""));
         let am = apple_music(&server).await;
         let before = server.requests().len();
-        let track = ItemId::new(ProviderKind::AppleMusic, "../../etc");
-        let error = am.protected(&track, false).await.unwrap_err();
-        assert!(error.to_string().contains("not a song id"), "{error}");
-        // The licence host's connection, opened ahead, is all that may have gone out.
-        assert!(
-            server.requests()[before..]
-                .iter()
-                .all(|r| r.method == "HEAD")
-        );
+        for spatial in [false, true] {
+            for id in ["../../etc", "", "ra.1234", "i.a/b", "12 3", "pl.u-1"] {
+                let track = ItemId::new(ProviderKind::AppleMusic, id);
+                let error = am.protected(&track, spatial).await.unwrap_err();
+                assert!(error.to_string().contains("not a song id"), "{id}: {error}");
+            }
+        }
+        // Long enough for a warm-up of the licence host's connection, had one been sent.
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        let after: Vec<String> = server.requests()[before..]
+            .iter()
+            .map(|r| format!("{} {}{}", r.method, r.host_name(), r.path))
+            .collect();
+        assert!(after.is_empty(), "{after:?}");
     }
 
     /// The whole of `stream`, read off the runtime, which its download goes on in.

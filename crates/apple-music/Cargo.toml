@@ -4,6 +4,11 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[features]
+# Entry points to the readers of what Apple sends, for the `cargo fuzz` targets of `fuzz/`
+# (outside the workspace, built in `nix develop .#fuzz`). Off by default: the app never has them.
+fuzzing = []
+
 [dependencies]
 async-trait = "0.1.92"
 browser-signin = { path = "../browser-signin" }

@@ -41,6 +41,8 @@ pub(crate) struct Gathering {
 }
 
 impl Gathering {
+    /// A gathering of up to `count` songs, nothing sent yet. With a `count` of 0, it sends
+    /// nothing and ends with no song.
     pub fn new(count: usize) -> Self {
         Self {
             count,
@@ -130,6 +132,29 @@ impl Gathering {
     #[cfg(test)]
     pub fn calls_in_flight(&self) -> usize {
         self.in_flight
+    }
+}
+
+/// `id`, when it is a station's id that may go into an address unescaped as one path
+/// segment: one or more ASCII letters, digits, `-`, `.` or `_`, and neither `.` nor `..`,
+/// which an address would read as the folder itself or its parent. Apple's ids take more
+/// forms than [`crate::apple_id`]'s: a playlist's station is `ra.cp-pl.u-<letters and
+/// digits>`.
+///
+/// # Errors
+///
+/// [`Error::Protocol`], naming `id`, for anything else: the station is asked nothing.
+pub(crate) fn station_id(id: &str) -> Result<&str> {
+    let one_segment = !id.is_empty()
+        && id != "."
+        && id != ".."
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_'));
+    if one_segment {
+        Ok(id)
+    } else {
+        Err(Error::Protocol(format!("not a station id: {id:?}")))
     }
 }
 
@@ -296,6 +321,45 @@ mod tests {
         assert_eq!(gathering.calls_to_send(), 0);
         assert!(gathering.is_over());
         assert!(gathering.into_songs().unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_station_id_is_one_path_segment() {
+        for id in [
+            "ra.cp-pl.u-AbC9",
+            "ra.1234",
+            "ra.u-a_b.c",
+            "x",
+            "..a",
+            "a..",
+            "...",
+            "_",
+        ] {
+            assert_eq!(station_id(id).unwrap(), id);
+        }
+        for id in [
+            "",
+            ".",
+            "..",
+            "ra.1/../me",
+            "ra 1",
+            "ra.1?x=y",
+            "ra.1#f",
+            "ra%2E1",
+            "ra.é",
+            "ra\\1",
+            "ra.1\n",
+            "ra:1",
+            "ra.1;x",
+            "ra+1",
+            "ra~1",
+        ] {
+            let error = station_id(id).unwrap_err();
+            assert!(
+                matches!(&error, Error::Protocol(m) if m.contains("not a station id")),
+                "{id:?}: {error}"
+            );
+        }
     }
 
     #[test]

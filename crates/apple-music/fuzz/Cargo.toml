@@ -1,0 +1,73 @@
+[package]
+name = "apple-music-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4.13"
+
+[dependencies.apple-music]
+path = ".."
+features = ["fuzzing"]
+
+[[bin]]
+name = "ids"
+path = "fuzz_targets/ids.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "web_playback_entry"
+path = "fuzz_targets/web_playback_entry.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "media_playlist"
+path = "fuzz_targets/media_playlist.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "licence_answer"
+path = "fuzz_targets/licence_answer.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "next_page"
+path = "fuzz_targets/next_page.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "web_player"
+path = "fuzz_targets/web_player.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "station_answer"
+path = "fuzz_targets/station_answer.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "opiums_own_readers"
+path = "fuzz_targets/opiums_own_readers.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

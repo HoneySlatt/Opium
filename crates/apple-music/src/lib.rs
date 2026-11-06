@@ -6,6 +6,9 @@
 
 pub mod auth;
 mod convert;
+#[cfg(feature = "fuzzing")]
+#[doc(hidden)]
+pub mod fuzzing;
 mod lyrics;
 mod motion;
 mod playback;
@@ -196,8 +199,8 @@ impl Hosts {
         Self {
             api: API.into(),
             web_player: WEB_PLAYER.into(),
-            play: playback::PLAY.into(),
-            licence: playback::LICENCE.into(),
+            play: playback::PLAY_HOST.into(),
+            licence: playback::LICENCE_HOST.into(),
         }
     }
 
@@ -209,8 +212,8 @@ impl Hosts {
         Self {
             api: local(API),
             web_player: local(WEB_PLAYER),
-            play: local(playback::PLAY),
-            licence: local(playback::LICENCE),
+            play: local(playback::PLAY_HOST),
+            licence: local(playback::LICENCE_HOST),
         }
     }
 }
@@ -252,8 +255,12 @@ pub struct AppleMusic {
     /// Borrowed from the web player, which swaps it now and then: read again
     /// when Apple turns it down.
     developer_token: std::sync::RwLock<String>,
-    /// When it was last read again, so a run of refusals reads it once.
+    /// When it was last read again on a refusal and the web player answered, so a run of
+    /// refusals reads it once.
     renewed: tokio::sync::Mutex<Option<std::time::Instant>>,
+    /// When a reading before it expires was last begun, whatever its outcome: one in
+    /// [`RENEW_EVERY`] at most, while the old token is still good.
+    read_before_expiry: std::sync::Mutex<Option<std::time::Instant>>,
     user_token: String,
     storefront: String,
     /// When the newest songs were first seen, once kept: see `seen`.
@@ -289,7 +296,7 @@ fn expires_soon(token: &str) -> bool {
 /// # Errors
 ///
 /// [`Error::Protocol`], naming `id`, for anything else: a request that would change the
-/// account, or name a station, is refused before it is sent.
+/// account is refused before it is sent.
 fn apple_id(id: &str) -> Result<&str> {
     let catalog = !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit());
     let prefixed = id.split_once('.').is_some_and(|(kind, name)| {
@@ -336,6 +343,7 @@ impl AppleMusic {
             hosts,
             developer_token: std::sync::RwLock::new(developer_token),
             renewed: tokio::sync::Mutex::new(None),
+            read_before_expiry: std::sync::Mutex::new(None),
             user_token,
             storefront: String::new(),
             seen: std::sync::Mutex::new(None),
@@ -428,7 +436,8 @@ impl AppleMusic {
     /// Send `request` with both tokens. Turned down with a 401, the developer
     /// token having expired or been swapped, it is read again from the web
     /// player and the request sent once more: a long session doesn't end up
-    /// signed out for it. A token about to expire is read again before.
+    /// signed out for it. A token about to expire is read again before, once
+    /// in [`RENEW_EVERY`] at most.
     async fn send(
         &self,
         request: reqwest::RequestBuilder,
@@ -436,7 +445,10 @@ impl AppleMusic {
     ) -> Result<reqwest::Response> {
         let mut token = self.developer_token();
         // The old token goes on being sent when the web player can't be read.
-        if expires_soon(&token) && matches!(self.renew_developer_token(&token).await, Ok(true)) {
+        if expires_soon(&token)
+            && self.may_read_before_expiry()
+            && matches!(self.renew_developer_token(&token).await, Ok(true))
+        {
             token = self.developer_token();
         }
         let again = request.try_clone();
@@ -453,6 +465,22 @@ impl AppleMusic {
             return self.authorized(again).send().await.map_err(failed);
         }
         Ok(resp)
+    }
+
+    /// Whether a request may read the developer token again before it expires: not when one
+    /// began within [`RENEW_EVERY`], whatever came of it. Saying yes counts as beginning one,
+    /// so that requests sent meanwhile go on with the old token, which is still good, rather
+    /// than each read the web player again or wait for it.
+    fn may_read_before_expiry(&self) -> bool {
+        let mut last = self
+            .read_before_expiry
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        if last.is_some_and(|at| at.elapsed() < RENEW_EVERY) {
+            return false;
+        }
+        *last = Some(std::time::Instant::now());
+        true
     }
 
     /// Read the developer token again, unless another request just did, in
@@ -484,6 +512,16 @@ impl AppleMusic {
             .write()
             .unwrap_or_else(|e| e.into_inner()) = token;
         Ok(true)
+    }
+
+    /// Forget when the developer token was last read again, as if five minutes had passed.
+    #[cfg(test)]
+    fn as_if_the_renewals_were_long_ago(&self) {
+        *self.renewed.try_lock().expect("no renewal under way") = None;
+        *self
+            .read_before_expiry
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = None;
     }
 
     /// `Ok(None)` on 404, which Apple also answers for some empty collections.
@@ -1699,7 +1737,10 @@ impl Provider for AppleMusic {
         if count == 0 {
             return Ok(Vec::new());
         }
-        let path = format!("/v1/me/stations/next-tracks/{}", apple_id(&station.id)?);
+        let path = format!(
+            "/v1/me/stations/next-tracks/{}",
+            station::station_id(&station.id)?
+        );
         let mut gathering = station::Gathering::new(count);
         let mut calls = futures_util::stream::FuturesUnordered::new();
         loop {
@@ -2163,6 +2204,75 @@ mod http_tests {
         assert_eq!(server.requests_to(crate::test_support::SCRIPT).len(), 2);
     }
 
+    /// A server whose web player serves `expiring`, a token about to expire, at the first
+    /// reading, then answers each later page with `later`; its API answers the profile.
+    fn web_player_then(
+        expiring: String,
+        later: impl Fn() -> Reply + Send + Sync + 'static,
+    ) -> TestServer {
+        let pages = AtomicUsize::new(0);
+        TestServer::start(move |request| {
+            if request.host_name() == "music.apple.com"
+                && request.path == "/"
+                && pages.fetch_add(1, Ordering::SeqCst) > 0
+            {
+                return later();
+            }
+            web_player_and_storefront(request, &expiring).unwrap_or_else(profile)
+        })
+    }
+
+    /// How many times `server`'s web player page was read.
+    fn page_readings(server: &TestServer) -> usize {
+        server
+            .requests()
+            .iter()
+            .filter(|r| r.host_name() == "music.apple.com" && r.path == "/")
+            .count()
+    }
+
+    /// Requests sent one after another, then side by side, while the token is about to
+    /// expire and `server`'s web player cannot renew it: each is sent with the old token, and
+    /// the web player is read once, at the first. Once five minutes have passed, it is read
+    /// once more.
+    async fn read_once_in_five_minutes(server: &TestServer) {
+        let am = apple_music(server).await;
+        // At the connection, then before the storefront's request.
+        assert_eq!(page_readings(server), 2);
+        for _ in 0..4 {
+            am.profile().await.unwrap();
+        }
+        let side_by_side: Vec<_> = (0..6).map(|_| am.profile()).collect();
+        for answer in futures_util::future::join_all(side_by_side).await {
+            answer.unwrap();
+        }
+        assert_eq!(page_readings(server), 2);
+        assert_eq!(server.requests_to(PROFILE).len(), 10);
+        am.as_if_the_renewals_were_long_ago();
+        am.profile().await.unwrap();
+        am.profile().await.unwrap();
+        assert_eq!(page_readings(server), 3);
+    }
+
+    #[tokio::test]
+    async fn a_web_player_failing_by_status_is_read_once_in_five_minutes_before_expiry() {
+        let server = web_player_then(fake_token(seconds_from_now(120)), || reply(503, ""));
+        read_once_in_five_minutes(&server).await;
+    }
+
+    #[tokio::test]
+    async fn a_web_player_out_of_reach_is_read_once_in_five_minutes_before_expiry() {
+        let server = web_player_then(fake_token(seconds_from_now(120)), Reply::hang_up);
+        read_once_in_five_minutes(&server).await;
+    }
+
+    #[tokio::test]
+    async fn a_web_player_serving_the_same_token_is_read_once_in_five_minutes_before_expiry() {
+        let expiring = fake_token(seconds_from_now(120));
+        let server = rotating(vec![expiring], |_| profile());
+        read_once_in_five_minutes(&server).await;
+    }
+
     #[tokio::test]
     async fn a_token_whose_expiry_does_not_read_is_kept_until_refused() {
         let header = base64::Engine::encode(
@@ -2465,15 +2575,31 @@ mod http_tests {
     }
 
     #[tokio::test]
-    async fn no_song_asked_or_a_station_id_that_is_not_apples_sends_nothing() {
+    async fn a_playlists_station_is_asked_by_its_id() {
+        const PLAYLISTS_STATION: &str = "/v1/me/stations/next-tracks/ra.cp-pl.u-AbC9";
+        let server = apple_server(|request| {
+            if request.path == PLAYLISTS_STATION {
+                songs(&["1".into(), "2".into()])
+            } else {
+                reply(404, "")
+            }
+        });
+        let am = apple_music(&server).await;
+        let station = ItemId::new(ProviderKind::AppleMusic, "ra.cp-pl.u-AbC9");
+        assert_eq!(am.station_tracks(&station, 2).await.unwrap().len(), 2);
+        assert_eq!(server.requests_to(PLAYLISTS_STATION).len(), 1);
+    }
+
+    #[tokio::test]
+    async fn no_song_asked_or_a_station_id_that_is_not_one_segment_sends_nothing() {
         let server = station_server(|_| songs(&["1".into()]));
         let am = apple_music(&server).await;
         assert!(am.station_tracks(&station(), 0).await.unwrap().is_empty());
-        for id in ["ra.1/../../me/library", "ra 1", "", "ra.1?x=y"] {
+        for id in ["ra.1/../../me/library", "ra 1", "", "ra.1?x=y", ".", ".."] {
             let station = ItemId::new(ProviderKind::AppleMusic, id);
             let error = am.station_tracks(&station, 10).await.unwrap_err();
             assert!(
-                error.to_string().contains("not an Apple Music id"),
+                error.to_string().contains("not a station id"),
                 "{id}: {error}"
             );
         }

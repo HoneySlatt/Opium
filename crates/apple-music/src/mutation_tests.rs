@@ -4,7 +4,7 @@
 //! their steps), and its result must keep its invariants.
 //!
 //! Here: the generator's rounds, and the readers of the crate's root (the ids a change may
-//! carry, the next page's address) and of `station`. The private readers of `playback` (the
+//! carry, the next page's address) and of `station` (its id, its answers). The private readers of `playback` (the
 //! ids, the `webPlayback` entry, the media playlists, the licence, and Opium's own beside
 //! them) and of `auth` (the page and the script) are fed the same way in a `mutation_tests`
 //! module of their own file.
@@ -81,6 +81,28 @@ fn apple_ids() {
             assert!(url.query().is_none() && url.fragment().is_none());
         }
     }
+}
+
+#[test]
+fn station_ids() {
+    let seeds = ["ra.cp-pl.u-AbC9", "ra.1234", "ra.u-a_b", "..", ""].map(String::from);
+    let mut accepted = 0;
+    for id in damaged_texts(0x57A, &seeds) {
+        if let Ok(station) = crate::station::station_id(&id) {
+            accepted += 1;
+            // Unescaped in the address, it stays its last segment, as it is.
+            let address = format!("{}/v1/me/stations/next-tracks/{station}", crate::API);
+            let url = url::Url::parse(&address).expect("an address");
+            assert_eq!(url.host_str(), Some("amp-api.music.apple.com"));
+            assert_eq!(url.as_str(), address, "{id:?}");
+            assert_eq!(
+                url.path_segments().and_then(|mut s| s.next_back()),
+                Some(station)
+            );
+            assert!(url.query().is_none() && url.fragment().is_none());
+        }
+    }
+    assert!(accepted > 0, "some ids are still stations'");
 }
 
 #[test]
