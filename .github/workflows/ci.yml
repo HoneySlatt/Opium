@@ -8,10 +8,14 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# A push or a pull request that changes only Markdown files builds and tests nothing: the links
+# between the documents, the one check they need, run at every push in links.yml.
 on:
   push:
     branches: [main]
+    paths-ignore: ["**.md"]
   pull_request:
+    paths-ignore: ["**.md"]
   # Every Monday at 06:53 UTC, even without a push, so that a project at rest still learns of
   # changes in its dependencies and in CI's environment. The odd minute keeps off the hour; the
   # owner's other projects run at 06:17 and 06:41. A push cancels a scheduled run in progress

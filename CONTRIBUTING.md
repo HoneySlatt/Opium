@@ -52,8 +52,11 @@ scripts/check.sh android    # inside `nix develop .#android`: the phone's core
   itself is not checked.
 - CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs
   `nix develop --no-update-lock-file --command scripts/check.sh` on every push to `main`, every
-  pull request, and every Monday at 06:53 UTC. The flag makes an incomplete `flake.lock` an error
-  instead of a silent update.
+  pull request, and every Monday at 06:53 UTC, but for a push or a pull request that changes only
+  Markdown files. The flag makes an incomplete `flake.lock` an error instead of a silent update.
+- [`links.yml`](.github/workflows/links.yml) checks the links between the Markdown files at
+  every push and pull request, documents only included, with lychee from the pinned nixpkgs: a
+  minute or two, where the whole check takes ten or more.
 - The weekly run tells a project at rest that a dependency or CI's environment has changed.
   GitHub stops scheduled runs after 60 days without activity on a public repository; a click in
   the Actions tab starts them again. The repository is private: each run, weekly ones included,

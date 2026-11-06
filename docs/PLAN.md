@@ -29,9 +29,6 @@ Every milestone ends with the definition of done in [`AGENTS.md`](../AGENTS.md#d
 - At the wake: M1.4's phone and M1.5, M1.14, then M1.8, the stage audit, which closes the stage;
   then Stage 5, the move to uwui. On 2026-11-05 Google's Android repository still answered 404, for
   the SDK's command-line tools too.
-- Asked by the owner on 2026-11-06, after M1.12, in a commit of its own: CI skips its build and
-  tests for a push that changes only Markdown files, and a small job checks their links on every
-  push.
 - The egui window is frozen until the move
   ([ADR-0026](adr/0026-the-egui-window-frozen-until-the-move.md)), but for M1.14's instruments; the
   phone's Compose screens until uwui replaces them
