@@ -18,9 +18,12 @@ with Jetpack Compose, over the same Rust core.
 - The APK is signed with Android's debug key.
 - On standby until SlimeEngine's Stage 6d plans its ports, Opium's first
   ([ADR-0031](docs/adr/0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md)).
-- Meanwhile, the code adapted from Kopuz is written again; Opium stays under GPL-3.0-or-later
+- The code once adapted from Kopuz was written again in a clean room, but for part of the
+  browser sign-in, kept as adapted
   ([ADR-0030](docs/adr/0030-the-kopuz-code-rewritten-in-a-clean-room.md),
-  [ADR-0032](docs/adr/0032-the-gpl-kept-and-kopuzs-code-still-written-again.md)).
+  [ADR-0033](docs/adr/0033-the-browser-sign-ins-pipe-kept-as-adapted-from-kopuz.md),
+  [evidence](docs/audits/2026-11-06-kopuz-whole-tree.md)). Opium stays under GPL-3.0-or-later
+  ([ADR-0032](docs/adr/0032-the-gpl-kept-and-kopuzs-code-still-written-again.md)).
 - What is being worked on: [docs/PLAN.md](docs/PLAN.md).
 
 - **One library, one search:** albums, songs, artists and playlists from every
@@ -116,8 +119,9 @@ in [docs/ROADMAP.md](docs/ROADMAP.md), [docs/PLAN.md](docs/PLAN.md) and
 
 ## Credits
 
-- [Kopuz](https://github.com/Kopuz-org/kopuz) (EUPL-1.2) for the way to Apple
-  Music's web player.
+- [Kopuz](https://github.com/Kopuz-org/kopuz) (EUPL-1.2), which found the way to
+  Apple Music's web player. Part of the browser sign-in
+  (`crates/browser-signin`) is adapted from its code.
 - [Geist](https://vercel.com/font) fonts (SIL Open Font License),
   [Lucide](https://lucide.dev) icons (ISC), the SoundCloud and Apple Music marks
   from [Simple Icons](https://simpleicons.org) (CC0), and the Navidrome logo

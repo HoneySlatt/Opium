@@ -3,7 +3,8 @@
 - Status: Accepted; amends [0030](0030-the-kopuz-code-rewritten-in-a-clean-room.md) (the licence
   kept, M1.13 a check that nothing of Kopuz's is left) and
   [0031](0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md) (its "Opium's intended licence"),
-  and confirms [0001](0001-gpl-3-0-or-later.md)
+  and confirms [0001](0001-gpl-3-0-or-later.md); amended by
+  [0033](0033-the-browser-sign-ins-pipe-kept-as-adapted-from-kopuz.md) (M1.13's outcome)
 - Date: 2026-11-06
 
 ## Context

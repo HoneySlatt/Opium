@@ -4,7 +4,9 @@
 > 2026-11-05, and its order the same day
 > ([ADR-0029](adr/0029-opium-waits-for-slime-ui-then-moves-first.md),
 > [ADR-0031](adr/0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md)); the move to MIT OR
-> Apache-2.0 the same day too ([ADR-0030](adr/0030-the-kopuz-code-rewritten-in-a-clean-room.md)). Living document. It defines
+> Apache-2.0 the same day too ([ADR-0030](adr/0030-the-kopuz-code-rewritten-in-a-clean-room.md)),
+> given up on 2026-11-06 for the GPL
+> ([ADR-0032](adr/0032-the-gpl-kept-and-kopuzs-code-still-written-again.md)). Living document. It defines
 > direction, ordering and exit criteria. It is not a task list: the current plan lives in
 > `docs/PLAN.md`, and decisions live in `docs/adr/`. Stages will be
 > merged, reduced, reordered or dropped as the project evolves; each such change is recorded in an
@@ -112,7 +114,7 @@ when it exceeds its budget by more than its noise.
 
 | Topic | Decision |
 |---|---|
-| Licence | GPL-3.0-or-later ([ADR-0001](adr/0001-gpl-3-0-or-later.md)), kept after the code adapted from Kopuz is written again in a clean room ([ADR-0030](adr/0030-the-kopuz-code-rewritten-in-a-clean-room.md), [ADR-0032](adr/0032-the-gpl-kept-and-kopuzs-code-still-written-again.md)) |
+| Licence | GPL-3.0-or-later ([ADR-0001](adr/0001-gpl-3-0-or-later.md)), kept after the code adapted from Kopuz was written again in a clean room, but for part of the browser sign-in ([ADR-0030](adr/0030-the-kopuz-code-rewritten-in-a-clean-room.md), [ADR-0032](adr/0032-the-gpl-kept-and-kopuzs-code-still-written-again.md), [ADR-0033](adr/0033-the-browser-sign-ins-pipe-kept-as-adapted-from-kopuz.md)) |
 | Name | Opium, everywhere, no compatibility with the old names ([ADR-0023](adr/0023-the-rename-to-opium.md)) |
 | Services | Apple Music, SoundCloud, Navidrome (OpenSubsonic), the device's own files ([ADR-0016](adr/0016-the-services.md)) |
 | One library | The best copy of each song: files, server, Apple Music, SoundCloud ([ADR-0007](adr/0007-one-library-and-the-best-copy.md)) |
@@ -169,16 +171,17 @@ push, and the rename to Opium is committed with the owner's data moved.
 - What the desktop app needs from a UI framework, in the repository, for SlimeEngine's Stage 6d
   ([`ui-framework-needs.md`](ui-framework-needs.md))
 - The quality bar measured as the app is today, its budgets decided by the owner
-- The code adapted from Kopuz written again in a clean room, Opium still under the GPL
-  ([ADR-0030](adr/0030-the-kopuz-code-rewritten-in-a-clean-room.md),
-  [ADR-0032](adr/0032-the-gpl-kept-and-kopuzs-code-still-written-again.md))
+- The code adapted from Kopuz written again in a clean room, but for part of the browser sign-in,
+  Opium still under the GPL ([ADR-0030](adr/0030-the-kopuz-code-rewritten-in-a-clean-room.md),
+  [ADR-0032](adr/0032-the-gpl-kept-and-kopuzs-code-still-written-again.md),
+  [ADR-0033](adr/0033-the-browser-sign-ins-pipe-kept-as-adapted-from-kopuz.md))
 - The figures uwui must match, measured under egui and on the Compose phone
   ([ADR-0031](adr/0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md))
 
 **Exit.** `scripts/check.sh` and `scripts/check.sh android` pass locally and CI is green on `main`;
 the owner's computer and phone run Opium under its new names with their data; the window's needs
 from a UI framework are written down and reviewed (M1.6); the budgets are decided (M1.7); Opium is
-left with nothing of Kopuz's (M1.13); the figures to beat are measured
+left with nothing of Kopuz's but the part the owner kept (M1.13); the figures to beat are measured
 (M1.14); the stage audit is recorded and its findings decided (M1.8).
 
 ### Stage 5 — On uwui

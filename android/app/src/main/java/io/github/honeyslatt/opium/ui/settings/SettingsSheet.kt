@@ -318,7 +318,7 @@ private fun Root(core: Core, settings: Settings, go: (SettingsPage) -> Unit) {
     Label("About")
     Group {
         GroupRow(first = true) {
-            Words("Opium for Android", "GPL-3.0-or-later. The way to Apple Music’s web player comes from Kopuz (EUPL-1.2).")
+            Words("Opium for Android", "GPL-3.0-or-later. Part of the browser sign-in adapted from Kopuz (EUPL-1.2).")
             BasicText(BuildConfig.VERSION_NAME, style = geist(15.sp).copy(color = roles.sub))
         }
     }

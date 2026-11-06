@@ -4,7 +4,8 @@
   the CDM's host) and [0029](0029-opium-waits-for-slime-ui-then-moves-first.md) (the standby lifted
   for these milestones); amended by
   [0032](0032-the-gpl-kept-and-kopuzs-code-still-written-again.md) (the GPL kept, the rewrite
-  going on)
+  going on) and [0033](0033-the-browser-sign-ins-pipe-kept-as-adapted-from-kopuz.md) (one adapted
+  part left)
 - Date: 2026-11-05
 
 ## Context

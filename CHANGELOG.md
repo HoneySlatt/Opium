@@ -27,3 +27,8 @@ Nothing has been released yet. What Opium does today:
   audio chip's offload for songs that are not encrypted.
 - The app is renamed from Music to Opium: its folders, its package and its names on the network
   change, with no migration.
+- **Written again**: the parts once adapted from Kopuz (the Widevine host, the encrypted MP4
+  reader, some of the Apple Music client) are written again from specifications, and sturdier
+  against damaged files. Only part of the browser sign-in is still adapted from Kopuz (EUPL-1.2),
+  and the about screens say so; Opium stays under GPL-3.0-or-later. Kopuz is still credited for
+  finding the way to Apple Music's web player.

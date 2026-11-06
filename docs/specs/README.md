@@ -12,11 +12,13 @@ and stay afterwards as the reference for the protocols they describe.
 
 ## The clean-room rewrite
 
-Code adapted from Kopuz (EUPL-1.2) is replaced by code written from these files alone, so that
-no code of Opium's derives from Kopuz
+Code adapted from Kopuz (EUPL-1.2) was replaced, from M1.10 to M1.12, by code written from these
+files alone, so that no code of Opium's derives from Kopuz
 ([ADR-0030](../adr/0030-the-kopuz-code-rewritten-in-a-clean-room.md); the GPL kept,
 [ADR-0032](../adr/0032-the-gpl-kept-and-kopuzs-code-still-written-again.md); the inventory in
-[the licence audit](../audits/2026-11-05-licence.md)).
+[the licence audit](../audits/2026-11-05-licence.md); the whole tree compared with Kopuz at M1.13,
+[evidence](../audits/2026-11-06-kopuz-whole-tree.md)). One part found then, the browser sign-in's
+pipe, is kept as adapted ([ADR-0033](../adr/0033-the-browser-sign-ins-pipe-kept-as-adapted-from-kopuz.md)).
 
 - **Two sides.** The *dirty side* read Kopuz's code and its adaptation in Opium, and wrote these
   specifications, describing behaviour only: no code, no names of functions, types or variables,
@@ -40,8 +42,10 @@ no code of Opium's derives from Kopuz
   - once on the raw tokens, once with every identifier made the same;
   - sequences of Chromium's header, which both sides must use, are left out;
   - every shared run of 50 raw tokens or 30 normalised ones is read by hand and explained, or
-    rewritten. For calibration: on 2026-11-05, Opium's own code shared at most 46 raw tokens with
-    Kopuz, and `fmp4.rs` 590.
+    rewritten. For calibration: `fmp4.rs` shared 590 raw tokens with Kopuz on 2026-11-05; over the
+    whole tree, Opium's own code shares at most 104, an `mpris-server` trait's methods
+    ([M1.13](../audits/2026-11-06-kopuz-whole-tree.md)). The 46 measured on 2026-11-05 covered
+    fewer files.
   - A search for Kopuz's names, comments, error strings and test data.
   - A reviewer that wrote neither side compares them.
 - **The evidence**, kept in [`../audits/`](../audits/README.md): the clean side's brief, its

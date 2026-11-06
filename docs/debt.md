@@ -58,8 +58,6 @@ work is in [`PLAN.md`](PLAN.md); a stage's audit adds what it leaves open.
     over a four-hour download, its last calls 0.24 ms each under the stream's lock
     ([measured](measurements.md#indexing-an-encrypted-track-m110-2026-11-05)). A way to make
     clear only the fragments just indexed needs a public item more in `cenc`.
-  - The desktop's about screen still credits Kopuz for CENC code; it is frozen
-    ([ADR-0026](adr/0026-the-egui-window-frozen-until-the-move.md)), and M1.13 corrects it.
 - **Left by M1.11** (`widevine` written again; [evidence](audits/2026-11-05-widevine-clean-room.md)):
   - Checked with the owner's CDM: loading, initialising, a licence request, the figures before
     and after ([measured](measurements.md#the-cdm-m111-2026-11-05)); played with the owner, on
@@ -115,3 +113,9 @@ work is in [`PLAN.md`](PLAN.md); a stage's audit adds what it leaves open.
     started by `join`'s order of polling.
   - A station's calls still in flight when enough songs came are dropped: their songs are lost,
     the station's cursor moved past them, as the rounds of four did before.
+- **Left by M1.13** (the whole tree compared with Kopuz;
+  [evidence](audits/2026-11-06-kopuz-whole-tree.md)):
+  - `DevTools` in `browser-signin` is still adapted from Kopuz, and rests on the EUPL's
+    compatibility clause; the owner kept it
+    ([ADR-0033](adr/0033-the-browser-sign-ins-pipe-kept-as-adapted-from-kopuz.md)). Another
+    licence than the GPL needs it written again first.

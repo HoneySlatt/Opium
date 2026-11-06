@@ -403,7 +403,7 @@ pub fn show(app: &mut App, ui: &mut Ui, pad: f32) -> f32 {
                 &theme,
                 pos2(card.left() + 16.0, card.center().y),
                 &format!("Opium {}", env!("CARGO_PKG_VERSION")),
-                "GPL-3.0-or-later. Widevine and CENC code adapted from Kopuz (EUPL-1.2).",
+                "GPL-3.0-or-later. Part of the browser sign-in adapted from Kopuz (EUPL-1.2).",
                 width - 32.0,
             );
         });

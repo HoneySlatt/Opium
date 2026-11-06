@@ -11,6 +11,13 @@
 //!
 //! The profile is kept between sign-ins: when a token expires, a browser that
 //! is still signed in hands over a fresh one without any typing.
+//!
+//! `DevTools`, the pipes' setup and the reading of their answers, is adapted
+//! from Kopuz (<https://github.com/Kopuz-org/kopuz>, revision a58c385,
+//! `daemon/server/src/cookies/cdp.rs`), Copyright (c) 2026 Temidaradev and the
+//! Kopuz contributors, EUPL-1.2, modified for Opium from 2026-10-30 and
+//! redistributed under the GPL-3.0-or-later through the EUPL's compatibility
+//! clause; kept so by the project's ADR-0033.
 
 use std::collections::HashMap;
 use std::os::fd::{AsRawFd, OwnedFd};

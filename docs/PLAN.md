@@ -9,14 +9,14 @@ Every milestone ends with the definition of done in [`AGENTS.md`](../AGENTS.md#d
 
 ## Current
 
-- Stage 1 — Under the method, started on 2026-11-04. M1.1, M1.2, M1.3, M1.6, M1.7, M1.9, M1.10,
-  M1.11 and M1.12 are done.
-- **Standby** ([ADR-0031](adr/0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md)), lifted for
-  the milestones that leave Kopuz's code behind
-  ([ADR-0030](adr/0030-the-kopuz-code-rewritten-in-a-clean-room.md)): M1.10 to M1.13, one a session,
-  in that order. Otherwise only a loss of data, a crash, a security flaw or a service that stops
-  working is fixed.
-- **Next: M1.13**, nothing of Kopuz's left, the GPL kept
+- Stage 1 — Under the method, started on 2026-11-04. M1.1, M1.2, M1.3, M1.6, M1.7, M1.9 and M1.10
+  to M1.13 are done.
+- **Standby** ([ADR-0031](adr/0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md)), lifted
+  from M1.10 to M1.13 for Kopuz's code
+  ([ADR-0030](adr/0030-the-kopuz-code-rewritten-in-a-clean-room.md)), and back since: only a loss
+  of data, a crash, a security flaw or a service that stops working is fixed.
+- Kopuz's code is written again but for part of the browser sign-in, which the owner kept, named
+  ([ADR-0033](adr/0033-the-browser-sign-ins-pipe-kept-as-adapted-from-kopuz.md)); the GPL kept
   ([ADR-0032](adr/0032-the-gpl-kept-and-kopuzs-code-still-written-again.md)).
 - Played with the owner on 2026-11-05, on the new `cenc` and `widevine`: Apple Music in stereo and
   Spatial Audio, the live radio (after a fix to `cenc`); on 2026-11-06, on M1.12's code, by the
@@ -50,7 +50,7 @@ Every milestone ends with the definition of done in [`AGENTS.md`](../AGENTS.md#d
 | [M1.10](#m110-to-m112--kopuzs-code-written-again) | `cenc` written again in a clean room | Done |
 | [M1.11](#m110-to-m112--kopuzs-code-written-again) | `widevine` written again in a clean room | Done |
 | [M1.12](#m110-to-m112--kopuzs-code-written-again) | `apple-music`'s derived items written again in a clean room | Done |
-| [M1.13](#m113--nothing-of-kopuzs-left) | Nothing of Kopuz's left, the GPL kept | Planned, next |
+| [M1.13](#m113--nothing-of-kopuzs-left) | Nothing of Kopuz's left, the GPL kept | Done, one part kept |
 | [M1.14](#m114--the-figures-to-beat-on-uwui) | The figures uwui must match: the egui window's and the Compose phone's | Planned |
 
 ## Stage 1 — Under the method
@@ -197,6 +197,13 @@ One milestone each, in this order: `cenc`, then `widevine`, then `apple-music`.
   - The comparison finds no run above its threshold owed to Kopuz.
   - No document or screen says that Opium holds Kopuz's code.
 - **Measured.** Nothing.
+- **Done on 2026-11-06.** The whole tree compared at both revisions, every run above the thresholds
+  read by hand ([evidence](audits/2026-11-06-kopuz-whole-tree.md)). One part was found still
+  adapted, `DevTools` in `browser-signin`; the owner kept it, named, so the second and third
+  criteria hold for all but it
+  ([ADR-0033](adr/0033-the-browser-sign-ins-pipe-kept-as-adapted-from-kopuz.md)). The about
+  screens, the README and the CHANGELOG say so. The test helper `boxed`, still Kopuz's in two
+  test files, took the form M1.10's clean side wrote.
 
 ### M1.14 — The figures to beat on uwui
 
