@@ -32,7 +32,9 @@ Standards cited: **RFC 8216** (HLS), **RFC 3986** (resolving a relative address)
 - The entry's `songId` names the catalog song a library song was matched to: a number above 0, or
   a string neither empty nor `-1`. Anything else, or none, means there is none (an upload). It is
   read by `playback.rs`'s own code, given in the export.
-- An id that is neither kind (§1) is refused before the request, with an error naming it.
+- An id that is neither kind (§1) is refused with an error naming it before any request of the
+  song's: before `webPlayback`, the catalog's lookup of its Spatial Audio, and the licence host's
+  warm-up (`protected` and `fetch_track`, Opium's own, given in the export).
 
 ## 3. Choosing what to play
 
@@ -136,8 +138,10 @@ Gathering about `count` songs (the caller asks for 10 to 25) must:
 And:
 
 - A `count` of 0 sends nothing and answers no song.
-- The station's id must be an Apple id (`apple_id`, §12), or it is refused before any request: it
-  goes into the address unescaped.
+- The station's id goes into the address unescaped, so it must stay one path segment: one or
+  more ASCII letters, digits, dashes, dots or underscores, and neither `.` nor `..`. Anything
+  else is refused before any request. Apple's station ids are not all of `apple_id`'s form: a
+  playlist's station is `ra.cp-pl.u-<letters and digits>`, a dot after its prefix's name.
 - Each call goes through `lib.rs`'s own `send`, which renews the developer token on a 401. A 401
   or 403 after that is "not signed in"; another failure status names the path and the status.
 - An answer is a list of songs (`data`), each read as `types::Song` and made a `Track` by
@@ -167,9 +171,13 @@ Apple's web player carries a developer token, a JWT (RFC 7519), in its main scri
 - `GET https://music.apple.com/`, with the crate's one HTTP client (its user agent and its
   redirect policy, `lib.rs`'s own code). On 2026-11-05 Apple answered a 301 to a storefront's page
   (`/us/new`), which the client follows, then a page of 2.4 MB.
-- The page names its main script, an address of the form `/assets/index~<hash>.js` (Apple has
-  also used `index-<hash>.js`; both are looked for), in a `<script type="module" … src="…">`. That
-  path is on `https://music.apple.com`.
+- The page names its main script: on 2026-11-05 in a `<script type="module" … src="…">`. It is
+  the first text anywhere in the page, in a tag or not, of the form `/assets/index~<hash>.js`
+  (Apple has also used `index-<hash>.js`; both are looked for), `<hash>` one or more ASCII
+  letters, digits, `_` or `-`; written alone, or right after `https://music.apple.com`; a query
+  right after it (`?`, then what follows up to a quote, a space, `<` or `>`) is kept. The script
+  is fetched from `https://music.apple.com` at that path, with that query. As tolerant as the
+  code before, which found the path anywhere: the tag's form may change.
 - `GET` that script (3.3 MB on 2026-11-05): the token is the first JWT in it, three base64url
   segments joined by dots, whose first segment decodes to a JSON header naming `"alg": "ES256"`.
   Text shaped like a JWT whose header does not decode, or names another algorithm, is passed
@@ -178,13 +186,17 @@ Apple's web player carries a developer token, a JWT (RFC 7519), in its main scri
   in daily use.
 - Its payload's `exp` (seconds since the epoch) says when it expires (on 2026-11-05, about 70
   days after it was issued). A request about to be sent within ten minutes of that time first
-  reads the token again, as a 401 does today (`lib.rs`'s own renewal: one reading at a time, at
-  most one every five minutes, the old token kept when the reading fails). A token without a
-  readable `exp` is renewed on a 401 only.
-- Each step that fails names itself: the page out of reach (its status), no script named, the
-  script out of reach (its status), no token in the script, a payload that does not decode. A
-  page or a script out of reach, a failure status included, is a network error: a renewal that
-  meets one is tried again at the next request, rather than taken for a sign-out.
+  reads the token again, the old token kept when the reading fails. One such reading at a time,
+  and at most one every five minutes, whatever its outcome, a failed connection included: the old
+  token is still good until its `exp`, and a web player out of reach must not cost every request
+  a reading. A token without a readable `exp` is renewed on a 401 only. The renewal on a 401 is
+  `lib.rs`'s own, unchanged: one reading at a time, at most one every five minutes after the page
+  or the script answered.
+- Each step that fails names itself: the page out of reach, no script named, the script out of
+  reach, no token in the script, a payload that does not decode. No connection, or an answer cut
+  short, is a network error; a page or a script that answers a failure status is a protocol
+  error naming the status, as before this rewrite: the renewal on a 401 then waits its five
+  minutes instead of reading the page again at every request.
 - Searching the page and the script is a scan in time proportional to their length. On the files
   of 2026-11-05, in a release build, the first search of a process takes about 0.5 ms, before and
   after this rewrite; once its expressions are built, 15 µs before, 19.5 µs after, the checks of
@@ -222,6 +234,15 @@ Apple's web player carries a developer token, a JWT (RFC 7519), in its main scri
 - The same mutation tests also cover Opium's own readers beside these, in the export: the
   enhanced playlist, its master's variant, the ExoPlayer playlists, the map's range, the AAC
   configuration's rate and the `songId`.
+- `cargo fuzz` targets for the same readers ([ADR-0030](../adr/0030-the-kopuz-code-rewritten-in-a-clean-room.md)):
+  a crate `crates/apple-music/fuzz` outside the workspace, as `crates/cenc/fuzz` is, built in the
+  nightly shell (`nix develop .#fuzz`) and run weekly by `scripts/fuzz.sh`, which runs every
+  `crates/*/fuzz`. The readers are private: a crate feature `fuzzing`, off by default, exposes
+  entry points to them in a `#[doc(hidden)]` module, and nothing else. Each target checks the
+  invariants the mutation tests check.
+- Tests also cover the renewal's bounds: a web player that keeps failing, by status and by
+  connection, and one that keeps serving a token about to expire, each costing at most one
+  reading in five minutes before the token's `exp`.
 
 ## 11. Better than before, where this rewrite can
 
@@ -230,8 +251,8 @@ Apple's web player carries a developer token, a JWT (RFC 7519), in its main scri
   has one streams as today.
 - A playlist removal naming no song is refused before any request (fixed on 2026-11-05, before the
   rewrite).
-- A song's id of neither kind (§2) and a station's id that is not an Apple id (§7) are refused
-  before any request.
+- A song's id of neither kind (§2) and a station's id that is not one path segment (§7) are
+  refused before any request.
 - The developer token is read again before it expires (§9), and the script's text is checked to be
   a token (§9).
 
@@ -258,8 +279,12 @@ clean side under the names given. Their callers in the export already use these 
 The clean side also changes Opium's own code in the export, only where these sections ask, and
 says where in its report:
 
-- `send` in `lib.rs`: the renewal before the token expires (§9);
+- `send` in `lib.rs`, and the renewal's bookkeeping beside `renew_developer_token`: the renewal
+  before the token expires and its bounds (§9);
+- `protected` and `fetch_track` in `playback.rs`: a song's id checked before any request (§2);
 - `as_it_downloads` in `playback.rs`: a download without a length (§11);
+- the crate's `Cargo.toml` and a `fuzzing` module for the `cargo fuzz` targets, and the fuzz crate
+  itself (§10);
 - the addresses of Apple's hosts, and the building of the client, as the tests' seam needs (§10);
 - tests anywhere in the crate.
 
