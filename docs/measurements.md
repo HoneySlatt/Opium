@@ -25,12 +25,12 @@ compositor Umbriel. Display: DP-3, ASUS PG32UCDM, 3840x2160 at 240.016 Hz, scale
 refresh. Build: release (`cargo build --release -p app-desktop`), `9de52f3` with this milestone's
 measuring mode.
 
-Library: `scripts/measure/library.py`'s, the same every time: 8,500 songs of silence in FLAC, 647
-albums by 194 artists, one 1200x1200 JPEG cover of about 380 kB an album, read from the index the
-app keeps after its first scan. Conditions: a throwaway profile, off the network, the session bus
-pointed nowhere, muted, nothing played, the Stock theme, the interface at 100 % (1.65 pixels a
-point at scale 1.5), the window full screen, 3840x2160 pixels or 2327x1309 points. The owner left
-the display alone during the runs; load average 0.8 to 2.5.
+Library: `scripts/measure/library.py`'s, the same every time: 8,500 songs of silence in FLAC, in 647
+album folders by 194 artists, which the app shows as 641 albums; one 1200x1200 JPEG cover of about
+380 kB an album; read from the index the app keeps after its first scan. Conditions: a throwaway
+profile, off the network, the session bus pointed nowhere, muted, nothing played, the Stock theme,
+the interface at 100 % (1.65 pixels a point at scale 1.5), the window full screen, 3840x2160 pixels
+or 2327x1309 points. The owner left the display alone during the runs; load average 0.8 to 3.2.
 
 Method: the [measuring mode](../CONTRIBUTING.md#the-measuring-mode), run by
 `scripts/measure/frames.py <profile> <scenario> <runs> <out>` with `WAYLAND_DISPLAY=wayland-0`.
@@ -38,61 +38,72 @@ A frame's *interval* is the time from the start of the frame before; it counts o
 before asked for it at once, so that the window's rests are left out. One period is 4.17 ms; a
 frame later than 6.25 ms (1.5 periods) missed at least one vsync. *CPU* is eframe's time for the
 frame: the interface, tessellation and the drawing calls, not the GPU's work nor the wait for the
-display.
+display. `scroll-albums` was run again after the first review, which found that its first useful
+frame came before the grid had albums; the other records were taken before the record said how a
+scenario ended and how many frames went undrawn, which their rows show by hand (every phase named,
+each scroll at the list's end), then summed up again by `frames.py --again`.
 
 | Measure | Runs | Figure |
 |---|---|---|
 | Start: from just before the program starts to the end of the first useful frame's work (Songs from the index) | 10 | median 152.0 ms, 144.3 to 216.5 (nine of ten under 161) |
-| The first useful frame's CPU time | 10 | 19.0 to 25.5 ms |
-| Start with the Albums grid as first page (its first frame has no cover yet) | 5 | 128.6 to 138.6 ms; that frame 3.2 to 3.7 ms of CPU |
+| The first useful frame's CPU time | 21 | 17.9 to 29.0 ms |
+| Its interval to the next frame, which its own work makes long | 21 | median 25.1 ms, 20.9 to 33.4 |
 
 | Phase | Runs | Frames | Interval median / p99 / max | Late (over 6.25 ms / 8.33 ms) | CPU median / p99 / max |
 |---|---|---|---|---|---|
-| Scrolling Songs, the whole library, 441,066 points at 4,000 a second | 3 | 79,423 | 4.17 / 4.36 / 16.5 ms | 9 / 1 | 0.63 / 0.87 / 2.1 ms |
-| Scrolling the Albums grid to its end, 19,858 points | 5 | 6,010 | 4.16 / 5.53 / 6.4 ms | 1 / 0 | 0.68 / 2.20 / 2.7 ms |
+| Scrolling Songs, the whole library, 441,065 to 441,070 points at 4,000 a second | 3 | 79,423 | 4.17 / 4.36 / 16.5 ms | 9 / 1 | 0.63 / 0.87 / 2.1 ms |
+| Scrolling the Albums grid to its end, 19,855 to 19,856 points | 5 | 6,010 | 4.16 / 5.67 / 6.3 ms | 1 / 0 | 0.66 / 2.23 / 3.1 ms |
 | Moving between pages: Albums, Artists, Home, Songs, four rounds | 3 | 3,290 | 4.17 / 4.43 / 43.3 ms | 10 / 10 | 0.68 / 0.87 / 41.7 ms |
 | The queue drawer opened and closed, three times | 3 | 1,008 | 4.17 / 4.32 / 4.6 ms | 0 / 0 | 0.59 / 0.72 / 0.8 ms |
 | Now Playing opened and closed, three times, no song shown | 3 | 1,249 | 4.17 / 4.36 / 4.6 ms | 0 / 0 | 0.50 / 0.81 / 0.9 ms |
-| The 3 s after the first useful frame, Songs, its covers arriving | 10 | 1,096 | 4.17 / 8.49 / 29.3 ms | 30 / 19 | 0.57 / 4.43 / 6.1 ms |
-| The same, the Albums grid | 5 | 475 | 4.17 / 33.6 / 56.3 ms | 16 / 16 | 0.66 / 31.5 / 47.3 ms |
+| Songs at rest for 3 s after the first useful frame, its covers arriving | 10 | 1,086 | 4.17 / 8.32 / 8.8 ms | 20 / 9 | 0.57 / 4.43 / 6.1 ms |
+| The Albums grid's first 3 s, opened from Songs, its albums and covers arriving | 5 | 263 | 4.17 / 45.5 / 56.8 ms | 15 / 15 | 0.72 / 38.6 / 55.6 ms |
 
 | Memory (`/proc`, every 0.25 s) | Runs | Figure |
 |---|---|---|
-| At the first useful frame | 16 | VmRSS 199 to 232 MiB, RssAnon 73 to 124 |
+| In the first sample after the first useful frame (within 0.25 s) | 21 | VmRSS 199 to 232 MiB, RssAnon 73 to 124 |
 | Highest while scrolling Songs over the whole library | 3 | VmRSS 235 to 249 MiB |
-| Highest with the Albums grid | 5 | VmRSS 309 to 338 MiB sampled; VmHWM 364 to 383 MiB |
+| Highest with the Albums grid | 5 | VmRSS 308 to 323 MiB sampled; VmHWM 365 to 395 MiB |
 | Highest during the transitions, Albums among them | 3 | VmHWM 376 to 391 MiB |
 
 What the figures say:
 
-- The window holds 240 Hz while it scrolls and while its drawer and Now Playing move: a frame's
-  CPU stays under 2.7 ms, and late frames are 10 in 85,433 while scrolling.
-- Its stalls are the first draws. The Albums grid's first second, as its covers arrive, has frames
-  of 13 to 47 ms of CPU, whether it is the first page or reached from Songs; every other page change
-  stays under 2.2 ms. The first useful frame itself takes 19 to 26 ms. The covers are decoded on
-  threads of their own; what these frames spend was not split further (uploads, layout, text).
-- VmHWM stands 45 to 70 MiB above the highest VmRSS sampled with the Albums grid: a peak shorter
+- Scrolling, the drawer and Now Playing keep to the display's 240 Hz but for 10 frames late in
+  85,433 scrolling; a frame's CPU stays under 3.2 ms.
+- The stalls are first draws. The first useful frame takes 18 to 29 ms of CPU. The Albums grid's
+  first second, as its albums and covers arrive, has frames of up to 56 ms, whether reached by the
+  scenario or among the page changes; every other page change stays under 2.2 ms. The covers are
+  decoded on threads of their own; what these frames spend was not split further (uploads, layout,
+  text).
+- VmHWM stands 54 to 79 MiB above the highest VmRSS sampled with the Albums grid: a peak shorter
   than the sampling's 0.25 s. The covers decode one thread each, unbounded ([debt](debt.md)), which
   would make such a peak; it was not traced.
-- Against the [quality bar](ROADMAP.md#quality-bar): start 152 ms to the first useful frame
-  (budget 100 ms, missed); memory 199 to 232 MiB after start (budget 150 MiB at rest, missed),
-  249 MiB at most scrolling the whole library (no more than 400 MiB, met), but a 391 MiB peak with
-  the Albums grid; frames: every scenario's CPU 99th percentile within 4.17 ms, but frames over 8.33 ms in
-  the second after Songs or the Albums grid first shows (the budget allows none).
+- Against the [quality bar](ROADMAP.md#quality-bar):
+  - start, 152 ms to the first useful frame: the warm budget of 100 ms is missed;
+  - memory, 199 to 232 MiB after start: the budget of 150 MiB at rest is missed; 249 MiB at most
+    scrolling Songs over the whole library is within 400 MiB, but the Albums grid peaks at 395 MiB;
+  - frames: the budget asks the display's rate held, no dropped frame, a 99th percentile within 4.17
+    ms and no frame over 8.33 ms. It is missed: 10 frames late while scrolling, 1 of them over 8.33
+    ms; over 8.33 ms too, 9 in Songs' first 3 s (10 runs), 15 in the Albums grid's (5 runs) and 10
+    when Albums first shows among the page changes (3 runs). The frames' CPU 99th percentile is
+    within 4.17 ms in every moving phase, but a frame's whole time, GPU included, was not measured.
 - Not comparable with M1.7's figures: those were the owner's library from Apple Music, Connect on
   the network, a 1440x900 window, and start timed to the window's mapping.
+- The first run after a build is slower, the binary not yet in the page cache: 314 ms, left in the
+  `scroll-albums` runs above but not in the start's.
 
 In a headless Weston (`weston.sh`, 3840x2160 at 240 Hz, kiosk shell), on a first version of this
-library, the same scenarios gave the same CPU times, but one frame in four came 9.5 to 10.5 ms late
-during the drawer, Now Playing, page changes and the Albums grid; one in two at 1920x1080. Setting
-its `repaint-window` from 7 to 2 ms moved the delay, not the pattern. Songs scrolled without it.
-On the owner's display none of it showed: the headless Weston's pacing, not the window's. Frame
-times are taken on a real display ([pitfall](../CONTRIBUTING.md#known-pitfalls)).
+library, the same scenarios gave the same CPU times, but one frame in four came with an interval of
+9.5 to 10.6 ms during the drawer, Now Playing, page changes and the Albums grid; one in two at
+1920x1080. Setting its `repaint-window` from 7 to 2 ms moved the delay, not the pattern. Songs
+scrolled without it. On the owner's display none of it showed: the headless Weston's pacing, not
+the window's. Frame times are taken on a real display
+([pitfall](../CONTRIBUTING.md#known-pitfalls)).
 
 Not measured: each frame's GPU time (Mesa's HUD gives none per frame here); a cold start (dropping
 the page cache needs root); the 1080p display at 180 Hz; power while scrolling; the input's time
-to the screen; a library of 100,000 songs (`library.py <profile> 100000` makes one); the lowest
-tier.
+to the screen; a library of 100,000 songs (`library.py <profile> 100000` makes one; a scroll stops
+after 300 s, which the record says); the lowest tier.
 
 ### The phone under Compose
 
