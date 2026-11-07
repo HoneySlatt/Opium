@@ -173,8 +173,12 @@
                 pkgs.gradle_9
                 sdk
               ];
+              # Under every name the tools read, so that a machine's own SDK or NDK, such as a CI
+              # runner's, is never mixed in.
               ANDROID_HOME = home;
+              ANDROID_SDK_ROOT = home;
               ANDROID_NDK_HOME = "${home}/ndk/${ndk}";
+              ANDROID_NDK_ROOT = "${home}/ndk/${ndk}";
               JAVA_HOME = pkgs.jdk17.home;
               # Gradle's own aapt2 is built for other Linuxes; the SDK's runs here.
               GRADLE_OPTS = "-Dorg.gradle.project.android.aapt2FromMavenOverride=${home}/build-tools/${buildTools}/aapt2";
