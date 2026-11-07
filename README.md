@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="packaging/opium.svg" alt="Opium's icon: a white note beside three bars of a sound wave, on a dark rounded square" width="192">
+</p>
+
 # Opium
 
 A music player for the computer and the phone that puts Apple Music,
