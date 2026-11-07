@@ -31,6 +31,10 @@ read the old code, and wrote the specification, is the *dirty side*
 service's subscription was not confirmed in the last 30 days, or the user signed out of it
 (`downloads::store::Standing`, [ADR-0017](adr/0017-downloads-sealed-and-tied-to-the-subscription.md)).
 
+**First useful frame.** The first frame that shows the library, not only the window: on the
+desktop, Songs drawn with its rows from the cached library, as M1.14's measuring mode marks it
+(`measure.rs`). Start-up is timed to the end of its work.
+
 **Guest.** Someone on the local network who joins the queue by a code, without pairing and without
 seeing the owner's data; planned at Stage 8, its trust decided by an ADR first
 ([ADR-0034](adr/0034-what-opium-is-to-become.md)).
@@ -45,6 +49,10 @@ and seals them (`connect::lend`, [ADR-0017](adr/0017-downloads-sealed-and-tied-t
 
 **M3E.** The built-in theme in Material 3 Expressive's style, with a fixed violet tonal scheme,
 beside Stock and Spotify ([ADR-0011](adr/0011-themes-as-toml-files-of-component-variants.md)).
+
+**Measuring mode.** The desktop window recording its frames and running a scripted scenario on its
+own (`OPIUM_MEASURE`), so that uwui is held to the same figures; M1.14's, removed with egui
+([how](../CONTRIBUTING.md#the-measuring-mode)).
 
 **Opium Connect.** How the user's devices find each other, pair, show what each plays, control
 each other, hand the music over and keep their shared state in common, on the local network and

@@ -13,7 +13,8 @@ work is in [`PLAN.md`](PLAN.md); a stage's audit adds what it leaves open.
   ([ADR-0026](adr/0026-the-egui-window-frozen-until-the-move.md)):
   - Space toggles playback again on each key repeat while held (`ui/mod.rs:922`);
   - files dropped on the window do nothing under Wayland, where winit 0.30 has no drag and drop;
-  - Opium cannot be driven by an agent: nothing scrolls, clicks or types;
+  - Opium cannot be driven by an agent: nothing scrolls, clicks or types, but for M1.14's scripted
+    scenarios (`measure.rs`), which only measure;
   - a comment says the cookie turns in twenty seconds; it turns in 14 (`ui/fab.rs:28`);
   - animations that go on without the focus (`ui/lyrics.rs`, `ui/loading.rs`);
   - one thread per cover file, unbounded (`ui/thumbs.rs`); WebP and GIF covers not decoded;
@@ -111,8 +112,10 @@ work is in [`PLAN.md`](PLAN.md); a stage's audit adds what it leaves open.
     their documentation, and "the CDM closed the session" is said when the host closed it.
 - **The screenshot mode may never save**: on 2026-11-05 the release build saved in one of nine
   runs, on the desktop or in a headless Weston, old code and new alike; it waits for frames the
-  compositor may not send. The cause is not known. The visual checks of the definition of done and
-  M1.14 lean on it; frozen with `app-desktop` ([pitfall](../CONTRIBUTING.md#known-pitfalls)).
+  compositor may not send. On 2026-11-07 it saved twice in two runs, in a headless Weston at
+  3840x2160 under its kiosk shell. The cause is not known. The visual checks of the definition of
+  done lean on it; M1.14's measuring mode does not. Frozen with `app-desktop`
+  ([pitfall](../CONTRIBUTING.md#known-pitfalls)).
 - **Left by M1.12** (`apple-music`'s derived items written again;
   [evidence](audits/2026-11-06-apple-music-clean-room.md)):
   - Played by the owner on 2026-11-06, on the owner's profile, everything working by the owner's

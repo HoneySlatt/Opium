@@ -179,11 +179,45 @@ kill -TERM "$wpid"                                            # that pid only
   focused window.
 - `startup.py … map` times the window's mapping from Umbriel's event stream instead, on the
   desktop.
+- The window's frames, its start to the first useful frame and its memory while it scrolls and
+  animates are taken by [the measuring mode](#the-measuring-mode), on a library that
+  `scripts/measure/library.py` generates, the same every time.
+- The phone's start, frames and memory under Compose are taken by `scripts/measure/phone.py`, over
+  adb ([the phone](#the-phone-over-adb)); it plays nothing.
 - The CDM's costs (a licence, a decrypt, wake-ups at rest) and Apple Music's steps (the developer
   token, the library, a station's batch, a song ready) are taken apart from the window, by
   `scripts/measure/cdm-cost.sh` running builds of `crates/apple-music/examples/cdm_cost.rs` or
   `am_cost.rs` in turn. Each run asks Apple for a licence on the owner's account, and `am_cost`
   for a station's batch, which moves that station's place: with the owner's go only.
+
+### The measuring mode
+
+M1.14's instruments (`crates/app-desktop/src/measure.rs`, removed with egui): the window records
+every frame and runs a scenario on its own, then closes. The scroll is injected into egui's own
+input; nothing reaches the compositor.
+
+| Variable | Effect |
+|---|---|
+| `OPIUM_MEASURE=<scenario>` | `start`, `scroll-songs`, `scroll-albums` or `animate`; the window asks to be full screen |
+| `OPIUM_MEASURE_OUT=<file>` | The frame record, written when the scenario ends |
+
+```sh
+cargo build --release -p app-desktop
+scripts/measure/library.py /var/tmp/opium-library        # once: 8,500 songs, 647 albums, covers
+WAYLAND_DISPLAY=wayland-0 OPIUM_MEASURE_PIXELS=3840x2160 \
+    scripts/measure/frames.py <profile> start 1 <out>    # the first run scans the folder: drop it
+WAYLAND_DISPLAY=wayland-0 OPIUM_MEASURE_PIXELS=3840x2160 \
+    scripts/measure/frames.py <profile> scroll-songs 3 <out>
+```
+
+- `frames.py` runs the scenario off the network and sums up each run's record: the start, each
+  phase's CPU times and intervals, the frames missed, the memory. Its head says how.
+- `library.py` sets the interface at 150 %, for a headless Weston at scale 1. On the owner's
+  display, whose scale is 1.5, use a copy of the profile without `ui_scale`
+  ([settings care](#settings-care)).
+- Frame times are taken on the owner's 4K display (DP-3, 240 Hz, scale 1.5) with the owner's go:
+  the window covers it for the run. Not in a headless Weston, whose pacing misses frames of its own
+  ([pitfalls](#known-pitfalls)). Start and memory can be taken in either.
 
 ### The screenshot mode
 
@@ -208,6 +242,9 @@ The desktop app saves its own window once it has had time to load, then quits
   window then stays until closed.
 - `_PAGE`, `_PLAY`, `_STATION` and `_DOWNLOAD` need `OPIUM_SCREENSHOT`; `_DOWNLOADED` acts only
   with `_PAGE`.
+- `_PAGE` waits for the playlists: a profile without any, such as `library.py`'s, stays on Home.
+  With `OPIUM_MEASURE=scroll-songs`, which opens Songs itself, a capture shows the list as it
+  scrolls.
 
 ## Running Opium without touching the owner's data
 
@@ -351,6 +388,11 @@ from opening. The cause is not found ([ADR-0021](docs/adr/0021-the-exit-watch.md
   not send. To end a test run by the app's own exit path, run it with a session bus of its own
   (`unshare --user --map-current-user --net dbus-run-session -- …`) and call MPRIS `Quit` on that
   bus.
+- **A headless Weston paces transitions badly**: at 240 Hz, one frame in four to one in two came
+  late (9.5 to 10.5 ms) during transitions and the Albums grid, more at 1920x1080 than at 3840x2160,
+  whatever its `repaint-window`, while scrolling Songs held 240 Hz and the window's CPU stayed under
+  1 ms. The same runs on the owner's display did not. Take frame times on a real display.
+- **The 4K display is DP-3 since 2026-11-07** (DP-2 in M1.7's figures): read `umbriel outputs`.
 - **End a test process by its own pid**, never by name: `pkill -n weston` once ended another
   agent's headless Weston.
 - **`unshare -rn` breaks D-Bus's authentication**; to cut the network but keep the bus, use
