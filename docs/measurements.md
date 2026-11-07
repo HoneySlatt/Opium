@@ -10,6 +10,31 @@ the desktop runs on a [throwaway profile](../CONTRIBUTING.md#a-throwaway-profile
 cited live in [`scripts/measure/`](../scripts/measure/), each described at its head
 ([CONTRIBUTING.md](../CONTRIBUTING.md#measuring)).
 
+## The Android shell and CI's `android` job, M1.5 (2026-11-07)
+
+**From an empty store, on the owner's desktop** (16 cores, a home connection; Google's
+archives came at 2 to 4 MB/s): `nix build --store <empty folder> --substituters
+https://cache.nixos.org/ .#devShells.x86_64-linux.android`, at `flake.lock`'s nixpkgs of
+2026-10-27. Built in 8 min 30 s, 11 GB of store. Six SDK archives were downloaded from Google and
+matched nixpkgs' hashes: the NDK r30, build-tools 36.1, platform 37.0 r02, platform-tools 37.0.1,
+CMake 4.1.2, command-line tools 16111833; a seventh, `sdk-tools-linux-4333796.zip`, came from
+cache.nixos.org. One run.
+
+**CI**, GitHub's `ubuntu-24.04`, [`ci.yml`](../.github/workflows/ci.yml) at commit `8c16e3f`, run
+`42382084036`. The Nix store starts empty at each run: Google's SDK is downloaded each time, but
+for `sdk-tools`, from cache.nixos.org. The shell itself, read from the log's times, took about
+5 min cold and 4 min 30 s warm.
+
+| Run | Cargo cache | Duration | Of which |
+|---|---|---|---|
+| Cold | None | 10 min 49 s | the disk freed in 2 min 50 s; `nix develop` and the check in 7 min 36 s, clippy's 2 min 32 s among them; the cache saved in 11 s, 423 MB |
+| Warm (the job run again) | Hit | 7 min 2 s | the disk freed in 1 min 59 s; the cache restored in 15 s; `nix develop` and the check in 4 min 39 s, clippy's 9 s among them |
+
+The job runs beside the `check` job, whose warm run took 6 min 44 s in the same run: the workflow's
+length barely changes, under the 20-minute budget. The private repository's minutes grow by 8 a
+warm run and 11 a cold one, as GitHub counts each job in whole minutes, rounded up. The runner had
+14 GB free before its disk was freed, 45 GB after; the job used 12.
+
 ## Apple Music's steps, M1.12 (2026-11-05 and 2026-11-06)
 
 How long Apple Music's steps take Opium on the owner's account, before and after

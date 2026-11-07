@@ -43,6 +43,10 @@ work is in [`PLAN.md`](PLAN.md); a stage's audit adds what it leaves open.
   Settings only changes the relay. The README said it could be turned off until 2026-11-06. It stays
   until the owner decides whether it may be turned off, open in the [ROADMAP](ROADMAP.md#open) for
   Stage 8.
+- **CI checks the phone's Rust only**: `scripts/check.sh android` runs clippy on `opium-ffi`; no
+  check builds the Kotlin bindings, the Kotlin or the APK, so Kotlin that no longer matches the core
+  passes CI. Built by hand (`build-core.sh`, `gradle assembleRelease`). Tracked by Stage 2, whose
+  signed APK builds with a pinned Gradle.
 - **The dependencies are not checked**: `cargo deny` finds three advisories against `zstd`
   (RUSTSEC-2026-0391, -0398, -0403), six unmaintained crates and a yanked `async-executor`; a
   passing `deny.toml` would ignore them or update `Cargo.lock`, the owner's call at Stage 2.
