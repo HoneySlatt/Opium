@@ -25,8 +25,7 @@ Every milestone ends with the definition of done in [`AGENTS.md`](../AGENTS.md#d
   owner's account did not get for the album tried.
 - Then Stage 5, the move to uwui, when uwui's first stage takes Opium's port; the phone moves to
   uwui without condition ([ADR-0031](adr/0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md));
-  the stages after it in the [ROADMAP's order](ROADMAP.md#4-stages). On 2026-11-05 Google's Android
-  repository still answered 404, for the SDK's command-line tools too.
+  the stages after it in the [ROADMAP's order](ROADMAP.md#4-stages).
 - **What Opium is to become**, decided by the owner on 2026-11-06 in a design session that built
   nothing ([ADR-0034](adr/0034-what-opium-is-to-become.md)): the general public, the platforms, the
   services, Connect, the library, the sound, the interface, the order of stages 6 to 10. The owner
@@ -53,7 +52,7 @@ Every milestone ends with the definition of done in [`AGENTS.md`](../AGENTS.md#d
 | [M1.2](#done) | `scripts/check.sh` passes on `main` | Done |
 | [M1.3](#done) | Every push to `main` and every pull request is checked by CI | Done |
 | [M1.4](#m14--the-rename-landed) | The owner's computer and phone run Opium under its new names, with their data | In progress: the computer done, the phone's app installed |
-| [M1.5](#m15--the-phones-core-checked) | The Android shell builds from an empty store and the phone's core is checked | Planned |
+| [M1.5](#m15--the-phones-core-checked) | The Android shell builds from an empty store and the phone's core is checked | In progress: built from an empty store, CI's job to measure |
 | [M1.6](#done) | SlimeEngine's Stage 6d can read, in this repository, what Opium's window needs | Done |
 | [M1.7](#done) | The owner decides Opium's budgets with today's figures in hand | Done |
 | [M1.8](#m18--the-stage-audit) | The whole project examined before Stage 1 closes | Planned |
@@ -117,9 +116,15 @@ built in this stage.
 - **Goal.** The phone's Rust core is checked like the rest, and its shell builds anywhere.
 - **Delivers.** The Android shell building from an empty store again: on 2026-11-04, Google's
   server answered 404 for the SDK's `cmake-4.1.2-linux.zip`, and on 2026-11-05 for its command-line
-  tools (`commandlinetools-linux-16111833_latest.zip`) too: the versions that nixpkgs' `androidenv`
-  asks for are gone. Then `scripts/check.sh android` run, and a CI job for it if the SDK's download
-  fits CI's time.
+  tools (`commandlinetools-linux-16111833_latest.zip`) too. Then `scripts/check.sh android` run,
+  and a CI job for it if the SDK's download fits CI's time.
+- **Where it stands (2026-11-07).** Google serves every archive the shell asks for again, the
+  same versions: the 404s were Google's, and passed; `flake.nix` is unchanged. The shell built
+  from an empty Nix store (`nix build --store <empty folder>`, cache.nixos.org its only binary
+  cache) in 8 min 30 s, 11 GB, its six SDK archives downloaded from Google and checked against
+  nixpkgs' hashes. `scripts/check.sh android` passes; `build-core.sh` and `gradle assembleRelease`
+  build the APK, not installed. CI's `android` job, which downloads the SDK at each run, is added;
+  its durations are to measure. The `unsafe` of `opium-ffi` has its `// SAFETY:`.
 - **Done when.** `nix develop .#android` builds on a machine that never built it, and
   `scripts/check.sh android` passes.
 - **How to test.** `nix develop .#android -c scripts/check.sh android`; `./android/build-core.sh`
