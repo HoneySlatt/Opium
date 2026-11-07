@@ -9,7 +9,8 @@ animate. Each run starts the release build through run.sh on $WAYLAND_DISPLAY, c
 (`unshare --user --map-current-user --net`), with OPIUM_MEASURE set; the app writes its frame
 record and closes itself. Meanwhile its memory is read from /proc every 0.25 s. A run that has
 not ended after 400 s is ended by SIGTERM to its own pid, and counts as failed. `--again` runs
-nothing: it sums up again the files that earlier runs left in <out-dir>.
+nothing: it sums up again the files that earlier runs left in <out-dir>, keeping the load average
+the runs met.
 
 For every run, in <out-dir>: the record (<scenario>-<n>.csv), the memory with the time the program
 was started (<scenario>-<n>-mem.json) and the app's standard error (<scenario>-<n>.log); then
@@ -19,17 +20,18 @@ was started (<scenario>-<n>-mem.json) and the app's standard error (<scenario>-<
   scans the folder, is not a warm start: run a `start` first and drop it.
 - after_useful_ms: the first useful frame's interval to the next frame, which its own work makes
   long; it is left out of the phase that follows.
-- for each phase of the scenario, over the frames the frame before asked for at once (the record's
-  `continued`): their CPU time (eframe's: interface, tessellation and drawing calls) and their
-  interval, the time from the frame before's start, which is what the display shows; the interval
-  is held when it is one period of <refresh in Hz> (240 by default); a frame later than 1.5
-  periods missed at least one vsync;
+- for each phase of the scenario: the CPU time of every frame in it (eframe's: interface,
+  tessellation and drawing calls), and the interval of each frame the frame before asked for at
+  once (the record's `continued`), the time from the frame before's start, which is what the
+  display shows; the interval is held when it is one period of <refresh in Hz> (240 by default);
+  a frame later than 1.5 periods missed at least one vsync;
 - memory: VmRSS and RssAnon in the first sample after the first useful frame (within 0.25 s),
   their highest after it, and VmHWM, the highest VmRSS the kernel saw.
-A run is left out of the figures together, and said on standard error, if its window was hidden
-for a frame (`undrawn`), if its scenario did not end by itself (`ended`), if it was not drawn at
-1.65 pixels a point (the owner's scale 1.5 at the interface's 100 %), or, with
-OPIUM_MEASURE_PIXELS set (3840x2160), if its window had another size. Refuses to start if an Opium
+A run is left out of the figures together, and said on standard error, if it never showed the
+library, if its window was hidden for a frame (`undrawn`), if its scenario did not end by itself
+(`ended`), if it was not drawn at OPIUM_MEASURE_PIXELS_PER_POINT (1.65 by default: the owner's
+scale 1.5 at the interface's 100 %), or, with OPIUM_MEASURE_PIXELS set (3840x2160), if its
+window had another size. Refuses to start if an Opium
 already runs. Run inside `nix develop`.
 """
 import json
@@ -51,8 +53,8 @@ runs = int(runs)
 refresh = float(rest[0]) if rest else 240.0
 period_ms = 1000.0 / refresh
 pixels = os.environ.get("OPIUM_MEASURE_PIXELS")
-# The owner's display at scale 1.5, the interface at 100 % (which draws at 1.1).
-PIXELS_PER_POINT = 1.65
+# By default the owner's display at scale 1.5, the interface at 100 % (which draws at 1.1).
+PIXELS_PER_POINT = float(os.environ.get("OPIUM_MEASURE_PIXELS_PER_POINT", "1.65"))
 run_sh = os.path.join(os.path.dirname(os.path.abspath(__file__)), "run.sh")
 
 
@@ -127,14 +129,15 @@ def spread(values):
 
 
 def phases(frames):
-    """Each phase's frames that the frame before asked for at once: CPU times and intervals. The
-    interval after the first useful frame measures that frame's own work, and stays out."""
+    """Each phase's CPU times, of every frame in it, and intervals, of the frames the frame before
+    asked for at once. The interval after the first useful frame measures that frame's own work,
+    and stays out."""
     found = {}
     for before, frame in zip(frames, frames[1:]):
-        if not frame["continued"] or frame["phase"] in ("loading", "useful", "end"):
+        if frame["phase"] in ("loading", "useful", "end"):
             continue
         phase = found.setdefault(frame["phase"], {"cpu": [], "interval": []})
-        if before["phase"] != "useful":
+        if frame["continued"] and before["phase"] != "useful":
             phase["interval"].append((frame["start"] - before["start"]) * 1e3)
         if frame["cpu_ms"] is not None:
             phase["cpu"].append(frame["cpu_ms"])
@@ -182,7 +185,10 @@ def sum_up(run):
     reasons = unfit(facts)
     if reasons:
         print(f"run {run}: left out: {'; '.join(reasons)}", file=sys.stderr)
-    useful = next(i for i, f in enumerate(frames) if f["phase"] == "useful")
+    useful = next((i for i, f in enumerate(frames) if f["phase"] == "useful"), None)
+    if useful is None:
+        print(f"run {run}: no first useful frame (ended: {facts.get('ended')})", file=sys.stderr)
+        return {"run": run, "failed": f"no first useful frame; ended: {facts.get('ended')}"}
     first = frames[useful]
     after = [s for s in samples if s["t"] >= first["start"]]
     at_useful = after[0] if after else {}
@@ -241,7 +247,12 @@ together = {
                                if r["memory_mib"]["rss_highest"]]),
     "hwm_mib": spread([r["memory_mib"]["hwm"] for r in done if r["memory_mib"]["hwm"]]),
 }
-with open(os.path.join(out, f"{scenario}.json"), "w") as summed:
-    json.dump({"scenario": scenario, "refresh_hz": refresh, "load_average": os.getloadavg(),
+summed_path = os.path.join(out, f"{scenario}.json")
+load = os.getloadavg()
+if again and os.path.exists(summed_path):
+    with open(summed_path) as earlier:
+        load = json.load(earlier).get("load_average", load)
+with open(summed_path, "w") as summed:
+    json.dump({"scenario": scenario, "refresh_hz": refresh, "load_average": load,
                "runs": results, "together": together}, summed, indent=1)
 print("together:", json.dumps(together))

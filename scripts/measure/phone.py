@@ -178,10 +178,10 @@ def gfxinfo():
 def flings(count):
     """Flings up the page, then back down, between the heights 700 and 1700: below the page's
     head, above the player along the bottom. A swipe this fast is never taken for a tap."""
-    require_front("scrolling")
     x = WIDTH // 2
     for low, high in ((1700, 700), (700, 1700)):
         for _ in range(count):
+            require_front("a fling")
             shell(f"input swipe {x} {low} {x} {high} 120")
             time.sleep(0.6)
 
@@ -218,6 +218,10 @@ for _ in range(runs):
     require_front("going Home")
     shell("input keyevent KEYCODE_HOME")
     time.sleep(2)
+    if "launcher" not in shell("dumpsys window | grep mCurrentFocus"):
+        sys.exit("stopped before a hot start: the home screen is not in front (the owner may have "
+                 "the phone)")
+    require_idle("a hot start")
     hot.append(start())
     print("hot start", hot[-1], flush=True)
     time.sleep(2)
