@@ -23,7 +23,7 @@ cache.nixos.org. One run.
 **CI**, GitHub's `ubuntu-24.04`, [`ci.yml`](../.github/workflows/ci.yml) at commit `1737924`, run
 `42385634353`: cold, its caches' keys new, then warm, its jobs run again. The Nix store starts
 empty at each run: Google's SDK is downloaded each time, but for `sdk-tools`, from
-cache.nixos.org. Evaluating a shell for the cache's key takes 16 to 20 s.
+cache.nixos.org. Evaluating a shell for the cache's key takes 15 to 21 s.
 
 | Job | Run | Duration | Of which |
 |---|---|---|---|
@@ -33,13 +33,14 @@ cache.nixos.org. Evaluating a shell for the cache's key takes 16 to 20 s.
 | `check` | Warm | 7 min 21 s | the disk freed in 1 min 16 s; the cache restored in 33 s; `scripts/check.sh` in 5 min 4 s |
 
 The two jobs run side by side: the workflow lasts as long as `check`, under the 20-minute budget
-warm. The private repository's minutes grow by 7 a warm run and 10 a cold one, as GitHub counts
+warm. The `android` job adds 7 billed minutes to a warm run and 10 to a cold one, as GitHub counts
 each job in whole minutes, rounded up. The runner had 14 GB free before its disk was freed, 45 GB
 after; the `android` job used 11 to 12.
 
 The first runs, at commit `8c16e3f` (run `42382084036`), took 10 min 49 s cold and 7 min 2 s warm
 for `android`, built with debug info; the next, at `ddc6c5a`, 8 min 10 s, a cache saved
-with other build settings restored and rebuilt in full, which led to the keys above.
+with other build settings restored and rebuilt in full, which led to the keys above. ADR-0036's
+8 and 11 minutes come from those first runs.
 
 ## Apple Music's steps, M1.12 (2026-11-05 and 2026-11-06)
 
