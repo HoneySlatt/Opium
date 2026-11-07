@@ -46,7 +46,6 @@ work is in [`PLAN.md`](PLAN.md); a stage's audit adds what it leaves open.
 - **The dependencies are not checked**: `cargo deny` finds three advisories against `zstd`
   (RUSTSEC-2026-0391, -0398, -0403), six unmaintained crates and a yanked `async-executor`; a
   passing `deny.toml` would ignore them or update `Cargo.lock`, the owner's call at Stage 2.
-- **`unsafe` without `// SAFETY:`**: `File::from_raw_fd` (`opium-ffi/src/lib.rs`).
 - **Public items without documentation**: not counted yet.
 - **Left on purpose by the [2026-10-31 audit](audits/2026-10-31-full.md)**: SoundCloud's clear HLS
   joined whole before it plays; the player's real-time scratch buffer reallocated, 32-bit sources

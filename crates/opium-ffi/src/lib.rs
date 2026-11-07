@@ -2123,9 +2123,13 @@ pub fn file_lyrics(fd: i32, title: String) -> Option<Lyrics> {
     local::lyrics_from(&mut owned_file(fd)?, &title)
 }
 
-/// The file `fd` names, owned from now on: closed once dropped.
+/// The file `fd` names, owned from now on: closed once dropped. `None` for a
+/// negative `fd`. Every caller takes `fd` from Kotlin, which hands it over.
 fn owned_file(fd: i32) -> Option<std::fs::File> {
     use std::os::fd::FromRawFd;
-    // Kotlin hands it over (`detachFd`) and keeps no copy of it.
+    // SAFETY: `fd` is open and owned by nobody else: Kotlin takes it from a
+    // `ParcelFileDescriptor` with `detachFd`, which gives up its ownership,
+    // and passes it to one call only, so the `File` is its one owner and
+    // closes it once.
     (fd >= 0).then(|| unsafe { std::fs::File::from_raw_fd(fd) })
 }
