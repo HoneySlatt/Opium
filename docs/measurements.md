@@ -28,9 +28,14 @@ cache.nixos.org. Evaluating a shell for the cache's key takes 15 to 21 s.
 | Job | Run | Duration | Of which |
 |---|---|---|---|
 | `android` | Cold | 9 min 19 s | the disk freed in 2 min 23 s; `nix develop` and the check in 6 min 20 s; the cache saved in 6 s, 238 MB |
-| `android` | Warm | 6 min 4 s | the disk freed in 1 min 24 s; the cache restored in 4 s; `nix develop` and the check in 4 min 11 s, clippy's 14 s among them, 15 crates checked again |
+| `android` | Warm | 6 min 4 s | the disk freed in 1 min 24 s; the cache restored in 4 s; `nix develop` and the check in 4 min 11 s, clippy's 14 s among them, 14 crates checked again |
 | `check` | Cold | 17 min 8 s | the disk freed in 2 min 17 s; `scripts/check.sh` in 13 min 57 s; the cache saved in 28 s, 1.2 GB |
 | `check` | Warm | 7 min 21 s | the disk freed in 1 min 16 s; the cache restored in 33 s; `scripts/check.sh` in 5 min 4 s |
+
+A second cold run, at commit `373a0a4` (run `42388743339`), took 9 min 12 s for `android` but
+27 min 33 s for `check`, the same build: clippy 11 min 50 s and the tests' build 10 min 54 s, where
+the run above took 13 min 57 s for the whole script. Cold runs spread that far from one runner to
+the next; why was not looked into. A cold run has no budget.
 
 The two jobs run side by side: the workflow lasts as long as `check`, under the 20-minute budget
 warm. The `android` job adds 7 billed minutes to a warm run and 10 to a cold one, as GitHub counts
@@ -38,9 +43,9 @@ each job in whole minutes, rounded up. The runner had 14 GB free before its disk
 after; the `android` job used 11 to 12.
 
 The first runs, at commit `8c16e3f` (run `42382084036`), took 10 min 49 s cold and 7 min 2 s warm
-for `android`, built with debug info; the next, at `ddc6c5a`, 8 min 10 s, a cache saved
-with other build settings restored and rebuilt in full, which led to the keys above. ADR-0036's
-8 and 11 minutes come from those first runs.
+for `android`, built with debug info; the next, at `ddc6c5a` (run `42384547161`), 8 min 10 s: a
+cache saved with other build settings was restored and rebuilt in full, so the caches' keys now
+name the shell, the build settings and the manifests ([`ci.yml`](../.github/workflows/ci.yml)).
 
 ## Apple Music's steps, M1.12 (2026-11-05 and 2026-11-06)
 
