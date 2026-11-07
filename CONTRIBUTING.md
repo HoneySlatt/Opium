@@ -54,9 +54,10 @@ scripts/check.sh android    # inside `nix develop .#android`: the phone's core
   `nix develop --no-update-lock-file --command scripts/check.sh` on every push to `main`, every
   pull request, and every Monday at 06:53 UTC, but for a push or a pull request that changes only
   Markdown files. The flag makes an incomplete `flake.lock` an error instead of a silent update.
-  A second job runs `scripts/check.sh android` in `nix develop .#android` at the same times. No
-  binary cache holds Google's SDK, so each run downloads it from Google: a version gone from
-  Google's server fails that job, as it did by hand on 2026-11-04 and 2026-11-05.
+  A second job runs `scripts/check.sh android` in `nix develop .#android` at the same times.
+  cache.nixos.org holds none of Google's SDK but an old `sdk-tools` archive, so each run downloads
+  the rest from Google: a version missing from Google's server fails that job, as it did by hand on
+  2026-11-04 and 2026-11-05.
 - [`links.yml`](.github/workflows/links.yml) checks the links between the Markdown files at
   every push and pull request, documents only included, with lychee from the pinned nixpkgs: a
   minute or two, where the whole check takes ten or more.

@@ -97,19 +97,21 @@ jobs:
           name: fuzz-artifacts
           path: crates/*/fuzz/artifacts/
   # The phone's core (`scripts/check.sh android`), in the Android shell. The shell's SDK is Google's,
-  # unfree, so no binary cache holds it: every run downloads it from Google again, which tells when
-  # the versions nixpkgs asks for are gone from Google's server, as they were on 2026-11-04 and
-  # 2026-11-05 (docs/PLAN.md, M1.5).
+  # unfree, so cache.nixos.org holds none of it but an old `sdk-tools` archive: every run downloads
+  # the rest from Google again, and fails when a version nixpkgs asks for is missing from Google's
+  # server, as on 2026-11-04 and 2026-11-05 (docs/measurements.md, M1.5).
   android:
     runs-on: ubuntu-24.04
     # A cold run is measured in docs/measurements.md; this limit only stops a hung run.
     timeout-minutes: 60
+    # As in the check job.
     env:
+      CARGO_PROFILE_DEV_DEBUG: "0"
       CARGO_INCREMENTAL: "0"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # The shell takes 11 GB of Nix store from empty (measured on 2026-11-07), the SDK's archives
-      # and what they unpack to; freed as the check job's disk is, which ran out before it was.
+      # The runner leaves 14 GB free and the job uses 12, the SDK's archives and what they unpack
+      # to (measured on 2026-11-07): too close, so the disk is freed as in the check job.
       - name: Free the runner's disk
         run: |
           df -h /
@@ -136,6 +138,6 @@ jobs:
             ~/.cargo/git
             target-android
           key: ${{ steps.cache.outputs.cache-primary-key }}
-      # What the run left of the runner's disk, which the check job had to free.
+      # The disk the job used, to compare with the 14 GB the runner leaves free.
       - if: always()
         run: df -h /
