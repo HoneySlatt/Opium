@@ -6,13 +6,13 @@
 //!
 //! `OPIUM_MEASURE=<scenario>` turns them on and `OPIUM_MEASURE_OUT=<file>`
 //! names the record, written once the scenario ends, and the window then
-//! closes. Every scenario opens its page as soon as the library's songs are
-//! in, Songs but for `scroll-albums`; that frame is the first useful one, and
-//! [`SETTLE`] at rest follows. Then:
+//! closes. Every scenario opens Songs as soon as the library's songs are in;
+//! that frame is the first useful one, and [`SETTLE`] at rest follows. Then:
 //!
 //! - `start`: nothing more.
-//! - `scroll-songs`, `scroll-albums`: Songs or the Albums grid scrolled down
-//!   at [`SCROLL_SPEED`] to the end.
+//! - `scroll-songs`: Songs scrolled down at [`SCROLL_SPEED`] to the end.
+//! - `scroll-albums`: the Albums grid opened, [`SETTLE`] at rest while its
+//!   albums and covers come in, then scrolled down likewise.
 //! - `animate`: the window's transitions, [`STEP`] apart: four rounds of
 //!   Albums, Artists, Home and Songs; the queue drawer opened and closed three
 //!   times; Now Playing opened and closed three times.
@@ -24,7 +24,10 @@
 //! frame rate, as fingers on a trackpad do, without the rubber band at the
 //! end, so that the end shows. It is injected into egui's own input: nothing
 //! reaches the compositor. The record is plain text: `#` lines say what was
-//! measured, then one line a frame (`start_us,cpu_us,phase,continued,scrolled`):
+//! measured and how the scenario ended (`ended=`: `done`, `end` of the page,
+//! the scroll's time `limit`, or `no-songs`) and how many frames were begun
+//! but not drawn (`undrawn=`, the window hidden: the run is unfit), then one
+//! line a frame drawn (`start_us,cpu_us,phase,continued,scrolled`):
 //!
 //! - `start_us`, when the frame began, in microseconds of the Unix epoch, so
 //!   that a script compares it with the time it started the program;
@@ -32,9 +35,11 @@
 //!   drawing calls but not the wait for the display (`IntegrationInfo::cpu_usage`);
 //!   empty for the last frame, which eframe reports only on the next one;
 //! - `phase`, the part of the scenario the frame belongs to;
-//! - `continued`, 1 if the frame before asked for this one at once, as a
-//!   moving frame does: its distance from the frame before then says whether
-//!   the display's pace was held. 0 after a rest, or a wait the window chose;
+//! - `continued`, 1 if an immediate repaint was asked during the pass
+//!   before (`requested_repaint_last_pass`): mostly a moving frame asking
+//!   for the next, whose distance from it then says whether the display's
+//!   pace was held, but also another thread waking the window, after which
+//!   the distance holds a rest. 0 after a rest, or a wait the window chose;
 //! - `scrolled`, how far the page had scrolled, in points.
 
 use std::fmt::Write as _;
@@ -54,8 +59,11 @@ pub const SCROLL_SPEED: f32 = 4000.0;
 /// The time between two of `animate`'s steps: longer than the slowest
 /// transition (0.38 s), so that each one ends at rest.
 pub const STEP: f64 = 1.0;
-/// The longest a scroll goes on, should its end never come.
+/// The longest a scroll goes on, should its end never come: about 23,000 of
+/// Songs' rows. The record says when it was reached.
 const SCROLL_LIMIT: f64 = 300.0;
+/// The longest the library's songs are waited for.
+const LOAD_LIMIT: f64 = 60.0;
 /// Frames in a row whose scroll no page took before it counts as the end.
 const ENDED_AFTER: u32 = 10;
 
@@ -90,8 +98,11 @@ impl Scenario {
 
 /// What the scenario asks of the window this frame.
 pub enum Action {
+    /// Go to this page.
     Open(Page),
+    /// Open the queue drawer if closed, close it if open.
     ToggleDrawer,
+    /// Open Now Playing if closed, close it if open.
     ToggleNowPlaying,
 }
 
@@ -147,6 +158,9 @@ enum Stage {
     Loading,
     /// At rest since the first useful frame, at the time given.
     Settling(f64),
+    /// `scroll-albums`: at rest since the Albums grid was opened, at the
+    /// time given.
+    SettlingAlbums(f64),
     /// Scrolling since the time given; `None` until the first frame's touch.
     Scrolling(Option<f64>),
     /// At `animate`'s step given, taken at the time given.
@@ -163,6 +177,7 @@ struct Frame {
     scrolled: f32,
 }
 
+/// The frame record and the scenario under way: see the module's head.
 pub struct Measure {
     scenario: Scenario,
     out: PathBuf,
@@ -179,6 +194,11 @@ pub struct Measure {
     facts: String,
     /// Full screen asked for.
     full_screen: bool,
+    /// Frames begun but not drawn, the window hidden: left out of the
+    /// record, and counted in it, as they make its run unfit.
+    undrawn: u32,
+    /// How the scenario ended, for the record.
+    ended: &'static str,
 }
 
 impl Measure {
@@ -216,6 +236,8 @@ impl Measure {
             untaken: 0,
             facts: String::new(),
             full_screen: false,
+            undrawn: 0,
+            ended: "",
         }
     }
 
@@ -278,6 +300,15 @@ impl Measure {
         if !std::mem::replace(&mut self.full_screen, true) {
             ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(true));
         }
+        // Frames begun while the window was hidden ran no pass: eframe
+        // reports no time for them, and their input waits for this frame.
+        if let Some(current) = self.frames.pop() {
+            while self.frames.last().is_some_and(|f| f.phase.is_empty()) {
+                self.frames.pop();
+                self.undrawn += 1;
+            }
+            self.frames.push(current);
+        }
         if let (Some(cpu), [.., before, _]) = (cpu_of_last_frame, self.frames.as_mut_slice()) {
             before.cpu_us = Some((cpu as f64 * 1e6) as u64);
         }
@@ -289,30 +320,46 @@ impl Measure {
             Stage::Loading if songs > 0 => {
                 self.stage = Stage::Settling(now);
                 self.facts = facts(ctx, songs);
-                let page = if self.scenario == Scenario::ScrollAlbums {
-                    Page::Albums
-                } else {
-                    Page::Songs
-                };
-                ("useful", Some(Action::Open(page)))
+                ("useful", Some(Action::Open(Page::Songs)))
             }
-            Stage::Loading => ("loading", None),
+            Stage::Loading if now > LOAD_LIMIT => {
+                self.end(ctx, "no-songs");
+                ("end", None)
+            }
+            Stage::Loading => {
+                ctx.request_repaint_after(Duration::from_secs_f64(LOAD_LIMIT - now));
+                ("loading", None)
+            }
             Stage::Settling(since) if now - since < SETTLE => {
                 ctx.request_repaint_after(Duration::from_secs_f64(SETTLE - (now - since)));
                 ("settle", None)
             }
             Stage::Settling(_) => match self.scenario {
                 Scenario::Start => {
-                    self.end(ctx);
+                    self.end(ctx, "done");
                     ("end", None)
                 }
-                Scenario::ScrollSongs | Scenario::ScrollAlbums => {
+                Scenario::ScrollSongs => {
                     self.stage = Stage::Scrolling(None);
                     ctx.request_repaint();
                     ("scroll", None)
                 }
+                Scenario::ScrollAlbums => {
+                    self.stage = Stage::SettlingAlbums(now);
+                    ctx.request_repaint_after(Duration::from_secs_f64(SETTLE));
+                    ("albums", Some(Action::Open(Page::Albums)))
+                }
                 Scenario::Animate => self.step(ctx, 0, now),
             },
+            Stage::SettlingAlbums(since) if now - since < SETTLE => {
+                ctx.request_repaint_after(Duration::from_secs_f64(SETTLE - (now - since)));
+                ("albums", None)
+            }
+            Stage::SettlingAlbums(_) => {
+                self.stage = Stage::Scrolling(None);
+                ctx.request_repaint();
+                ("scroll", None)
+            }
             Stage::Scrolling(_) => {
                 ctx.request_repaint();
                 ("scroll", None)
@@ -347,8 +394,10 @@ impl Measure {
             }
         }
         let now = ctx.input(|i| i.time);
-        if self.untaken >= ENDED_AFTER || now - began > SCROLL_LIMIT {
-            self.end(ctx);
+        if self.untaken >= ENDED_AFTER {
+            self.end(ctx, "end");
+        } else if now - began > SCROLL_LIMIT {
+            self.end(ctx, "limit");
         }
     }
 
@@ -359,7 +408,7 @@ impl Measure {
         now: f64,
     ) -> (&'static str, Option<Action>) {
         let Some(&(phase, what)) = ANIMATION.get(step) else {
-            self.end(ctx);
+            self.end(ctx, "done");
             return ("end", None);
         };
         self.stage = Stage::Animating(step, now);
@@ -375,17 +424,21 @@ impl Measure {
         (phase, Some(action))
     }
 
-    /// The record written, beside then renamed over, and the window closed.
-    fn end(&mut self, ctx: &egui::Context) {
+    /// The record written, beside then renamed over, and the window closed;
+    /// `how` says how the scenario ended.
+    fn end(&mut self, ctx: &egui::Context, how: &'static str) {
         self.stage = Stage::Done;
+        self.ended = how;
         if let Some(frame) = self.frames.last_mut() {
             frame.phase = "end";
         }
         let mut text = format!(
-            "# opium frame record\n# scenario={}\n# scroll_speed={SCROLL_SPEED}\n# settle={SETTLE}\n# step={STEP}\n{}# scrolled={}\nstart_us,cpu_us,phase,continued,scrolled\n",
+            "# opium frame record\n# scenario={}\n# scroll_speed={SCROLL_SPEED}\n# settle={SETTLE}\n# step={STEP}\n{}# scrolled={}\n# ended={}\n# undrawn={}\nstart_us,cpu_us,phase,continued,scrolled\n",
             self.scenario.name(),
             self.facts,
             self.scrolled,
+            self.ended,
+            self.undrawn,
         );
         for frame in &self.frames {
             let cpu = frame.cpu_us.map(|c| c.to_string()).unwrap_or_default();
@@ -468,8 +521,7 @@ mod tests {
 
     #[test]
     fn start_records_every_frame_and_marks_the_first_useful_one() {
-        let dir = std::env::temp_dir().join(format!("opium-measure-test-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = out_dir("start");
         let out = dir.join("frames.csv");
         let mut measure = Measure {
             out: out.clone(),
@@ -503,6 +555,77 @@ mod tests {
             .map(|l| l.split(',').nth(1).unwrap())
             .collect();
         assert_eq!(cpus, ["2000", "2000", "2000", ""]);
+    }
+
+    /// A fresh record's folder of its own under the temporary folder.
+    fn out_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("opium-measure-{name}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn albums_open_after_songs_and_settle_before_the_scroll() {
+        let dir = out_dir("albums");
+        let mut measure = Measure {
+            out: dir.join("frames.csv"),
+            ..Measure::new(Scenario::ScrollAlbums)
+        };
+        let ctx = egui::Context::default();
+        assert!(matches!(
+            frame(&mut measure, &ctx, 0.0, 12),
+            Some(Action::Open(Page::Songs))
+        ));
+        assert!(matches!(
+            frame(&mut measure, &ctx, SETTLE, 12),
+            Some(Action::Open(Page::Albums))
+        ));
+        frame(&mut measure, &ctx, SETTLE + 1.0, 12);
+        assert!(measure.stage == Stage::SettlingAlbums(SETTLE));
+        frame(&mut measure, &ctx, 2.0 * SETTLE, 12);
+        assert!(measure.stage == Stage::Scrolling(None));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn frames_not_drawn_are_left_out_and_counted() {
+        let dir = out_dir("undrawn");
+        let out = dir.join("frames.csv");
+        let mut measure = Measure {
+            out: out.clone(),
+            ..Measure::new(Scenario::Start)
+        };
+        let ctx = egui::Context::default();
+        frame(&mut measure, &ctx, 0.0, 12);
+        // The window hidden: two frames begun, none drawn.
+        for time in [0.5, 1.0] {
+            measure.frame_begins(&mut egui::RawInput {
+                time: Some(time),
+                ..Default::default()
+            });
+        }
+        frame(&mut measure, &ctx, SETTLE, 12);
+        let text = std::fs::read_to_string(&out).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(text.contains("# undrawn=2\n"));
+        let rows = text.lines().filter(|l| !l.starts_with('#')).count();
+        assert_eq!(rows, 3, "the header and the two frames drawn");
+    }
+
+    #[test]
+    fn a_library_that_never_comes_ends_the_scenario() {
+        let dir = out_dir("no-songs");
+        let out = dir.join("frames.csv");
+        let mut measure = Measure {
+            out: out.clone(),
+            ..Measure::new(Scenario::ScrollSongs)
+        };
+        let ctx = egui::Context::default();
+        frame(&mut measure, &ctx, 0.0, 0);
+        frame(&mut measure, &ctx, LOAD_LIMIT + 0.1, 0);
+        let text = std::fs::read_to_string(&out).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(text.contains("# ended=no-songs\n"));
     }
 
     #[test]
@@ -540,13 +663,13 @@ mod tests {
         assert_eq!(delta.y, -SCROLL_SPEED * 0.25);
         // No scroll area here takes it: the end, after a few frames.
         let ctx = egui::Context::default();
-        let dir = std::env::temp_dir().join(format!("opium-measure-scroll-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = out_dir("scroll");
         measure.out = dir.join("frames.csv");
         for i in 0..ENDED_AFTER {
             frame(&mut measure, &ctx, 10.5 + f64::from(i) * 0.01, 12);
         }
         assert!(measure.stage == Stage::Done);
+        assert_eq!(measure.ended, "end");
         assert_eq!(measure.scrolled, 0.0);
         std::fs::remove_dir_all(&dir).unwrap();
     }
