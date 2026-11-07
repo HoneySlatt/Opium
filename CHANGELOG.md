@@ -25,6 +25,11 @@ Nothing has been released yet. What Opium does today:
   shortcuts, files opened from the file manager, tags edited as in iTunes.
 - **On the phone** (Android 14 and later): the same library and pages, Android Auto, and the
   audio chip's offload for songs that are not encrypted.
+- **Tags written safely**: a song's tags are edited on a copy first. On the computer, the change is
+  made on a copy that replaces the file once whole, so a crash or a full disk can no longer damage
+  the song. On the phone, the original is kept aside while the file is written; a change cut short
+  leaves the song half written until Opium can open it again, at its next start or at that song's
+  next change, and then puts it back.
 - The app is renamed from Music to Opium: its folders, its package and its names on the network
   change, with no migration.
 - **Written again**: the parts once adapted from Kopuz (the Widevine host, the encrypted MP4

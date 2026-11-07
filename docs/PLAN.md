@@ -37,8 +37,12 @@ Every milestone ends with the definition of done in [`AGENTS.md`](../AGENTS.md#d
   [`ui-framework-needs.md`](ui-framework-needs.md#what-adr-0034-asks-of-uwui) lists what it asks of
   uwui; the owner carries that list to SlimeEngine's M6d.1b3b, which chooses how state changes an
   application's interface.
-- **Next, on the owner's go**: tags written aside then renamed, on the desktop and the phone, a
-  loss of data the standby allows fixing ([known debt](debt.md)).
+- **Fixed on 2026-11-07**, under the standby's rule on a loss of data: a song's tags are written
+  on a copy (`local::tag_writes`), one write at a time. The desktop renames the copy over the
+  file. The phone keeps the original aside while it writes the copy over the file, and puts back
+  a file whose writing was cut short, at the next start or before that file's next write. Tested
+  in `cargo test`, the phone's core checked and its APK built; neither app was used to edit a
+  song, and the phone's way back was never cut short on a device.
 - The egui window is frozen until the move
   ([ADR-0026](adr/0026-the-egui-window-frozen-until-the-move.md)), but for M1.14's instruments; the
   phone's Compose screens until uwui replaces them

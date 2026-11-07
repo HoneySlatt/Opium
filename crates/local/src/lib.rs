@@ -3,6 +3,7 @@
 //! their pictures the covers. They play as they are.
 
 mod scan;
+mod tag_writes;
 mod tags;
 mod watch;
 
@@ -19,10 +20,10 @@ use opium_core::text::fold;
 use opium_core::{Error, Provider, Result};
 
 pub use scan::{EXTENSIONS, is_music};
-pub use tags::{
-    Cover, TagEdit, Tags, lyrics_from, lyrics_of, read_tags, read_tags_from, write_tags,
-    write_tags_to,
+pub use tag_writes::{
+    Unfinished, undo_tag_write, unfinished_tag_writes, write_tags, write_tags_over,
 };
+pub use tags::{Cover, TagEdit, Tags, lyrics_from, lyrics_of, read_tags, read_tags_from};
 pub use watch::Watching;
 
 pub use scan::Entry;

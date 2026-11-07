@@ -40,6 +40,37 @@ class LocalFiles(private val context: Context, private val core: Core, private v
     /** The folders with music in them, and how many songs each: to choose from. */
     val found: StateFlow<List<Pair<String, Int>>> = _found.asStateFlow()
 
+    /**
+     * Where a tag write keeps its copies while it replaces a file: the app's
+     * own, left out of backups, never cleared by the system.
+     */
+    private val tagWork = java.io.File(context.noBackupFilesDir, "tag-writes").path
+
+    /**
+     * The tag writes cut short last time (the app killed while it replaced a
+     * file), each file put back as it was, before any new write.
+     */
+    private val undone: Job = scope.launch(Dispatchers.IO) { undoUnfinished(only = null) }
+
+    /**
+     * Put back the files of the tag writes cut short, or only `only`'s; why
+     * the last couldn't be, if one couldn't. One whose file can't be opened
+     * (Android's leave to change it gone after a restart) waits for the next
+     * try: that file's next write, the leave given again, which the core
+     * refuses until then and whose error says why.
+     */
+    private fun undoUnfinished(only: String?): String? {
+        var failed: String? = null
+        for (write in io.github.honeyslatt.opium.core.unfinishedTagWrites(tagWork)) {
+            if (only != null && write.uri != only) continue
+            runCatching {
+                val fd = context.contentResolver.openFileDescriptor(Uri.parse(write.uri), "rw") ?: error("the file couldn't be opened")
+                io.github.honeyslatt.opium.core.undoTagWrite(fd.detachFd(), tagWork, write.id)
+            }.onFailure { failed = it.message }
+        }
+        return failed
+    }
+
     /** Whether Android lets the app read the music files. */
     fun allowed() = context.checkSelfPermission(Manifest.permission.READ_MEDIA_AUDIO) == PackageManager.PERMISSION_GRANTED
 
@@ -217,11 +248,13 @@ class LocalFiles(private val context: Context, private val core: Core, private v
 
     /** Write `edit` into the files of `tracks`, leave given; why some couldn't be, if any. */
     suspend fun write(tracks: List<io.github.honeyslatt.opium.core.model.Track>, edit: io.github.honeyslatt.opium.core.FileTagEdit): String? = withContext(Dispatchers.IO) {
+        undone.join()
         val failed = tracks.mapNotNull { track ->
             runCatching {
                 if (!inIndex(track.id.id)) error("the file isn't in Android's music index")
+                undoUnfinished(only = track.id.id)?.let { error("an earlier change cut short couldn't be undone: $it") }
                 val fd = context.contentResolver.openFileDescriptor(Uri.parse(track.id.id), "rw") ?: error("the file couldn't be opened")
-                io.github.honeyslatt.opium.core.writeFileTags(fd.detachFd(), edit)
+                io.github.honeyslatt.opium.core.writeFileTags(fd.detachFd(), edit, tagWork, track.id.id)
             }.exceptionOrNull()?.let { "${track.title}: ${it.message}" }
         }
         // Android reads a file written again as it is closed: the library follows.

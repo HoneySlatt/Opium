@@ -31,9 +31,10 @@ app in Kotlin with Jetpack Compose, which calls the core through UniFFI
   `Browser` seam through which every change goes ([ADR-0012](adr/0012-soundcloud-changes-through-a-browser-seam.md)).
 - **`crates/navidrome`**: any Subsonic/OpenSubsonic server, with salted-token requests; files
   streamed as they are.
-- **`crates/local`**: the device's own music files as a service: scanning and watching folders,
-  tags read and written (`lofty`), covers, `.lrc` lyrics. On the phone, Android's media index fills
-  it instead of a scan.
+- **`crates/local`**: the device's own music files as a service: scanning and watching folders, tags
+  read and written (`lofty`), always on a copy, renamed over the file on the desktop and written
+  over it on the phone with the original kept aside (`tag_writes.rs`), covers, `.lrc` lyrics. On the
+  phone, Android's media index fills it instead of a scan.
 - **`crates/lyrics`**: LRCLIB, NetEase Cloud Music and KuGou, and the LRC format
   ([ADR-0008](adr/0008-the-lyrics-sources.md)).
 - **`crates/services`**: the services and files as one: an item goes to its own service, a search

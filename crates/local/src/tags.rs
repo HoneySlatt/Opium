@@ -103,18 +103,10 @@ pub(crate) fn tags_of(file: &lofty::file::TaggedFile) -> Tags {
     }
 }
 
-/// Write `edit` into the file at `path`, in its own kind of tag.
-pub fn write_tags(path: &Path, edit: &TagEdit) -> Result<(), String> {
-    let mut file = std::fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(path)
-        .map_err(|e| e.to_string())?;
-    write_tags_to(&mut file, edit)
-}
-
-/// Write `edit` into `file`, open to read and write: the phone's.
-pub fn write_tags_to(open: &mut std::fs::File, edit: &TagEdit) -> Result<(), String> {
+/// Write `edit` into `open`, a file open to read and write, in its own kind
+/// of tag. The file is rewritten where it is: callers give it a copy
+/// ([`crate::write_tags`], [`crate::write_tags_over`]), never the user's file.
+pub(crate) fn edit_tags(open: &mut std::fs::File, edit: &TagEdit) -> Result<(), String> {
     use std::io::Seek;
     let mut file = lofty::read_from(open).map_err(|e| e.to_string())?;
     if file.primary_tag().is_none() {

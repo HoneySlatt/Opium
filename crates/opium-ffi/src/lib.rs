@@ -2049,9 +2049,18 @@ pub fn read_file_tags(fd: i32) -> Option<FileTags> {
 }
 
 /// Write `edit` into the file `fd` is open on (read and write), handed
-/// over, then closed.
+/// over, then closed. The copies are kept in `work`, a folder of the app's
+/// own that the system never clears, while the file is replaced; `uri`
+/// names the file again for [`unfinished_tag_writes`]. An error leaves the
+/// file as it was, or says it will be put back once Opium can open it again:
+/// at the next start, or before that file's next write.
 #[uniffi::export]
-pub fn write_file_tags(fd: i32, edit: FileTagEdit) -> Result<(), OpiumError> {
+pub fn write_file_tags(
+    fd: i32,
+    edit: FileTagEdit,
+    work: String,
+    uri: String,
+) -> Result<(), OpiumError> {
     let mut file = owned_file(fd).ok_or_else(|| OpiumError::Failed {
         reason: "the file couldn't be opened".into(),
     })?;
@@ -2070,7 +2079,41 @@ pub fn write_file_tags(fd: i32, edit: FileTagEdit) -> Result<(), OpiumError> {
             FileCover::Set { jpeg } => local::Cover::Set(jpeg),
         },
     };
-    local::write_tags_to(&mut file, &edit).map_err(|reason| OpiumError::Failed { reason })
+    local::write_tags_over(&mut file, &edit, std::path::Path::new(&work), &uri)
+        .map_err(|reason| OpiumError::Failed { reason })
+}
+
+/// A tag write cut short while it replaced its file (the app killed): the
+/// file's `uri`, and the `id` that [`undo_tag_write`] puts it back with.
+#[derive(uniffi::Record)]
+pub struct UnfinishedTagWrite {
+    pub id: String,
+    pub uri: String,
+}
+
+/// The tag writes in `work` cut short while they replaced their file, asked
+/// when the app starts and before a file is written; copies of writes that
+/// finished are removed then.
+#[uniffi::export]
+pub fn unfinished_tag_writes(work: String) -> Vec<UnfinishedTagWrite> {
+    local::unfinished_tag_writes(std::path::Path::new(&work))
+        .into_iter()
+        .map(|write| UnfinishedTagWrite {
+            id: write.id,
+            uri: write.key,
+        })
+        .collect()
+}
+
+/// Put back as it was the file `fd` is open on (read and write), handed
+/// over, then closed: the one of the unfinished write `id` in `work`.
+#[uniffi::export]
+pub fn undo_tag_write(fd: i32, work: String, id: String) -> Result<(), OpiumError> {
+    let mut file = owned_file(fd).ok_or_else(|| OpiumError::Failed {
+        reason: "the file couldn't be opened".into(),
+    })?;
+    local::undo_tag_write(&mut file, std::path::Path::new(&work), &id)
+        .map_err(|reason| OpiumError::Failed { reason })
 }
 
 /// The lyrics in the tags of the file `fd` is open on (read), handed over,

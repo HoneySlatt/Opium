@@ -369,8 +369,8 @@ on Windows.
   device; favourites of Opium's own, shared between devices
 - Every play kept and shared: the shared state's format versioned and migrated, its merge still
   ignoring order and repetition ([ADR-0014](adr/0014-shared-state-merged-field-by-field.md))
-- A file's old copy kept aside a while when its tags change, and the change undone on demand
-  (writing aside then renaming is a fix of today's [known debt](debt.md), not this stage's)
+- A file's old copy kept aside a while when its tags change, and the change undone on demand;
+  the tags are already edited on a copy first ([`ARCHITECTURE.md`](ARCHITECTURE.md))
 - MusicBrainz and the Cover Art Archive completing tags, covers and credits, off by default
 - Everything exported in open formats (JSON, M3U)
 - Scrobbling to ListenBrainz and Last.fm, off by default, with a queue that waits for the network;

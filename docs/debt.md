@@ -22,12 +22,17 @@ work is in [`PLAN.md`](PLAN.md); a stage's audit adds what it leaves open.
   - the exit hang inside eframe's teardown ([ADR-0021](adr/0021-the-exit-watch.md),
     [ADR-0024](adr/0024-the-exit-watch-aborts-for-a-core-dump.md));
   - the interface's state and logic mixed with egui in `app.rs`, taken out as part of the move.
-- **Tags are written in place**: `local::write_tags` on the desktop, and `local::write_tags_to` on
-  the phone (through `opium-ffi`), rewrite the user's file where it is, so a crash or a full disk
-  during the write can damage the song, against the rule that writes go aside and are renamed. On
-  the phone, Android's file access may not allow a rename. Found on 2026-11-06 while recording
-  [ADR-0034](adr/0034-what-opium-is-to-become.md). A loss of data, which the standby allows fixing:
-  it stays until the owner's go, the next fix the [PLAN](PLAN.md#current) proposes.
+- **What a tag write leaves** (`local::tag_writes`, since 2026-11-07): on the desktop, the file
+  replaced by its copy loses its extended attributes, ACLs and owner, and a second hard link to it
+  keeps the old tags; a folder the user can't write refuses the copy, so its files' tags are no
+  longer written even where the files could be; a crash during a write leaves a whole copy of the
+  song in its folder, hidden (`.opium-tags-…`), which nothing removes. On the phone, a write cut
+  short is put back only once Android lets Opium open the file again, at a start or at that file's
+  next change; the copies of a file deleted meanwhile stay in the app's own folder, and so does the
+  original of a file changed since some other way (`<id>.kept`), which nothing shows the user: a
+  song a power cut left with blocks of zeros is taken for one, and stays damaged. An undo that fails
+  at a start says nothing; the reason shows only in that song's next change. Tracked by Stage 7,
+  which reworks tag edits (old copies kept, undo).
 - **Away from home cannot be turned off**: the desktop always asks for it (`desktop::devices`,
   `set_away(true)`), so n0's relays and address lookup are reached even before any device is paired;
   Settings only changes the relay. The README said it could be turned off until 2026-11-06. It stays
