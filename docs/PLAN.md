@@ -87,7 +87,8 @@ built in this stage.
   `check` job ([measured](measurements.md#the-android-shell-and-cis-android-job-m15-2026-11-07)).
   `opium-ffi`'s `unsafe` block and its `unsafe(no_mangle)` say why they are sound. The shell names
   its SDK and NDK under every name the tools read, so a runner's own are never mixed in. CI checks
-  no Kotlin nor the APK ([debt](debt.md)).
+  no Kotlin nor the APK ([debt](debt.md)). A red caused by Google blocks as any other
+  ([ADR-0036](adr/0036-the-phones-ci-job-blocks-even-when-google-fails.md)).
 - **M1.6 — What the window needs from a UI framework.**
   [`ui-framework-needs.md`](ui-framework-needs.md): 113 needs, 108 indispensable, each citing the
   code, the marks confirmed by the owner on 2026-11-05.

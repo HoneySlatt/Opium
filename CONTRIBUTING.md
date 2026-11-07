@@ -57,7 +57,9 @@ scripts/check.sh android    # inside `nix develop .#android`: the phone's core
   A second job runs `scripts/check.sh android` in `nix develop .#android` at the same times.
   cache.nixos.org holds none of Google's SDK but an old `sdk-tools` archive, so each run downloads
   the rest from Google: a version missing from Google's server fails that job, as it did by hand on
-  2026-11-04 and 2026-11-05.
+  2026-11-04 and 2026-11-05. That red blocks work as any other; the fix is a newer nixpkgs in
+  `flake.lock`, with the owner's go
+  ([ADR-0036](docs/adr/0036-the-phones-ci-job-blocks-even-when-google-fails.md)).
 - [`links.yml`](.github/workflows/links.yml) checks the links between the Markdown files at
   every push and pull request, documents only included, with lychee from the pinned nixpkgs: a
   minute or two, where the whole check takes ten or more.
