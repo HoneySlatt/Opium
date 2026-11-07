@@ -23,9 +23,10 @@ changes nothing but what is shown. In order:
 Before each cold start, tap or key, it checks again that Opium is the focused app, playing and
 downloading nothing, and stops if not: the owner may have taken the phone back. The labels are found in a dump of the interface
 (`uiautomator dump`), read only when Opium has the focus, and deleted from the phone at once. Only
-the navigation is tapped, each label within the heights where the Stock theme's layout of
-2026-11-07 puts it (on a 1080x2424 screen): a label found elsewhere, which could be a song's, or
-another theme's layout, stops the script.
+the navigation is tapped, each label looked for only within the heights where the Stock theme's
+layout of 2026-11-07 puts it (on a 1080x2424 screen), and a tab only once the four tabs are found
+side by side: a song's label elsewhere is never taken, and another theme's layout, where a label
+is not found once in its place, stops the script.
 Writes <out-dir>/phone.json and prints its figures.
 """
 import json
@@ -72,9 +73,14 @@ def require_idle(what):
 
 
 def playing():
+    """Whether Opium's media session plays, or might: a session whose state cannot be read counts
+    as playing, so that a format not met before stops the script rather than the music."""
     sessions = shell("dumpsys media_session")
     for block in sessions.split("package=")[1:]:
-        if block.startswith(PACKAGE) and "state=PLAYING" in block:
+        if not block.startswith(PACKAGE):
+            continue
+        states = re.findall(r"state=PlaybackState \{state=(\w+)", block)
+        if not states or any(state not in ("NONE", "STOPPED", "PAUSED", "ERROR") for state in states):
             return True
     return False
 

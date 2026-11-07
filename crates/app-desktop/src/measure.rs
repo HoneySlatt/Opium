@@ -26,7 +26,8 @@
 //! reaches the compositor. The record is plain text: `#` lines say what was
 //! measured and how the scenario ended (`ended=`: `done`, `end` of the page,
 //! the scroll's time `limit`, or `no-songs`) and how many frames were begun
-//! but not drawn (`undrawn=`, the window hidden: the run is unfit), then one
+//! but not drawn (`undrawn=`, the window hidden or the compositor withholding
+//! frames: the run is unfit), then one
 //! line a frame drawn (`start_us,cpu_us,phase,continued,scrolled`):
 //!
 //! - `start_us`, when the frame began, in microseconds of the Unix epoch, so
@@ -626,6 +627,28 @@ mod tests {
         let text = std::fs::read_to_string(&out).unwrap();
         std::fs::remove_dir_all(&dir).unwrap();
         assert!(text.contains("# ended=no-songs\n"));
+    }
+
+    #[test]
+    fn animate_takes_every_step_then_ends() {
+        let dir = out_dir("animate");
+        let out = dir.join("frames.csv");
+        let mut measure = Measure {
+            out: out.clone(),
+            ..Measure::new(Scenario::Animate)
+        };
+        let ctx = egui::Context::default();
+        frame(&mut measure, &ctx, 0.0, 12);
+        let mut asked = 0;
+        for step in 0..=ANIMATION.len() {
+            if frame(&mut measure, &ctx, SETTLE + step as f64 * STEP, 12).is_some() {
+                asked += 1;
+            }
+        }
+        let text = std::fs::read_to_string(&out).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(asked, ANIMATION.len());
+        assert!(text.contains("# ended=done\n"));
     }
 
     #[test]

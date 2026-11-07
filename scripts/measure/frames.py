@@ -10,7 +10,7 @@ animate. Each run starts the release build through run.sh on $WAYLAND_DISPLAY, c
 record and closes itself. Meanwhile its memory is read from /proc every 0.25 s. A run that has
 not ended after 400 s is ended by SIGTERM to its own pid, and counts as failed. `--again` runs
 nothing: it sums up again the files that earlier runs left in <out-dir>, keeping the load average
-the runs met.
+read when they ended (the system's, over 1, 5 and 15 minutes, the measured app's work included).
 
 For every run, in <out-dir>: the record (<scenario>-<n>.csv), the memory with the time the program
 was started (<scenario>-<n>-mem.json) and the app's standard error (<scenario>-<n>.log); then
@@ -28,7 +28,8 @@ was started (<scenario>-<n>-mem.json) and the app's standard error (<scenario>-<
 - memory: VmRSS and RssAnon in the first sample after the first useful frame (within 0.25 s),
   their highest after it, and VmHWM, the highest VmRSS the kernel saw.
 A run is left out of the figures together, and said on standard error, if it never showed the
-library, if its window was hidden for a frame (`undrawn`), if its scenario did not end by itself
+library, if a frame was begun but not drawn (`undrawn`: the window hidden, or the compositor
+withholding frames), if its scenario did not end by itself
 (`ended`), if it was not drawn at OPIUM_MEASURE_PIXELS_PER_POINT (1.65 by default: the owner's
 scale 1.5 at the interface's 100 %), or, with OPIUM_MEASURE_PIXELS set (3840x2160), if its
 window had another size. Refuses to start if an Opium
@@ -165,7 +166,7 @@ def unfit(facts):
         reasons.append(f"{facts['undrawn']} frames not drawn, the window hidden")
     if facts.get("ended") not in ("done", "end"):
         reasons.append(f"ended: {facts.get('ended')}")
-    if round(float(facts.get("pixels_per_point", 0)), 2) != PIXELS_PER_POINT:
+    if abs(float(facts.get("pixels_per_point", 0)) - PIXELS_PER_POINT) > 0.005:
         reasons.append(f"{facts.get('pixels_per_point')} pixels a point, not {PIXELS_PER_POINT}")
     if pixels and facts.get("window_pixels") != pixels:
         reasons.append(f"window {facts.get('window_pixels')}, not {pixels}")
