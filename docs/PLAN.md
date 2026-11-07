@@ -9,11 +9,11 @@ Every milestone ends with the definition of done in [`AGENTS.md`](../AGENTS.md#d
 
 ## Current
 
-- Stage 1 — Under the method, started on 2026-11-04. M1.1 to M1.7, M1.9 and M1.10 to M1.13 are
-  done.
+- Stage 1 — Under the method, started on 2026-11-04. M1.1 to M1.7, M1.9 and M1.10 to M1.14 are
+  done; the stage audit M1.8 is next.
 - **Awake to finish Stage 1**, since 2026-11-07, by the owner's decision
-  ([ADR-0035](adr/0035-the-port-in-uwuis-first-stage-stage-1-finished-first.md)): M1.14, then the
-  stage audit M1.8. After it, Opium waits for its port in uwui's first stage,
+  ([ADR-0035](adr/0035-the-port-in-uwuis-first-stage-stage-1-finished-first.md)): M1.14, done on
+  2026-11-07, then the stage audit M1.8. After it, Opium waits for its port in uwui's first stage,
   after SlimeEngine's Stage 6d, fixing only a loss of data, a crash, a security flaw or a service
   that stops working.
 - Kopuz's code is written again but for part of the browser sign-in, which the owner kept, named
@@ -61,7 +61,7 @@ Every milestone ends with the definition of done in [`AGENTS.md`](../AGENTS.md#d
 | [M1.11](#m110-to-m112--kopuzs-code-written-again) | `widevine` written again in a clean room | Done |
 | [M1.12](#m110-to-m112--kopuzs-code-written-again) | `apple-music`'s derived items written again in a clean room | Done |
 | [M1.13](#m113--nothing-of-kopuzs-left) | Nothing of Kopuz's left, the GPL kept | Done, one part kept |
-| [M1.14](#m114--the-figures-to-beat-on-uwui) | The figures uwui must match: the egui window's and the Compose phone's | Planned |
+| [M1.14](#m114--the-figures-to-beat-on-uwui) | The figures uwui must match: the egui window's and the Compose phone's | Done |
 
 ## Stage 1 — Under the method
 
@@ -217,6 +217,19 @@ One milestone each, in this order: `cenc`, then `widevine`, then `apple-music`.
 - **Done when.** The figures are in [`measurements.md`](measurements.md), taken by scripts kept in
   `scripts/measure/`, before uwui's first stage ports Opium.
 - **By hand.** The phone, with the owner.
+- **Done on 2026-11-07.** [The figures](measurements.md#the-figures-to-beat-on-uwui-m114-2026-11-07):
+  - The window's measuring mode (`measure.rs`, [how](../CONTRIBUTING.md#the-measuring-mode)):
+    a record of every frame and four scenarios, run by `scripts/measure/frames.py` over a library
+    `library.py` generates, the same every time.
+  - On the owner's 4K display: 152 ms to the first useful frame; 240 Hz held while scrolling the
+    whole library and while the drawer and Now Playing move; stalls of up to 47 ms when the Albums
+    grid first shows; 199 to 232 MiB after start, 391 MiB at most.
+  - On the phone under Compose (`phone.py`): cold start 543 ms, 99th percentile of frame time 7 to
+    8 ms scrolling, 19 ms between tabs, 273 to 380 MiB.
+  - A headless Weston proved unfit for frame times: it paced transitions badly where the owner's
+    display did not ([pitfall](../CONTRIBUTING.md#known-pitfalls)).
+  - Not measured: each frame's GPU time, a cold start of the desktop, the phone's first useful
+    frame.
 
 ## Ideas
 

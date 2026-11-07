@@ -99,15 +99,18 @@ They stay in Opium and ask the framework only for what the rows below list:
 
 ## Driven and measured
 
-The quality bar measures frame times, input to response and the look through uwui. egui offers
-none of this: it is why those rows of the bar have no figure yet.
+The quality bar measures frame times, input to response and the look through uwui. Under egui,
+M1.14 measured frame times with a record and scripted scenarios of the window's own
+(`measure.rs`), removed with egui; [its figures](measurements.md#the-figures-to-beat-on-uwui-m114-2026-11-07)
+are the ones uwui must match, measured the same way: the same library, scenarios, speed and
+display.
 
 | Need | Asked by | egui today | Mark |
 |---|---|---|---|
 | A frame read back as pixels, for the screenshot mode (`OPIUM_SCREENSHOT`) and reference images | `screenshot.rs:137-157` | Given: `request_screenshot` | Indispensable |
 | The window rendered without a display, for reference images in CI and captures off screen | the quality bar's *Rendering* and *The look in one place* | Missing: the window needs a compositor (a headless Weston for tests) | Indispensable |
-| Agents reading the interface and driving it: scroll, click, type | the quality bar's *Input to visible response*; [known debt](debt.md) | Missing | Indispensable |
-| Each frame's time, recorded, per animation | the quality bar's *Scrolling and animations* | Missing | Indispensable |
+| Agents reading the interface and driving it: scroll, click, type | the quality bar's *Input to visible response*; [known debt](debt.md) | Missing, but for M1.14's scripted scroll and transitions, injected into egui's input (`App::raw_input_hook`) | Indispensable |
+| Each frame's time, recorded, per animation | the quality bar's *Scrolling and animations* | Given for M1.14: each frame's start, eframe's CPU time for it (`IntegrationInfo::cpu_usage`) and whether the frame before asked for it at once (`requested_repaint_last_pass`); no GPU time | Indispensable |
 
 ## Input
 
