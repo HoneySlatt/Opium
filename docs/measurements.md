@@ -39,13 +39,14 @@ the next; why was not looked into. A cold run has no budget.
 
 The two jobs run side by side: the workflow lasts as long as `check`, under the 20-minute budget
 warm. The `android` job adds 7 billed minutes to a warm run and 10 to a cold one, as GitHub counts
-each job in whole minutes, rounded up. The runner had 14 GB free before its disk was freed, 45 GB
-after; the `android` job used 11 to 12.
+each job in whole minutes, rounded up. The runner had 14 GB free before its disk was freed (17 on
+run `42388743339`), 45 GB after; the `android` job used 11 to 12.
 
 The first runs, at commit `8c16e3f` (run `42382084036`), took 10 min 49 s cold and 7 min 2 s warm
 for `android`, built with debug info; the next, at `ddc6c5a` (run `42384547161`), 8 min 10 s: a
 cache saved with other build settings was restored and rebuilt in full, so the caches' keys now
-name the shell, the build settings and the manifests ([`ci.yml`](../.github/workflows/ci.yml)).
+name the shell, the build settings, `Cargo.lock`, the workspace's manifests and
+`scripts/check.sh` ([`ci.yml`](../.github/workflows/ci.yml)).
 
 ## Apple Music's steps, M1.12 (2026-11-05 and 2026-11-06)
 

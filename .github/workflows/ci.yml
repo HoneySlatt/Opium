@@ -31,8 +31,8 @@ jobs:
   check:
     runs-on: ubuntu-24.04
     # A cold build compiles BoringSSL, FFmpeg's bindings, iroh and wgpu: about 11 minutes of the
-    # script's work on a 16-core desktop, and 31 minutes on the first run here before the disk ran
-    # out. The quality bar's budget is 20 minutes for a warm run, one whose cache hit; a cold run is
+    # script's work on a 16-core desktop, 17 to 28 minutes for the job here (docs/measurements.md,
+    # M1.5). The quality bar's budget is 20 minutes for a warm run, one whose cache hit; a cold run is
     # measured and recorded (docs/PLAN.md, M1.3). This limit only stops a hung run.
     timeout-minutes: 60
     # The same checks, in a smaller and faster build: the tests' binaries carry no debug info, which
@@ -120,7 +120,7 @@ jobs:
       CARGO_INCREMENTAL: "0"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # The runner leaves 14 GB free and the job uses 11 to 12, the SDK's archives and what they
+      # The runner leaves 14 to 17 GB free and the job uses 11 to 12, the SDK's archives and what they
       # unpack to (measured on 2026-11-07): too close, so the disk is freed as in the check job.
       - name: Free the runner's disk
         run: |
@@ -153,6 +153,6 @@ jobs:
             ~/.cargo/git
             target-android
           key: ${{ steps.cache.outputs.cache-primary-key }}
-      # The disk the job used, to compare with the 14 GB the runner leaves free.
+      # The disk the job used, to compare with the 14 to 17 GB the runner leaves free.
       - if: always()
         run: df -h /
