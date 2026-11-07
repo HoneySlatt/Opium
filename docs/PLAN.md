@@ -9,11 +9,11 @@ Every milestone ends with the definition of done in [`AGENTS.md`](../AGENTS.md#d
 
 ## Current
 
-- Stage 1 — Under the method, started on 2026-11-04. M1.1, M1.2, M1.3, M1.5, M1.6, M1.7, M1.9 and
-  M1.10 to M1.13 are done.
+- Stage 1 — Under the method, started on 2026-11-04. M1.1 to M1.7, M1.9 and M1.10 to M1.13 are
+  done.
 - **Awake to finish Stage 1**, since 2026-11-07, by the owner's decision
-  ([ADR-0035](adr/0035-the-port-in-uwuis-first-stage-stage-1-finished-first.md)): M1.4's phone part,
-  M1.14, then the stage audit M1.8. After it, Opium waits for its port in uwui's first stage,
+  ([ADR-0035](adr/0035-the-port-in-uwuis-first-stage-stage-1-finished-first.md)): M1.14, then the
+  stage audit M1.8. After it, Opium waits for its port in uwui's first stage,
   after SlimeEngine's Stage 6d, fixing only a loss of data, a crash, a security flaw or a service
   that stops working.
 - Kopuz's code is written again but for part of the browser sign-in, which the owner kept, named
@@ -51,7 +51,7 @@ Every milestone ends with the definition of done in [`AGENTS.md`](../AGENTS.md#d
 | [M1.1](#done) | A session arriving in the repository finds the rules, the decisions, the direction and the plan | Done |
 | [M1.2](#done) | `scripts/check.sh` passes on `main` | Done |
 | [M1.3](#done) | Every push to `main` and every pull request is checked by CI | Done |
-| [M1.4](#m14--the-rename-landed) | The owner's computer and phone run Opium under its new names, with their data | In progress: the computer done, the phone's app installed |
+| [M1.4](#done) | The owner's computer and phone run Opium under its new names, with their data | Done |
 | [M1.5](#done) | The Android shell builds from an empty store and the phone's core is checked | Done |
 | [M1.6](#done) | SlimeEngine's Stage 6d can read, in this repository, what Opium's window needs | Done |
 | [M1.7](#done) | The owner decides Opium's budgets with today's figures in hand | Done |
@@ -80,6 +80,13 @@ built in this stage.
   built without debug info, the cache kept on failure (since M1.5, on success only). On
   2026-11-05: 24 minutes cold, 9 min 25 s warm, under the 20-minute budget
   ([measurements](measurements.md)).
+- **M1.4 — The rename landed.** The rename ([ADR-0023](adr/0023-the-rename-to-opium.md),
+  `8e8784d`), the repository renamed `HoneySlatt/Opium` (`8e82ab7`). On the computer, the owner's
+  folders, keyring item, sealed files' magic and the shared state's provider moved. On the phone,
+  the new package installed on 2026-11-07, a release build, then signed in and paired by the owner,
+  whose history and playlists match the computer's by the owner's report of 2026-11-07, not
+  checked by an agent. The old `io.github.honeyslatt.music` is still installed with its data, for
+  the owner to remove.
 - **M1.5 — The phone's core checked.** The Android shell builds from an empty Nix store again,
   no SDK version changed: Google's 404s of 2026-11-04 and 2026-11-05 had passed. Built in 8 min
   30 s, 11 GB, its six SDK archives downloaded from Google and matching nixpkgs' hashes;
@@ -105,22 +112,6 @@ built in this stage.
   questions decided by the owner, and
   [ADR-0031](adr/0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md) for uwui. A playlist
   removal without an id refused (`2645376`).
-
-### M1.4 — The rename landed
-
-- **Goal.** Opium under its new names on the owner's computer and phone, with their data.
-- **Delivers.** The rename ([ADR-0023](adr/0023-the-rename-to-opium.md), `8e8784d`); the GitHub
-  repository renamed `HoneySlatt/Opium` (`8e82ab7`); the owner's data moved on the computer: the
-  folders, the keyring item, the sealed files' magic, the shared state's provider; the repository's
-  folder renamed. On the phone, the new package installed (release build, not debuggable) on
-  2026-11-07, beside the old `io.github.honeyslatt.music`, which keeps its data. Left: signing in
-  and pairing again, by the owner.
-- **Done when.** On the computer, Opium starts on the moved folders with its library, sign-ins and
-  downloads; on the phone, it is signed in and paired, and the history and playlists match.
-- **How to test.** `scripts/check.sh`; a run on a
-  [throwaway profile](../CONTRIBUTING.md#a-throwaway-profile).
-- **Measured.** Nothing.
-- **By hand.** The owner moves the folder and the phone's data, and checks both devices.
 
 ### M1.8 — The stage audit
 
