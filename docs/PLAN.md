@@ -77,7 +77,7 @@ built in this stage.
 - **M1.2 — The checks green.** The workspace formatted, dead variants removed, links fixed, and
   `synced`'s flaky test fixed (`d1c8543`), passing 30 runs in a row.
 - **M1.3 — CI green.** The workflow on GitHub, in the same Nix shell; the runner's disk freed, tests
-  built without debug info, the cache kept on failure. On 2026-11-05: 24 minutes cold, 9 min 25 s
+  built without debug info, the cache kept on failure (since M1.5, on success only). On 2026-11-05: 24 minutes cold, 9 min 25 s
   warm, under the 20-minute budget ([measurements](measurements.md)).
 - **M1.5 — The phone's core checked.** The Android shell builds from an empty Nix store again,
   no SDK version changed: Google's 404s of 2026-11-04 and 2026-11-05 had passed. Built in 8 min
@@ -234,8 +234,7 @@ For the owner to pick; none is planned.
   captures, reference images for CI. On the desktop, with uwui.
 - **CI building the phone's app**: `build-core.sh` and `gradle assembleRelease` in the `android`
   job, so that Kotlin which no longer matches the core fails CI ([debt](debt.md)); with Stage 2's
-  Gradle wrapper. The core and the APK took 9 min to build on the desktop, the core from cold;
-  CI's time not measured.
+  Gradle wrapper. Its time is not measured.
 - **A crash report of the app's own**: a panic hook writing what the user can attach to an issue;
   the phone's now, the desktop window's with uwui.
 - **What Kopuz has and Opium lacks** ([licence audit](audits/2026-11-05-licence.md)): stations

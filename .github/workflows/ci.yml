@@ -54,12 +54,16 @@ jobs:
           df -h /
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
       # The shell's derivation names its toolchain and its variables, whether flake.lock or
-      # flake.nix changed them: the cache's key below follows it.
+      # flake.nix changed them: the cache's key below follows it. Assigned apart, so that a failed
+      # evaluation fails the step instead of leaving the key without it.
       - id: shell
-        run: echo "drv=$(basename "$(nix eval --raw --no-update-lock-file .#devShells.x86_64-linux.default.drvPath)" .drv)" >> "$GITHUB_OUTPUT"
+        run: |
+          drv=$(nix eval --raw --no-update-lock-file .#devShells.x86_64-linux.default.drvPath)
+          echo "drv=$(basename "$drv" .drv)" >> "$GITHUB_OUTPUT"
       # Cargo's downloads and the build, kept from one run to the next while the packages that
-      # Cargo.lock pins, the shell and the job's build settings are unchanged: a build made otherwise
-      # would be restored only to be rebuilt, and never saved again. The key is exact, with no
+      # Cargo.lock pins, the crates' manifests (their features and profiles), the flags of
+      # scripts/check.sh, the shell and the job's build settings are unchanged: a build made
+      # otherwise would be restored only to be rebuilt, and never saved again. The key is exact, with no
       # fallback, so an entry holds one build and never grows with stale artefacts; without debug
       # info and incremental data, `target` is a fraction of a local debug build's size.
       - id: cache
@@ -69,12 +73,13 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: cargo-${{ runner.os }}-${{ steps.shell.outputs.drv }}-debug${{ env.CARGO_PROFILE_DEV_DEBUG }}-incremental${{ env.CARGO_INCREMENTAL }}-${{ hashFiles('Cargo.lock') }}
+          key: cargo-${{ runner.os }}-${{ steps.shell.outputs.drv }}-debug${{ env.CARGO_PROFILE_DEV_DEBUG }}-incremental${{ env.CARGO_INCREMENTAL }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'scripts/check.sh') }}
       # Without the flag, an incomplete flake.lock would be completed with an unpinned revision.
       - run: nix develop --no-update-lock-file --command scripts/check.sh
-      # Saved even when a check fails, so that the next run starts warm; skipped on a hit, as an
-      # entry cannot be overwritten.
-      - if: always() && steps.cache.outputs.cache-hit != 'true'
+      # Saved only when every check passed: a failed or cancelled run stops with part of the build
+      # made, which, saved under the exact key, would be restored and rebuilt at every run after
+      # it. Skipped on a hit, as an entry cannot be overwritten.
+      - if: steps.cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -115,8 +120,8 @@ jobs:
       CARGO_INCREMENTAL: "0"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # The runner leaves 14 GB free and the job uses 12, the SDK's archives and what they unpack
-      # to (measured on 2026-11-07): too close, so the disk is freed as in the check job.
+      # The runner leaves 14 GB free and the job uses 11 to 12, the SDK's archives and what they
+      # unpack to (measured on 2026-11-07): too close, so the disk is freed as in the check job.
       - name: Free the runner's disk
         run: |
           df -h /
@@ -128,7 +133,9 @@ jobs:
       # As in the check job, but for the Android shell and `target-android`, the folder of
       # scripts/check.sh android.
       - id: shell
-        run: echo "drv=$(basename "$(nix eval --raw --no-update-lock-file .#devShells.x86_64-linux.android.drvPath)" .drv)" >> "$GITHUB_OUTPUT"
+        run: |
+          drv=$(nix eval --raw --no-update-lock-file .#devShells.x86_64-linux.android.drvPath)
+          echo "drv=$(basename "$drv" .drv)" >> "$GITHUB_OUTPUT"
       - id: cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -136,9 +143,9 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target-android
-          key: cargo-android-${{ runner.os }}-${{ steps.shell.outputs.drv }}-debug${{ env.CARGO_PROFILE_DEV_DEBUG }}-incremental${{ env.CARGO_INCREMENTAL }}-${{ hashFiles('Cargo.lock') }}
+          key: cargo-android-${{ runner.os }}-${{ steps.shell.outputs.drv }}-debug${{ env.CARGO_PROFILE_DEV_DEBUG }}-incremental${{ env.CARGO_INCREMENTAL }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', 'scripts/check.sh') }}
       - run: nix develop .#android --no-update-lock-file --command scripts/check.sh android
-      - if: always() && steps.cache.outputs.cache-hit != 'true'
+      - if: steps.cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
