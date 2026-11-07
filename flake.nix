@@ -173,8 +173,9 @@
                 pkgs.gradle_9
                 sdk
               ];
-              # Under every name the tools read, so that a machine's own SDK or NDK, such as a CI
-              # runner's, is never mixed in.
+              # Also under the older names, which cargo-ndk and Android's Gradle plugin compare
+              # with the newer ones: a machine's own SDK, such as a CI runner's, would otherwise
+              # stay named beside this one.
               ANDROID_HOME = home;
               ANDROID_SDK_ROOT = home;
               ANDROID_NDK_HOME = "${home}/ndk/${ndk}";
