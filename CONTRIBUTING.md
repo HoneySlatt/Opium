@@ -203,7 +203,7 @@ input; nothing reaches the compositor.
 
 ```sh
 cargo build --release -p app-desktop
-scripts/measure/library.py /var/tmp/opium-library        # once: 8,500 songs, 647 albums, covers
+scripts/measure/library.py <profile> 8500 1.5           # once, for a display at scale 1.5
 WAYLAND_DISPLAY=wayland-0 OPIUM_MEASURE_PIXELS=3840x2160 \
     scripts/measure/frames.py <profile> start 1 <out>    # the first run scans the folder: drop it
 WAYLAND_DISPLAY=wayland-0 OPIUM_MEASURE_PIXELS=3840x2160 \
@@ -211,10 +211,12 @@ WAYLAND_DISPLAY=wayland-0 OPIUM_MEASURE_PIXELS=3840x2160 \
 ```
 
 - `frames.py` runs the scenario off the network and sums up each run's record: the start, each
-  phase's CPU times and intervals, the frames missed, the memory. Its head says how.
-- `library.py` sets the interface at 150 %, for a headless Weston at scale 1. On the owner's
-  display, whose scale is 1.5, use a copy of the profile without `ui_scale`
-  ([settings care](#settings-care)).
+  phase's CPU times and intervals, the frames missed, the memory. Its head says how. With
+  `--again` in place of the profile it runs nothing and sums up again the files left in `<out>`.
+- `library.py` makes 8,500 songs in 641 albums with their covers, and sets the interface's scale so
+  that the window draws at 1.65 pixels a point, the owner's, on a display of the scale given: 1.5
+  for the owner's, 1 (the default) for a headless Weston. `frames.py` leaves out a run drawn at
+  another scale.
 - Frame times are taken on the owner's 4K display (DP-3, 240 Hz, scale 1.5) with the owner's go:
   the window covers it for the run. Not in a headless Weston, whose pacing misses frames of its own
   ([pitfalls](#known-pitfalls)). Start and memory can be taken in either.
@@ -389,9 +391,10 @@ from opening. The cause is not found ([ADR-0021](docs/adr/0021-the-exit-watch.md
   (`unshare --user --map-current-user --net dbus-run-session -- …`) and call MPRIS `Quit` on that
   bus.
 - **A headless Weston paces transitions badly**: at 240 Hz, one frame in four to one in two came
-  late (9.5 to 10.5 ms) during transitions and the Albums grid, more at 1920x1080 than at 3840x2160,
-  whatever its `repaint-window`, while scrolling Songs held 240 Hz and the window's CPU stayed under
-  1 ms. The same runs on the owner's display did not. Take frame times on a real display.
+  9.5 to 10.6 ms after the one before during transitions and the Albums grid, more at 1920x1080
+  than at 3840x2160, whatever its `repaint-window`, while scrolling Songs held 240 Hz and the
+  window's CPU stayed about 1 ms. The same runs on the owner's display did not. Take frame times on
+  a real display.
 - **The 4K display is DP-3 since 2026-11-07** (DP-2 in M1.7's figures): read `umbriel outputs`.
 - **End a test process by its own pid**, never by name: `pkill -n weston` once ended another
   agent's headless Weston.

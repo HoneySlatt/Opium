@@ -7,8 +7,9 @@ usage: scripts/measure/phone.py <runs> <out-dir>
 Run with `adb` on the PATH (`nix shell nixpkgs#android-tools`) and the owner's phone plugged in,
 with the release build installed (CONTRIBUTING.md, "The phone over adb"). It plays nothing, and
 changes nothing but what is shown. In order:
-1. checks: one device; the app not DEBUGGABLE; Opium not playing, since a cold start ends its
-   process, and with it the music;
+1. checks: one device; the app not DEBUGGABLE; Opium or the home screen in front; Opium neither
+   playing nor downloading, since a cold start ends its process, and with it the music or the
+   download;
 2. cold starts, <runs> times: `am force-stop`, then `am start -W` (TotalTime: the system's time
    from the intent to the first frame drawn);
 3. hot starts, <runs> times: Home, then `am start -W` again, the process still alive;
@@ -19,8 +20,8 @@ changes nothing but what is shown. In order:
 6. moving between pages: the tabs Home, New, Radio and Library tapped in turn, 4 rounds, gfxinfo
    likewise;
 7. memory after it all, then Home.
-Before each batch of taps or keys, it checks that Opium is the focused app and stops if not: the
-owner may have taken the phone back. The labels are found in a dump of the interface
+Before each cold start, tap or key, it checks again that Opium is the focused app, playing and
+downloading nothing, and stops if not: the owner may have taken the phone back. The labels are found in a dump of the interface
 (`uiautomator dump`), read only when Opium has the focus, and deleted from the phone at once. Only
 the navigation is tapped, each label within the heights where the Stock theme's layout of
 2026-11-07 puts it (on a 1080x2424 screen): a label found elsewhere, which could be a song's, or
@@ -54,10 +55,20 @@ def opium_in_front():
 
 
 def require_front(what):
+    """Stops unless Opium is the focused app, plays nothing and downloads nothing: the owner may
+    have taken the phone back, and a cold start would end the music or the download."""
     if not opium_in_front():
         focus = shell("dumpsys window | grep mCurrentFocus").strip()
         sys.exit(f"stopped before {what}: Opium is not the focused app (the owner may have the "
                  f"phone): {focus}")
+    require_idle(what)
+
+
+def require_idle(what):
+    if playing():
+        sys.exit(f"stopped before {what}: Opium is playing")
+    if "DownloadService" in shell(f"dumpsys activity services {PACKAGE} | grep ServiceRecord || true"):
+        sys.exit(f"stopped before {what}: Opium is downloading")
 
 
 def playing():
@@ -180,8 +191,10 @@ if len(adb("devices").strip().splitlines()) != 2:
 WIDTH, HEIGHT = map(int, re.search(r"(\d+)x(\d+)", shell("wm size")).groups())
 if "DEBUGGABLE" in shell(f"dumpsys package {PACKAGE} | grep pkgFlags"):
     sys.exit("a debuggable build is installed: install the release build")
-if playing():
-    sys.exit("Opium is playing: a cold start would stop the music")
+# The phone set aside: Opium or the home screen in front, nothing playing or downloading.
+if not opium_in_front() and "launcher" not in shell("dumpsys window | grep mCurrentFocus"):
+    sys.exit("another app is in front: the owner may be using the phone")
+require_idle("the cold starts")
 
 result = {"device": shell("getprop ro.product.model").strip(),
           "build": shell("getprop ro.build.fingerprint").strip(),
@@ -189,9 +202,9 @@ result = {"device": shell("getprop ro.product.model").strip(),
           "compiled": shell(f"dumpsys package dexopt | grep -A2 '{PACKAGE}]' | grep -o 'status=[a-z-]*'").strip()}
 
 cold = []
-for _ in range(runs):
-    if playing():
-        sys.exit("Opium started playing: stopped")
+for run in range(runs):
+    if run:
+        require_front("a cold start")
     shell(f"am force-stop {PACKAGE}")
     time.sleep(3)
     cold.append(start())

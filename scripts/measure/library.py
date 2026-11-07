@@ -1,18 +1,21 @@
 #!/usr/bin/env python3
 """Makes a throwaway profile holding a library of the owner's library's size, the same every time.
 
-usage: scripts/measure/library.py <profile-dir> [songs]
+usage: scripts/measure/library.py <profile-dir> [<songs> [<display scale>]]
 
 The same arguments and the same ffmpeg always give the same files, so that the egui window's
 figures and uwui's are taken over the same songs; every random choice comes from one seeded
 generator, in the main thread. Writes, under <profile-dir>:
 - music/<artist>/<album>/<nn> <title>.flac: songs of silence, two to seven minutes long, tagged
   (title, artist, album, album artist, track, year, genre), about 10 kB each through FLAC's
-  longest frames; 8,500 songs by default, in 647 albums by 194 artists;
+  longest frames; 8,500 songs by default, in 647 album folders by 194 artists, which the app shows
+  as 641 albums (six pairs share an artist and a title);
 - music/<artist>/<album>/cover.jpg: one cover an album, 1200x1200, a gradient between two colours
   with a seeded grain, about 380 kB, so that each decodes as a photograph's would;
-- config/opium/settings.toml: the music folder, the interface at 150 % (`ui_scale = 1.5`, which
-  draws at the owner's 1.5 with a display at scale 1), muted.
+- config/opium/settings.toml: the music folder, muted, and the interface's scale that draws at the
+  owner's 1.65 pixels a point (scale 1.5, the interface at 100 %) on a display of <display scale>:
+  150 % (`ui_scale = 1.5`) for a headless Weston at scale 1, the default; 100 % for the owner's
+  display at 1.5.
 The app reads the folder at its first start and keeps an index in cache/opium/local: a first run
 is a scan, the runs after it read the library from that index, as every start but the first does.
 Needs ffmpeg, from `nix develop`. Refuses a profile folder that already holds anything.
@@ -28,6 +31,7 @@ import tempfile
 
 profile = os.path.abspath(sys.argv[1])
 songs_wanted = int(sys.argv[2]) if len(sys.argv) > 2 else 8500
+display_scale = float(sys.argv[3]) if len(sys.argv) > 3 else 1.0
 if os.path.exists(profile) and os.listdir(profile):
     sys.exit(f"{profile} already holds something: give a new or empty folder")
 music = os.path.join(profile, "music")
@@ -120,5 +124,8 @@ os.rmdir(templates)
 
 with open(os.path.join(config, "settings.toml"), "w") as settings:
     # A JSON string is a TOML basic string.
-    settings.write(f"local_folders = [{json.dumps(music)}]\nui_scale = 1.5\nmuted = true\n")
+    settings.write(f"local_folders = [{json.dumps(music)}]\nmuted = true\n")
+    ui_scale = 1.5 / display_scale
+    if ui_scale != 1.0:
+        settings.write(f"ui_scale = {ui_scale}\n")
 print(f"{songs} songs, {len(albums)} albums, {len(set(a['artist'] for a in albums))} artists in {music}")
