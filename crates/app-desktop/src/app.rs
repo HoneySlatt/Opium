@@ -824,6 +824,9 @@ pub struct App {
     volume_changed: Option<std::time::Instant>,
     pub toast: Option<(String, f64)>,
     screenshot: Option<crate::screenshot::Screenshot>,
+    /// M1.14's frame record and scripted scroll, off unless `OPIUM_MEASURE`
+    /// asks (`measure.rs`).
+    measure: Option<crate::measure::Measure>,
     settings: crate::settings::Settings,
     /// Raised by the watcher when Amane rewrites the theme file.
     theme_changed: Arc<AtomicBool>,
@@ -1037,6 +1040,7 @@ impl App {
             signal_open: std::env::var_os("OPIUM_SCREENSHOT_SIGNAL").map(|_| SignalAnchor::TopBar),
             now_playing: std::env::var_os("OPIUM_SCREENSHOT_NP").is_some(),
             screenshot: crate::screenshot::Screenshot::from_env(),
+            measure: crate::measure::Measure::from_env(),
             settings,
             theme_changed,
             zoom: None,
@@ -6248,10 +6252,29 @@ impl eframe::App for App {
         self.tell_devices();
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+    fn raw_input_hook(&mut self, _ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        if let Some(measure) = &mut self.measure {
+            measure.frame_begins(raw_input);
+        }
+    }
+
+    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         self.zoom(ui.ctx());
         self.drawn_at = ui.input(|i| i.time);
+        let asked = self
+            .measure
+            .as_mut()
+            .and_then(|m| m.before_drawing(ui.ctx(), frame.info().cpu_usage, self.songs.len()));
+        match asked {
+            Some(crate::measure::Action::Open(page)) => self.go(page),
+            Some(crate::measure::Action::ToggleDrawer) => self.drawer_open = !self.drawer_open,
+            Some(crate::measure::Action::ToggleNowPlaying) => self.now_playing = !self.now_playing,
+            None => {}
+        }
         ui::show(self, ui);
+        if let Some(measure) = &mut self.measure {
+            measure.after_drawing(ui.ctx());
+        }
         self.forget_unseen_motion();
         // Every few seconds, the covers long out of sight leave memory.
         let now = ui.input(|i| i.time);

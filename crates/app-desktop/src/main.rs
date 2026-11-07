@@ -6,6 +6,7 @@ mod color;
 mod covers;
 mod fonts;
 mod icons;
+mod measure;
 mod palette;
 mod screenshot;
 mod theme;

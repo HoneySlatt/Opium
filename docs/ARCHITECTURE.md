@@ -84,7 +84,8 @@ app in Kotlin with Jetpack Compose, which calls the core through UniFFI
   `app.rs` (the interface's state and much of its logic, about 6 300 lines), `ui/` (one module per
   page or part: songs, grids, album and playlist pages, Now Playing, lyrics, settings, the M3E
   toolbar and panes…), `theme.rs`, `fonts.rs`, `icons.rs`, `covers.rs` (egui's cover loader),
-  `screenshot.rs` (the screenshot mode). About 29 000 lines.
+  `screenshot.rs` (the screenshot mode), `measure.rs` (M1.14's frame record and scripted scenarios,
+  removed with egui). About 30 000 lines.
 
 ### The Android app
 
