@@ -55,7 +55,7 @@ Every milestone ends with the definition of done in [`AGENTS.md`](../AGENTS.md#d
 | [M1.1](#done) | A session arriving in the repository finds the rules, the decisions, the direction and the plan | Done |
 | [M1.2](#done) | `scripts/check.sh` passes on `main` | Done |
 | [M1.3](#done) | Every push to `main` and every pull request is checked by CI | Done |
-| [M1.4](#m14--the-rename-landed) | The owner's computer and phone run Opium under its new names, with their data | In progress: the computer done |
+| [M1.4](#m14--the-rename-landed) | The owner's computer and phone run Opium under its new names, with their data | In progress: the computer done, the phone's app installed |
 | [M1.5](#m15--the-phones-core-checked) | The Android shell builds from an empty store and the phone's core is checked | Planned |
 | [M1.6](#done) | SlimeEngine's Stage 6d can read, in this repository, what Opium's window needs | Done |
 | [M1.7](#done) | The owner decides Opium's budgets with today's figures in hand | Done |
@@ -105,8 +105,9 @@ built in this stage.
 - **Delivers.** The rename ([ADR-0023](adr/0023-the-rename-to-opium.md), `8e8784d`); the GitHub
   repository renamed `HoneySlatt/Opium` (`8e82ab7`); the owner's data moved on the computer: the
   folders, the keyring item, the sealed files' magic, the shared state's provider; the repository's
-  folder renamed. Left: on the phone, the new package installed (release build), signed in and
-  paired again.
+  folder renamed. On the phone, the new package installed (release build, not debuggable) on
+  2026-11-07, beside the old `io.github.honeyslatt.music`, which keeps its data. Left: signing in
+  and pairing again, by the owner.
 - **Done when.** On the computer, Opium starts on the moved folders with its library, sign-ins and
   downloads; on the phone, it is signed in and paired, and the history and playlists match.
 - **How to test.** `scripts/check.sh`; a run on a
