@@ -147,7 +147,7 @@ when it exceeds its budget by more than its noise.
 | Sign-in | In the user's browser, on a profile of Opium's own ([ADR-0003](adr/0003-sign-in-through-the-users-browser.md)) |
 | DRM | The browser's Widevine CDM through a shim on the desktop, MediaDrm on the phone ([ADR-0004](adr/0004-the-widevine-cdm-borrowed-from-the-browser.md)); from M1.11 a thin C++ layer, the host's logic in Rust on one thread ([ADR-0030](adr/0030-the-kopuz-code-rewritten-in-a-clean-room.md)) |
 | Desktop audio | PipeWire only, at each track's rate ([ADR-0005](adr/0005-pipewire-at-each-tracks-own-rate.md)) |
-| Desktop UI | egui, until the move to uwui during SlimeEngine's Stage 6d; GPUI abandoned ([ADR-0006](adr/0006-egui-for-the-desktop-window.md), [ADR-0022](adr/0022-gpui-tried-and-abandoned.md), [ADR-0031](adr/0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md)) |
+| Desktop UI | egui, until the move to uwui in uwui's first stage ([ADR-0035](adr/0035-the-port-in-uwuis-first-stage-stage-1-finished-first.md)); GPUI abandoned ([ADR-0006](adr/0006-egui-for-the-desktop-window.md), [ADR-0022](adr/0022-gpui-tried-and-abandoned.md), [ADR-0031](adr/0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md)) |
 | Phone | Kotlin and Compose over the Rust core through UniFFI; ExoPlayer plays; Android 14 and later, arm64, the lowest Android decided again at Stage 3 ([ADR-0009](adr/0009-the-android-app-over-the-rust-core.md), [ADR-0034](adr/0034-what-opium-is-to-become.md)) |
 | Themes | TOML files choosing component variants; Stock, Spotify, M3E built in, the Spotify theme renamed before a public release ([ADR-0011](adr/0011-themes-as-toml-files-of-component-variants.md), [ADR-0034](adr/0034-what-opium-is-to-become.md)) |
 | Devices | Opium Connect: mDNS, TCP 47820, SPAKE2, Noise; iroh away from home; state merged field by field ([ADR-0010](adr/0010-opium-connect-on-the-local-network.md), [ADR-0014](adr/0014-shared-state-merged-field-by-field.md), [ADR-0015](adr/0015-away-from-home-through-iroh.md)) |
@@ -188,11 +188,11 @@ Each is decided by an ADR at the stage where it becomes necessary, not earlier.
 
 ## 4. Stages
 
-The stages run in the order 1, 5, 2, 3, 6, 4, 7, 8, 9, then 10 once uwui supports macOS: the move
-to uwui comes first, during SlimeEngine's Stage 6d
+The stages run in the order 1, 5, 2, 3, 6, 4, 7, 8, 9, then 10 once uwui supports macOS: the move to
+uwui comes first, in uwui's first stage, after SlimeEngine's Stage 6d
 ([ADR-0029](adr/0029-opium-waits-for-slime-ui-then-moves-first.md),
-[ADR-0031](adr/0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md)); the new functions come
-after the phone: listening first, then Windows
+[ADR-0035](adr/0035-the-port-in-uwuis-first-stage-stage-1-finished-first.md)); the new functions
+come after the phone: listening first, then Windows
 ([ADR-0034](adr/0034-what-opium-is-to-become.md)). They keep their numbers, which earlier ADRs cite.
 
 ### Stage 1 — Under the method
@@ -224,10 +224,10 @@ left with nothing of Kopuz's but the part the owner kept (M1.13); the figures to
 
 ### Stage 5 — On uwui
 
-**Goal.** The desktop window drawn by uwui, the owner's UI framework, egui gone. Opium is the first
-of the four programs SlimeEngine's Stage 6d ports, before uwui's API is declared stable; Slatty
-comes after it ([ADR-0031](adr/0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md)). Opium is
-on standby until the stage plans its ports, and this stage comes right after Stage 1
+**Goal.** The desktop window drawn by uwui, the owner's UI framework, egui gone. Opium is one of the
+programs uwui's first stage ports, after SlimeEngine's Stage 6d, before uwui's API is declared
+stable ([ADR-0035](adr/0035-the-port-in-uwuis-first-stage-stage-1-finished-first.md)). Stage 1 is
+finished first; Opium then waits for the port, and this stage comes right after Stage 1
 ([ADR-0029](adr/0029-opium-waits-for-slime-ui-then-moves-first.md)).
 
 - The interface's state and logic taken out of `app.rs` into a model free of any toolkit
@@ -245,7 +245,7 @@ on standby until the stage plans its ports, and this stage comes right after Sta
   ([ADR-0019](adr/0019-the-workings-apart-from-the-drawing.md))
 - A need missing in uwui added there, under its rules, when it serves others too; one of Opium's
   alone built in Opium; neither worked around
-- Then, as Stage 6d's third port, a prototype of Opium's phone screens on uwui, in a surface the
+- Then, in the same stage of uwui's, a prototype of Opium's phone screens on uwui, in a surface the
   Kotlin app gives it, measured against the same screens in Compose in smoothness, start-up and
   power, with a Macrobenchmark module and Perfetto
   ([ADR-0027](adr/0027-macrobenchmark-for-the-phones-measurements-at-stage-3.md)). uwui is taken

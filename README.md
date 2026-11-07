@@ -20,8 +20,8 @@ with Jetpack Compose, over the same Rust core.
   aside ([ADR-0026](docs/adr/0026-the-egui-window-frozen-until-the-move.md),
   [ADR-0031](docs/adr/0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md)).
 - The APK is signed with Android's debug key.
-- On standby until SlimeEngine's Stage 6d plans its ports, Opium's first
-  ([ADR-0031](docs/adr/0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md)).
+- Finishing its first stage, then waiting for its port to uwui, in uwui's first stage
+  ([ADR-0035](docs/adr/0035-the-port-in-uwuis-first-stage-stage-1-finished-first.md)).
 - The code once adapted from Kopuz was written again in a clean room, but for part of the
   browser sign-in, kept as adapted
   ([ADR-0030](docs/adr/0030-the-kopuz-code-rewritten-in-a-clean-room.md),

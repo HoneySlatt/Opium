@@ -2,9 +2,11 @@
 
 Opium's desktop window is drawn with egui and will move to uwui, the owner's UI framework, formerly
 slime-ui ([ADR-0026](adr/0026-the-egui-window-frozen-until-the-move.md),
-[ADR-0031](adr/0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md)). SlimeEngine's Stage 6d,
-which makes uwui run applications, ends only when every need marked *indispensable* below exists in
-uwui, shown by an example and its tests (SlimeEngine's ADR-0170). This file is that list.
+[ADR-0031](adr/0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md)). uwui's first stage, which
+ports Opium, ends only when every need marked *indispensable* below exists in uwui, shown by an
+example and its tests (uwui's ROADMAP;
+[ADR-0035](adr/0035-the-port-in-uwuis-first-stage-stage-1-finished-first.md)). This file is that
+list.
 
 Each need was found in the code of `crates/app-desktop`; the inventory written for ADR-0170 on
 2026-11-04 was not kept, so this one replaces it.
@@ -274,9 +276,10 @@ ADR-0170), so the needs are split in two. The third column says whether uwui's o
 
 ### Opium's state, for M6d.1b3b
 
-SlimeEngine's M6d.1b3b chooses how an application's state changes its interface, on the bench that
-M6d.1b2 builds and M6d.1b3a extends. These are the changes Opium makes, from the most frequent to
-the rarest. Each must leave the window's thread free and draw nothing once it is over.
+SlimeEngine's M6d.1b3b chose how an application's state changes its interface: signals, checked
+against this list among others (SlimeEngine's ADR-0205). These are the changes Opium makes, from the
+most frequent to the rarest. Each must leave the window's thread free and draw nothing once it is
+over.
 
 - **Every frame while something moves**: the progress (the wave), the word filling in the lyrics,
   springs, a gesture's drag. Only a few drawn properties change; no view of the page should be
@@ -301,7 +304,8 @@ say they changed, and messages.
 ### General needs
 
 The mark follows this file's rule, against the quality bar of 0.1.0, as the owner chose on
-2026-11-06: of these 20 needs, 5 are indispensable to the end of Stage 6d; the others are wished,
+2026-11-06: of these 20 needs, 5 are indispensable to the end of uwui's first stage; the others are
+wished,
 each with the stage of Opium's that asks it where there is one.
 
 | Need | Opium's use | In uwui's requirements | Mark |

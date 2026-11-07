@@ -7,7 +7,9 @@
   measure its frames) and [0027](0027-macrobenchmark-for-the-phones-measurements-at-stage-3.md) (the
   Macrobenchmark in Stage 5); amended by
   [0032](0032-the-gpl-kept-and-kopuzs-code-still-written-again.md) (Opium keeps the GPL, which
-  uwui's licence allows it to use) and [0034](0034-what-opium-is-to-become.md) (the lower tiers)
+  uwui's licence allows it to use), [0034](0034-what-opium-is-to-become.md) (the lower tiers) and
+  [0035](0035-the-port-in-uwuis-first-stage-stage-1-finished-first.md) (the port in uwui's first
+  stage; the standby's end)
 - Date: 2026-11-05
 
 ## Context

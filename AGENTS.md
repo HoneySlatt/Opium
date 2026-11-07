@@ -26,9 +26,10 @@ Rules for AI agents working in this repository. Read this file fully at the star
 - Work on the current milestone, or on what the owner asks; a request that changes the plan goes
   into the PLAN.
 - Do not start later stages, nor prepare abstractions for them.
-- Opium is on standby until SlimeEngine's Stage 6d plans its ports
-  ([ADR-0031](docs/adr/0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md)): fix only data
-  loss, a crash, a security flaw or a broken service, unless the owner asks otherwise.
+- Stage 1 is being finished (M1.4's phone part, M1.5, M1.14, M1.8); after it, Opium waits for its
+  port in uwui's first stage
+  ([ADR-0035](docs/adr/0035-the-port-in-uwuis-first-stage-stage-1-finished-first.md)), fixing only
+  data loss, a crash, a security flaw or a broken service, unless the owner asks otherwise.
 - When experience contradicts the roadmap, propose a change; once accepted, record it in an ADR.
 - `crates/app-desktop` is frozen until the move to uwui, the owner's UI framework
   ([ADR-0026](docs/adr/0026-the-egui-window-frozen-until-the-move.md)): change it only for data loss,

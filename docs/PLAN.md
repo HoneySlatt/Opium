@@ -11,10 +11,11 @@ Every milestone ends with the definition of done in [`AGENTS.md`](../AGENTS.md#d
 
 - Stage 1 — Under the method, started on 2026-11-04. M1.1, M1.2, M1.3, M1.6, M1.7, M1.9 and M1.10
   to M1.13 are done.
-- **Standby** ([ADR-0031](adr/0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md)), lifted
-  from M1.10 to M1.13 for Kopuz's code
-  ([ADR-0030](adr/0030-the-kopuz-code-rewritten-in-a-clean-room.md)), and back since: only a loss
-  of data, a crash, a security flaw or a service that stops working is fixed.
+- **Awake to finish Stage 1**, since 2026-11-07, by the owner's decision
+  ([ADR-0035](adr/0035-the-port-in-uwuis-first-stage-stage-1-finished-first.md)): M1.4's phone part,
+  M1.5, M1.14, then the stage audit M1.8. After it, Opium waits for its port in uwui's first stage,
+  after SlimeEngine's Stage 6d, fixing only a loss of data, a crash, a security flaw or a service
+  that stops working.
 - Kopuz's code is written again but for part of the browser sign-in, which the owner kept, named
   ([ADR-0033](adr/0033-the-browser-sign-ins-pipe-kept-as-adapted-from-kopuz.md)); the GPL kept
   ([ADR-0032](adr/0032-the-gpl-kept-and-kopuzs-code-still-written-again.md)).
@@ -22,14 +23,10 @@ Every milestone ends with the definition of done in [`AGENTS.md`](../AGENTS.md#d
   Spatial Audio, the live radio (after a fix to `cenc`); on 2026-11-06, on M1.12's code, by the
   owner, who reported everything working. Still due: a SoundCloud song served encrypted, which the
   owner's account did not get for the album tried.
-- The standby ends when SlimeEngine's Stage 6d plans its ports: Opium's desktop is the first of
-  four, during the stage, and the phone moves to uwui without condition
-  ([ADR-0031](adr/0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md)). Stage 1 closes
-  between the wake and the first port.
-- At the wake: M1.4's phone and M1.5, M1.14, then M1.8, the stage audit, which closes the stage;
-  then Stage 5, the move to uwui, and the stages after it in the [ROADMAP's
-  order](ROADMAP.md#4-stages). On 2026-11-05 Google's Android repository still answered 404, for the
-  SDK's command-line tools too.
+- Then Stage 5, the move to uwui, when uwui's first stage takes Opium's port; the phone moves to
+  uwui without condition ([ADR-0031](adr/0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md));
+  the stages after it in the [ROADMAP's order](ROADMAP.md#4-stages). On 2026-11-05 Google's Android
+  repository still answered 404, for the SDK's command-line tools too.
 - **What Opium is to become**, decided by the owner on 2026-11-06 in a design session that built
   nothing ([ADR-0034](adr/0034-what-opium-is-to-become.md)): the general public, the platforms, the
   services, Connect, the library, the sound, the interface, the order of stages 6 to 10. The owner
@@ -231,7 +228,7 @@ One milestone each, in this order: `cenc`, then `widevine`, then `apple-music`.
     ([ADR-0031](adr/0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md)).
   - On the owner's phone, under Compose, in a release build: start-up, frame times, memory.
 - **Done when.** The figures are in [`measurements.md`](measurements.md), taken by scripts kept in
-  `scripts/measure/`, before SlimeEngine's Stage 6d ports Opium.
+  `scripts/measure/`, before uwui's first stage ports Opium.
 - **By hand.** The phone, with the owner.
 
 ## Ideas
