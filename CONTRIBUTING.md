@@ -218,19 +218,28 @@ WAYLAND_DISPLAY=wayland-0 OPIUM_MEASURE_PIXELS=3840x2160 \
   for the owner's, 1 (the default) for a headless Weston. `frames.py` leaves out a run drawn at
   another scale.
 - What uwui repeats, to be compared ([the figures](docs/measurements.md#the-figures-to-beat-on-uwui-m114-2026-11-07)):
-  - the library of `library.py`, the Stock theme, the window full screen on the same display, at
-    1.65 pixels a point;
+  - the conditions: the library of `library.py`, the Stock theme, the window full screen on the
+    same display, at 1.65 pixels a point, no variable refresh, the GPU's power level as it was
+    (`/sys/class/drm/card1/device/power_dpm_force_performance_level` read `high`; how it is set on
+    this machine is not recorded), Mesa and Linux as recorded with the figures;
   - the scenarios: Songs opened as soon as the cached library is in (the first useful frame),
     then 3 s at rest; `scroll-songs` scrolls Songs down at 4,000 points a second to its end, the
     pointer at the window's middle, the scroll steady, without rubber band, ended when 10 frames
     in a row move nothing; `scroll-albums` opens Albums after the rest, rests 3 s more, and scrolls
     it likewise; `animate` takes a step each second: Albums, Artists, Home, Songs four times, the
     queue drawer opened and closed three times, Now Playing likewise;
-  - the record, one line a frame drawn: its start, its CPU time, the work of the interface, of
-    turning it into triangles and of the drawing calls, without the GPU nor the wait for the
-    display (egui's `IntegrationInfo::cpu_usage`), its phase, and whether the frame was asked for
-    by the one before so that something moves (egui's `requested_repaint_last_pass`), as
-    `measure.rs`'s head says; then `frames.py` sums it up unchanged.
+  - the driving: `OPIUM_MEASURE=<scenario>` and `OPIUM_MEASURE_OUT=<file>`, as `run.sh` and
+    `frames.py` pass them;
+  - the record, as `frames.py` reads it: `#` lines `key=value`, among them `pixels_per_point`,
+    `window_pixels`, `ended` (`done`, or `end` for a scroll at its end) and `undrawn` (0); then the
+    line `start_us,cpu_us,phase,continued,scrolled` and one line a frame drawn: its start in
+    microseconds of the Unix epoch; its CPU time, the work of the interface, of turning it into
+    triangles and of the drawing calls, without the GPU nor the wait for the display (egui's
+    `IntegrationInfo::cpu_usage`); its phase, `loading` before the library, `useful` for the first
+    useful frame, then `settle`, `albums`, `scroll`, `pages`, `drawer` or `now-playing`, and `end`
+    for the last; 1 if the frame was asked for at once by the pass before (egui's
+    `requested_repaint_last_pass`), else 0; the points scrolled so far. `measure.rs`, removed with
+    egui, stays in the history (`git log -- crates/app-desktop/src/measure.rs`).
 - Frame times are taken on the owner's 4K display (DP-3, 240 Hz, scale 1.5) with the owner's go:
   the window covers it for the run. Not in a headless Weston, whose pacing misses frames of its own
   ([pitfalls](#known-pitfalls)). Start and memory can be taken in either.
@@ -404,11 +413,9 @@ from opening. The cause is not found ([ADR-0021](docs/adr/0021-the-exit-watch.md
   not send. To end a test run by the app's own exit path, run it with a session bus of its own
   (`unshare --user --map-current-user --net dbus-run-session -- …`) and call MPRIS `Quit` on that
   bus.
-- **A headless Weston paces transitions badly**: at 240 Hz, one frame in four to one in two came
-  9.5 to 10.6 ms after the one before during transitions and the Albums grid, more at 1920x1080
-  than at 3840x2160, whatever its `repaint-window`, while scrolling Songs held 240 Hz and the
-  window's CPU stayed about 1 ms. The same runs on the owner's display did not. Take frame times on
-  a real display.
+- **A headless Weston paces transitions badly**: it adds late frames of its own where the owner's
+  display adds none ([measured](docs/measurements.md#the-desktop-window-under-egui)). Take frame
+  times on a real display.
 - **The 4K display is DP-3 since 2026-11-07** (DP-2 in M1.7's figures): read `umbriel outputs`.
 - **End a test process by its own pid**, never by name: `pkill -n weston` once ended another
   agent's headless Weston.

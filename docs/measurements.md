@@ -30,8 +30,8 @@ album folders by 194 artists, which the app shows as 641 albums; one 1200x1200 J
 380 kB an album; read from the index the app keeps after its first scan. Conditions: a throwaway
 profile, off the network, the session bus pointed nowhere, muted, nothing played, the Stock theme,
 the interface at 100 % (1.65 pixels a point at scale 1.5), the window full screen, 3840x2160 pixels
-or 2327x1309 points. The owner left the display alone during the runs; load average over a
-minute 0.8 to 2.4.
+or 2327x1309 points. The owner left the display alone during the runs; the system's load average
+over a minute, read at the end of each scenario's runs, 0.8 to 2.4.
 
 Method: the [measuring mode](../CONTRIBUTING.md#the-measuring-mode), run by
 `scripts/measure/frames.py <profile> <scenario> <runs> <out>` with `WAYLAND_DISPLAY=wayland-0`.
@@ -74,17 +74,18 @@ What the figures say:
 - Scrolling, the drawer and Now Playing keep to the display's 240 Hz but for 10 frames late in
   85,433 scrolling; a frame's CPU stays under 3.2 ms.
 - The stalls are first draws. The first useful frame takes 18 to 29 ms of CPU. The Albums grid's
-  first second, as its albums and covers arrive, has frames of up to 56 ms of CPU, 57 ms apart, whether reached by the
-  scenario or among the page changes; every other page change stays under 2.2 ms. The covers are
-  decoded on threads of their own; what these frames spend was not split further (uploads, layout,
-  text).
+  first second, as its albums and covers arrive, has frames of up to 56 ms of CPU, 57 ms apart (42
+  and 43 ms when Albums first shows among the page changes); every other page change stays under 2.2
+  ms. The covers are decoded on threads of their own; what these frames spend was not split further
+  (uploads, layout, text).
 - VmHWM stands 54 to 79 MiB above the highest VmRSS sampled with the Albums grid: a peak shorter
   than the sampling's 0.25 s. The covers decode one thread each, unbounded ([debt](debt.md)), which
   would make such a peak; it was not traced.
 - Against the [quality bar](ROADMAP.md#quality-bar):
   - start, 152 ms to the first useful frame: the warm budget of 100 ms is missed;
   - memory, 199 to 232 MiB after start: the budget of 150 MiB at rest is missed; 249 MiB at most
-    scrolling Songs over the whole library is within 400 MiB, but the Albums grid peaks at 395 MiB;
+    scrolling Songs over the whole library is within 400 MiB, and so, barely, is the Albums grid's
+    peak of 395 MiB;
   - frames: the budget asks the display's rate held, no dropped frame, a 99th percentile within 4.17
     ms and no frame over 8.33 ms. It is missed: 10 frames late while scrolling, 1 of them over 8.33
     ms; over 8.33 ms too, 9 in Songs' first 3 s (10 runs), 15 in the Albums grid's (5 runs) and 10
@@ -105,19 +106,20 @@ library, the same scenarios gave the same CPU times, but one frame in four came 
 1920x1080. Setting its `repaint-window` from 7 to 2 ms moved the delay, not the pattern. Songs
 scrolled without it. On the owner's display none of it showed: the headless Weston's pacing, not
 the window's. Frame times are taken on a real display
-([pitfall](../CONTRIBUTING.md#known-pitfalls)).
+([pitfall](../CONTRIBUTING.md#known-pitfalls)). Those trials' raw files were not kept.
 
 Not measured: each frame's GPU time (Mesa's HUD gives none per frame here); a cold start (dropping
 the page cache needs root); the 1080p display at 180 Hz; power while scrolling; the input's time
 to the screen; a library of 100,000 songs (`library.py <profile> 100000 1.5` makes one, but its
-scroll, about 22 minutes, would pass `measure.rs`'s limit of 300 s, and its first scan may pass the
-60 s the library is waited for: both need raising first); the lowest tier.
+scroll, about 22 minutes, would pass `measure.rs`'s limit of 300 s and `frames.py`'s 400 s per
+run, and its first scan may pass the 60 s the library is waited for: all three need raising
+first); the lowest tier.
 
 ### The phone under Compose
 
 Phone: the owner's Pixel 10 on GrapheneOS (Android 17, build `CP3A.261005.005`), 1080x2424 at
 120 Hz. Build: the release APK, signed with the debug key, built on 2026-11-07 from `a259613`, whose
-phone code differs from this commit's by comments only; installed by adb, not `DEBUGGABLE`,
+phone code differs from `77d9925`'s by comments only; installed by adb, not `DEBUGGABLE`,
 compiled ahead of time (`status=speed`). Library: the owner's, 8,554 songs, Stock theme, as the
 phone held it; nothing played. Command: `scripts/measure/phone.py 10 <out>`, in
 `nix shell nixpkgs#android-tools`, before its checks were tightened (focus, playback and downloads
