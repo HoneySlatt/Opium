@@ -59,10 +59,13 @@ scripts/check.sh android    # inside `nix develop .#android`: the phone's core
   the rest from Google: a version missing from Google's server fails that job, as it did by hand on
   2026-11-04 and 2026-11-05. That red blocks work as any other
   ([ADR-0036](docs/adr/0036-the-phones-ci-job-blocks-even-when-google-fails.md)). The fix, with
-  the owner's go, depends on the archive: the NDK, the build-tools and the platform are pinned in
-  `flake.nix` (`ndk`, `buildTools`, `platformVersions`), to move to versions nixpkgs' `androidenv`
-  lists; the other tools (CMake, the command-line tools, platform-tools) follow nixpkgs, to move in
-  `flake.lock`.
+  the owner's go, is a version that Google serves, chosen in `flake.nix` where it can be: the NDK,
+  the build-tools and the platform are pinned there (`ndk`, `buildTools`, `platformVersions`), and
+  CMake and the command-line tools can be (`cmakeVersions`, `cmdLineToolsVersion`, arguments of
+  `composeAndroidPackages`), each among the versions nixpkgs' `androidenv` lists in its
+  `repo.json`. Only platform-tools has a single version there: for it, a newer nixpkgs in
+  `flake.lock`, which also moves the desktop's and the fuzzing shell's tools and the packaged app,
+  but not the Android shell's Rust, which rust-overlay pins.
 - [`links.yml`](.github/workflows/links.yml) checks the links between the Markdown files at
   every push and pull request, documents only included, with lychee from the pinned nixpkgs: a
   minute or two, where the whole check takes ten or more.

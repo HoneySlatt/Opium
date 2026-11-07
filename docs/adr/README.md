@@ -49,4 +49,4 @@ call the app "Music" ([ADR-0023](0023-the-rename-to-opium.md)).
 | [0033](0033-the-browser-sign-ins-pipe-kept-as-adapted-from-kopuz.md) | The browser sign-in's pipe is kept as adapted from Kopuz | Accepted; amends 0030 and 0032 |
 | [0034](0034-what-opium-is-to-become.md) | What Opium is to become | Accepted; amends 0008, 0009, 0010, 0011, 0013, 0014, 0016, 0017, 0025, 0029 and 0031 |
 | [0035](0035-the-port-in-uwuis-first-stage-stage-1-finished-first.md) | The port in uwui's first stage, Stage 1 finished first | Accepted; amends 0031 |
-| [0036](0036-the-phones-ci-job-blocks-even-when-google-fails.md) | The phone's CI job blocks, even when Google fails | Accepted |
+| [0036](0036-the-phones-ci-job-blocks-even-when-google-fails.md) | The phone's CI job blocks, even when Google fails | Accepted; its remedy narrowed in CONTRIBUTING.md |

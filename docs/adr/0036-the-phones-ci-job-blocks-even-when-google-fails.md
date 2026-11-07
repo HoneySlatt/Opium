@@ -1,6 +1,7 @@
 # 0036. The phone's CI job blocks, even when Google fails
 
-- Status: Accepted
+- Status: Accepted; its remedy is narrowed by CONTRIBUTING.md's
+  [checks](../../CONTRIBUTING.md#the-checks): most tools can be moved in `flake.nix` alone
 - Date: 2026-11-07
 
 ## Context
