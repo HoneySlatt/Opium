@@ -7,12 +7,12 @@
 > Apache-2.0 the same day too ([ADR-0030](adr/0030-the-kopuz-code-rewritten-in-a-clean-room.md)),
 > given up on 2026-11-06 for the GPL
 > ([ADR-0032](adr/0032-the-gpl-kept-and-kopuzs-code-still-written-again.md)); what Opium is to
-> become, its stages 6 to 10, on 2026-11-06 too
-> ([ADR-0034](adr/0034-what-opium-is-to-become.md)). Living document. It defines
-> direction, ordering and exit criteria. It is not a task list: the current plan lives in
-> `docs/PLAN.md`, and decisions live in `docs/adr/`. Stages will be
-> merged, reduced, reordered or dropped as the project evolves; each such change is recorded in an
-> ADR.
+> become, its stages 6 to 10, on 2026-11-06 too ([ADR-0034](adr/0034-what-opium-is-to-become.md));
+> what uwui's decisions of 2026-11-07 change for Opium, the same day
+> ([ADR-0037](adr/0037-uwuis-decisions-of-2026-11-07-taken-into-opium.md)). Living document. It
+> defines direction, ordering and exit criteria. It is not a task list: the current plan lives in
+> `docs/PLAN.md`, and decisions live in `docs/adr/`. Stages will be merged, reduced, reordered or
+> dropped as the project evolves; each such change is recorded in an ADR.
 
 ## 1. Vision
 
@@ -65,16 +65,19 @@ lyrics equally.
 
 > **Decided by the owner on 2026-11-05** ([ADR-0025](adr/0025-the-quality-bar.md)), its tiers,
 > accessibility, translation and library size amended on 2026-11-06
-> ([ADR-0034](adr/0034-what-opium-is-to-become.md)). Taken from the method's default bars for every
-> project, for interfaces and desktop applications and for mobile applications, adapted to Opium;
-> the sound row comes from the bar for audio. "Today" gives what was measured on 2026-11-05 on the
-> high desktop tier, or says plainly that it was not measured. The figures themselves live in
-> [`measurements.md`](measurements.md). No budget is yet anchored on a figure measured from a
-> reference app, Spotify's battery on the phone aside. The desktop window is frozen until the move
-> to uwui, the owner's UI framework ([ADR-0026](adr/0026-the-egui-window-frozen-until-the-move.md)):
-> the rows checked "with uwui" are worked on then. The phone's Compose screens are frozen until uwui
-> replaces them ([ADR-0031](adr/0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md)): its
-> interface rows are worked on then, on uwui.
+> ([ADR-0034](adr/0034-what-opium-is-to-become.md)), uwui's bars for applications added on
+> 2026-11-07, their figures set at Stage 5
+> ([ADR-0037](adr/0037-uwuis-decisions-of-2026-11-07-taken-into-opium.md)). Taken from the method's
+> default bars for every project, for interfaces and desktop applications and for mobile
+> applications, adapted to Opium; the sound row comes from the bar for audio. "Today" gives what was
+> measured on 2026-11-05 on the high desktop tier, or says plainly that it was not measured. The
+> figures themselves live in [`measurements.md`](measurements.md). No budget is yet anchored on a
+> figure measured from a reference app, Spotify's battery on the phone aside. The desktop window is
+> frozen until the move to uwui, the owner's UI framework
+> ([ADR-0026](adr/0026-the-egui-window-frozen-until-the-move.md)): the rows checked "with uwui" are
+> worked on then. The phone's Compose screens are frozen until uwui replaces them
+> ([ADR-0031](adr/0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md)): its interface rows are
+> worked on then, on uwui.
 
 References: Apple Music's apps and Spotify's, on the computer and the phone, for looks, motion and
 responsiveness; Spotify's Android app for the battery used while playing; beyond them, the most
@@ -109,10 +112,13 @@ when it exceeds its budget by more than its noise.
 | Desktop power, at rest and while scrolling | At rest no measurable GPU power and no wake-up; playing, the work of the rows above and no more; CPU judged by its time and wake-ups. Today: 0 W at rest ([power](measurements.md#5-gpu-power-at-rest)); scrolling not measurable before uwui | `scripts/measure/power-compare.sh` (`power1_average`); RAPL or `powertop` run by the owner (root) | By hand; scrolling with uwui |
 | Scrolling and animations | The display's rate held, no dropped frame: on the high tier 240 Hz at 4K and scale 1.5, 99th percentile ≤ 4.17 ms and no frame over 8.33 ms; on the lowest tier its display's rate, ≤ 16.7 ms at 60 Hz. Today, missed: 10 frames late in 85,433 scrolling, none in the drawer and Now Playing; frames over 8.33 ms, up to 57 ms, when Songs or the Albums grid first shows; the intervals' 99th percentile 4.32 to 5.67 ms, the frames' CPU 99th percentile 0.8 to 2.2 ms in every moving phase, their GPU time not measured ([M1.14](measurements.md#the-desktop-window-under-egui)) | Under egui, M1.14's measuring mode and `scripts/measure/frames.py`; then uwui's frame statistics and MCP server | With uwui; by hand, on the owner's display |
 | Input to visible response | Within one frame where the work allows | The same trace, with input from the MCP server | With uwui: unmeasurable before |
+| Input to photon | From an input to the light that changes on the screen; its figure set at Stage 5 ([ADR-0037](adr/0037-uwuis-decisions-of-2026-11-07-taken-into-opium.md)). Today: not measured, no sensor | A light sensor on the screen, which the owner buys (SlimeEngine's ADR-0215) | With uwui, by hand |
+| Own cost | What Opium adds above a *blank window*, a program that only clears its window and presents it: memory, start, processor, power, a frame's time, the package's size; its figure set at Stage 5, beside uwui's lead of a third of the best rival's own cost (SlimeEngine's ADR-0213). Today: not measured | The blank window measured in the same run as Opium | With uwui |
 | The window's thread | Never waits on a disk or the network. Today: not audited | Reading the code; a trace of the thread once instrumented | With uwui |
 | Images | Decoded off the window's thread, in a cache bounded in memory that frees the GPU's. Today: one thread per cover file, unbounded ([known debt](debt.md)) | Reading the code; memory under load | With uwui |
 | Rendering | Gradients dithered, colours blended correctly, text crisp and pixel-aligned at scales 1, 1.5 and 2, in each theme | Reference images through the screenshot mode | With uwui; in CI once the window renders without a display |
 | The look in one place | Each theme's colours, durations, springs, radii and blur in one place, shown by a gallery of every component; the owner approves the look from captures made off screen. Today: colours and component variants in the theme files both apps read ([ADR-0011](adr/0011-themes-as-toml-files-of-component-variants.md)); motion and radii in each app's code; no gallery; the screenshot mode captures a window on screen | Captures of the gallery, or the screenshot mode until then | By the owner, with uwui |
+| Judged by people | Blind tests: people compare captures of Opium's screens and of its rivals' without knowing which is which; the test of signature: Opium's themes not recognised as uwui's look more often than chance. Their figures set at Stage 5 ([ADR-0037](adr/0037-uwuis-decisions-of-2026-11-07-taken-into-opium.md)). Today: never run | Captures shown blind, as SlimeEngine's ADR-0215 sets: the owner and relatives first | With uwui, by people |
 | Accessibility | WCAG 2.2 at level AA, checked: screen readers name every control; the whole app by keyboard, every shortcut remappable; reduced motion and transparency honoured; contrast checked in each theme; uwui's high-contrast theme when the system asks. Today: no control named ([known debt](debt.md)) | Orca; keyboard only; contrast ratios | With uwui |
 | Text ready for translation | Strings in one place per app, no sentence built from pieces, plurals by rule, layouts that hold longer text and right-to-left writing. Today: English only, the strings written in the code of both apps | A pseudo-locale with longer and right-to-left text | From Stage 5, English and French on the desktop at 0.1.0, on the phone at Stage 3 ([ADR-0034](adr/0034-what-opium-is-to-become.md)); right-to-left once such a language is planned |
 | A library of 100,000 songs | Every budget above holds with 100,000 songs: start-up, memory, scrolling, search, sorting and filtering. Today: measured on the owner's library, about 8,500 songs ([baseline](measurements.md#baseline-of-the-desktop-app-before-any-budget-2026-11-05)) | A library generated for it: files and a fake server | With uwui; again at Stage 7 |
@@ -120,7 +126,9 @@ when it exceeds its budget by more than its noise.
 | Sound | No underrun while playing, under load (scrolling, a build), even when the graph runs 128-frame periods at 48 kHz, the method's default: Opium asks no latency of its own, so another program can set that quantum; each track at its own rate; other programs heard. Today: not measured (it needs sound) | `pw-top`: its error count and rate | By hand, at each milestone touching playback |
 | Bad input | Never a crash: parsers of untrusted data fuzzed (the services' answers, MP4 and CENC boxes, HLS playlists, file tags, what paired devices send, themes, settings); `unsafe` under Miri where it can run | `cargo fuzz` in a nightly shell, and mutation tests in `cargo test` ([ADR-0030](adr/0030-the-kopuz-code-rewritten-in-a-clean-room.md)); Miri | CI: the mutation tests at every push, `cargo fuzz` weekly, from M1.10 for MP4, CENC and HLS |
 | Crash report | A crash leaves a report the user can attach to an issue; nothing leaves the machine without the user's consent. Today: only a hung exit leaves `exit.log` and a core dump ([ADR-0024](adr/0024-the-exit-watch-aborts-for-a-core-dump.md)); no panic hook in either app | Reading the code; a forced panic on a throwaway profile | By hand, once built |
+| Hours without a crash | The share of hours of use without a crash, counted on the machine and never sent; its figure set at Stage 5 ([ADR-0037](adr/0037-uwuis-decisions-of-2026-11-07-taken-into-opium.md)). Today: not counted | uwui's host's crash reports, written on the machine (SlimeEngine's M6d.7) | With uwui |
 | Iteration | A warm CI run, whose cache hit, under 20 minutes; a cold run measured and recorded, without a budget; the full build and tests budgeted once measured. Today: the `check` job 17 to 28 min cold, 7 min 21 s warm; the `android` job, beside it, 9 min 19 s cold, 6 min 4 s warm, on 2026-11-07 ([measured](measurements.md#the-android-shell-and-cis-android-job-m15-2026-11-07)); the full build and tests not measured | CI's durations; `scripts/check.sh` timed | CI, at each run |
+| Compiling | A change of the interface seen, a change of the Rust code running again, the app built from nothing; their figures set at Stage 5 ([ADR-0037](adr/0037-uwuis-decisions-of-2026-11-07-taken-into-opium.md)). Today: not measured | Timed at each milestone that touches them | With uwui |
 | Phone cold start | To the first useful frame, no worse than today; warm ≤ 150 ms. Today: cold 543 ms to the first frame, hot 27.5 ms, on the owner's Pixel 10 under Compose ([M1.14](measurements.md#the-phone-under-compose)); the first useful frame not measured | Macrobenchmark from Stage 3 ([ADR-0027](adr/0027-macrobenchmark-for-the-phones-measurements-at-stage-3.md)); until then `adb shell am start -W` (`TotalTime`) and a Perfetto trace | By hand, on the owner's phone; a mid-range phone unmeasured |
 | Phone frame times | The display's rate held while scrolling and animating, no janky frame: 120 Hz on the high tier (99th percentile ≤ 8.33 ms), 90 Hz on the lowest (≤ 11.1 ms). Today, under Compose: 99th percentile 8 ms scrolling Songs, 7 ms Albums, 19 ms moving between tabs, 1, 0 and 7 janky frames ([M1.14](measurements.md#the-phone-under-compose)) | Macrobenchmark from Stage 3 ([ADR-0027](adr/0027-macrobenchmark-for-the-phones-measurements-at-stage-3.md)); until then Perfetto's frame timeline and `adb shell dumpsys gfxinfo io.github.honeyslatt.opium framestats` | By hand, at Stage 3, on uwui against Compose |
 | Phone battery while playing, screen off | No more than Spotify's for the same kind of song, Apple Music's protected songs included (under 844 ticks a minute). Today: 1,500 to 1,900 ticks a minute for Apple Music, before the rename ([phone](measurements.md#the-phone-2026-11-03)) | Macrobenchmark from Stage 3 ([ADR-0027](adr/0027-macrobenchmark-for-the-phones-measurements-at-stage-3.md)); until then CPU ticks from `/proc/<pid>/stat` over 60 s, and Perfetto's power rails where the phone exposes them | By the owner, or with the owner's go, at each milestone touching playback on the phone |
@@ -135,8 +143,8 @@ when it exceeds its budget by more than its noise.
 | Topic | Decision |
 |---|---|
 | Direction | The general public; music only; one person per installation; no account of Opium's, no telemetry ([ADR-0034](adr/0034-what-opium-is-to-become.md)) |
-| Platforms | Linux and Windows, macOS once uwui supports it; Android and Android Auto; a player without a screen, `opium-headless`; iOS kept possible, not planned ([ADR-0034](adr/0034-what-opium-is-to-become.md)) |
-| Native or optional | The device's files and LRCLIB native; each online service, the Widevine layer and six pieces that talk beyond Opium optional; everything else native, the sound's treatments, bit-perfect USB, the guest and the notification when the song changes off by default ([ADR-0034](adr/0034-what-opium-is-to-become.md)) |
+| Platforms | Linux and Windows; macOS after uwui's 1.0, checked in the owner's virtual machine, Apple's chips unchecked until a Mac with them is; Android and Android Auto; a player without a screen, `opium-headless`; iOS kept possible, not planned ([ADR-0034](adr/0034-what-opium-is-to-become.md), [ADR-0037](adr/0037-uwuis-decisions-of-2026-11-07-taken-into-opium.md)) |
+| Native or optional | The device's files and LRCLIB native; each online service, the Widevine layer and six pieces that talk beyond Opium optional; everything else native, the actions for users' agents included, the sound's treatments, bit-perfect USB, the guest and the notification when the song changes off by default ([ADR-0034](adr/0034-what-opium-is-to-become.md), [ADR-0037](adr/0037-uwuis-decisions-of-2026-11-07-taken-into-opium.md)) |
 | Distribution | Flathub and Nix; a signed APK on GitHub; Flathub and Nix update it on Linux, Obtainium or the user on Android, the app itself on Windows and macOS ([ADR-0034](adr/0034-what-opium-is-to-become.md)) |
 | Translation | The text ready for translation from Stage 5; English and French on the desktop at 0.1.0, on the phone at Stage 3 ([ADR-0034](adr/0034-what-opium-is-to-become.md)) |
 | Licence | GPL-3.0-or-later ([ADR-0001](adr/0001-gpl-3-0-or-later.md)), kept after the code adapted from Kopuz was written again in a clean room, but for part of the browser sign-in ([ADR-0030](adr/0030-the-kopuz-code-rewritten-in-a-clean-room.md), [ADR-0032](adr/0032-the-gpl-kept-and-kopuzs-code-still-written-again.md), [ADR-0033](adr/0033-the-browser-sign-ins-pipe-kept-as-adapted-from-kopuz.md)) |
@@ -149,7 +157,8 @@ when it exceeds its budget by more than its noise.
 | Desktop audio | PipeWire only, at each track's rate ([ADR-0005](adr/0005-pipewire-at-each-tracks-own-rate.md)) |
 | Desktop UI | egui, until the move to uwui in uwui's first stage ([ADR-0035](adr/0035-the-port-in-uwuis-first-stage-stage-1-finished-first.md)); GPUI abandoned ([ADR-0006](adr/0006-egui-for-the-desktop-window.md), [ADR-0022](adr/0022-gpui-tried-and-abandoned.md), [ADR-0031](adr/0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md)) |
 | Phone | Kotlin and Compose over the Rust core through UniFFI; ExoPlayer plays; Android 14 and later, arm64, the lowest Android decided again at Stage 3 ([ADR-0009](adr/0009-the-android-app-over-the-rust-core.md), [ADR-0034](adr/0034-what-opium-is-to-become.md)) |
-| Themes | TOML files choosing component variants; Stock, Spotify, M3E built in, the Spotify theme renamed before a public release ([ADR-0011](adr/0011-themes-as-toml-files-of-component-variants.md), [ADR-0034](adr/0034-what-opium-is-to-become.md)) |
+| Themes | TOML files choosing component variants; Stock, Spotify, M3E built in, the Spotify theme renamed before a public release; on uwui, M3E built on uwui's official Material 3 Expressive theme, the music player's parts in Opium, and Stock with glass ([ADR-0011](adr/0011-themes-as-toml-files-of-component-variants.md), [ADR-0034](adr/0034-what-opium-is-to-become.md), [ADR-0037](adr/0037-uwuis-decisions-of-2026-11-07-taken-into-opium.md)) |
+| Users' agents | Opium's actions declared once, on uwui's declaration, shared by users' agents and the `opium` command; nothing answers an agent the user has not accepted; any change to an account at a service confirmed in the window each time; no secret given ([ADR-0037](adr/0037-uwuis-decisions-of-2026-11-07-taken-into-opium.md)) |
 | Devices | Opium Connect: mDNS, TCP 47820, SPAKE2, Noise; iroh away from home; state merged field by field ([ADR-0010](adr/0010-opium-connect-on-the-local-network.md), [ADR-0014](adr/0014-shared-state-merged-field-by-field.md), [ADR-0015](adr/0015-away-from-home-through-iroh.md)) |
 | Offline | Sealed downloads, DRM songs tied to a subscription confirmed in 30 days ([ADR-0017](adr/0017-downloads-sealed-and-tied-to-the-subscription.md)) |
 | Lyrics | The song's own source, then LRCLIB, other sites opt-in ([ADR-0008](adr/0008-the-lyrics-sources.md)) |
@@ -175,20 +184,21 @@ Each is decided by an ADR at the stage where it becomes necessary, not earlier.
 | The name in the stores | Opium and the Spotify theme's new name, against the chosen stores' rules ([ADR-0034](adr/0034-what-opium-is-to-become.md)) | Stage 2 |
 | Flathub | Whether it accepts an app that borrows the browser's CDM, and the CDM reached from Flatpak's sandbox | Stage 2 |
 | The lowest Android | As low as uwui allows, aiming at Android 10 or 12 | Stage 3 |
-| Users' themes | Opium's TOML, or uwui's format once it has one, the existing themes converted | Stage 5 |
+| Android's adapter for the actions | AppFunctions, once the lowest Android it needs and whether any agent calls it on GrapheneOS, without Google's services, are checked ([ADR-0037](adr/0037-uwuis-decisions-of-2026-11-07-taken-into-opium.md)) | Stage 3 |
+| Users' themes | Opium's TOML, or uwui's format once it has one, the existing themes converted; uwui's official themes are crates of their own ([ADR-0037](adr/0037-uwuis-decisions-of-2026-11-07-taken-into-opium.md)) | Stage 5 |
 | A crossfade between two rates | One track resampled for the fade, or the fade skipped, against [ADR-0005](adr/0005-pipewire-at-each-tracks-own-rate.md) | Stage 6 |
 | Updates on Windows and macOS | uwui's optional crate (SlimeEngine's ADR-0199), or Opium's own | Stage 4 |
 | The guest | Its trust model, and the rule that Connect hears only paired devices | Stage 8, by an ADR |
 | Away from home turned off | A switch in Settings, so that n0 is reached only when wanted, or none ([known debt](debt.md)) | Stage 8 |
 | Protected songs beyond the app | On UPnP renderers, against the licence's output rules; on the Raspberry Pi, a CDM on ARM Linux | Stage 8 |
-| macOS | Its stage, and its CDM's host verification | When uwui supports macOS |
+| macOS's CDM | Its host verification, by a spike first ([ADR-0037](adr/0037-uwuis-decisions-of-2026-11-07-taken-into-opium.md)) | Stage 10 |
 | What 1.0 holds | The stages it closes, and what it promises | Stage 9 |
 | Extensions | On uwui's isolated WebAssembly, after the themes | After 1.0 |
 | The exit watch | Kept as a safety net, or removed once the hang is found ([ADR-0021](adr/0021-the-exit-watch.md)) | When the hang is found |
 
 ## 4. Stages
 
-The stages run in the order 1, 5, 2, 3, 6, 4, 7, 8, 9, then 10 once uwui supports macOS: the move to
+The stages run in the order 1, 5, 2, 3, 6, 4, 7, 8, 9, then 10 after uwui's 1.0: the move to
 uwui comes first, in uwui's first stage, after SlimeEngine's Stage 6d
 ([ADR-0029](adr/0029-opium-waits-for-slime-ui-then-moves-first.md),
 [ADR-0035](adr/0035-the-port-in-uwuis-first-stage-stage-1-finished-first.md)); the new functions
@@ -233,6 +243,16 @@ finished first; Opium then waits for the port, and this stage comes right after 
 - The interface's state and logic taken out of `app.rs` into a model free of any toolkit
 - Each page and component, in each theme's variants, on the framework, with every need marked
   indispensable in [`ui-framework-needs.md`](ui-framework-needs.md)
+- The song playing, in Stock with glass, the cover flying to it and the transitions on springs:
+  uwui's fifth screen of reference, rich in effects; the rest of Stage 6's motion and glass stays
+  there ([ADR-0037](adr/0037-uwuis-decisions-of-2026-11-07-taken-into-opium.md))
+- M3E built on uwui's official Material 3 Expressive theme, its crate in uwui's repository; the
+  player bar, the wave of progress and the composition of Opium's pages stay in Opium
+- Opium's actions declared once, on uwui's declaration: users' agents call them once the user has
+  accepted each agent, through uwui's local MCP server once it exists; any change to an account at a
+  service confirmed in the window each time; no secret given
+- uwui's bars for applications measured, their figures set: the own cost above a blank window,
+  input to photon, people's blind tests and the test of signature, compiling, hours without a crash
 - Agents read and drive the window through the framework; screen readers name its controls,
   WCAG 2.2 AA checked, uwui's high-contrast theme when the system asks
 - The text ready for translation, in English and French
@@ -255,8 +275,9 @@ finished first; Opium then waits for the port, and this stage comes right after 
 Wayland and under Xwayland; the display's rate held while scrolling and animating; start-up, frame
 times while scrolling and animating, memory and power at rest at least as good as egui's figures of
 M1.14, measured the same way, and held with 100,000 songs; WCAG 2.2 AA checked; every screen of the
-desktop in English and French; the phone's prototype measured against Compose, and what uwui must
-fix recorded.
+desktop in English and French; the song playing measured as uwui's fifth screen; each action run by
+an accepted agent, a change to an account refused until confirmed; the figures of uwui's bars for
+applications set; the phone's prototype measured against Compose, and what uwui must fix recorded.
 
 ### Stage 2 — The first release → 0.1.0
 
@@ -305,6 +326,8 @@ did ([ADR-0031](adr/0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md)).
 - Battery and smoothness measured against the reference player, before and after each change
 - The phone's text in English and French
 - The lowest Android decided with uwui, and the lowest phone measured
+- Android's adapter for Opium's actions, through AppFunctions, once the lowest Android it needs and
+  whether any agent calls it on GrapheneOS are checked ([ADR-0037](adr/0037-uwuis-decisions-of-2026-11-07-taken-into-opium.md))
 
 **Exit.** Every screen on uwui, as good as Compose on M1.14's figures; every page of each theme
 exists on the phone; TalkBack names every control; the measurements are in the repository and no worse than at the
@@ -330,10 +353,10 @@ stage's start.
   home-screen widget, a quick-settings tile
 - On the desktop: a mini-player, an icon in the tray, a notification when the song changes (off by
   default), a start with the session, shortcuts with chords, a palette of commands, the `opium`
-  command; Discord, off by default
+  command, which runs the actions declared at Stage 5 ([ADR-0037](adr/0037-uwuis-decisions-of-2026-11-07-taken-into-opium.md)); Discord, off by default
 - Discovery: radios computed on the device from the history and the files, beside the services'
 - The cover flying between screens, gestures that drive and interrupt animations, glass materials
-  lightened on the lowest tier, haptics on the phone
+  lightened on the lowest tier, haptics on the phone, beyond the song playing, done at Stage 5
 - At start, Opium back where the user was: page, scroll, selection and the window's size, besides
   the song and the panels that come back today
 
@@ -408,13 +431,17 @@ notices; the guest's ADR accepted and its tests passing; the Pi's budgets measur
 
 **Exit.** Both servers browsed, searched, played and downloaded, verified against real servers.
 
-### Stage 10 — macOS (eventual)
+### Stage 10 — macOS
 
-**Goal.** Opium on macOS once uwui supports it and a Mac can check it
-([ADR-0034](adr/0034-what-opium-is-to-become.md)).
+**Goal.** Opium on macOS, after uwui's 1.0, checked in the owner's virtual machine; the
+documentation says that Apple's chips are not checked until a Mac with them has been
+([ADR-0034](adr/0034-what-opium-is-to-become.md), [ADR-0037](adr/0037-uwuis-decisions-of-2026-11-07-taken-into-opium.md)).
 
 - First, a spike of the CDM's host verification on macOS, as on Windows
-- Audio through Core Audio at each track's rate, the app updating itself
+- What uwui does not cover: audio through Core Audio at each track's rate, the CDM's host, the
+  tokens in the Keychain, a single instance without D-Bus; the menu bar, Now Playing and the
+  media keys through uwui's system integrations
+- The app updating itself
 
 **Exit.** As Stage 4's, on macOS.
 
@@ -431,4 +458,4 @@ notices; the guest's ADR accepted and its tests passing; the Pi's budgets measur
 | 0.5 | 7 | The library |
 | 0.6 | 8 | Connect and the player without a screen |
 | 0.7 | 9 | Jellyfin and Plex |
-| — | 10 | macOS, when uwui supports it |
+| — | 10 | macOS, after uwui's 1.0 |

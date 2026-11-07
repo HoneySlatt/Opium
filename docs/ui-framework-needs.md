@@ -10,9 +10,11 @@ list.
 
 Each need was found in the code of `crates/app-desktop`; the inventory written for ADR-0170 on
 2026-11-04 was not kept, so this one replaces it.
-[Its last section](#what-adr-0034-asks-of-uwui) adds what the owner's requirements ask beyond
+[A later section](#what-adr-0034-asks-of-uwui) adds what the owner's requirements ask beyond
 today's window ([ADR-0034](adr/0034-what-opium-is-to-become.md)); its needs are counted
-apart from the 113 below.
+apart from the 113 below. [The last](#what-uwuis-decisions-of-2026-11-07-ask) adds what uwui's
+decisions of 2026-11-07 ask
+([ADR-0037](adr/0037-uwuis-decisions-of-2026-11-07-taken-into-opium.md)).
 
 ## How to read it
 
@@ -318,8 +320,8 @@ each with the stage of Opium's that asks it where there is one.
 | Values that change every frame bound to drawn properties alone, without building views again | The wave, the lyrics, springs | Precision: the state model | Wished |
 | A text range's style animated over time without laying the text out again | A word filling as it is sung | New | Wished |
 | The window's state restored at start: the navigation's stack, each list's scroll by the item shown rather than by pixels, the selection, the panels, the size | Opium returns where the user was, its library changed meanwhile | Precision: ADR-0190 restores size, place, panels, tabs and scroll | Wished: Stage 6 |
-| An element flying from one screen to the next; animations driven by a finger or the touchpad, interrupted without a jump; predictive back | The cover from the grid to the album to the player | Yes: ADR-0190's motion | Wished: Stage 6 |
-| Glass: the application's own content blurred behind a bar or a panel, lightened on the lowest tier, on battery and under reduced transparency | The player bar and the sidebar | Yes: ADR-0190's Glass theme and effects lightened | Wished: Stage 6 |
+| An element flying from one screen to the next; animations driven by a finger or the touchpad, interrupted without a jump; predictive back | The cover from the grid to the album to the player | Yes: ADR-0190's motion | Wished: Stage 5 for the song playing, uwui's fifth screen ([ADR-0037](adr/0037-uwuis-decisions-of-2026-11-07-taken-into-opium.md)); Stage 6 elsewhere |
+| Glass: the application's own content blurred behind a bar or a panel, lightened on the lowest tier, on battery and under reduced transparency | Stock's song playing, then its player bar and sidebar | Yes: the glass material of uwui's core (SlimeEngine's ADR-0171), which Stock uses without uwui's Glass theme ([ADR-0037](adr/0037-uwuis-decisions-of-2026-11-07-taken-into-opium.md)); effects lightened | Wished: Stage 5 for the song playing, uwui's fifth screen; Stage 6 elsewhere |
 | Haptics on Android | The volume's steps, a list's end | Yes: uwui's ROADMAP | Wished: Stage 6 |
 | uwui's high-contrast theme applied to an application whose own themes build components differently, those components staying readable | One high-contrast theme for Opium's three | Precision: ADR-0190 ships a high-contrast theme | Indispensable: the quality bar's accessibility |
 | Translation through Fluent, the language changed live; layouts that hold longer text | English and French at 0.1.0 | Yes: ADR-0190 | Indispensable: the quality bar's translation |
@@ -343,11 +345,53 @@ These stay in Opium; uwui gives them only the general pieces above.
 - The sound: the levelling, the crossfade, the equaliser and AutoEq's profiles, the signal path's
   data, bit-perfect USB on Android (in the Kotlin layer).
 - The lyrics' sources, word timings and translations; scrobbling; MusicBrainz; Discord.
-- The `opium` command, over the session bus on Linux, another way on Windows (Stage 4); MPRIS until
-  uwui's crate for the system's integrations exists (ADR-0190).
+- The `opium` command, which runs the actions Opium declares on uwui, over the session bus on
+  Linux, another way on Windows (Stage 4); MPRIS until uwui's crate for the system's integrations
+  exists (ADR-0190).
 - The tokens in the keyring; the downloads and the offline mode; the browser sign-in and the CDM,
   from inside Flatpak's sandbox.
 - On Android, the home-screen widget, the quick-settings tile, sharing a link and Android Auto, all
   in the Kotlin layer: the system draws them, not uwui.
-- The themes' content (Stock, the renamed Spotify theme, M3E) and the colours taken from covers.
+- The themes' content (Stock with its glass, the renamed Spotify theme, M3E's parts proper to a
+  music player on uwui's M3E crate) and the colours taken from covers.
 - The smart playlists' rules and their editor, built from uwui's forms.
+
+## What uwui's decisions of 2026-11-07 ask
+
+SlimeEngine's ADR-0213, ADR-0215, ADR-0218 and ADR-0220, taken into Opium by
+[ADR-0037](adr/0037-uwuis-decisions-of-2026-11-07-taken-into-opium.md). They serve SlimeEngine's
+M6d.9b, which checks the declaration of actions, and M6d.10, which weighs the pilots' needs for
+uwui's first stage. Their marks wait for the owner; none is counted with the needs above.
+
+- **The fifth screen of reference.** Opium's song playing, in Stock, with glass, chosen by the
+  owner on 2026-11-07. Opium has no Glass theme: Stock uses the glass material of uwui's core. The
+  cover flies to it from the screen before, and the transitions move on springs. Built at Opium's
+  Stage 5.
+- **M3E as an official theme.** uwui's Material 3 Expressive crate holds the generic look. Opium
+  builds on it what is proper to a music player: the player bar, the wave of progress, the
+  composition of its pages. The crate must let an application add components of its own in the
+  theme's style, and change a component's structure, as SlimeEngine's M6d.1d plans for themes.
+- **Actions declared once.** Opium's first list, below, for checking the declaration against
+  Android's AppFunctions, Apple's App Intents and Windows' registry of agents. The declaration must
+  hold an action confirmed in the window each time it runs, an action whose result is a list, and a
+  parameter that names an item of the library by its id or by text that the app resolves.
+- **A primary modifier.** Opium's shortcuts, every one remappable, saved once with Ctrl or Cmd as
+  the primary modifier (SlimeEngine's M6d.3).
+- **Crash reports on the machine,** from uwui's desktop host (SlimeEngine's M6d.7): Opium has no
+  panic hook today ([quality bar](ROADMAP.md#quality-bar)).
+- **A blank window** measured beside Opium's screens, so that Opium's own cost is known.
+
+| Action | Parameters | Family | Permission |
+|---|---|---|---|
+| Play an item: a song, an album, an artist, a playlist, a station | the item | Playback | Once the agent is accepted |
+| Pause, resume, next, previous, seek | a position in seconds, for seek | Playback | Once the agent is accepted |
+| Shuffle, repeat, the sleep timer | on or off; a mode; a duration | Playback | Once the agent is accepted |
+| Add to the queue, play next, remove from it, clear it | the item; its place in the queue | Queue | Once the agent is accepted |
+| What is playing; the queue | none | Reading | Once the agent is accepted |
+| Search the library and the services | text; the kinds of item | Reading | Once the agent is accepted |
+| Open a page: an album, an artist, a playlist, a search | the item | Navigation | Once the agent is accepted |
+| Like a song or take the like back; add it to the library | the item | A service's account | Confirmed in the window each time |
+| Create a playlist at a service, add to it, remove from it | the playlist; the items | A service's account | Confirmed in the window each time |
+| Opium's own playlists and favourites changed | the playlist; the items | Opium's shared state | Undone and logged; whether also confirmed, decided at Stage 5 |
+
+Downloads and settings are not on the list: whether an agent may touch them is decided at Stage 5.

@@ -33,6 +33,14 @@ Every milestone ends with the definition of done in [`AGENTS.md`](../AGENTS.md#d
   [`ui-framework-needs.md`](ui-framework-needs.md#what-adr-0034-asks-of-uwui) lists what it asks of
   uwui; the owner carries that list to SlimeEngine's M6d.1b3b, which chooses how state changes an
   application's interface.
+- **uwui's decisions of 2026-11-07**, SlimeEngine's ADR-0213 to ADR-0220, taken into Opium the same
+  day by the owner, documents only
+  ([ADR-0037](adr/0037-uwuis-decisions-of-2026-11-07-taken-into-opium.md)): Opium's song playing, in
+  Stock with glass, is uwui's fifth screen of reference, its effects brought to Stage 5; M3E is
+  built on uwui's official theme; Opium's actions for users' agents are declared at Stage 5, a
+  change to an account confirmed each time; macOS's Stage 10 comes after uwui's 1.0; uwui's bars for
+  applications join the quality bar, their figures set at Stage 5. The ROADMAP and
+  [`ui-framework-needs.md`](ui-framework-needs.md#what-uwuis-decisions-of-2026-11-07-ask) follow it.
 - **Fixed on 2026-11-07**, under the standby's rule on a loss of data: a song's tags are written
   on a copy (`local::tag_writes`), one write at a time. The desktop renames the copy over the
   file. The phone keeps the original aside while it writes the copy over the file, and puts back

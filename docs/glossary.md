@@ -3,12 +3,22 @@
 The terms this project defines, in alphabetical order. Each says what it means here, and links to
 where it is decided or built.
 
+**Actions for agents.** What Opium does that a user's agent may ask of it, each declared once on
+uwui's declaration, with its parameters, its family and its permission; the `opium` command runs
+the same ones. Nothing answers an agent that the user has not accepted, and a change to an account
+at a service is confirmed in the window each time
+([ADR-0037](adr/0037-uwuis-decisions-of-2026-11-07-taken-into-opium.md)).
+
 **Away from home.** Paired devices that are not on the same network, reaching each other through
 iroh, straight or through a relay ([ADR-0015](adr/0015-away-from-home-through-iroh.md)).
 
 **Best copy.** Of the copies of one song or album that several sources have, the one the library
 shows and plays: the device's own file, then the Navidrome server's, then Apple Music's, then
 SoundCloud's ([ADR-0007](adr/0007-one-library-and-the-best-copy.md), `opium_core::dedupe`).
+
+**Blank window.** A program that only clears its window and presents it, measured in the same run
+as Opium so that Opium's *own cost*, what it adds above that window, is known (SlimeEngine's
+ADR-0213, [ADR-0037](adr/0037-uwuis-decisions-of-2026-11-07-taken-into-opium.md)).
 
 **Browser seam.** The way every change to SoundCloud (a like, a follow, a playlist edit) is sent:
 through a `soundcloud::Browser` that sends it as the user's browser would, so that SoundCloud's bot
@@ -49,11 +59,17 @@ phone borrows from the computer the Apple Music and SoundCloud songs it cannot d
 and seals them (`connect::lend`, [ADR-0017](adr/0017-downloads-sealed-and-tied-to-the-subscription.md)).
 
 **M3E.** The built-in theme in Material 3 Expressive's style, with a fixed violet tonal scheme,
-beside Stock and Spotify ([ADR-0011](adr/0011-themes-as-toml-files-of-component-variants.md)).
+beside Stock and Spotify ([ADR-0011](adr/0011-themes-as-toml-files-of-component-variants.md)). On
+uwui, it is built on uwui's official Material 3 Expressive theme, the music player's parts in
+Opium ([ADR-0037](adr/0037-uwuis-decisions-of-2026-11-07-taken-into-opium.md)).
 
 **Measuring mode.** The desktop window recording its frames and running a scripted scenario on its
 own (`OPIUM_MEASURE`), so that uwui is held to the same figures; M1.14's, removed with egui
 ([how](../CONTRIBUTING.md#the-measuring-mode)).
+
+**Official theme.** A look of uwui's that is not its core's, in a crate of its own in uwui's
+repository, with its own version and its images of reference in uwui's CI: Glass, Material 3
+Expressive and Pro (SlimeEngine's ADR-0213).
 
 **Opium Connect.** How the user's devices find each other, pair, show what each plays, control
 each other, hand the music over and keep their shared state in common, on the local network and
@@ -66,6 +82,9 @@ every paired device (`ProviderKind::Opium`, [ADR-0014](adr/0014-shared-state-mer
 Stage 2: each online service, the Widevine layer, and six more pieces that talk beyond Opium, which
 [ADR-0034](adr/0034-what-opium-is-to-become.md) lists. *Native* parts are always built, perhaps off
 by default ([ADR-0034](adr/0034-what-opium-is-to-become.md)).
+
+**Own cost.** What a program adds above a *blank window* on the same machine: memory, start,
+processor, power, a frame's time, the package's size (SlimeEngine's ADR-0213).
 
 **Pairing.** Making two devices trust each other once: one shows a six-digit code, the user types
 it on the other, and the two derive a key of their own with SPAKE2
@@ -81,6 +100,11 @@ a room on a Raspberry Pi and driven by the other devices through Opium Connect; 
 
 **Provider.** A source of music as the core sees it: a crate implementing `opium_core::Provider`
 (Apple Music, SoundCloud, Navidrome, the device's files), with the `ProviderKind` that names it.
+
+**Screen of reference.** One of the five screens, chosen by the owner, on which uwui is measured
+against its rivals and never tuned for: Opium's table of songs in M3E, and Opium's song playing in
+Stock with glass, among them (SlimeEngine's ADR-0198 and ADR-0213,
+[ADR-0037](adr/0037-uwuis-decisions-of-2026-11-07-taken-into-opium.md)).
 
 **Sealed download.** A song kept for offline listening, encrypted with the app's key in chunks of
 64 KiB, playable only by Opium on the device that holds the key
@@ -106,6 +130,8 @@ a station of songs that the service picks one after the other (`opium_core::mode
 
 **Stock.** The built-in theme in Apple Music's look, in Carbonfox's black with Apple Music's pink;
 what a theme file leaves out is Stock's ([ADR-0011](adr/0011-themes-as-toml-files-of-component-variants.md)).
+On uwui it gains glass, through the material of uwui's core
+([ADR-0037](adr/0037-uwuis-decisions-of-2026-11-07-taken-into-opium.md)).
 
 **Throwaway profile.** Config, cache and data folders of a test's own, with no session bus and no
 network, on which an agent runs the app without touching the owner's data
@@ -116,8 +142,9 @@ the old code's and Kopuz's, raw and with identifiers made alike, every long shar
 ([method](specs/README.md)).
 
 **uwui.** The owner's UI framework, formerly slime-ui, made in SlimeEngine's repository and then
-in its own, under MIT OR Apache-2.0. Opium's desktop window and phone screens move to it during
-SlimeEngine's Stage 6d ([ADR-0031](adr/0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md)).
+in its own, under MIT OR Apache-2.0. Opium's desktop window and phone screens move to it in uwui's
+first stage, Opium one of the programs that stage ports
+([ADR-0035](adr/0035-the-port-in-uwuis-first-stage-stage-1-finished-first.md)).
 
 **Wake.** The callback through which the desktop's workings ask the window for a new frame when
 something it shows has changed (`desktop::Wake`, [ADR-0019](adr/0019-the-workings-apart-from-the-drawing.md)).

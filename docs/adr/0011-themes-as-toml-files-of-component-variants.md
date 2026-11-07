@@ -1,7 +1,9 @@
 # 0011. Themes as TOML files that choose a variant of each component
 
 - Status: Accepted; amended by [0034](0034-what-opium-is-to-become.md)
-  (the Spotify theme renamed; users' themes' format at Stage 5; uwui's high contrast)
+  (the Spotify theme renamed; users' themes' format at Stage 5; uwui's high contrast), then by
+  [0037](0037-uwuis-decisions-of-2026-11-07-taken-into-opium.md) (M3E built on uwui's official
+  theme; Stock gains glass)
 - Date: 2026-10-31
 
 ## Context

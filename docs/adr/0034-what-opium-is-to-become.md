@@ -15,7 +15,9 @@
   shown; an offline mode turned on by hand), [0025](0025-the-quality-bar.md) (the lowest desktop
   named after a real machine; a tier without a screen; a library of 100,000 songs),
   [0029](0029-opium-waits-for-slime-ui-then-moves-first.md) (the order after the phone) and
-  [0031](0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md) (the lower tiers)
+  [0031](0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md) (the lower tiers); amended by
+  [0037](0037-uwuis-decisions-of-2026-11-07-taken-into-opium.md) (glass and its motion earlier for
+  one screen; actions for users' agents; macOS planned after uwui's 1.0)
 - Date: 2026-11-06
 
 ## Context
