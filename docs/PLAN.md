@@ -80,13 +80,13 @@ built in this stage.
   built without debug info, the cache kept on failure. On 2026-11-05: 24 minutes cold, 9 min 25 s
   warm, under the 20-minute budget ([measurements](measurements.md)).
 - **M1.5 — The phone's core checked.** The Android shell builds from an empty Nix store again,
-  `flake.nix` unchanged: Google's 404s of 2026-11-04 and 2026-11-05 had passed. Built in 8 min
+  no SDK version changed: Google's 404s of 2026-11-04 and 2026-11-05 had passed. Built in 8 min
   30 s, 11 GB, its six SDK archives downloaded from Google and matching nixpkgs' hashes;
   `scripts/check.sh android` passes, the release APK builds. CI's `android` job downloads the SDK
   at each run, so a version gone from Google fails it: 10 min 49 s cold, 7 min 2 s warm, beside the
   `check` job ([measured](measurements.md#the-android-shell-and-cis-android-job-m15-2026-11-07)).
-  `opium-ffi`'s `unsafe` block and its `unsafe(no_mangle)` say why they are sound. The shell names
-  its SDK and NDK under every name the tools read, so a runner's own are never mixed in. CI checks
+  `opium-ffi`'s `unsafe` block and its `unsafe(no_mangle)` say why they are sound. The shell sets
+  `ANDROID_SDK_ROOT` and `ANDROID_NDK_ROOT` too, which a CI runner set to its own SDK. CI checks
   no Kotlin nor the APK ([debt](debt.md)). A red caused by Google blocks as any other
   ([ADR-0036](adr/0036-the-phones-ci-job-blocks-even-when-google-fails.md)).
 - **M1.6 — What the window needs from a UI framework.**
@@ -232,6 +232,10 @@ For the owner to pick; none is planned.
 
 - **A gallery of every component in each theme**, captured off screen: the look approved on
   captures, reference images for CI. On the desktop, with uwui.
+- **CI building the phone's app**: `build-core.sh` and `gradle assembleRelease` in the `android`
+  job, so that Kotlin which no longer matches the core fails CI ([debt](debt.md)); with Stage 2's
+  Gradle wrapper. The core and the APK took 9 min to build on the desktop, the core from cold;
+  CI's time not measured.
 - **A crash report of the app's own**: a panic hook writing what the user can attach to an issue;
   the phone's now, the desktop window's with uwui.
 - **What Kopuz has and Opium lacks** ([licence audit](audits/2026-11-05-licence.md)): stations
