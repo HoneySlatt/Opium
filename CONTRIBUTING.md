@@ -217,6 +217,20 @@ WAYLAND_DISPLAY=wayland-0 OPIUM_MEASURE_PIXELS=3840x2160 \
   that the window draws at 1.65 pixels a point, the owner's, on a display of the scale given: 1.5
   for the owner's, 1 (the default) for a headless Weston. `frames.py` leaves out a run drawn at
   another scale.
+- What uwui repeats, to be compared ([the figures](docs/measurements.md#the-figures-to-beat-on-uwui-m114-2026-11-07)):
+  - the library of `library.py`, the Stock theme, the window full screen on the same display, at
+    1.65 pixels a point;
+  - the scenarios: Songs opened as soon as the cached library is in (the first useful frame),
+    then 3 s at rest; `scroll-songs` scrolls Songs down at 4,000 points a second to its end, the
+    pointer at the window's middle, the scroll steady, without rubber band, ended when 10 frames
+    in a row move nothing; `scroll-albums` opens Albums after the rest, rests 3 s more, and scrolls
+    it likewise; `animate` takes a step each second: Albums, Artists, Home, Songs four times, the
+    queue drawer opened and closed three times, Now Playing likewise;
+  - the record, one line a frame drawn: its start, its CPU time, the work of the interface, of
+    turning it into triangles and of the drawing calls, without the GPU nor the wait for the
+    display (egui's `IntegrationInfo::cpu_usage`), its phase, and whether the frame was asked for
+    by the one before so that something moves (egui's `requested_repaint_last_pass`), as
+    `measure.rs`'s head says; then `frames.py` sums it up unchanged.
 - Frame times are taken on the owner's 4K display (DP-3, 240 Hz, scale 1.5) with the owner's go:
   the window covers it for the run. Not in a headless Weston, whose pacing misses frames of its own
   ([pitfalls](#known-pitfalls)). Start and memory can be taken in either.

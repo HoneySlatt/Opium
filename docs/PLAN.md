@@ -222,7 +222,7 @@ One milestone each, in this order: `cenc`, then `widevine`, then `apple-music`.
     a record of every frame and four scenarios, run by `scripts/measure/frames.py` over a library
     `library.py` generates, the same every time.
   - On the owner's 4K display: 152 ms to the first useful frame; 10 frames late in 85,433 while
-    scrolling, none while the drawer and Now Playing move; stalls of up to 56 ms when the Albums
+    scrolling, none while the drawer and Now Playing move; stalls of up to 57 ms when the Albums
     grid first shows; 199 to 232 MiB after start, 395 MiB at most.
   - On the phone under Compose (`phone.py`): cold start 543 ms, 99th percentile of frame time 7 to
     8 ms scrolling, 19 ms between tabs, 273 to 380 MiB.

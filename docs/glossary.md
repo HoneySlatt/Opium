@@ -32,8 +32,9 @@ service's subscription was not confirmed in the last 30 days, or the user signed
 (`downloads::store::Standing`, [ADR-0017](adr/0017-downloads-sealed-and-tied-to-the-subscription.md)).
 
 **First useful frame.** The first frame that shows the library, not only the window: on the
-desktop, Songs drawn with its rows from the cached library, as M1.14's measuring mode marks it
-(`measure.rs`). Start-up is timed to the end of its work.
+desktop, the first frame of Songs with its rows from the cached library, at the start of the page's
+arrival (a fade of 0.28 s in Stock), as M1.14's measuring mode marks it (`measure.rs`). Start-up
+is timed to the end of its work.
 
 **Guest.** Someone on the local network who joins the queue by a code, without pairing and without
 seeing the owner's data; planned at Stage 8, its trust decided by an ADR first
