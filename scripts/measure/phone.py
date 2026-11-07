@@ -20,13 +20,14 @@ changes nothing but what is shown. In order:
 6. moving between pages: the tabs Home, New, Radio and Library tapped in turn, 4 rounds, gfxinfo
    likewise;
 7. memory after it all, then Home.
-Before each cold start, tap or key, it checks again that Opium is the focused app, playing and
-downloading nothing, and stops if not: the owner may have taken the phone back. The labels are found in a dump of the interface
-(`uiautomator dump`), read only when Opium has the focus, and deleted from the phone at once. Only
-the navigation is tapped, each label looked for only within the heights where the Stock theme's
-layout of 2026-11-07 puts it (on a 1080x2424 screen), and a tab only once the four tabs are found
-side by side: a song's label elsewhere is never taken, and another theme's layout, where a label
-is not found once in its place, stops the script.
+Right before each start it checks that the home screen is in front (or Opium, before a cold start),
+and before each tap, key or fling that Opium is; each time, that Opium plays and downloads nothing;
+it stops if not: the owner may have taken the phone back. The labels are found in a dump of the
+interface (`uiautomator dump`), read only when Opium has the focus, and deleted from the phone at
+once. Only the navigation is tapped, each label looked for only within the heights where the Stock
+theme's layout of 2026-11-07 puts it (on a 1080x2424 screen), and a tab only once the four tabs are
+found side by side: a song's label elsewhere is never taken, and another theme's layout, where a
+label is not found once in its place, stops the script.
 Writes <out-dir>/phone.json and prints its figures.
 """
 import json
@@ -197,10 +198,13 @@ if len(adb("devices").strip().splitlines()) != 2:
 WIDTH, HEIGHT = map(int, re.search(r"(\d+)x(\d+)", shell("wm size")).groups())
 if "DEBUGGABLE" in shell(f"dumpsys package {PACKAGE} | grep pkgFlags"):
     sys.exit("a debuggable build is installed: install the release build")
-# The phone set aside: Opium or the home screen in front, nothing playing or downloading.
-if not opium_in_front() and "launcher" not in shell("dumpsys window | grep mCurrentFocus"):
-    sys.exit("another app is in front: the owner may be using the phone")
-require_idle("the cold starts")
+def require_home(what):
+    """Stops unless the home screen is in front and Opium idle: the phone still set aside."""
+    if "launcher" not in shell("dumpsys window | grep mCurrentFocus"):
+        sys.exit(f"stopped before {what}: the home screen is not in front (the owner may have the "
+                 f"phone)")
+    require_idle(what)
+
 
 result = {"device": shell("getprop ro.product.model").strip(),
           "build": shell("getprop ro.build.fingerprint").strip(),
@@ -209,10 +213,14 @@ result = {"device": shell("getprop ro.product.model").strip(),
 
 cold = []
 for run in range(runs):
-    if run:
+    # The phone set aside: Opium in front, or the home screen on the first run.
+    if run or opium_in_front():
         require_front("a cold start")
+    else:
+        require_home("a cold start")
     shell(f"am force-stop {PACKAGE}")
     time.sleep(3)
+    require_home("a cold start")
     cold.append(start())
     print("cold start", cold[-1], flush=True)
     time.sleep(5)
@@ -224,10 +232,7 @@ for _ in range(runs):
     require_front("going Home")
     shell("input keyevent KEYCODE_HOME")
     time.sleep(2)
-    if "launcher" not in shell("dumpsys window | grep mCurrentFocus"):
-        sys.exit("stopped before a hot start: the home screen is not in front (the owner may have "
-                 "the phone)")
-    require_idle("a hot start")
+    require_home("a hot start")
     hot.append(start())
     print("hot start", hot[-1], flush=True)
     time.sleep(2)

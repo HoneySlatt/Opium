@@ -8,7 +8,7 @@ usage: scripts/measure/frames.py <profile-dir> <scenario> <runs> <out-dir> [<ref
 animate. Each run starts the release build through run.sh on $WAYLAND_DISPLAY, cut off the network
 (`unshare --user --map-current-user --net`), with OPIUM_MEASURE set; the app writes its frame
 record and closes itself. Meanwhile its memory is read from /proc every 0.25 s. A run that has
-not ended after 400 s is ended by SIGTERM to its own pid, and counts as failed. `--again` runs
+not ended after 400 s is ended by SIGTERM to its own pid, and counts as failed, record or not. `--again` runs
 nothing: it sums up again the files that earlier runs left in <out-dir>, keeping the load average
 read when they ended (the system's, over 1, 5 and 15 minutes, the measured app's work included),
 or none if no earlier summary is there.
@@ -26,7 +26,7 @@ was started (<scenario>-<n>-mem.json) and the app's standard error (<scenario>-<
   once (the record's `continued`), the time from the frame before's start, which is what the
   display shows; the interval is held when it is one period of <refresh in Hz> (240 by default);
   a frame later than 1.5 periods missed at least one vsync;
-- memory: VmRSS and RssAnon in the first sample after the first useful frame (within 0.25 s),
+- memory: VmRSS and RssAnon in the first sample after the first useful frame began (within 0.25 s),
   their highest after it, and VmHWM, the highest VmRSS the kernel saw.
 A run is left out of the figures together, and said on standard error, if it never showed the
 library, if a frame was begun but not drawn (`undrawn`: the window hidden, or the compositor
@@ -90,15 +90,17 @@ def measure(run):
             stdout=subprocess.DEVNULL, stderr=log)
         watcher = threading.Thread(target=watch_memory, args=(app.pid, samples, stop), daemon=True)
         watcher.start()
+        timed_out = False
         try:
             app.wait(timeout=400)
         except subprocess.TimeoutExpired:
+            timed_out = True
             app.send_signal(signal.SIGTERM)  # its own pid: unshare and run.sh exec the app
             app.wait()
         stop.set()
         watcher.join()
     with open(os.path.join(out, f"{scenario}-{run}-mem.json"), "w") as mem:
-        json.dump({"started": started, "samples": samples}, mem)
+        json.dump({"started": started, "timed_out": timed_out, "samples": samples}, mem)
 
 
 def read_record(path):
@@ -185,6 +187,8 @@ def sum_up(run):
     started, samples = memory["started"], memory["samples"]
     facts, frames = read_record(record)
     reasons = unfit(facts)
+    if memory.get("timed_out"):
+        reasons.append("ended by SIGTERM after 400 s")
     if reasons:
         print(f"run {run}: left out: {'; '.join(reasons)}", file=sys.stderr)
     useful = next((i for i, f in enumerate(frames) if f["phase"] == "useful"), None)

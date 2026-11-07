@@ -64,7 +64,7 @@ written back; `frames.py --again` summed them up again.
 
 | Memory (`/proc`, every 0.25 s) | Runs | Figure |
 |---|---|---|
-| In the first sample after the first useful frame (within 0.25 s) | 21 | VmRSS 199 to 232 MiB, RssAnon 73 to 124 |
+| In the first sample after the first useful frame began (within 0.25 s) | 21 | VmRSS 199 to 232 MiB, RssAnon 73 to 124 |
 | Highest while scrolling Songs over the whole library | 3 | VmRSS 235 to 249 MiB |
 | Highest with the Albums grid | 5 | VmRSS 308 to 322 MiB sampled; VmHWM 365 to 395 MiB |
 | Highest during the transitions, Albums among them | 3 | VmHWM 376 to 391 MiB |

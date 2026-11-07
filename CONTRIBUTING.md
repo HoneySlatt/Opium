@@ -213,10 +213,10 @@ WAYLAND_DISPLAY=wayland-0 OPIUM_MEASURE_PIXELS=3840x2160 \
 - `frames.py` runs the scenario off the network and sums up each run's record: the start, each
   phase's CPU times and intervals, the frames missed, the memory. Its head says how. With
   `--again` in place of the profile it runs nothing and sums up again the files left in `<out>`.
-- `library.py` makes 8,500 songs in 641 albums with their covers, and sets the interface's scale so
-  that the window draws at 1.65 pixels a point, the owner's, on a display of the scale given: 1.5
-  for the owner's, 1 (the default) for a headless Weston. `frames.py` leaves out a run drawn at
-  another scale.
+- `library.py` makes 8,500 songs in 647 album folders with their covers, which the app shows as 641
+  albums, and sets the interface's scale so that the window draws at 1.65 pixels a point, the
+  owner's, on a display of the scale given: 1.5 for the owner's, 1 (the default) for a headless
+  Weston. `frames.py` leaves out a run drawn at another scale.
 - What uwui repeats, to be compared ([the figures](docs/measurements.md#the-figures-to-beat-on-uwui-m114-2026-11-07)):
   - the conditions: the library of `library.py`, nothing played and no song shown, the Stock theme,
     the window full screen on the same display, at 1.65 pixels a point, no variable refresh, the
