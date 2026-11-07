@@ -83,7 +83,7 @@ built in this stage.
   no SDK version changed: Google's 404s of 2026-11-04 and 2026-11-05 had passed. Built in 8 min
   30 s, 11 GB, its six SDK archives downloaded from Google and matching nixpkgs' hashes;
   `scripts/check.sh android` passes, the release APK builds. CI's `android` job downloads the SDK
-  at each run, so a version gone from Google fails it: 10 min 49 s cold, 7 min 2 s warm, beside the
+  at each run, so a version gone from Google fails it: 9 min 19 s cold, 6 min 4 s warm, beside the
   `check` job ([measured](measurements.md#the-android-shell-and-cis-android-job-m15-2026-11-07)).
   `opium-ffi`'s `unsafe` block and its `unsafe(no_mangle)` say why they are sound. The shell sets
   `ANDROID_SDK_ROOT` and `ANDROID_NDK_ROOT` too, which a CI runner set to its own SDK. CI checks

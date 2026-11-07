@@ -20,20 +20,26 @@ matched nixpkgs' hashes: the NDK r30, build-tools 36.1, platform 37.0 r02, platf
 CMake 4.1.2, command-line tools 16111833; a seventh, `sdk-tools-linux-4333796.zip`, came from
 cache.nixos.org. One run.
 
-**CI**, GitHub's `ubuntu-24.04`, [`ci.yml`](../.github/workflows/ci.yml) at commit `8c16e3f`, run
-`42382084036`. The Nix store starts empty at each run: Google's SDK is downloaded each time, but
-for `sdk-tools`, from cache.nixos.org. The shell itself, read from the log's times, took about
-5 min cold and 4 min 30 s warm.
+**CI**, GitHub's `ubuntu-24.04`, [`ci.yml`](../.github/workflows/ci.yml) at commit `1737924`, run
+`42385634353`: cold, its caches' keys new, then warm, its jobs run again. The Nix store starts
+empty at each run: Google's SDK is downloaded each time, but for `sdk-tools`, from
+cache.nixos.org. Evaluating a shell for the cache's key takes 16 to 20 s.
 
-| Run | Cargo cache | Duration | Of which |
+| Job | Run | Duration | Of which |
 |---|---|---|---|
-| Cold | None | 10 min 49 s | the disk freed in 2 min 50 s; `nix develop` and the check in 7 min 36 s, clippy's 2 min 32 s among them; the cache saved in 11 s, 423 MB |
-| Warm (the job run again) | Hit | 7 min 2 s | the disk freed in 1 min 59 s; the cache restored in 15 s; `nix develop` and the check in 4 min 39 s, clippy's 9 s among them |
+| `android` | Cold | 9 min 19 s | the disk freed in 2 min 23 s; `nix develop` and the check in 6 min 20 s; the cache saved in 6 s, 238 MB |
+| `android` | Warm | 6 min 4 s | the disk freed in 1 min 24 s; the cache restored in 4 s; `nix develop` and the check in 4 min 11 s, clippy's 14 s among them, 15 crates checked again |
+| `check` | Cold | 17 min 8 s | the disk freed in 2 min 17 s; `scripts/check.sh` in 13 min 57 s; the cache saved in 28 s, 1.2 GB |
+| `check` | Warm | 7 min 21 s | the disk freed in 1 min 16 s; the cache restored in 33 s; `scripts/check.sh` in 5 min 4 s |
 
-The job runs beside the `check` job, whose warm run took 6 min 44 s in the same run: the workflow's
-length barely changes, under the 20-minute budget. The private repository's minutes grow by 8 a
-warm run and 11 a cold one, as GitHub counts each job in whole minutes, rounded up. The runner had
-14 GB free before its disk was freed, 45 GB after; the job used 12.
+The two jobs run side by side: the workflow lasts as long as `check`, under the 20-minute budget
+warm. The private repository's minutes grow by 7 a warm run and 10 a cold one, as GitHub counts
+each job in whole minutes, rounded up. The runner had 14 GB free before its disk was freed, 45 GB
+after; the `android` job used 11 to 12.
+
+The first runs, at commit `8c16e3f` (run `42382084036`), took 10 min 49 s cold and 7 min 2 s warm
+for `android`, built with debug info; the next, at `ddc6c5a`, 8 min 10 s, a cache saved
+with other build settings restored and rebuilt in full, which led to the keys above.
 
 ## Apple Music's steps, M1.12 (2026-11-05 and 2026-11-06)
 
