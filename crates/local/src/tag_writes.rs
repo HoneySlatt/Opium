@@ -552,7 +552,7 @@ mod tests {
                 let (path, work) = (path.clone(), work.clone());
                 // Titles of lengths far apart: bytes of two writes mixed in the
                 // file would read as neither, or not at all.
-                let title = format!("Writer {n} {}", "x".repeat(n * 300));
+                let title = format!("Writer {n} {}", "x".repeat(1 + n * 300));
                 std::thread::spawn(move || match n % 2 {
                     0 => write_tags(&path, &titled(&title)).map(|()| title),
                     _ => write_tags_over(&mut open_rw(&path), &titled(&title), &work, "k")
