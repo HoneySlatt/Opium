@@ -195,8 +195,9 @@ pub struct Measure {
     facts: String,
     /// Full screen asked for.
     full_screen: bool,
-    /// Frames begun but not drawn, the window hidden: left out of the
-    /// record, and counted in it, as they make its run unfit.
+    /// Frames begun but not drawn, the window hidden or the compositor
+    /// withholding frames: left out of the record, and counted in it, as
+    /// they make its run unfit.
     undrawn: u32,
     /// How the scenario ended, for the record.
     ended: &'static str,

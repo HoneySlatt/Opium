@@ -76,8 +76,8 @@ What the figures say:
 - The stalls are first draws. The first useful frame takes 18 to 29 ms of CPU. The Albums grid's
   first second, as its albums and covers arrive, has frames of up to 56 ms of CPU, 57 ms apart (42
   and 43 ms when Albums first shows among the page changes); every other page change stays under 2.2
-  ms. The covers are decoded on threads of their own; what these frames spend was not split further
-  (uploads, layout, text).
+  ms of CPU. The covers are decoded on threads of their own; what these frames spend was not split
+  further (uploads, layout, text).
 - VmHWM stands 54 to 79 MiB above the highest VmRSS sampled with the Albums grid: a peak shorter
   than the sampling's 0.25 s. The covers decode one thread each, unbounded ([debt](debt.md)), which
   would make such a peak; it was not traced.

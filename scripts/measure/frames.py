@@ -10,7 +10,8 @@ animate. Each run starts the release build through run.sh on $WAYLAND_DISPLAY, c
 record and closes itself. Meanwhile its memory is read from /proc every 0.25 s. A run that has
 not ended after 400 s is ended by SIGTERM to its own pid, and counts as failed. `--again` runs
 nothing: it sums up again the files that earlier runs left in <out-dir>, keeping the load average
-read when they ended (the system's, over 1, 5 and 15 minutes, the measured app's work included).
+read when they ended (the system's, over 1, 5 and 15 minutes, the measured app's work included),
+or none if no earlier summary is there.
 
 For every run, in <out-dir>: the record (<scenario>-<n>.csv), the memory with the time the program
 was started (<scenario>-<n>-mem.json) and the app's standard error (<scenario>-<n>.log); then
@@ -163,7 +164,7 @@ def unfit(facts):
     """Why a run's figures may not stand with the others; empty if they may."""
     reasons = []
     if facts.get("undrawn", "0") != "0":
-        reasons.append(f"{facts['undrawn']} frames not drawn, the window hidden")
+        reasons.append(f"{facts['undrawn']} frames begun but not drawn")
     if facts.get("ended") not in ("done", "end"):
         reasons.append(f"ended: {facts.get('ended')}")
     if abs(float(facts.get("pixels_per_point", 0)) - PIXELS_PER_POINT) > 0.005:
@@ -250,9 +251,11 @@ together = {
 }
 summed_path = os.path.join(out, f"{scenario}.json")
 load = os.getloadavg()
-if again and os.path.exists(summed_path):
-    with open(summed_path) as earlier:
-        load = json.load(earlier).get("load_average", load)
+if again:
+    load = None
+    if os.path.exists(summed_path):
+        with open(summed_path) as earlier:
+            load = json.load(earlier).get("load_average")
 with open(summed_path, "w") as summed:
     json.dump({"scenario": scenario, "refresh_hz": refresh, "load_average": load,
                "runs": results, "together": together}, summed, indent=1)

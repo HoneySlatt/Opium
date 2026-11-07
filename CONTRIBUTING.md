@@ -218,10 +218,11 @@ WAYLAND_DISPLAY=wayland-0 OPIUM_MEASURE_PIXELS=3840x2160 \
   for the owner's, 1 (the default) for a headless Weston. `frames.py` leaves out a run drawn at
   another scale.
 - What uwui repeats, to be compared ([the figures](docs/measurements.md#the-figures-to-beat-on-uwui-m114-2026-11-07)):
-  - the conditions: the library of `library.py`, the Stock theme, the window full screen on the
-    same display, at 1.65 pixels a point, no variable refresh, the GPU's power level as it was
-    (`/sys/class/drm/card1/device/power_dpm_force_performance_level` read `high`; how it is set on
-    this machine is not recorded), Mesa and Linux as recorded with the figures;
+  - the conditions: the library of `library.py`, nothing played and no song shown, the Stock theme,
+    the window full screen on the same display, at 1.65 pixels a point, no variable refresh, the
+    GPU's power level as it was (`/sys/class/drm/card1/device/power_dpm_force_performance_level`
+    read `high`; how it is set on this machine is not recorded), Mesa and Linux as recorded with the
+    figures;
   - the scenarios: Songs opened as soon as the cached library is in (the first useful frame),
     then 3 s at rest; `scroll-songs` scrolls Songs down at 4,000 points a second to its end, the
     pointer at the window's middle, the scroll steady, without rubber band, ended when 10 frames
@@ -235,11 +236,13 @@ WAYLAND_DISPLAY=wayland-0 OPIUM_MEASURE_PIXELS=3840x2160 \
     line `start_us,cpu_us,phase,continued,scrolled` and one line a frame drawn: its start in
     microseconds of the Unix epoch; its CPU time, the work of the interface, of turning it into
     triangles and of the drawing calls, without the GPU nor the wait for the display (egui's
-    `IntegrationInfo::cpu_usage`); its phase, `loading` before the library, `useful` for the first
-    useful frame, then `settle`, `albums`, `scroll`, `pages`, `drawer` or `now-playing`, and `end`
-    for the last; 1 if the frame was asked for at once by the pass before (egui's
-    `requested_repaint_last_pass`), else 0; the points scrolled so far. `measure.rs`, removed with
-    egui, stays in the history (`git log -- crates/app-desktop/src/measure.rs`).
+    `IntegrationInfo::cpu_usage`); its phase: `loading` before the library, `useful` for the first
+    useful frame, `settle` for the 3 s at rest after it, `albums` for the Albums grid's 3 s at rest,
+    `scroll` while a scroll goes, `pages`, `drawer` or `now-playing` for `animate`'s steps (the
+    frame that takes a step already in its new phase), and `end` for the last; 1 if the frame was
+    asked for at once by the pass before (egui's `requested_repaint_last_pass`), else 0; the points
+    scrolled so far. `measure.rs`, removed with egui, stays in the history (`git log --
+    crates/app-desktop/src/measure.rs`).
 - Frame times are taken on the owner's 4K display (DP-3, 240 Hz, scale 1.5) with the owner's go:
   the window covers it for the run. Not in a headless Weston, whose pacing misses frames of its own
   ([pitfalls](#known-pitfalls)). Start and memory can be taken in either.

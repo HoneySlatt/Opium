@@ -67,7 +67,7 @@ def require_front(what):
 
 def require_idle(what):
     if playing():
-        sys.exit(f"stopped before {what}: Opium is playing")
+        sys.exit(f"stopped before {what}: Opium is playing, or its state could not be read")
     if "DownloadService" in shell(f"dumpsys activity services {PACKAGE} | grep ServiceRecord || true"):
         sys.exit(f"stopped before {what}: Opium is downloading")
 
