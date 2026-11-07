@@ -33,6 +33,11 @@ work is in [`PLAN.md`](PLAN.md); a stage's audit adds what it leaves open.
   song a power cut left with blocks of zeros is taken for one, and stays damaged. An undo that fails
   at a start says nothing; the reason shows only in that song's next change. Tracked by Stage 7,
   which reworks tag edits (old copies kept, undo).
+- **Two instances can run at once** (seen on 2026-11-07): an Opium started while another held the
+  MPRIS name ran on without it, and once the other quit, nobody held the name. Media keys then miss
+  it, and a new launch starts a second instance, which overwrites the first's files
+  ([ADR-0018](adr/0018-one-instance-through-the-session-bus.md)). Cause not looked for. A risk to
+  data, kept as debt by the owner's decision of 2026-11-07; tracked by M1.8, the stage audit.
 - **Away from home cannot be turned off**: the desktop always asks for it (`desktop::devices`,
   `set_away(true)`), so n0's relays and address lookup are reached even before any device is paired;
   Settings only changes the relay. The README said it could be turned off until 2026-11-06. It stays
