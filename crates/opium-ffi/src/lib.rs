@@ -1943,6 +1943,10 @@ impl ProtectedTrack {
 /// TLS checks certificates against Android's own store, which needs the
 /// app's context: called once, before any request, from `Tls.init`.
 #[cfg(target_os = "android")]
+// SAFETY: the name is JNI's for `Tls.init` alone, so no other symbol has it,
+// and the signature is the one the JVM calls it with: `Tls.kt` declares it
+// `@JvmStatic external fun init(context: Context)`, a static method, given
+// its class and then the context.
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_io_github_honeyslatt_opium_core_Tls_init<'caller>(
     mut env: jni::EnvUnowned<'caller>,
