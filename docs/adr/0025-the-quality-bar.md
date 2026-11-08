@@ -2,7 +2,8 @@
 
 - Status: Accepted; amended by [0034](0034-what-opium-is-to-become.md)
   (the lowest desktop named after a real machine; a tier without a screen; 100,000 songs), then by
-  [0037](0037-uwuis-decisions-of-2026-11-07-taken-into-opium.md) (uwui's bars for applications)
+  [0037](0037-uwuis-decisions-of-2026-11-07-taken-into-opium.md) (uwui's bars for applications), then
+  by [0038](0038-opium-measured-against-the-market.md) (rivals and margins; frames, sound, battery, library, handoff)
 - Date: 2026-11-05
 
 ## Context

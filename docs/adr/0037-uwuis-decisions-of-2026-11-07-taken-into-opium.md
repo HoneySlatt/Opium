@@ -3,7 +3,8 @@
 - Status: Accepted; amends [0011](0011-themes-as-toml-files-of-component-variants.md) (M3E built on
   uwui's official theme; Stock gains glass), [0025](0025-the-quality-bar.md) (uwui's bars for
   applications enter Opium's) and [0034](0034-what-opium-is-to-become.md) (glass and its motion
-  earlier for one screen; actions for users' agents, native; macOS planned after uwui's 1.0)
+  earlier for one screen; actions for users' agents, native; macOS planned after uwui's 1.0);
+  amended by [0038](0038-opium-measured-against-the-market.md) (what users' agents may touch)
 - Date: 2026-11-07
 
 ## Context

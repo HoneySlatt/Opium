@@ -38,7 +38,7 @@ call the app "Music" ([ADR-0023](0023-the-rename-to-opium.md)).
 | [0022](0022-gpui-tried-and-abandoned.md) | GPUI tried and abandoned; egui stays until SlimeEngine's UI framework runs applications | Accepted; amends 0006 (until the move); amended by 0026 and 0031 |
 | [0023](0023-the-rename-to-opium.md) | The app is named Opium, everywhere, with no compatibility kept | Accepted |
 | [0024](0024-the-exit-watch-aborts-for-a-core-dump.md) | The exit watch aborts, for a core dump | Accepted; amends 0021 |
-| [0025](0025-the-quality-bar.md) | The quality bar: tiers and budgets | Accepted; amended by 0034 and 0037 |
+| [0025](0025-the-quality-bar.md) | The quality bar: tiers and budgets | Accepted; amended by 0034, 0037 and 0038 |
 | [0026](0026-the-egui-window-frozen-until-the-move.md) | The egui window is frozen until the move to SlimeEngine's UI framework | Accepted; amends 0006 and 0022; amended by 0029 and 0031 |
 | [0027](0027-macrobenchmark-for-the-phones-measurements-at-stage-3.md) | Macrobenchmark for the phone's measurements, at Stage 3 | Accepted; amended by 0031 |
 | [0028](0028-the-phones-compose-screens-frozen-until-measured.md) | The phone's Compose screens are frozen until slime-ui is measured on Android | Accepted; amended by 0031 |
@@ -47,7 +47,8 @@ call the app "Music" ([ADR-0023](0023-the-rename-to-opium.md)).
 | [0031](0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md) | Opium moves to uwui during SlimeEngine's Stage 6d, on the phone too | Accepted; amends 0022, 0026, 0027, 0028 and 0029; amended by 0032, 0034 and 0035 |
 | [0032](0032-the-gpl-kept-and-kopuzs-code-still-written-again.md) | The GPL is kept, and Kopuz's code is still written again | Accepted; amends 0030 and 0031, confirms 0001; amended by 0033 |
 | [0033](0033-the-browser-sign-ins-pipe-kept-as-adapted-from-kopuz.md) | The browser sign-in's pipe is kept as adapted from Kopuz | Accepted; amends 0030 and 0032 |
-| [0034](0034-what-opium-is-to-become.md) | What Opium is to become | Accepted; amends 0008, 0009, 0010, 0011, 0013, 0014, 0016, 0017, 0025, 0029 and 0031; amended by 0037 |
+| [0034](0034-what-opium-is-to-become.md) | What Opium is to become | Accepted; amends 0008, 0009, 0010, 0011, 0013, 0014, 0016, 0017, 0025, 0029 and 0031; amended by 0037 and 0038 |
 | [0035](0035-the-port-in-uwuis-first-stage-stage-1-finished-first.md) | The port in uwui's first stage, Stage 1 finished first | Accepted; amends 0031 |
 | [0036](0036-the-phones-ci-job-blocks-even-when-google-fails.md) | The phone's CI job blocks, even when Google fails | Accepted; its remedy narrowed in CONTRIBUTING.md |
-| [0037](0037-uwuis-decisions-of-2026-11-07-taken-into-opium.md) | uwui's decisions of 2026-11-07, taken into Opium | Accepted; amends 0011, 0025 and 0034 |
+| [0037](0037-uwuis-decisions-of-2026-11-07-taken-into-opium.md) | uwui's decisions of 2026-11-07, taken into Opium | Accepted; amends 0011, 0025 and 0034; amended by 0038 |
+| [0038](0038-opium-measured-against-the-market.md) | Opium measured against the market | Accepted; amends 0025, 0034 and 0037 |

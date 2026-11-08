@@ -392,6 +392,9 @@ uwui's first stage. Their marks wait for the owner; none is counted with the nee
 | Open a page: an album, an artist, a playlist, a search | the item | Navigation | Once the agent is accepted |
 | Like a song or take the like back; add it to the library | the item | A service's account | Confirmed in the window each time |
 | Create a playlist at a service, add to it, remove from it | the playlist; the items | A service's account | Confirmed in the window each time |
-| Opium's own playlists and favourites changed | the playlist; the items | Opium's shared state | Undone and logged; whether also confirmed, decided at Stage 5 |
+| Opium's own playlists and favourites changed | the playlist; the items | Opium's shared state | Once the agent is accepted, undone by a change that compensates; deleting a playlist confirmed each time |
+| Download an album or a playlist, or remove its download | the item | The device's downloads | Confirmed in the window each time |
 
-Downloads and settings are not on the list: whether an agent may touch them is decided at Stage 5.
+No setting is reachable by an agent ([ADR-0038](adr/0038-opium-measured-against-the-market.md)). An
+agent makes a bounded number of changes in a row; what an action returns marks the text that comes
+from outside (titles, notes) as untrusted; "favourite" means Opium's own.

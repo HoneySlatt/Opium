@@ -79,9 +79,10 @@ away from home (`crates/connect`, [ADR-0010](adr/0010-opium-connect-on-the-local
 every paired device (`ProviderKind::Opium`, [ADR-0014](adr/0014-shared-state-merged-field-by-field.md)).
 
 **Optional piece.** A part of Opium that a build can leave out whole, as a Cargo feature, planned at
-Stage 2: each online service, the Widevine layer, and six more pieces that talk beyond Opium, which
-[ADR-0034](adr/0034-what-opium-is-to-become.md) lists. *Native* parts are always built, perhaps off
-by default ([ADR-0034](adr/0034-what-opium-is-to-become.md)).
+Stage 2: each online service, the Widevine layer, and seven more pieces that talk beyond Opium,
+which [ADR-0034](adr/0034-what-opium-is-to-become.md) and
+[ADR-0038](adr/0038-opium-measured-against-the-market.md) list. *Native* parts are always built,
+perhaps off by default ([ADR-0034](adr/0034-what-opium-is-to-become.md)).
 
 **Own cost.** What a program adds above a *blank window* on the same machine: memory, start,
 processor, power, a frame's time, the package's size (SlimeEngine's ADR-0213).
@@ -100,6 +101,11 @@ a room on a Raspberry Pi and driven by the other devices through Opium Connect; 
 
 **Provider.** A source of music as the core sees it: a crate implementing `opium_core::Provider`
 (Apple Music, SoundCloud, Navidrome, the device's files), with the `ProviderKind` that names it.
+
+**Rivals' families.** The two sets of players Opium is measured against: the *natives*, players
+written in native code (DeaDBeeF, Strawberry, Poweramp…), for resources and sound; the *giants*,
+the streaming services' apps and Roon, for experience and functions
+([ADR-0038](adr/0038-opium-measured-against-the-market.md)).
 
 **Screen of reference.** One of the five screens, chosen by the owner, on which uwui is measured
 against its rivals and never tuned for: Opium's table of songs in M3E, and Opium's song playing in
@@ -140,6 +146,10 @@ network, on which an agent runs the app without touching the owner's data
 **Token comparison.** The check after a clean-room rewrite: the new code's tokens compared with
 the old code's and Kopuz's, raw and with identifiers made alike, every long shared run read by hand
 ([method](specs/README.md)).
+
+**Transition.** The blend from one song into the next, computed from each song's tempo, beat and
+energy, at the level of Apple's AutoMix; never inside an album without gaps
+([ADR-0038](adr/0038-opium-measured-against-the-market.md)).
 
 **uwui.** The owner's UI framework, formerly slime-ui, made in SlimeEngine's repository and then
 in its own, under MIT OR Apache-2.0. Opium's desktop window and phone screens move to it in uwui's

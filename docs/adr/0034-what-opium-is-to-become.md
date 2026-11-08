@@ -17,7 +17,9 @@
   [0029](0029-opium-waits-for-slime-ui-then-moves-first.md) (the order after the phone) and
   [0031](0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md) (the lower tiers); amended by
   [0037](0037-uwuis-decisions-of-2026-11-07-taken-into-opium.md) (glass and its motion earlier for
-  one screen; actions for users' agents; macOS planned after uwui's 1.0)
+  one screen; actions for users' agents; macOS planned after uwui's 1.0), then by
+  [0038](0038-opium-measured-against-the-market.md) (transitions, notes, quality shown, the library's tools, Android Auto,
+  the watch; Wikipedia and Wikidata an optional piece)
 - Date: 2026-11-06
 
 ## Context

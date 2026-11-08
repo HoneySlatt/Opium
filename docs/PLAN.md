@@ -41,6 +41,13 @@ Every milestone ends with the definition of done in [`AGENTS.md`](../AGENTS.md#d
   change to an account confirmed each time; macOS's Stage 10 comes after uwui's 1.0; uwui's bars for
   applications join the quality bar, their figures set at Stage 5. The ROADMAP and
   [`ui-framework-needs.md`](ui-framework-needs.md#what-uwuis-decisions-of-2026-11-07-ask) follow it.
+- **Opium measured against the market**, decided by the owner on 2026-11-08 in a design session that
+  built nothing ([ADR-0038](adr/0038-opium-measured-against-the-market.md)): rivals in two families,
+  the native players for resources and sound, the giants for experience; at least as frugal as the
+  best native, 2.5 times faster than the best giant on what depends on Opium alone; figures for
+  frames, sound, battery, the library and a handoff; transitions at AutoMix's level, notes from
+  Wikipedia, each song's quality shown, the library's tools, Android Auto complete. The ROADMAP
+  follows it.
 - **Fixed on 2026-11-07**, under the standby's rule on a loss of data: a song's tags are written
   on a copy (`local::tag_writes`), one write at a time. The desktop renames the copy over the
   file. The phone keeps the original aside while it writes the copy over the file, and puts back
