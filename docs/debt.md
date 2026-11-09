@@ -32,8 +32,9 @@ work is in [`PLAN.md`](PLAN.md); a stage's audit adds what it leaves open.
   next change; the copies of a file deleted meanwhile stay in the app's own folder, and so does the
   original of a file changed since some other way (`<id>.kept`), which nothing shows the user: a
   song a power cut left with blocks of zeros is taken for one, and stays damaged. An undo that fails
-  at a start says nothing; the reason shows only in that song's next change. Tracked by Stage 7,
-  which reworks tag edits (old copies kept, undo).
+  at a start says nothing; the reason shows only in that song's next change. Not verified: neither
+  app was used to edit a song, and the phone's way back was never cut short on a device. Tracked by
+  Stage 7, which reworks tag edits (old copies kept, undo).
 - **Two instances can run at once** (seen on 2026-11-07): an Opium started while another held the
   MPRIS name ran on without it, and once the other quit, nobody held the name. Media keys then miss
   it, and a new launch starts a second instance, which overwrites the first's files

@@ -186,7 +186,7 @@ name the shell, the build settings, `Cargo.lock`, the workspace's manifests and
 
 How long Apple Music's steps take Opium on the owner's account, before and after
 `crates/apple-music`'s derived items were written again
-([M1.12](PLAN.md#m110-to-m112--kopuzs-code-written-again)). Machine: AMD Ryzen 7 5800X, Linux
+([M1.12](history.md#m110-to-m112--kopuzs-code-written-again)). Machine: AMD Ryzen 7 5800X, Linux
 7.3.0, the owner's network. Command: `scripts/measure/cdm-cost.sh`, which runs release builds of
 [`am_cost.rs`](../crates/apple-music/examples/am_cost.rs), with the owner's go: one licence and one
 station batch on the owner's account a run, nothing played, nothing written to disk. Song
@@ -246,7 +246,7 @@ station batch on the owner's account a run, nothing played, nothing written to d
 ## The CDM, M1.11 (2026-11-05)
 
 What the browser's CDM costs Opium, before and after `crates/widevine` was written again
-([M1.11](PLAN.md#m110-to-m112--kopuzs-code-written-again)); what is measured is set in
+([M1.11](history.md#m110-to-m112--kopuzs-code-written-again)); what is measured is set in
 [`specs/widevine-host.md`](specs/widevine-host.md#11-what-is-measured) §11. Machine: AMD Ryzen 7
 5800X, Linux 7.3.0. CDM: Widevine 4.10.3112.0, from Brave's profile. Command:
 `scripts/measure/cdm-cost.sh`, which runs release builds of
@@ -303,7 +303,7 @@ the owner's account a run, nothing played, nothing written to disk. Song 1463409
 ## Indexing an encrypted track, M1.10 (2026-11-05)
 
 What indexing an Apple-shaped file costs, before and after `crates/cenc` was written again
-([M1.10](PLAN.md#m110-to-m112--kopuzs-code-written-again)); the budget is in
+([M1.10](history.md#m110-to-m112--kopuzs-code-written-again)); the budget is in
 [`specs/fmp4-cenc.md`](specs/fmp4-cenc.md#10-performance) §10. Machine: AMD Ryzen 7 5800X, Linux
 7.3.0, load average 0.8 to 4. Command: `cargo run --release -p cenc --example index_cost
 [fragments]` ([`index_cost.rs`](../crates/cenc/examples/index_cost.rs)), inside `nix develop`.

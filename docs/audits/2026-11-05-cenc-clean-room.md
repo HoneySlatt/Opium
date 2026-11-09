@@ -170,7 +170,7 @@ Read by hand:
   in other words in round 3, without being shown the original.
 
 Nothing above the thresholds is left unexplained; only the comment was said again. A reviewer that wrote
-neither side compared them at the milestone's review ([PLAN](../PLAN.md#m110-to-m112--kopuzs-code-written-again)).
+neither side compared them at the milestone's review ([history](../history.md#m110-to-m112--kopuzs-code-written-again)).
 
 ## Checked beyond the built files
 
