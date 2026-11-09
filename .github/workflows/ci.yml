@@ -8,8 +8,8 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-# A push or a pull request that changes only Markdown files builds and tests nothing: the links
-# between the documents, the one check they need, run at every push in links.yml.
+# A push or a pull request that changes only Markdown files builds and tests nothing: the checks
+# of the documents, the ones they need, run at every push in documents.yml.
 on:
   push:
     branches: [main]

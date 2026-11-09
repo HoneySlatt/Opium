@@ -42,11 +42,18 @@ The app keeps its files in three folders, each following its XDG variable:
 ```sh
 scripts/check.sh            # every check of the definition of done; what CI runs
 scripts/check.sh android    # inside `nix develop .#android`: the phone's core
+scripts/check.sh docs       # the documents only: their sizes and links, in a second
 ```
 
-- `scripts/check.sh` runs, in order: formatting, clippy with warnings as errors, the build and the
-  tests, the code documentation with warnings as errors, and the links between the tracked Markdown
-  files (lychee, offline, anchors included). Its head says what it checks and what it does not.
+- `scripts/check.sh` runs, in order: the documents' part below, formatting, clippy with warnings as
+  errors, the build and the tests, and the code documentation with warnings as errors. Its head
+  says what it checks and what it does not.
+- `scripts/check.sh docs` checks the documents alone. It fails when `AGENTS.md` passes 1,500 words
+  or `docs/PLAN.md` 2,000 (`wc -w`): every agent reads both at every session, so their size is
+  paid each time. Then it checks the links between the tracked Markdown files (lychee, offline,
+  anchors included). Shorten a file that fails by moving its detail to its home: finished
+  milestones to [`docs/history.md`](docs/history.md), debt to [`docs/debt.md`](docs/debt.md),
+  commands to this file.
 - `scripts/check.sh android` runs clippy on `opium-ffi` for arm64 Android, warnings as errors, in
   `target-android`. It checks that the phone's core builds without the desktop's crates. The APK
   itself is not checked.
@@ -66,9 +73,9 @@ scripts/check.sh android    # inside `nix develop .#android`: the phone's core
   `repo.json`. Only platform-tools has a single version there: for it, a newer nixpkgs in
   `flake.lock`, which also moves the desktop's and the fuzzing shell's tools and the packaged app,
   but not the Android shell's Rust, which rust-overlay pins.
-- [`links.yml`](.github/workflows/links.yml) checks the links between the Markdown files at
-  every push and pull request, documents only included, with lychee from the pinned nixpkgs: a
-  minute or two, where the whole check takes ten or more.
+- [`documents.yml`](.github/workflows/documents.yml) runs `scripts/check.sh docs` at every push
+  and pull request, documents only included, with lychee from the pinned nixpkgs: a minute or two,
+  where the whole check takes ten or more.
 - The weekly run tells a project at rest that a dependency or CI's environment has changed.
   GitHub stops scheduled runs after 60 days without activity on a public repository; a click in
   the Actions tab starts them again. The repository is private: each run, weekly ones included,
