@@ -28,7 +28,7 @@ call the app "Music" ([ADR-0023](0023-the-rename-to-opium.md)).
 | [0012](0012-soundcloud-changes-through-a-browser-seam.md) | SoundCloud's changes go through a browser seam | Accepted |
 | [0013](0013-secrets-and-what-is-kept-on-disk.md) | Secrets, and what is kept on disk | Accepted; amended by 0034 |
 | [0014](0014-shared-state-merged-field-by-field.md) | What the devices share, merged field by field | Accepted; amended by 0034 |
-| [0015](0015-away-from-home-through-iroh.md) | Away from home, paired devices meet through iroh | Accepted; amends 0010 (away from home) |
+| [0015](0015-away-from-home-through-iroh.md) | Away from home, paired devices meet through iroh | Accepted; amends 0010 (away from home); amended by 0040 |
 | [0016](0016-the-services.md) | The services: Apple Music, SoundCloud, Navidrome and the device's own files | Accepted; amended by 0034 |
 | [0017](0017-downloads-sealed-and-tied-to-the-subscription.md) | Downloads sealed with the app's key, and tied to the subscription | Accepted; amended by 0034 |
 | [0018](0018-one-instance-through-the-session-bus.md) | One instance, found through its MPRIS name on the session bus | Accepted |
@@ -37,7 +37,7 @@ call the app "Music" ([ADR-0023](0023-the-rename-to-opium.md)).
 | [0021](0021-the-exit-watch.md) | The exit watch | Accepted; amended by 0024 |
 | [0022](0022-gpui-tried-and-abandoned.md) | GPUI tried and abandoned; egui stays until SlimeEngine's UI framework runs applications | Accepted; amends 0006 (until the move); amended by 0026 and 0031 |
 | [0023](0023-the-rename-to-opium.md) | The app is named Opium, everywhere, with no compatibility kept | Accepted |
-| [0024](0024-the-exit-watch-aborts-for-a-core-dump.md) | The exit watch aborts, for a core dump | Accepted; amends 0021 |
+| [0024](0024-the-exit-watch-aborts-for-a-core-dump.md) | The exit watch aborts, for a core dump | Accepted; amends 0021; amended by 0039 |
 | [0025](0025-the-quality-bar.md) | The quality bar: tiers and budgets | Accepted; amended by 0034, 0037 and 0038 |
 | [0026](0026-the-egui-window-frozen-until-the-move.md) | The egui window is frozen until the move to SlimeEngine's UI framework | Accepted; amends 0006 and 0022; amended by 0029 and 0031 |
 | [0027](0027-macrobenchmark-for-the-phones-measurements-at-stage-3.md) | Macrobenchmark for the phone's measurements, at Stage 3 | Accepted; amended by 0031 |
@@ -51,4 +51,8 @@ call the app "Music" ([ADR-0023](0023-the-rename-to-opium.md)).
 | [0035](0035-the-port-in-uwuis-first-stage-stage-1-finished-first.md) | The port in uwui's first stage, Stage 1 finished first | Accepted; amends 0031 |
 | [0036](0036-the-phones-ci-job-blocks-even-when-google-fails.md) | The phone's CI job blocks, even when Google fails | Accepted; its remedy narrowed in CONTRIBUTING.md |
 | [0037](0037-uwuis-decisions-of-2026-11-07-taken-into-opium.md) | uwui's decisions of 2026-11-07, taken into Opium | Accepted; amends 0011, 0025 and 0034; amended by 0038 |
-| [0038](0038-opium-measured-against-the-market.md) | Opium measured against the market | Accepted; amends 0025, 0034 and 0037 |
+| [0038](0038-opium-measured-against-the-market.md) | Opium measured against the market | Accepted; amends 0025, 0034 and 0037; amended by 0041 |
+| [0039](0039-the-exit-watch-leaves-no-core-dump-unless-asked.md) | The exit watch leaves no core dump unless asked | Accepted; amends 0024 |
+| [0040](0040-away-from-home-only-while-a-device-is-paired.md) | Away from home only while a device is paired | Accepted; amends 0015 |
+| [0041](0041-a-paused-protected-songs-session-closes-after-a-long-pause.md) | A paused protected song's session closes after a long pause | Accepted; amends 0038 |
+| [0042](0042-ci-keeps-one-job-of-checks.md) | CI keeps one job of checks | Accepted |

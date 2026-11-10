@@ -4,7 +4,7 @@
   frames, sound, battery, library and handoff given figures), [0034](0034-what-opium-is-to-become.md)
   (transitions, notes, quality shown, the library's tools, Android Auto, the watch; Wikipedia and
   Wikidata among the optional pieces) and [0037](0037-uwuis-decisions-of-2026-11-07-taken-into-opium.md)
-  (what users' agents may touch)
+  (what users' agents may touch); amended by [0041](0041-a-paused-protected-songs-session-closes-after-a-long-pause.md)
 - Date: 2026-11-08
 
 ## Context

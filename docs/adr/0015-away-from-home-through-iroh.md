@@ -1,7 +1,7 @@
 # 0015. Away from home, paired devices meet through iroh
 
 - Status: Accepted; amends [0010](0010-opium-connect-on-the-local-network.md) (paired devices also
-  reach each other away from home)
+  reach each other away from home); amended by [0040](0040-away-from-home-only-while-a-device-is-paired.md)
 - Date: 2026-11-01
 
 ## Context

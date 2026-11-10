@@ -124,13 +124,14 @@ In `nix develop .#android`:
 
 ### Developer examples
 
-- `cargo run -p widevine --example probe` loads the browser's CDM and asks it for a licence
-  challenge, offline.
 - `cargo run -p lyrics --example find -- <seconds> <artist> -- <title>` asks every lyrics source
   for one song, NetEase and KuGou included (the app leaves them off by default), and prints what
   each gives and how long it took. It needs the network and no sign-in; each site learns the song.
-- The others run on the owner's real sign-ins, kept in the config folder, and only with the owner's
-  go ([AGENTS.md](AGENTS.md#never-on-your-own)):
+- The others run only with the owner's go ([AGENTS.md](AGENTS.md#never-on-your-own)), `probe`
+  because it loads the owner's CDM, the rest because they use the owner's real sign-ins, kept in
+  the config folder:
+  - `cargo run -p widevine --example probe` loads the browser's CDM and asks it for a licence
+    challenge, offline;
   - `cargo run -p apple-music --example am -- …`; `OPIUM_SPATIAL=1` asks for Spatial Audio;
   - `cargo run -p soundcloud --example sc -- …`, which may renew SoundCloud's tokens on disk, under
     the running app;

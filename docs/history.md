@@ -170,6 +170,32 @@ One milestone each, in this order: `cenc`, then `widevine`, then `apple-music`.
   - Not measured: each frame's GPU time, a cold start of the desktop, the phone's first useful
     frame.
 
+#### M1.8 — The stage audit
+
+- **Goal.** Stage 1 closes on a project examined whole, so that the next stage starts from known
+  facts.
+- **Delivers.** A stage audit over every dimension of the method: correctness; edge cases;
+  performance, every budget that can be checked today measured again; resources at rest; security
+  and privacy; data safety; tests, with mutation testing (`cargo mutants`), none skipped or flaky;
+  readability; documentation; dependencies; accessibility; debt. One fresh reviewer per dimension,
+  each finding verified by a test, a measurement or the exact line. Two checks of reading: a fresh
+  agent builds, runs and tests Opium from the README alone and answers a newcomer's questions from
+  the documents; another explains a module from its links. Recorded in
+  [`audits/`](audits/README.md); open items added to the [known debt](debt.md).
+- **Done when.** The audit is recorded and the owner has decided on its findings; Stage 1 moves to
+  [`history.md`](history.md).
+- **Measured.** Every budget of the quality bar that can be checked today, again. The owner set the
+  audit's scope on 2026-11-10: mutation testing leaves out `app-desktop` and `opium-ffi`, the rivals
+  are not measured ([audit](audits/2026-11-10-stage-1.md#scope)).
+- **By hand.** The owner decides the fixes that change direction.
+- **Done on 2026-11-10.** [The audit](audits/2026-11-10-stage-1.md), its proofs kept beside it:
+  13 losses of data, 9 flaws, 12 cases of wrong behaviour, the budgets measured again on the
+  desktop, its 4K display and the phone, mutation testing run twice (the first run's shared target
+  made it unreadable). Five rounds of closing review. The owner's decisions: M1.15 fixes the losses,
+  flaws, crashes and broken services; ADR-0039 to ADR-0042; the examples that write decrypted
+  audio kept until Stage 2; `probe` only with the owner's go; the rest given a stage in
+  [the debt](debt.md).
+
 ### Decisions and events
 
 - **Opium measured against the market**, decided by the owner on 2026-11-08 in a design session that

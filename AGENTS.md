@@ -58,7 +58,8 @@ test instance by its pid.
 Ask the owner first, every time:
 
 - No change on a real account (likes, ratings, library, playlists, sign-in) or to the owner's tags.
-- No purchase, no developer example on the owner's sign-ins (`am`, `sc`, `spike`).
+- No purchase, no developer example on the owner's sign-ins (`am`, `sc`, `spike`), nor `probe`,
+  which loads the owner's CDM.
 - No run [on a copy of the owner's profile](CONTRIBUTING.md#tests-on-a-copy-of-the-owners-profile):
   it talks to the real services and may renew their tokens.
 - No sound on the owner's speakers; never take the sound card exclusively (ALSA `hw:`).

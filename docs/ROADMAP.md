@@ -168,6 +168,7 @@ when it exceeds its budget by more than its noise.
 | Distribution | Flathub and Nix; a signed APK on GitHub; Flathub and Nix update it on Linux, Obtainium or the user on Android, the app itself on Windows and macOS ([ADR-0034](adr/0034-what-opium-is-to-become.md)) |
 | Translation | The text ready for translation from Stage 5; English and French on the desktop at 0.1.0, on the phone at Stage 3 ([ADR-0034](adr/0034-what-opium-is-to-become.md)) |
 | Licence | GPL-3.0-or-later ([ADR-0001](adr/0001-gpl-3-0-or-later.md)), kept after the code adapted from Kopuz was written again in a clean room, but for part of the browser sign-in ([ADR-0030](adr/0030-the-kopuz-code-rewritten-in-a-clean-room.md), [ADR-0032](adr/0032-the-gpl-kept-and-kopuzs-code-still-written-again.md), [ADR-0033](adr/0033-the-browser-sign-ins-pipe-kept-as-adapted-from-kopuz.md)) |
+| CI's time | One job of checks, the phone's job beside it, the fuzzing weekly; the checks split across jobs only if a warm run passes 20 minutes ([ADR-0042](adr/0042-ci-keeps-one-job-of-checks.md)) |
 | Name | Opium, everywhere, no compatibility with the old names ([ADR-0023](adr/0023-the-rename-to-opium.md)) |
 | Services | Apple Music, SoundCloud, Navidrome (OpenSubsonic), the device's own files ([ADR-0016](adr/0016-the-services.md)); Jellyfin and Plex at Stage 9; ListenBrainz, Last.fm, MusicBrainz, the Cover Art Archive, Discord, Wikipedia and Wikidata, each off by default ([ADR-0034](adr/0034-what-opium-is-to-become.md), [ADR-0038](adr/0038-opium-measured-against-the-market.md)) |
 | One library | The best copy of each song: files, server, Apple Music, SoundCloud ([ADR-0007](adr/0007-one-library-and-the-best-copy.md)) |
@@ -195,7 +196,6 @@ Each is decided by an ADR at the stage where it becomes necessary, not earlier.
 |---|---|---|
 | Dependency checks | `cargo deny` with a `deny.toml`, once the advisories it finds are fixed or accepted ([known debt](debt.md)) | Stage 2 |
 | Miri | The nightly shell of fuzzing ([ADR-0030](adr/0030-the-kopuz-code-rewritten-in-a-clean-room.md)), or another | When `unsafe` code is first put under it |
-| CI's time | One job, or the checks split across jobs if a run exceeds the owner's limit | Stage 1 |
 | What a release exposes of DRM | The release aims at the public ([ADR-0034](adr/0034-what-opium-is-to-become.md)). The owner's call: the repository's visibility, whether the CDM borrowing and the protected services ship, what becomes of the developer examples that write decrypted audio (`am fetch`, `am live`, `sc fetch`) | Stage 2 |
 | The release's signing key | The owner creates the keystore; how the build reads it, kept out of the repository | Stage 2 |
 | Third-party licences | `cargo-about` for the Rust crates, and the Gradle dependencies' own list, or one tool for both | Stage 2 |
@@ -250,7 +250,8 @@ push, and the rename to Opium is committed with the owner's data moved.
 the owner's computer and phone run Opium under its new names with their data; the window's needs
 from a UI framework are written down and reviewed (M1.6); the budgets are decided (M1.7); Opium is
 left with nothing of Kopuz's but the part the owner kept (M1.13); the figures to beat are measured
-(M1.14); the stage audit is recorded and its findings decided (M1.8).
+(M1.14); the stage audit is recorded and its findings decided (M1.8), and the losses of data,
+flaws and broken services it found are fixed (M1.15).
 
 ### Stage 5 — On uwui
 

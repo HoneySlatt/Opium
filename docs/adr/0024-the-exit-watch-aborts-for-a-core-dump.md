@@ -1,6 +1,6 @@
 # 0024. The exit watch aborts, for a core dump
 
-- Status: Accepted; amends [0021](0021-the-exit-watch.md) (how the watch ends the process)
+- Status: Accepted; amends [0021](0021-the-exit-watch.md) (how the watch ends the process); amended by [0039](0039-the-exit-watch-leaves-no-core-dump-unless-asked.md)
 - Date: 2026-11-04
 
 ## Context
