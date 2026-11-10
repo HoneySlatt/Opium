@@ -1,8 +1,11 @@
 //! Navidrome, or any server speaking the Subsonic API (with OpenSubsonic's
 //! additions): the user's own files, played as they are. Requests are signed
-//! with Subsonic's salted token, `md5(password + salt)`: the password itself
-//! is used once, to make it, and kept nowhere.
+//! with Subsonic's salted token, `md5(password + salt)`. The password is
+//! used, never kept: to make that token at sign-in, and to open a session on
+//! Navidrome's own API, at sign-in and when that session lapses
+//! ([ADR-0044](../../../docs/adr/0044-navidromes-password-as-it-is-used.md)).
 
+mod address;
 mod convert;
 mod resume;
 mod types;
@@ -73,10 +76,17 @@ mod year {
 /// token in place of the password.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Credentials {
-    /// `http://0.0.0.0:4533`, without the trailing slash.
+    /// The address requests go to, without the trailing slash, with a scheme
+    /// and no user or password (every cover's address starts with it, and is
+    /// kept and shared): `https://music.example.org`. Typed without a scheme,
+    /// it was made `https://`, or `http://` on the local network (see
+    /// [`Credentials::new`]).
     pub url: String,
     pub user: String,
+    /// Subsonic's salt, which signs in with `token`: never printed.
     pub salt: String,
+    /// `md5(password + salt)`, which signs in as the password does: never
+    /// printed.
     pub token: String,
     /// A session on the server's own API, which some changes need (a
     /// playlist's cover): given for the password, renewed as it is used.
@@ -97,18 +107,27 @@ impl std::fmt::Debug for Credentials {
 impl Credentials {
     /// Make the token from `password` and a fresh salt; the password goes no
     /// further.
+    ///
+    /// An address typed with a scheme is followed. One typed without is
+    /// reached over HTTPS, unless it is on the local network (a private IPv4
+    /// address, a loopback one, the unspecified one (`0.0.0.0`, `::`, which
+    /// name this machine as loopback does), an IPv6 link-local or unique
+    /// local one, `localhost`, or a name ending in `.local`), which is
+    /// reached over HTTP, as a server at home is.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Protocol`] for an address holding a user or a password
+    /// (`https://me:pass@host`), whatever its scheme, a scheme other than
+    /// `http` and `https`, or one that cannot be read as an address; the message repeats nothing that was typed.
+    /// [`Error::Protocol`] too if the system has no random numbers for the
+    /// salt.
     pub fn new(url: &str, user: &str, password: &str) -> Result<Self> {
+        let url = address::server_url(url)?;
         let mut bytes = [0u8; 8];
         getrandom::fill(&mut bytes).map_err(|e| Error::Protocol(format!("random salt: {e}")))?;
         let salt = hex(&bytes);
         let token = hex(&Md5::digest(format!("{password}{salt}").as_bytes()));
-        let url = url.trim().trim_end_matches('/');
-        // An address alone is reached over HTTP, as a server at home is.
-        let url = if url.contains("://") {
-            url.to_owned()
-        } else {
-            format!("http://{url}")
-        };
         Ok(Self {
             url,
             user: user.trim().to_owned(),
@@ -259,7 +278,14 @@ const SESSION_HEADER: &str = "x-nd-authorization";
 
 impl Navidrome {
     /// Sign in to the server; a wrong password or user is `NotSignedIn`.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Protocol`] if the address holds a user or a password, as one
+    /// kept by an earlier version might: nothing is sent, and the user signs
+    /// in again.
     pub async fn connect(credentials: Credentials) -> Result<Self> {
+        address::refuse_user_information(&credentials.url)?;
         let http = reqwest::Client::builder()
             // A server out of reach, or a download that stalls, fails rather
             // than hang what waits on it.
@@ -1161,6 +1187,25 @@ impl Provider for Navidrome {
 
 #[cfg(test)]
 mod tests {
+    // Stage 1 audit S2: an address typed with a password must not reach a kept address.
+    #[test]
+    fn a_password_typed_in_the_address_goes_into_no_kept_address() {
+        let typed = "https://me:hunter2@music.example.org";
+        let Ok(credentials) = super::Credentials::new(typed, "me", "a password") else {
+            // Refused, saying why: nothing is kept.
+            return;
+        };
+        let urls = super::convert::Urls {
+            base: credentials.url.clone(),
+            auth: credentials.query(),
+        };
+        let cover = urls.cover(Some("al-1")).expect("a cover's address");
+        assert!(
+            !cover.url_template.contains("hunter2"),
+            "a kept cover address holds the password: {}",
+            cover.url_template
+        );
+    }
 
     #[test]
     fn a_cover_is_signed_only_as_it_is_fetched() {
@@ -1216,11 +1261,64 @@ mod tests {
         );
         let bare = Credentials::new("0.0.0.0:4533", "me", "x").unwrap();
         assert_eq!(bare.url, "http://0.0.0.0:4533");
+        let away = Credentials::new("music.example.org", "me", "x").unwrap();
+        assert_eq!(away.url, "https://music.example.org");
         assert_eq!(c.salt.len(), 16);
         assert_eq!(
             c.token,
             hex(&Md5::digest(format!("sesame{}", c.salt).as_bytes()))
         );
+    }
+
+    #[test]
+    fn an_address_with_user_information_is_refused_before_a_token_is_made() {
+        for typed in [
+            "https://me:hunter2@nas",
+            "me@nas:4533",
+            "http://:hunter2@192.168.1.5",
+        ] {
+            match Credentials::new(typed, "me", "a password") {
+                Err(Error::Protocol(said)) => assert!(!said.contains("hunter2"), "{said}"),
+                other => panic!("{typed:?} was not refused: {other:?}"),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn a_kept_address_with_a_password_is_not_connected_to() {
+        // What an earlier version kept; on a regression, the only port tried is this machine's own,
+        // closed.
+        let kept = Credentials {
+            url: "https://me:hunter2@127.0.0.1:9".into(),
+            user: "me".into(),
+            salt: "s".into(),
+            token: "t".into(),
+            session: None,
+        };
+        match Navidrome::connect(kept).await {
+            Err(Error::Protocol(said)) => assert!(!said.contains("hunter2"), "{said}"),
+            Err(other) => panic!("not refused as it should be: {other}"),
+            Ok(_) => panic!("connected to an address holding a password"),
+        }
+    }
+
+    #[test]
+    fn a_cover_address_made_from_a_typed_one_has_a_scheme_and_no_sign_in() {
+        for (typed, base) in [
+            ("nas.local:4533", "http://nas.local:4533"),
+            ("music.example.org/", "https://music.example.org"),
+        ] {
+            let credentials = Credentials::new(typed, "me", "x").unwrap();
+            let urls = Urls {
+                base: credentials.url.clone(),
+                auth: credentials.query(),
+            };
+            let cover = urls.cover(Some("al-1")).unwrap();
+            assert_eq!(
+                cover.url_template,
+                format!("{base}/rest/getCoverArt.view?id=al-1&size={{size}}")
+            );
+        }
     }
 
     #[test]
