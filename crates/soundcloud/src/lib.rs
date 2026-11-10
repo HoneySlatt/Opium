@@ -467,6 +467,7 @@ impl SoundCloud {
     /// Make `ids` a playlist's tracks, in that order: SoundCloud takes the
     /// whole list each time, 500 at most.
     async fn set_playlist_tracks(&self, playlist: &ItemId, ids: &[u64]) -> Result<()> {
+        let playlist = numeric_id(&playlist.id)?;
         if ids.len() > PLAYLIST_MAX {
             return Err(Error::Protocol(format!(
                 "a SoundCloud playlist holds {PLAYLIST_MAX} tracks at most"
@@ -475,7 +476,7 @@ impl SoundCloud {
         let body = serde_json::json!({ "playlist": { "tracks": ids } });
         self.send(
             reqwest::Method::PUT,
-            &format!("/playlists/{}", playlist.id),
+            &format!("/playlists/{playlist}"),
             Some(&body),
         )
         .await
@@ -483,27 +484,39 @@ impl SoundCloud {
     }
 
     /// Like or unlike: a track, or a playlist or album.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Protocol`] for an id that is not a number (a single's, after its prefix),
+    /// before anything is sent.
     async fn like(&self, kind: FavouriteKind, id: &ItemId, on: bool) -> Result<()> {
         let path = match kind {
-            FavouriteKind::Song => format!("/users/{}/track_likes/{}", self.me.id, id.id),
+            FavouriteKind::Song => {
+                format!("/users/{}/track_likes/{}", self.me.id, numeric_id(&id.id)?)
+            }
             // A single is its track.
             FavouriteKind::Album if id.id.starts_with(convert::SINGLE) => format!(
                 "/users/{}/track_likes/{}",
                 self.me.id,
-                &id.id[convert::SINGLE.len()..]
+                numeric_id(&id.id[convert::SINGLE.len()..]).map_err(|_| not_an_id(&id.id))?
             ),
             FavouriteKind::Album | FavouriteKind::Playlist => {
-                format!("/users/{}/playlist_likes/{}", self.me.id, id.id)
+                format!(
+                    "/users/{}/playlist_likes/{}",
+                    self.me.id,
+                    numeric_id(&id.id)?
+                )
             }
             // An artist is followed.
             FavouriteKind::Artist => {
+                let artist = numeric_id(&id.id)?;
                 let method = if on {
                     reqwest::Method::POST
                 } else {
                     reqwest::Method::DELETE
                 };
                 return self
-                    .send(method, &format!("/me/followings/{}", id.id), None)
+                    .send(method, &format!("/me/followings/{artist}"), None)
                     .await
                     .map(drop);
             }
@@ -581,6 +594,26 @@ impl SoundCloud {
 
 /// A track's station, as the app names it: `track-stations:<id>`.
 const STATION: &str = "track-stations:";
+
+/// `id`, when it is one of SoundCloud's that may go into the path of a change: a number
+/// (users, tracks and playlists have no other), in ASCII digits and nothing else.
+///
+/// # Errors
+///
+/// [`Error::Protocol`], naming `id`, for anything else (`..`, `/`, `?`, `#`, `%2e`, nothing):
+/// a request that would change the account is refused before it is sent, so that an id from a
+/// paired device cannot turn one change into another.
+fn numeric_id(id: &str) -> Result<&str> {
+    if !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()) && id.parse::<u64>().is_ok() {
+        Ok(id)
+    } else {
+        Err(not_an_id(id))
+    }
+}
+
+fn not_an_id(id: &str) -> Error {
+    Error::Protocol(format!("not a SoundCloud id: {id:?}"))
+}
 
 /// The app a JWT token was issued to: its `client_id` claim.
 fn jwt_client_id(token: &str) -> Option<String> {
@@ -927,10 +960,11 @@ impl Provider for SoundCloud {
     }
 
     async fn edit_playlist(&self, playlist: &ItemId, name: &str, description: &str) -> Result<()> {
+        let playlist = numeric_id(&playlist.id)?;
         let body = serde_json::json!({ "playlist": { "title": name, "description": description } });
         self.send(
             reqwest::Method::PUT,
-            &format!("/playlists/{}", playlist.id),
+            &format!("/playlists/{playlist}"),
             Some(&body),
         )
         .await
@@ -939,15 +973,12 @@ impl Provider for SoundCloud {
 
     /// The user's own goes for good; one they only liked is unliked.
     async fn delete_playlist(&self, playlist: &ItemId) -> Result<()> {
-        let found: types::Playlist = self.get(&format!("/playlists/{}", playlist.id)).await?;
+        let id = numeric_id(&playlist.id)?;
+        let found: types::Playlist = self.get(&format!("/playlists/{id}")).await?;
         if found.user.is_some_and(|u| u.id == self.me.id) {
-            self.send(
-                reqwest::Method::DELETE,
-                &format!("/playlists/{}", playlist.id),
-                None,
-            )
-            .await
-            .map(drop)
+            self.send(reqwest::Method::DELETE, &format!("/playlists/{id}"), None)
+                .await
+                .map(drop)
         } else {
             self.like(FavouriteKind::Playlist, playlist, false).await
         }
@@ -955,6 +986,7 @@ impl Provider for SoundCloud {
 
     /// `entry` is the track itself: a playlist has a track once.
     async fn remove_from_playlist(&self, playlist: &ItemId, entry: &ItemId) -> Result<()> {
+        numeric_id(&playlist.id)?;
         let _editing = self.editing.lock().await;
         let mut ids = self.playlist_ids(playlist).await?;
         ids.retain(|id| id.to_string() != entry.id);
@@ -963,6 +995,7 @@ impl Provider for SoundCloud {
 
     /// At the end, those not in it already.
     async fn add_to_playlist(&self, playlist: &ItemId, tracks: &[ItemId]) -> Result<()> {
+        numeric_id(&playlist.id)?;
         let _editing = self.editing.lock().await;
         let mut ids = self.playlist_ids(playlist).await?;
         for id in tracks.iter().filter_map(|t| t.id.parse::<u64>().ok()) {
@@ -1029,5 +1062,292 @@ mod tests {
             Some("web-app")
         );
         assert_eq!(jwt_client_id("2-12345-old-style"), None);
+    }
+}
+
+// Stage 1 audit S3: a change refuses an id that is not one of SoundCloud's.
+#[cfg(test)]
+mod write_paths {
+    use super::*;
+    use opium_core::model::ProviderKind;
+    use std::sync::Arc;
+
+    /// Keeps each change it is handed, as `METHOD url`, and answers it as SoundCloud answers a
+    /// like: 200, an empty object.
+    #[derive(Default)]
+    struct Recording(Mutex<Vec<String>>);
+
+    #[async_trait]
+    impl Browser for Recording {
+        async fn send(&self, change: Change) -> Result<Answer> {
+            self.0
+                .lock()
+                .unwrap()
+                .push(format!("{} {}", change.method, change.url));
+            Ok(Answer {
+                status: 200,
+                guard_header: false,
+                body: "{}".into(),
+            })
+        }
+    }
+
+    /// Signed in as user 42, its changes sent through `browser`; no request leaves the test.
+    fn signed_in(browser: Arc<Recording>) -> SoundCloud {
+        SoundCloud {
+            http: reqwest::Client::new(),
+            client_id: RwLock::new("a".repeat(32)),
+            tokens: Mutex::new(Tokens {
+                oauth: "a-token".into(),
+                refresh: None,
+            }),
+            on_tokens: Box::new(|_: &Tokens| {}),
+            renewing: tokio::sync::Mutex::new(()),
+            editing: tokio::sync::Mutex::new(()),
+            rescraping: tokio::sync::Mutex::new(None),
+            me: types::User {
+                id: 42,
+                ..Default::default()
+            },
+            stations: Mutex::default(),
+            browser: Some(browser),
+        }
+    }
+
+    /// The path a recorded change went to, its `..` resolved as the request resolves them.
+    fn path_of(change: &str) -> String {
+        let url = change.split_once(' ').unwrap().1;
+        reqwest::Url::parse(url).unwrap().path().to_owned()
+    }
+
+    #[tokio::test]
+    async fn unliking_a_track_changes_that_track_like_and_nothing_else() {
+        let browser = Arc::new(Recording::default());
+        let soundcloud = signed_in(browser.clone());
+        let id = ItemId::new(ProviderKind::SoundCloud, "1/../../../../playlists/555");
+        let unliked = soundcloud.like(FavouriteKind::Song, &id, false).await;
+        let sent = browser.0.lock().unwrap().clone();
+        for change in &sent {
+            assert!(
+                path_of(change).starts_with("/users/42/track_likes/"),
+                "an unlike went elsewhere: {change}"
+            );
+        }
+        // Refusing the id before anything is sent passes too.
+        assert!(unliked.is_err() || !sent.is_empty());
+    }
+
+    #[tokio::test]
+    async fn editing_a_playlist_changes_that_playlist_and_nothing_else() {
+        let browser = Arc::new(Recording::default());
+        let soundcloud = signed_in(browser.clone());
+        let id = ItemId::new(ProviderKind::SoundCloud, "1/../../me/followings/7");
+        let edited = soundcloud.edit_playlist(&id, "name", "").await;
+        let sent = browser.0.lock().unwrap().clone();
+        for change in &sent {
+            assert!(
+                path_of(change).starts_with("/playlists/"),
+                "an edit went elsewhere: {change}"
+            );
+        }
+        assert!(edited.is_err() || !sent.is_empty());
+    }
+
+    /// Ids that are not numbers, each of which would change what a change reaches or what it
+    /// sends: dot segments, separators, a query, a fragment, escapes, nothing, a sign, a
+    /// fraction, a number too large for an id, digits that are not ASCII.
+    const MALFORMED: [&str; 14] = [
+        "..",
+        "1/../2",
+        "1/2",
+        "1?x=2",
+        "1#2",
+        "%2e%2e",
+        "%2e",
+        "",
+        " 1",
+        "+1",
+        "-1",
+        "1.5",
+        "99999999999999999999999",
+        "\u{ff11}\u{ff12}",
+    ];
+
+    /// Signed in as in [`signed_in`], its reads sent to a proxy that is not there: a read that
+    /// slipped through fails as a network error, and reaches nothing.
+    fn offline(browser: Arc<Recording>) -> SoundCloud {
+        let mut soundcloud = signed_in(browser);
+        soundcloud.http = reqwest::Client::builder()
+            .proxy(reqwest::Proxy::all("http://127.0.0.1:9").unwrap())
+            .build()
+            .unwrap();
+        soundcloud
+    }
+
+    /// `result` is a refusal that names `id`, and `browser` was sent nothing.
+    fn assert_refused<T: std::fmt::Debug>(result: Result<T>, id: &str, browser: &Recording) {
+        match result {
+            Err(Error::Protocol(said)) => {
+                assert!(
+                    said.contains(&format!("{id:?}")),
+                    "the refusal omits {id:?}: {said}"
+                )
+            }
+            other => panic!("{id:?} was not refused: {other:?}"),
+        }
+        let sent = browser.0.lock().unwrap().clone();
+        assert!(sent.is_empty(), "{id:?} sent {sent:?}");
+    }
+
+    #[tokio::test]
+    async fn a_like_or_a_follow_refuses_an_id_that_is_not_a_number() {
+        for bad in MALFORMED.into_iter().chain(["single:1/../2", "single:"]) {
+            for kind in [
+                FavouriteKind::Song,
+                FavouriteKind::Album,
+                FavouriteKind::Playlist,
+                FavouriteKind::Artist,
+            ] {
+                for on in [true, false] {
+                    let browser = Arc::new(Recording::default());
+                    let soundcloud = offline(browser.clone());
+                    let id = ItemId::new(ProviderKind::SoundCloud, bad);
+                    assert_refused(soundcloud.like(kind, &id, on).await, bad, &browser);
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn a_single_prefix_is_followed_only_for_an_album() {
+        for kind in [
+            FavouriteKind::Song,
+            FavouriteKind::Playlist,
+            FavouriteKind::Artist,
+        ] {
+            let browser = Arc::new(Recording::default());
+            let soundcloud = offline(browser.clone());
+            let id = ItemId::new(ProviderKind::SoundCloud, "single:7");
+            assert_refused(soundcloud.like(kind, &id, true).await, "single:7", &browser);
+        }
+    }
+
+    #[tokio::test]
+    async fn the_provider_methods_that_like_refuse_a_malformed_id() {
+        for bad in MALFORMED {
+            let id = ItemId::new(ProviderKind::SoundCloud, bad);
+            let browser = Arc::new(Recording::default());
+            let soundcloud = offline(browser.clone());
+            let set = soundcloud
+                .set_favourite(FavouriteKind::Song, &id, true)
+                .await;
+            assert_refused(set, bad, &browser);
+            let added = soundcloud.add_to_library(FavouriteKind::Album, &id).await;
+            assert_refused(added, bad, &browser);
+            let removed = soundcloud.remove_from_library(&id).await;
+            assert_refused(removed, bad, &browser);
+        }
+    }
+
+    #[tokio::test]
+    async fn a_playlist_change_refuses_a_malformed_playlist_id() {
+        let track = ItemId::new(ProviderKind::SoundCloud, "5");
+        for bad in MALFORMED {
+            let playlist = ItemId::new(ProviderKind::SoundCloud, bad);
+            let browser = Arc::new(Recording::default());
+            let soundcloud = offline(browser.clone());
+            let edited = soundcloud.edit_playlist(&playlist, "name", "").await;
+            assert_refused(edited, bad, &browser);
+            let deleted = soundcloud.delete_playlist(&playlist).await;
+            assert_refused(deleted, bad, &browser);
+            let added = soundcloud
+                .add_to_playlist(&playlist, std::slice::from_ref(&track))
+                .await;
+            assert_refused(added, bad, &browser);
+            let removed = soundcloud.remove_from_playlist(&playlist, &track).await;
+            assert_refused(removed, bad, &browser);
+            let whole = soundcloud.set_playlist_tracks(&playlist, &[5]).await;
+            assert_refused(whole, bad, &browser);
+        }
+    }
+
+    #[tokio::test]
+    async fn a_playlist_from_the_discovery_pages_is_not_changed() {
+        // Its id is no number: the shelves read it, nothing writes it.
+        let browser = Arc::new(Recording::default());
+        let soundcloud = offline(browser.clone());
+        let id = ItemId::new(ProviderKind::SoundCloud, "soundcloud:system-playlists:x");
+        let edited = soundcloud.edit_playlist(&id, "name", "").await;
+        assert_refused(edited, &id.id, &browser);
+    }
+
+    #[tokio::test]
+    async fn numbers_go_to_their_own_paths() {
+        let cases = [
+            (
+                FavouriteKind::Song,
+                "7",
+                true,
+                "PUT",
+                "/users/42/track_likes/7",
+            ),
+            (
+                FavouriteKind::Song,
+                "7",
+                false,
+                "DELETE",
+                "/users/42/track_likes/7",
+            ),
+            (
+                FavouriteKind::Album,
+                "single:7",
+                true,
+                "PUT",
+                "/users/42/track_likes/7",
+            ),
+            (
+                FavouriteKind::Album,
+                "9",
+                true,
+                "PUT",
+                "/users/42/playlist_likes/9",
+            ),
+            (
+                FavouriteKind::Playlist,
+                "9",
+                false,
+                "DELETE",
+                "/users/42/playlist_likes/9",
+            ),
+            (FavouriteKind::Artist, "5", true, "POST", "/me/followings/5"),
+            (
+                FavouriteKind::Artist,
+                "5",
+                false,
+                "DELETE",
+                "/me/followings/5",
+            ),
+        ];
+        for (kind, id, on, method, path) in cases {
+            let browser = Arc::new(Recording::default());
+            let soundcloud = offline(browser.clone());
+            let id = ItemId::new(ProviderKind::SoundCloud, id);
+            soundcloud.like(kind, &id, on).await.unwrap();
+            let sent = browser.0.lock().unwrap().clone();
+            assert_eq!(sent.len(), 1, "{sent:?}");
+            assert_eq!(sent[0].split_once(' ').unwrap().0, method);
+            assert_eq!(path_of(&sent[0]), path);
+        }
+        let browser = Arc::new(Recording::default());
+        let soundcloud = offline(browser.clone());
+        let id = ItemId::new(ProviderKind::SoundCloud, "9");
+        soundcloud.edit_playlist(&id, "name", "").await.unwrap();
+        soundcloud.set_playlist_tracks(&id, &[1, 2]).await.unwrap();
+        let sent = browser.0.lock().unwrap().clone();
+        assert_eq!(sent.len(), 2, "{sent:?}");
+        assert!(
+            sent.iter()
+                .all(|c| c.starts_with("PUT ") && path_of(c) == "/playlists/9")
+        );
     }
 }
