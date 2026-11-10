@@ -26,12 +26,12 @@ call the app "Music" ([ADR-0023](0023-the-rename-to-opium.md)).
 | [0010](0010-opium-connect-on-the-local-network.md) | Opium Connect on the local network: mDNS, TCP 47820, SPAKE2 and Noise | Accepted; amended by 0015 and 0034 |
 | [0011](0011-themes-as-toml-files-of-component-variants.md) | Themes as TOML files that choose a variant of each component | Accepted; amended by 0034 and 0037 |
 | [0012](0012-soundcloud-changes-through-a-browser-seam.md) | SoundCloud's changes go through a browser seam | Accepted |
-| [0013](0013-secrets-and-what-is-kept-on-disk.md) | Secrets, and what is kept on disk | Accepted; amended by 0034 |
+| [0013](0013-secrets-and-what-is-kept-on-disk.md) | Secrets, and what is kept on disk | Accepted; amended by 0034 and 0044 |
 | [0014](0014-shared-state-merged-field-by-field.md) | What the devices share, merged field by field | Accepted; amended by 0034 |
 | [0015](0015-away-from-home-through-iroh.md) | Away from home, paired devices meet through iroh | Accepted; amends 0010 (away from home); amended by 0040 |
 | [0016](0016-the-services.md) | The services: Apple Music, SoundCloud, Navidrome and the device's own files | Accepted; amended by 0034 |
 | [0017](0017-downloads-sealed-and-tied-to-the-subscription.md) | Downloads sealed with the app's key, and tied to the subscription | Accepted; amended by 0034 |
-| [0018](0018-one-instance-through-the-session-bus.md) | One instance, found through its MPRIS name on the session bus | Accepted |
+| [0018](0018-one-instance-through-the-session-bus.md) | One instance, found through its MPRIS name on the session bus | Accepted; amended by 0043 |
 | [0019](0019-the-workings-apart-from-the-drawing.md) | The desktop's workings apart from its drawing, waking it through `Wake` | Accepted |
 | [0020](0020-d-bus-over-async-io.md) | D-Bus spoken over async-io, not tokio | Accepted |
 | [0021](0021-the-exit-watch.md) | The exit watch | Accepted; amended by 0024 |
@@ -56,3 +56,5 @@ call the app "Music" ([ADR-0023](0023-the-rename-to-opium.md)).
 | [0040](0040-away-from-home-only-while-a-device-is-paired.md) | Away from home only while a device is paired | Accepted; amends 0015 |
 | [0041](0041-a-paused-protected-songs-session-closes-after-a-long-pause.md) | A paused protected song's session closes after a long pause | Accepted; amends 0038 |
 | [0042](0042-ci-keeps-one-job-of-checks.md) | CI keeps one job of checks | Accepted |
+| [0043](0043-one-instance-per-profile-held-by-a-lock.md) | One instance per profile, held by a lock | Accepted; amends 0018 |
+| [0044](0044-navidromes-password-as-it-is-used.md) | Navidrome's password, as it is used | Accepted; amends 0013 |

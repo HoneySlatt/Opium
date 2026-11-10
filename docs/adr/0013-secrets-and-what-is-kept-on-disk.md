@@ -1,7 +1,8 @@
 # 0013. Secrets, and what is kept on disk
 
 - Status: Accepted; amended by [0034](0034-what-opium-is-to-become.md)
-  (every desktop token in the system's keyring)
+  (every desktop token in the system's keyring) and
+  [0044](0044-navidromes-password-as-it-is-used.md) (Navidrome's password)
 - Date: 2026-10-31
 
 ## Context

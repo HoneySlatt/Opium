@@ -1,6 +1,7 @@
 # 0018. One instance, found through its MPRIS name on the session bus
 
-- Status: Accepted
+- Status: Accepted; amended by [0043](0043-one-instance-per-profile-held-by-a-lock.md)
+  (the one instance held by a lock)
 - Date: 2026-11-04
 
 ## Context
