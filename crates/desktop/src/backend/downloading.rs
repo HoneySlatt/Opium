@@ -17,13 +17,9 @@ use soundcloud::SoundCloud;
 use super::{Playable, Replies, Reply};
 
 /// Where the downloads are kept: the user's data, not a cache that may be
-/// cleared.
-fn dir() -> PathBuf {
-    std::env::var_os("XDG_DATA_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
-        .unwrap_or_default()
-        .join("opium/downloads")
+/// cleared. `None` without a data folder.
+fn dir() -> Option<PathBuf> {
+    Some(crate::folders::data()?.join("downloads"))
 }
 
 /// The services as they are now, for the download that comes next.
@@ -115,14 +111,22 @@ impl Downloads {
         let queue = downloads::queue::Downloads::new(fetcher.clone(), Arc::new(Told(replies)));
         let opening = queue.clone();
         tokio::spawn(async move {
-            let opened = match downloads::keyring::key().await {
-                Ok(key) => tokio::task::spawn_blocking(move || {
-                    Store::open(&dir(), key)
-                        .map_err(|e| format!("Couldn't open the downloads: {e}"))
-                })
-                .await
-                .unwrap_or_else(|e| Err(e.to_string())),
-                Err(e) => Err(e),
+            // The folder first: without one, the keyring isn't asked for a key.
+            let opened = match dir() {
+                None => Err(
+                    "Couldn't open the downloads: there is no folder to keep them in, \
+                             as neither XDG_DATA_HOME nor HOME names an absolute folder"
+                        .to_owned(),
+                ),
+                Some(dir) => match downloads::keyring::key().await {
+                    Ok(key) => tokio::task::spawn_blocking(move || {
+                        Store::open(&dir, key)
+                            .map_err(|e| format!("Couldn't open the downloads: {e}"))
+                    })
+                    .await
+                    .unwrap_or_else(|e| Err(e.to_string())),
+                    Err(e) => Err(e),
+                },
             };
             if let Err(e) = &opened {
                 eprintln!("downloads: {e}");

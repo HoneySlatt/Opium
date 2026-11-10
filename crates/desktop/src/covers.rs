@@ -16,10 +16,7 @@ fn dir() -> Option<PathBuf> {
 }
 
 pub(crate) fn cache_dir(name: &str) -> Option<PathBuf> {
-    let cache = std::env::var_os("XDG_CACHE_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")))?;
-    Some(cache.join("opium").join(name))
+    Some(crate::folders::cache()?.join(name))
 }
 
 /// A hash of `url` (FNV-1a, which never changes), to name its file.

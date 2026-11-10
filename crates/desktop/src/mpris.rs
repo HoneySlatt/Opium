@@ -7,7 +7,9 @@ use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
-use mpris_server::zbus::{Result, fdo};
+use mpris_server::zbus::fdo::{RequestNameFlags, RequestNameReply};
+use mpris_server::zbus::names::WellKnownName;
+use mpris_server::zbus::{Connection, Result, fdo};
 use mpris_server::{
     LoopStatus, Metadata, PlaybackRate, PlaybackStatus, PlayerInterface, Property, RootInterface,
     Server, Signal, Time, TrackId, Volume,
@@ -90,6 +92,8 @@ pub struct Mpris {
     shared: Arc<Mutex<Shared>>,
     changes: tokio::sync::mpsc::UnboundedSender<Change>,
     actions: Receiver<Action>,
+    /// Set once the name is held and kept ([`Mpris::on_the_bus`]).
+    on_the_bus: Arc<std::sync::atomic::AtomicBool>,
 }
 
 /// The audio files opened here, as the desktop entry says too.
@@ -221,7 +225,7 @@ pub fn open_in_running(files: &[std::path::PathBuf]) -> bool {
             if !call(
                 "org.mpris.MediaPlayer2.Player",
                 "OpenUri",
-                Some(file_uri(file)),
+                Some(crate::file_uri(file)),
             )
             .await
             {
@@ -233,30 +237,49 @@ pub fn open_in_running(files: &[std::path::PathBuf]) -> bool {
     })
 }
 
-/// `path` as a `file://` address, its bytes escaped but the slashes.
-fn file_uri(path: &std::path::Path) -> String {
-    use std::os::unix::ffi::OsStrExt;
-    let mut uri = String::from("file://");
-    for &b in path.as_os_str().as_bytes() {
-        if b.is_ascii_alphanumeric() || b"/-_.~".contains(&b) {
-            uri.push(b as char);
-        } else {
-            uri.push_str(&format!("%{b:02X}"));
+/// Ask again for Opium's name, on the connection that holds it, so that no
+/// later request takes it: another Opium, on another profile, would
+/// otherwise take this one's media controls, which nothing would tell.
+///
+/// mpris-server asks for the name as zbus's connection builder does, with
+/// `RequestNameFlags::default()`: `ALLOW_REPLACEMENT | REPLACE_EXISTING |
+/// DO_NOT_QUEUE` (zbus 6.2, `connection/builder.rs` and `fdo/dbus.rs`).
+/// Asked again by its owner, the bus sets the name's flags anew (dbus-daemon,
+/// `bus/services.c`, `bus_registry_acquire_service`; dbus-broker,
+/// `src/bus/name.c`, `name_ownership_update`); with `DO_NOT_QUEUE` alone, a
+/// later request is refused. A request in the moment between the two still
+/// takes it: this one then finds it gone, and fails.
+async fn keep_the_name(bus: &Connection) -> Result<()> {
+    let reply = fdo::DBusProxy::new(bus)
+        .await?
+        .request_name(
+            WellKnownName::try_from(BUS_NAME)?,
+            RequestNameFlags::DO_NOT_QUEUE,
+        )
+        .await?;
+    match reply {
+        // Held still, or again: either way now with these flags alone.
+        RequestNameReply::AlreadyOwner | RequestNameReply::PrimaryOwner => Ok(()),
+        RequestNameReply::InQueue | RequestNameReply::Exists => {
+            Err(mpris_server::zbus::Error::NameTaken)
         }
     }
-    uri
 }
 
 impl Mpris {
-    /// Take the name `org.mpris.MediaPlayer2.opium` on a thread of its own;
-    /// `wake` is called when an action comes. Without a session bus nothing
-    /// happens, and the app plays on.
+    /// Take the name `org.mpris.MediaPlayer2.opium` on a thread of its own,
+    /// so that no later request takes it (`keep_the_name`); `wake` is
+    /// called when an action comes. Without a session bus, or with the name
+    /// held by another program, nothing happens but a line on standard
+    /// error, and the app plays on.
     pub fn start(wake: crate::Wake) -> Self {
         let shared = Arc::new(Mutex::new(Shared {
             state: State::default(),
             at: Instant::now(),
         }));
         let (actions_tx, actions) = std::sync::mpsc::channel();
+        let on_the_bus = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let on_the_bus_now = on_the_bus.clone();
         let (changes, mut changes_rx) = tokio::sync::mpsc::unbounded_channel::<Change>();
         let imp = Imp {
             shared: shared.clone(),
@@ -277,6 +300,11 @@ impl Mpris {
                             return;
                         }
                     };
+                    if let Err(e) = keep_the_name(server.connection()).await {
+                        eprintln!("media controls unavailable: {e}");
+                        return;
+                    }
+                    on_the_bus_now.store(true, std::sync::atomic::Ordering::Release);
                     while let Some(change) = changes_rx.recv().await {
                         if let Some(url) = &change.cover
                             && crate::covers::read(url).is_none()
@@ -304,7 +332,15 @@ impl Mpris {
             shared,
             changes,
             actions,
+            on_the_bus,
         }
+    }
+
+    /// Whether the media controls are on the session bus, their name held and
+    /// kept from later requests: not yet while they start, and never when
+    /// they are unavailable.
+    pub fn on_the_bus(&self) -> bool {
+        self.on_the_bus.load(std::sync::atomic::Ordering::Acquire)
     }
 
     pub fn next_action(&self) -> Option<Action> {

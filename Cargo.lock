@@ -1694,6 +1694,7 @@ dependencies = [
  "connect",
  "downloads",
  "ehttp",
+ "libc",
  "local",
  "lyrics",
  "motion",

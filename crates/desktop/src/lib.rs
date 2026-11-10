@@ -9,6 +9,8 @@ pub mod cache;
 pub mod covers;
 pub mod devices;
 pub mod exit;
+pub mod folders;
+pub mod instance;
 pub mod mpris;
 pub mod palette;
 pub mod settings;
@@ -64,4 +66,43 @@ pub fn file_path(uri: &str) -> Option<std::path::PathBuf> {
     }
     use std::os::unix::ffi::OsStringExt;
     Some(std::ffi::OsString::from_vec(path).into())
+}
+
+/// `path` as a `file://` address, every byte escaped but letters, digits and
+/// `/-_.~`: ASCII whatever the name, and read back by [`file_path`] to the
+/// same bytes.
+pub fn file_uri(path: &std::path::Path) -> String {
+    use std::os::unix::ffi::OsStrExt;
+    let mut uri = String::from("file://");
+    for &b in path.as_os_str().as_bytes() {
+        if b.is_ascii_alphanumeric() || b"/-_.~".contains(&b) {
+            uri.push(b as char);
+        } else {
+            uri.push_str(&format!("%{b:02X}"));
+        }
+    }
+    uri
+}
+
+#[cfg(test)]
+mod tests {
+    use std::os::unix::ffi::OsStrExt;
+    use std::path::Path;
+
+    #[test]
+    fn a_file_address_reads_back_to_the_same_bytes() {
+        let every_byte: Vec<u8> = (0..=255).collect();
+        for name in [
+            &b"/music/caf\xe9"[..],
+            b"/music/100% live",
+            b"file://x",
+            b"",
+            &every_byte,
+        ] {
+            let path = Path::new(std::ffi::OsStr::from_bytes(name));
+            let uri = super::file_uri(path);
+            assert!(uri.is_ascii(), "{uri}");
+            assert_eq!(super::file_path(&uri).as_deref(), Some(path), "{uri}");
+        }
+    }
 }

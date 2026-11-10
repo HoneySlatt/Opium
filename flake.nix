@@ -103,6 +103,8 @@
               git
               python3
               weston
+              # dbus-run-session: crates/desktop's tests of the one instance run on a bus of their own.
+              dbus
               pkg-config
               pipewire
               rustPlatform.bindgenHook

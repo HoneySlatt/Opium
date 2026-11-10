@@ -604,13 +604,14 @@ impl Own {
     }
 }
 
-/// Where the Apple Music sign-in keeps its token (see the `am` example).
+/// Where the Apple Music sign-in keeps its token (see the `am` example):
+/// `apple-music` in the config folder.
+///
+/// # Panics
+///
+/// Without a config folder, as [`crate::settings::dir`].
 pub fn apple_music_dir() -> PathBuf {
-    let config = std::env::var_os("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
-        .unwrap_or_default();
-    config.join("opium/apple-music")
+    crate::settings::dir().join("apple-music")
 }
 
 /// Where the SoundCloud sign-in keeps its tokens (see the `sc` example).
@@ -667,15 +668,16 @@ fn kept_soundcloud_tokens() -> Option<soundcloud::Tokens> {
 }
 
 /// Where the files' index and covers are kept: a cache, read again from the
-/// files if it goes.
-fn local_dir() -> PathBuf {
-    std::env::var_os("XDG_CACHE_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")))
-        .unwrap_or_default()
-        .join("opium")
-        .join("local")
+/// files if it goes. `None` without a cache folder.
+fn local_dir() -> Option<PathBuf> {
+    Some(crate::folders::cache()?.join("local"))
 }
+
+/// Why the files can't be opened without [`local_dir`].
+const NO_CACHE_FOLDER: &str = concat!(
+    "no cache folder to keep their index and covers in: ",
+    "neither XDG_CACHE_HOME nor HOME names an absolute folder"
+);
 
 /// The files of `folders`, as indexed last, then read again and watched.
 fn open_local(
@@ -687,7 +689,12 @@ fn open_local(
         replies.send(Reply::Files(None));
         return (None, None);
     }
-    let files = Arc::new(local::Local::open(folders.to_vec(), &local_dir()));
+    let Some(dir) = local_dir() else {
+        eprintln!("files: not opened, {NO_CACHE_FOLDER}");
+        replies.send(Reply::Files(None));
+        return (None, None);
+    };
+    let files = Arc::new(local::Local::open(folders.to_vec(), &dir));
     show_local(&files, true, replies);
     let changed = again.clone();
     let watching = files.watch(move || {
@@ -1143,6 +1150,10 @@ async fn run(
     let mut turned_off: std::collections::HashSet<ProviderKind> = off.iter().copied().collect();
     // Signed out of meanwhile, until signed in again.
     let mut signed_out = std::collections::HashSet::new();
+    // Apple's answers on the subscription, each with the sign-outs of Apple
+    // counted when it was asked (`confirm_subscription`).
+    let (answers_tx, mut answers) = tokio::sync::mpsc::unbounded_channel::<(bool, u64)>();
+    let mut apple_sign_outs = 0u64;
     // Out of reach, their libraries shown as kept: once, not at each try.
     let mut kept_shown = std::collections::HashSet::new();
     // The music files of the folders chosen, and their watching (the app
@@ -1162,7 +1173,7 @@ async fn run(
     // The paired phone borrows what it can't download itself.
     lends.lend(downloads.lender());
     if let Some(am) = apple.clone() {
-        confirm_subscription(am, downloads.clone());
+        confirm_subscription(am, answers_tx.clone(), apple_sign_outs);
     }
     if sc.is_some() {
         downloads.subscription(ProviderKind::SoundCloud, true);
@@ -1191,7 +1202,7 @@ async fn run(
                         apple = am;
                         if let Some(am) = apple.clone() {
                             kept_shown.remove(&provider);
-                            confirm_subscription(am, downloads.clone());
+                            confirm_subscription(am, answers_tx.clone(), apple_sign_outs);
                         }
                         if let Some(am) = apple.clone().filter(|_| load && library_wanted) {
                             loading.start(ProviderKind::AppleMusic, load_library(am, replies));
@@ -1226,6 +1237,14 @@ async fn run(
                             loading.start(ProviderKind::Navidrome, load_navidrome_library(nd, replies));
                         }
                     }
+                }
+                continue;
+            }
+            Some((active, asked_after)) = answers.recv() => {
+                // Asked before a sign-out, the answer is about the account
+                // that left: its songs mustn't play 30 days more.
+                if asked_after == apple_sign_outs {
+                    downloads.subscription(ProviderKind::AppleMusic, active);
                 }
                 continue;
             }
@@ -1350,7 +1369,12 @@ async fn run(
                 continue;
             }
             Request::OpenFiles(paths) => {
-                let covers = local_dir().join("covers");
+                let Some(dir) = local_dir() else {
+                    eprintln!("files: not opened, {NO_CACHE_FOLDER}");
+                    replies.send(Reply::Opened(Vec::new()));
+                    continue;
+                };
+                let covers = dir.join("covers");
                 tokio::spawn(async move {
                     let opened = tokio::task::spawn_blocking(move || {
                         local::files_in(&paths)
@@ -1459,7 +1483,10 @@ async fn run(
                 downloads.forget(provider);
                 loading.stop(provider);
                 match provider {
-                    ProviderKind::AppleMusic => apple = None,
+                    ProviderKind::AppleMusic => {
+                        apple = None;
+                        apple_sign_outs += 1;
+                    }
                     ProviderKind::SoundCloud => sc = None,
                     ProviderKind::Navidrome => {
                         nd = None;
@@ -2166,11 +2193,18 @@ fn keep_album(id: &ItemId, result: &Result<Box<(Album, Vec<Track>)>, String>) {
 }
 
 /// Ask Apple whether the subscription is active, which keeps its
-/// downloaded songs playing; nothing changes when it doesn't say.
-fn confirm_subscription(am: Arc<AppleMusic>, downloads: downloading::Downloads) {
+/// downloaded songs playing; nothing changes when it doesn't say. The answer
+/// goes back to the backend's loop with `sign_outs`, the sign-outs of Apple
+/// counted when it was asked, so that the loop drops one asked before a
+/// sign-out: it would keep the songs playing 30 days for an account gone.
+fn confirm_subscription(
+    am: Arc<AppleMusic>,
+    answers: UnboundedSender<(bool, u64)>,
+    sign_outs: u64,
+) {
     tokio::spawn(async move {
         if let Ok(Some(active)) = am.subscribed().await {
-            downloads.subscription(ProviderKind::AppleMusic, active);
+            let _ = answers.send((active, sign_outs));
         }
     });
 }

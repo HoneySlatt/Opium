@@ -7,10 +7,7 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 fn dir() -> Option<PathBuf> {
-    let cache = std::env::var_os("XDG_CACHE_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")))?;
-    Some(cache.join("opium").join("library"))
+    Some(crate::folders::cache()?.join("library"))
 }
 
 /// `playlist p.AbC` → `playlist-p.AbC.json`: ids are letters, digits and dots.

@@ -30,10 +30,16 @@ What the app needs besides, at run time (the [README](README.md#requirements) sa
 The app keeps its files in three folders, each following its XDG variable:
 
 - `$XDG_CONFIG_HOME/opium`: settings, themes, sign-ins, the sign-in browsers' profiles,
-  `connect.json`, `shared.json`, `playlists.json`, the session.
+  `connect.json`, `shared.json`, `playlists.json`, the session, and `instance.lock`, which one
+  instance holds per profile ([ADR-0043](docs/adr/0043-one-instance-per-profile-held-by-a-lock.md)).
 - `$XDG_CACHE_HOME/opium`: the library as last read, covers, animated covers, the files' index,
   `exit.log`.
 - `$XDG_DATA_HOME/opium`: downloads.
+
+A variable unset, empty or not an absolute path counts as unset, as the XDG Base Directory
+specification says: `~/.config`, `~/.cache` and `~/.local/share` are used (`desktop::folders`).
+With no usable `HOME` either, there is no folder: without a config folder the app refuses to start;
+without the others, nothing is cached, the files are not opened, or there are no downloads.
 
 ## Commands
 
@@ -371,9 +377,16 @@ setsid -f <the program pgrep showed> >/dev/null 2>&1   # started again, detached
 ### Settings care
 
 - `settings.toml` is rewritten whole from memory on every change, so an edit made while the app
-  runs is lost.
-- A file that does not read is kept beside as `settings.toml.bad`, and only its settings that read
-  are kept.
+  runs is lost. A save that fails says why on standard error.
+- A file that does not read whole (not UTF-8, a typo, a value this build does not know), or cannot
+  be read at all, is moved aside at the start, as `settings.toml.bad`, or `settings.toml.bad.1`,
+  `.2`… when that name is taken; standard error names the file used. Its settings that read, or
+  the defaults for a file that could not be read, are written in its place at once. A file that
+  cannot be moved aside is never written over while the app runs.
+- Keys the build does not know, a newer build's, are kept and written back unchanged.
+- A music folder whose name is not UTF-8 is written as a `file://` address, its bytes escaped. A
+  build older than M1.15 reads it as a folder of that name, which does not exist, and keeps it.
+- A `volume` that is not a finite number is dropped (full volume), one outside 0 to 1 is held to it.
 - To change a key in a test profile, replace it; never add a second one. A duplicate key once made
   the whole file unreadable, and the user's settings were lost.
 - Take a backup before any edit.
