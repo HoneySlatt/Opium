@@ -171,10 +171,10 @@ class Core(context: Context) {
         mkdirs()
     }
 
-    /** Signed out of a service: its downloads go too. */
+    /** Signed out of a service: its downloads are told, its protected songs then no longer playing. */
     var signedOut: (ProviderKind) -> Unit = {}
 
-    /** Forget the account: its sign-in goes from the phone, its library as kept, and its downloads. */
+    /** Forget the account: its sign-in goes from the phone, and its library as kept; its downloads stay. */
     fun signOut(kind: ProviderKind) {
         session.disconnect(kind)
         vault.delete(kind.vaultName)

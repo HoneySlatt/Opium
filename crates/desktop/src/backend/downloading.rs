@@ -162,7 +162,9 @@ impl Downloads {
         self.queue.remove(ids);
     }
 
-    /// Signed out of `provider`: its songs go.
+    /// Signed out of `provider`: its downloads waiting or under way are
+    /// called off, and its protected songs no longer play until its
+    /// subscription is confirmed again; every song kept stays.
     pub fn forget(&self, provider: ProviderKind) {
         self.queue.forget(provider);
     }
