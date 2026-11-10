@@ -37,6 +37,10 @@ specification only, so that the new code owes nothing to the old one's expressio
 read the old code, and wrote the specification, is the *dirty side*
 ([ADR-0030](adr/0030-the-kopuz-code-rewritten-in-a-clean-room.md), [method](specs/README.md)).
 
+**Exit watch.** The thread that ends the desktop app five seconds after everything is saved, when
+its teardown hangs, after noting where it stood in `exit.log` (`desktop::exit`,
+[ADR-0021](adr/0021-the-exit-watch.md)).
+
 **Expired.** The standing of a downloaded song that came through a service's DRM once that
 service's subscription was not confirmed in the last 30 days, or the user signed out of it
 (`downloads::store::Standing`, [ADR-0017](adr/0017-downloads-sealed-and-tied-to-the-subscription.md)).
@@ -131,6 +135,10 @@ Opium plays from the song's enhanced HLS ([ADR-0002](adr/0002-apple-music-throug
 **Specification.** A file of [`docs/specs/`](specs/README.md) saying what a part of Opium must do
 (formats, requests, steps, errors) apart from its code: the only input of a clean-room rewrite.
 
+**Standby.** Opium's wait, from M1.6, for SlimeEngine's Stage 6d, with no work on it meanwhile
+([ADR-0029](adr/0029-opium-waits-for-slime-ui-then-moves-first.md)); ended for Stage 1's last
+milestones on 2026-11-07 ([ADR-0035](adr/0035-the-port-in-uwuis-first-stage-stage-1-finished-first.md)).
+
 **Station.** A radio station: live (on air now), an episode (a show that aired, from its start), or
 a station of songs that the service picks one after the other (`opium_core::model::Station`).
 
@@ -138,6 +146,9 @@ a station of songs that the service picks one after the other (`opium_core::mode
 what a theme file leaves out is Stock's ([ADR-0011](adr/0011-themes-as-toml-files-of-component-variants.md)).
 On uwui it gains glass, through the material of uwui's core
 ([ADR-0037](adr/0037-uwuis-decisions-of-2026-11-07-taken-into-opium.md)).
+
+**Theme watch.** The desktop window's thread that looks every second at the theme files' times, to
+take a changed theme in (`theme-watch`, `crates/app-desktop/src/app.rs`).
 
 **Throwaway profile.** Config, cache and data folders of a test's own, with no session bus and no
 network, on which an agent runs the app without touching the owner's data
@@ -155,6 +166,9 @@ energy, at the level of Apple's AutoMix; never inside an album without gaps
 in its own, under MIT OR Apache-2.0. Opium's desktop window and phone screens move to it in uwui's
 first stage, Opium one of the programs that stage ports
 ([ADR-0035](adr/0035-the-port-in-uwuis-first-stage-stage-1-finished-first.md)).
+
+**Vault.** Where the phone keeps its sign-ins and the downloads' key, each sealed with a key of the
+Android Keystore (`data/Vault.kt`, [ADR-0013](adr/0013-secrets-and-what-is-kept-on-disk.md)).
 
 **Wake.** The callback through which the desktop's workings ask the window for a new frame when
 something it shows has changed (`desktop::Wake`, [ADR-0019](adr/0019-the-workings-apart-from-the-drawing.md)).

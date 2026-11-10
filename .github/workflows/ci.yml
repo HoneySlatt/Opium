@@ -17,7 +17,8 @@ on:
   pull_request:
     paths-ignore: ["**.md"]
   # Every Monday at 06:53 UTC, even without a push, so that a project at rest still learns of
-  # changes in its dependencies and in CI's environment. The odd minute keeps off the hour; the
+  # changes in its dependencies and in CI's environment: a broken build or a moved toolchain, not a
+  # new advisory, which nothing checks before Stage 2's cargo-deny (docs/debt.md). The odd minute keeps off the hour; the
   # owner's other projects run at 06:17 and 06:41. A push cancels a scheduled run in progress
   # (concurrency, above).
   schedule:
@@ -33,7 +34,7 @@ jobs:
     # A cold build compiles BoringSSL, FFmpeg's bindings, iroh and wgpu: about 11 minutes of the
     # script's work on a 16-core desktop, 17 to 28 minutes for the job here (docs/measurements.md,
     # M1.5). The quality bar's budget is 20 minutes for a warm run, one whose cache hit; a cold run is
-    # measured and recorded (docs/PLAN.md, M1.3). This limit only stops a hung run.
+    # measured and recorded (docs/history.md, M1.3). This limit only stops a hung run.
     timeout-minutes: 60
     # The same checks, in a smaller and faster build: the tests' binaries carry no debug info, which
     # they need only in a debugger, and nothing is kept for incremental builds, which a fresh runner

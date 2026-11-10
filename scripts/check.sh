@@ -10,12 +10,14 @@
 # `scripts/check.sh docs` checks the documents only: the sizes of the files every agent reads at
 # every session, and the links between the Markdown files. The default part runs it first.
 #
-# No test needs the network, PipeWire, a display, a session bus, a sign-in or a Widevine CDM. What
-# needs them is checked by hand (CONTRIBUTING.md, "Running Opium without touching the owner's data").
+# No test needs the network, PipeWire, a display, the user's session bus, a sign-in or a Widevine
+# CDM: the tests of the one instance start a bus of their own (dbus-run-session, from the shell).
+# What needs them is checked by hand (CONTRIBUTING.md, "Running Opium without touching the owner's
+# data").
 #
-# Not checked here yet (docs/PLAN.md): the dependencies' licences and advisories, as cargo-deny
-# finds advisories that only the owner can rule on; and the benchmarks, measured by hand for now
-# (docs/measurements.md).
+# Not checked here yet (docs/debt.md; cargo-deny at Stage 2, docs/ROADMAP.md): the dependencies'
+# licences and advisories, as cargo-deny finds advisories that only the owner can rule on; and the
+# benchmarks, measured by hand for now (docs/measurements.md).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

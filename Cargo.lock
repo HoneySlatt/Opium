@@ -1697,7 +1697,6 @@ dependencies = [
  "libc",
  "local",
  "lyrics",
- "motion",
  "mpris-server",
  "navidrome",
  "opium-core",

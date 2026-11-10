@@ -1,6 +1,7 @@
 # 0002. Apple Music through its web player, as Kopuz does
 
-- Status: Accepted
+- Status: Accepted; amended by [0030](0030-the-kopuz-code-rewritten-in-a-clean-room.md) (the code
+  adapted from Kopuz written again)
 - Date: 2026-10-29
 
 ## Context

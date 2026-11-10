@@ -25,7 +25,7 @@ pub fn turning(ui: &Ui, salt: &str, on: bool, period: f32) -> f32 {
     // Turning in the window in use only, as the wave travels: behind
     // another, it would have the whole window drawn again at the display's
     // rate for as long as the music plays, for a cover going round once in
-    // twenty seconds.
+    // the seconds its caller gives (14 for the cookie, 24 for the toolbar's).
     if on && ui.input(|i| i.focused) {
         let dt = (now - then).min(0.1) as f32;
         angle = (angle + dt * TAU / period) % TAU;

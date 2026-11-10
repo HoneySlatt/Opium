@@ -194,6 +194,6 @@ Watched or decided; each is taken up when its crate is next opened for a reason 
 ## Left on purpose by the 2026-10-31 audit
 
 SoundCloud's clear HLS joined whole before it plays; the player's real-time scratch buffer
-reallocated past 8,192 frames a channel; no stream cache on the phone (addresses signed per
+reallocated past 8,192 frames; no stream cache on the phone (addresses signed per
 request, live playlists, a wrong key would play the wrong song). Stage 6, where the sound is
 checked.

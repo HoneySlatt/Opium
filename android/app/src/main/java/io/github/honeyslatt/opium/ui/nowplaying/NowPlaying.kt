@@ -285,7 +285,7 @@ internal fun Wash(track: Track, playing: Boolean) {
     val colours by produceState(CoverColours.knownWash(url, light) ?: listOf(base, base, base), url, light) {
         url?.let { CoverColours.wash(it, light) }?.let { value = it }
     }
-    // There and back over 40 s, moved on 15 times a second: a few pixels a
+    // There and back over 80 s, moved on about 15 times a second: a few pixels a
     // second needn't redraw the screen at every frame (see `alignedDelay`).
     val wash = remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
     var rising by remember { mutableStateOf(true) }

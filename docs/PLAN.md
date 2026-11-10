@@ -83,8 +83,7 @@ For the owner to pick; none is planned.
   seeded by a playlist, and Apple's requests in the user's language (Opium asks in English).
 - Driving Opium by an agent comes with uwui's MCP server
   ([ADR-0026](adr/0026-the-egui-window-frozen-until-the-move.md)); a Macrobenchmark module for the
-  phone is decided for Stage 3
-  ([ADR-0027](adr/0027-macrobenchmark-for-the-phones-measurements-at-stage-3.md)).
+  phone comes with the phone's prototype, in Stage 5 ([ADR-0027](adr/0027-macrobenchmark-for-the-phones-measurements-at-stage-3.md), [ADR-0031](adr/0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md)).
 
 ## Known debt
 

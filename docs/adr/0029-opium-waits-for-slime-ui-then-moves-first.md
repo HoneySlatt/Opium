@@ -4,7 +4,8 @@
   and the ROADMAP's order (Stage 5 comes right after Stage 1); amended by
   [0030](0030-the-kopuz-code-rewritten-in-a-clean-room.md) (the standby lifted for the clean-room
   milestones), [0031](0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md) (the move during
-  Stage 6d) and [0034](0034-what-opium-is-to-become.md) (the order after the phone)
+  Stage 6d), [0034](0034-what-opium-is-to-become.md) (the order after the phone) and
+  [0035](0035-the-port-in-uwuis-first-stage-stage-1-finished-first.md) (the standby's end)
 - Date: 2026-11-05
 
 ## Context

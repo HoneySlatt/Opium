@@ -1,7 +1,8 @@
 # 0035. The port in uwui's first stage, Stage 1 finished first
 
 - Status: Accepted; amends [0031](0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md) (when
-  the port comes, and when the standby ends)
+  the port comes) and [0029](0029-opium-waits-for-slime-ui-then-moves-first.md) (when the standby
+  ends)
 - Date: 2026-11-07
 
 ## Context

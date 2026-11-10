@@ -19,8 +19,9 @@ pub enum Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-/// One connected music service. Browsing only: playback is resolved separately,
-/// since each platform plays streams its own way.
+/// One connected music service: browsing, and changes to the user's account
+/// (favourites, library, playlists, fewer suggestions like a song). Playback
+/// is resolved separately, since each platform plays streams its own way.
 #[async_trait]
 pub trait Provider: Send + Sync {
     fn kind(&self) -> ProviderKind;

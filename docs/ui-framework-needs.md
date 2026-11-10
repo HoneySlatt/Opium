@@ -34,9 +34,9 @@ The owner confirmed this rule and the marks on 2026-11-05, and chose four needs 
 that the rule left wished: a Korean fallback and colour emoji, tabular figures, WebP and GIF
 covers, and mipmaps.
 
-Of 113 needs, 108 are indispensable and 5 wished. egui gives 70 of them and Opium builds 28 itself,
+Of 113 needs, 108 are indispensable and 5 wished. egui gives 71 of them and Opium builds 28 itself,
 mostly drawing and motion (gradients, morphing shapes, springs, masks). 6 are in egui unused, and
-9 are missing. A row whose third column is mixed ("Given for X; built for Y") is counted by its first
+8 are missing. A row whose third column is mixed ("Given for X; built for Y") is counted by its first
 word.
 
 ## How the window is built
@@ -244,13 +244,14 @@ theme with its own durations (`ui/motion.rs:25-30`).
 ## Accessibility
 
 Opium gives screen readers nothing today: eframe enables AccessKit, but none of Opium's controls,
-drawn by hand, names itself; only the text fields are egui widgets. The quality bar asks for all of
+drawn by hand, names itself. The egui widgets it uses (text fields, spinners, modals, popup menus,
+tooltips) name themselves, but no text Opium draws reaches a screen reader. The quality bar asks for all of
 it ([Accessibility](ROADMAP.md#quality-bar)).
 
 | Need | Asked by | egui today | Mark |
 |---|---|---|---|
 | Each control named to screen readers, with its role and state | every `ui.interact` | Unused: `Response::widget_info`, AccessKit | Indispensable: the quality bar |
-| A focus ring, and Tab moving between controls | `ui/window_bar.rs:121-142` (the search field only) | Unused: controls that sense clicks can take the focus (`Sense::click` includes `FOCUSABLE`), but Opium draws no ring on them; Tab's order across Opium's layout not checked | Indispensable: the quality bar |
+| A focus ring, and Tab moving between controls | `ui/window_bar.rs:121-142` (the search field only) | Unused: controls that sense clicks can take the focus (`Sense::click` includes `FOCUSABLE`), but Opium draws no ring on them (two settings fields keep egui's frame and its outline, `ui/settings.rs:508`, `:816`); Tab's order across Opium's layout not checked | Indispensable: the quality bar |
 | Keyboard navigation in the song tables: arrows move a selection, Enter plays | `ui/tracks.rs:718-754` | Built | Indispensable |
 | Keyboard navigation in the other lists and grids | none | Missing | Indispensable: the quality bar |
 

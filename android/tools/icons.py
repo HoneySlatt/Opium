@@ -3,6 +3,9 @@
 and a few filled glyphs), so the app draws exactly the same icons.
 
     python3 android/tools/icons.py <opium-mobile.html> > Icons.kt
+
+Its input, the design's prototype, is kept outside the repository: Icons.kt is edited by hand
+now, and this script stays as the record of how it was first made.
 """
 import re
 import sys

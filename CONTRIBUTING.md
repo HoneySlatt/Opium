@@ -10,9 +10,11 @@ Development happens on NixOS, under Wayland. Everything runs inside the Nix deve
 
 - `nix develop`, loaded by direnv through `.envrc`: the workspace's shell. It provides Rust (cargo,
   rustc, clippy, rustfmt, rust-analyzer), pkg-config, PipeWire, FFmpeg and libopus to link against,
-  cmake and perl for BoringSSL, git and lychee for the links between Markdown files, and Python,
-  Weston and hyperfine for measurements. Every tool `scripts/check.sh` and `scripts/measure/` use
-  comes from it.
+  cmake and perl for BoringSSL, libclang for bindgen, git and lychee for the links between
+  Markdown files, `dbus-run-session` for the tests of the one instance, and Python, Weston and
+  hyperfine for measurements. Every tool `scripts/check.sh` uses comes from it; the measuring
+  scripts also use the system's `unshare` and `umbriel`, `adb` for the phone
+  (`nix shell nixpkgs#android-tools`) and `heaptrack` for the memory's detail.
 - `nix develop .#android`: the phone's shell, x86_64 only. It provides Rust with the Android
   targets, `cargo-ndk`, the Android SDK and NDK (Google's, under its own licence, accepted for this
   shell only), JDK 17 and Gradle 9.
@@ -30,8 +32,9 @@ What the app needs besides, at run time (the [README](README.md#requirements) sa
 The app keeps its files in three folders, each following its XDG variable:
 
 - `$XDG_CONFIG_HOME/opium`: settings, themes, sign-ins, the sign-in browsers' profiles,
-  `connect.json`, `shared.json`, `playlists.json`, the session, and `instance.lock`, which one
-  instance holds per profile ([ADR-0043](docs/adr/0043-one-instance-per-profile-held-by-a-lock.md)).
+  `connect.json`, `shared.json`, `playlists.json`, the playlists' chosen covers (`covers/`), Apple's
+  first-seen times (`apple-seen.json`), files that did not read set aside (`*.bad`, `*.bad.1`…),
+  the session, and `instance.lock`, which one instance holds per profile ([ADR-0043](docs/adr/0043-one-instance-per-profile-held-by-a-lock.md)).
 - `$XDG_CACHE_HOME/opium`: the library as last read, covers, animated covers, the files' index,
   `exit.log`.
 - `$XDG_DATA_HOME/opium`: downloads.
@@ -79,18 +82,21 @@ scripts/check.sh docs       # the documents only: their sizes and links, in a se
   `repo.json`. Only platform-tools has a single version there: for it, a newer nixpkgs in
   `flake.lock`, which also moves the desktop's and the fuzzing shell's tools and the packaged app,
   but not the Android shell's Rust, which rust-overlay pins.
-- [`documents.yml`](.github/workflows/documents.yml) runs `scripts/check.sh docs` at every push
-  and pull request, documents only included, with lychee from the pinned nixpkgs: a minute or two,
+- [`documents.yml`](.github/workflows/documents.yml) runs `scripts/check.sh docs` at every push to
+  `main` and on every pull request, documents only included, with lychee from the pinned nixpkgs: a minute or two,
   where the whole check takes ten or more.
-- The weekly run tells a project at rest that a dependency or CI's environment has changed.
+- The weekly run tells a project at rest that a dependency or CI's environment has changed: a
+  broken build or a moved toolchain, not a new advisory, which nothing checks before Stage 2's
+  `cargo deny` ([debt](docs/debt.md)).
   GitHub stops scheduled runs after 60 days without activity on a public repository; a click in
   the Actions tab starts them again. The repository is private: each run, weekly ones included,
   spends GitHub's free quota of minutes.
 - CI sets `CARGO_PROFILE_DEV_DEBUG=0` (the tests' binaries without debug info) and
   `CARGO_INCREMENTAL=0` (no incremental data, which a fresh runner never reuses): the same checks in
   a smaller, faster build. Set them locally to reproduce a CI build.
-- No test needs the network, PipeWire, a display, a session bus, a sign-in or a Widevine CDM. What
-  needs them is checked by hand, on a [throwaway profile](#a-throwaway-profile).
+- No test needs the network, PipeWire, a display, the user's session bus, a sign-in or a Widevine
+  CDM (the tests of the one instance start a bus of their own). What needs them is checked by hand,
+  on a [throwaway profile](#a-throwaway-profile).
 - Run `scripts/check.sh` before reporting a milestone done. Lychee reads only tracked files: check a
   new Markdown file with `lychee --offline --include-fragments <file>` until it is committed.
 
@@ -108,6 +114,11 @@ nix build                                         # the packaged desktop app: re
 ```
 
 The first build is slow: `wreq` builds BoringSSL from source, and FFmpeg's bindings run bindgen.
+
+A crate's unit tests live in it, beside the code (`mod tests`, or a folder such as
+`crates/synced/src/tests.rs` or `crates/cenc/src/tests/`); a test that needs a process of its own
+(it sets the environment, or starts a bus) goes under `crates/<crate>/tests/`. One test alone:
+`cargo test -p <crate> <part of its name>`.
 
 ### The phone's build
 
@@ -208,9 +219,13 @@ kill -TERM "$wpid"                                            # that pid only
 - `<profile>` is a [throwaway profile](#a-throwaway-profile)'s folder, the scripts run under
   `unshare --user --map-current-user --net` to keep it off the network; or a
   [copy of the owner's profile](#tests-on-a-copy-of-the-owners-profile) made by
-  `scripts/measure/copy-profile.sh`, with the owner's go.
+  `scripts/measure/copy-profile.sh`, with the owner's go. The figures at rest recorded before the
+  stage 1 audit were taken online; offline Opium wakes more
+  ([measurements](docs/measurements.md#1-at-rest-cpu-time-and-wake-ups)): compare like with like.
+- `OPIUM_BIN` names the binary `run.sh` starts (`target/release/opium` by default).
 - The scripts end each test instance by SIGTERM to its own pid, and refuse to start while another
-  Opium runs. Never close a window through the compositor: the command can reach the owner's
+  Opium runs. A run ended so never reaches the app's own exit, so it writes no setting that only
+  closing saves. Never close a window through the compositor: the command can reach the owner's
   focused window.
 - `startup.py … map` times the window's mapping from Umbriel's event stream instead, on the
   desktop.
@@ -319,10 +334,8 @@ The desktop app saves its own window once it has had time to load, then quits
 
 The three XDG variables move every file the app keeps. They do **not** move:
 
-- **the session bus**: the single-instance check, so a test build started while the owner's Opium
-  runs only raises the owner's window and exits
-  ([ADR-0018](docs/adr/0018-one-instance-through-the-session-bus.md)); the MPRIS name; and **the
-  keyring**, whose one item "Opium downloads" holds the key every download is sealed with;
+- **the session bus**: the MPRIS name, which an older Opium, from before [ADR-0043](docs/adr/0043-one-instance-per-profile-held-by-a-lock.md),
+  lets a newer one take; and **the keyring**, whose one item "Opium downloads" holds the key every download is sealed with;
 - **the network**: Opium Connect announces the app on the local network and through iroh. A fresh
   profile is a new device on the owner's phone; a copied `connect.json` *is* the owner's computer,
   which merges into the phone's real history, playlists and session;
@@ -336,26 +349,29 @@ A test run uses a throwaway profile, no session bus and no network. Inside `nix 
 `WAYLAND_DISPLAY` naming the compositor's socket in `$XDG_RUNTIME_DIR`:
 
 ```sh
-cargo build -p app-desktop
+cargo build --release -p app-desktop
 test=$(mktemp -d /tmp/opium-test.XXXXXX)
 unshare --user --map-current-user --net env \
     XDG_CONFIG_HOME="$test/config" XDG_CACHE_HOME="$test/cache" XDG_DATA_HOME="$test/data" \
     DBUS_SESSION_BUS_ADDRESS=unix:path=/nonexistent \
     OPIUM_SCREENSHOT="$test/shot.png" OPIUM_SCREENSHOT_AFTER=6 \
-    target/debug/opium
+    target/release/opium
 rm -rf "$test"
 ```
 
 - It writes only under `$test`.
-- It says that the media controls, the keyring (so downloads) and Opium Connect are unavailable,
-  which is expected.
+- It prints `media controls unavailable: …`, `the keyring that keeps the downloads' key: …` (so no
+  downloads) and `opium connect: can't look for devices: …`, which is expected.
 - Without the screenshot variables the window stays until closed.
 - Checked on 2026-11-05 under the Opium names, with the debug build on the desktop's compositor: the
   capture saved after about 8.6 s, and only `$test` was written (`config/opium/` with
   `connect.json`, `settings.toml` and `shared.json`; `cache/` with fontconfig's and Mesa's caches;
   `shot.png`).
-- In a headless Weston (`scripts/measure/weston.sh`), use the release build: the debug build's
-  capture never fired there in 30 s ([pitfalls](#known-pitfalls)).
+- It ends without writing `settings.toml` if no setting changed and the window was not closed
+  (a SIGTERM, the screenshot mode's own end): the settings are saved as they change and on closing.
+- Use the release build, as above: in a headless Weston (`scripts/measure/weston.sh`) the debug
+  build's capture never fired in 30 s; the release build's may not either
+  ([pitfalls](#known-pitfalls)).
 
 ### Tests on a copy of the owner's profile
 
@@ -458,13 +474,13 @@ from opening. The cause is not found ([ADR-0021](docs/adr/0021-the-exit-watch.md
   Use `pgrep -ax opium`, which matches the process's name, and read the path it prints.
 - **The owner's shell is zsh**: an unquoted `$var` is not split into words, and a word starting with
   `=` is replaced by a command's path (`echo ====` fails). Quote, or run scripts with bash.
-- **A test build started while Opium runs exits at once, printing nothing**: it raised the running
-  window ([ADR-0018](docs/adr/0018-one-instance-through-the-session-bus.md)).
+- **A test build started on a profile where Opium already runs exits at once**: it raised the
+  running window, or says the bus did not reach it ([ADR-0043](docs/adr/0043-one-instance-per-profile-held-by-a-lock.md)). On a throwaway profile it runs beside
+  the owner's.
 - **With a test `XDG_CONFIG_HOME`, no Widevine CDM is found**: set `WIDEVINE_CDM`.
-- **The screenshot mode may never save** ([debt](docs/debt.md)): on 2026-11-05 the debug build
-  never saved in a headless Weston, and later the same day the release build saved neither there
-  nor, most times, on the desktop, old and new code alike; it waits for frames the compositor may
-  not send. To end a test run by the app's own exit path, run it with a session bus of its own
+- **The screenshot mode may never save**: it waits for frames the compositor may not send. Its
+  record of runs is in [the debt](docs/debt.md); the one setting seen to work is a headless Weston at
+  3840x2160 under its kiosk shell (`scripts/measure/weston.sh <socket> 3840x2160 <mHz> kiosk`). To end a test run by the app's own exit path, run it with a session bus of its own
   (`unshare --user --map-current-user --net dbus-run-session -- …`) and call MPRIS `Quit` on that
   bus.
 - **A headless Weston paces transitions badly**: it adds late frames of its own where the owner's

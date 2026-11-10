@@ -54,8 +54,14 @@ app in Kotlin with Jetpack Compose, which calls the core through UniFFI
 - **`crates/browser-signin`**: signing in through a Chromium-family browser on a profile of the
   app's own, its cookies read over DevTools pipes ([ADR-0003](adr/0003-sign-in-through-the-users-browser.md)).
 - **`crates/synced`**: what the user's devices keep in common (history, Opium's own playlists, the
-  session, shared settings), kept on disk and merged field by field
-  ([ADR-0014](adr/0014-shared-state-merged-field-by-field.md)).
+  session, when new songs were first seen, the playlists last added to, shared settings), kept on
+  disk and merged field by field ([ADR-0014](adr/0014-shared-state-merged-field-by-field.md)).
+  Each change carries a stamp (`synced::Stamp`: milliseconds on a clock that never goes back,
+  `max(now, last + 1)`, and the device's id; the later stamp wins, the device's id breaks a tie).
+  Devices compare digests (`synced::Digest`, FNV-1a over each part's JSON) before sending what
+  differs. On disk: `shared.json` (the device's id and its copy, but for the playlists),
+  `playlists.json`, and the playlists' chosen covers under `covers/`; a file that does not read is
+  put aside as `<name>.bad`, then `.bad.1`, `.bad.2`…, never written over.
 - **`crates/connect`**: Opium Connect: finding, pairing, encrypted connections, control, handoffs,
   sharing `synced`'s state, lending songs; on the local network and through iroh
   ([ADR-0010](adr/0010-opium-connect-on-the-local-network.md),
@@ -112,7 +118,7 @@ connect                              ──► opium-core, synced
 services                             ──► opium-core, apple-music, soundcloud, navidrome, local
 
 desktop     ──► opium-core, apple-music, soundcloud, navidrome, local, lyrics, services,
-                browser-signin, widevine, player, motion, connect, synced, downloads (keyring)
+                browser-signin, widevine, player, connect, synced, downloads (keyring)
 app-desktop ──► desktop, and the same crates directly
 opium-ffi   ──► opium-core (ffi), apple-music, soundcloud, navidrome, local, lyrics, services,
                 connect (ffi), synced, downloads

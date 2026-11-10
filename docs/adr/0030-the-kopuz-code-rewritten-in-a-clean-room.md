@@ -1,6 +1,7 @@
 # 0030. The code adapted from Kopuz is written again in a clean room
 
-- Status: Accepted; amends [0004](0004-the-widevine-cdm-borrowed-from-the-browser.md) (the shape of
+- Status: Accepted; amends [0002](0002-apple-music-through-its-web-player.md) (the code adapted
+  from Kopuz), [0004](0004-the-widevine-cdm-borrowed-from-the-browser.md) (the shape of
   the CDM's host) and [0029](0029-opium-waits-for-slime-ui-then-moves-first.md) (the standby lifted
   for these milestones); amended by
   [0032](0032-the-gpl-kept-and-kopuzs-code-still-written-again.md) (the GPL kept, the rewrite

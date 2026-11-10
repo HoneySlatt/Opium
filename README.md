@@ -37,8 +37,8 @@ with Jetpack Compose, over the same Rust core.
 - **Your files:** choose music folders in Settings and their FLAC, ALAC, WAV,
   AIFF, MP3, AAC, Ogg Vorbis and Opus files join the library, with their tags
   and covers, watched as they change. Their tags can be edited, as in iTunes.
-  A file opened from the file manager, the command line or dropped on the
-  window plays.
+  A file opened from the file manager or the command line plays; one dropped
+  on the window plays under X11, not yet under Wayland.
 - **Sound:** each track plays at its own sample rate through PipeWire, without
   resampling, while other apps' sound still plays. You get Apple Music's AAC
   256 and its Spatial Audio for headphones, SoundCloud's original uploads when the artist allows downloads, and
@@ -81,15 +81,18 @@ with Jetpack Compose, over the same Rust core.
 With Nix, from a clone of the repository:
 
 ```sh
-nix run .
+nix build
+result/bin/opium
 ```
 
-(`nix run github:HoneySlatt/Opium` works too for those with access to the
-repository, which is private.)
+This runs Opium on your own settings, sign-ins and downloads. To work on Opium,
+run it on a throwaway profile instead ([CONTRIBUTING](CONTRIBUTING.md#a-throwaway-profile)).
 
-Or with Cargo. Besides a Rust toolchain you need `pkg-config`, a C and C++
-compiler (the Widevine shim is C++), FFmpeg, PipeWire and libopus to link
-against, and `cmake`, `perl` and `git` to build BoringSSL from source:
+Or with Cargo, inside the development shell (`nix develop`), which provides
+what the build needs: besides a Rust toolchain, `pkg-config`, a C and C++
+compiler (the Widevine shim is C++), libclang for `bindgen`, FFmpeg, PipeWire
+and libopus to link against, and `cmake`, `perl` and `git` to build BoringSSL
+from source:
 
 ```sh
 cargo build --release -p app-desktop

@@ -97,7 +97,7 @@ One milestone each, in this order: `cenc`, then `widevine`, then `apple-music`.
 - **Measured.** Before and after: indexing and the table's memory (`cenc`); a licence's time, the
   CDM's time per sample and its wake-ups at rest (`widevine`); the developer token, the library, a
   station's batch and a song's start, and the token's search (`apple-music`).
-- **M1.10, done on 2026-11-05.** `cenc` written by two clean agents; mutation tests and three
+- **M1.10, done on 2026-11-05.** `cenc` written by two clean agents; mutation tests and four
   `cargo fuzz` targets, run weekly (`scripts/fuzz.sh`); indexing 0.45 → 0.33 ms
   ([measurements](measurements.md#indexing-an-encrypted-track-m110-2026-11-05),
   [evidence](audits/2026-11-05-cenc-clean-room.md)).
