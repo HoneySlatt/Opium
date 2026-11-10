@@ -62,11 +62,32 @@ impl OutputState {
 /// enough not to click.
 const RAMP: f32 = 0.005;
 
+/// A gain read from where it was left: within `0.0..=1.0`, and silent, to
+/// fade in again, when it is not a number.
+fn settled(gain: f32) -> f32 {
+    if gain.is_finite() {
+        gain.clamp(0.0, 1.0)
+    } else {
+        0.0
+    }
+}
+
+/// A volume as the output may use it, if it is one: within `0.0..=1.0`.
+/// `None` for a value that is not finite.
+fn audible(volume: f32) -> Option<f32> {
+    volume.is_finite().then(|| volume.clamp(0.0, 1.0))
+}
+
 /// Move buffered frames into `out` at the volume. `gain` is the gain as
 /// it stands, moved towards the volume, or towards silence to pause or
 /// before dropping what is buffered (a seek), by [`RAMP`]. Once silent
 /// that way, nothing more is read until it is to sound again. Silence too
 /// when the decoder falls behind.
+///
+/// Whatever it is given, the gain it leaves is within `0.0..=1.0`: a gain
+/// that is not a number starts again from silence, a volume outside the
+/// range is held to it, and one that is not a number holds the gain as it
+/// stands.
 fn fill(
     consumer: &mut Consumer<f32>,
     state: &OutputState,
@@ -76,7 +97,8 @@ fn fill(
     sample_rate: u32,
 ) {
     let flush = state.flush.load(Ordering::Acquire);
-    let volume = f32::from_bits(state.volume.load(Ordering::Relaxed));
+    *gain = settled(*gain);
+    let volume = audible(f32::from_bits(state.volume.load(Ordering::Relaxed))).unwrap_or(*gain);
     // Muted, it plays on unheard; paused, or to drop what is buffered, it
     // stops once silent.
     let stopping = flush || state.paused.load(Ordering::Relaxed);
@@ -392,7 +414,7 @@ fn run(
     let gain = if state.paused.load(Ordering::Relaxed) {
         0.0
     } else {
-        f32::from_bits(state.volume.load(Ordering::Relaxed))
+        audible(f32::from_bits(state.volume.load(Ordering::Relaxed))).unwrap_or(0.0)
     };
     let feed = Feed {
         consumer,
@@ -498,6 +520,31 @@ mod tests {
     use spa::sys::*;
 
     #[test]
+    fn the_gain_stays_between_silence_and_full_whatever_it_is_given() {
+        let bad = [f32::NAN, f32::INFINITY, f32::NEG_INFINITY, 2.0, -1.0, 1e30];
+        for volume in bad.into_iter().chain([0.0, 0.5, 1.0]) {
+            for start in bad.into_iter().chain([0.0, 0.5, 1.0]) {
+                for sample_rate in [48_000, 1_000, 0] {
+                    let (mut producer, mut consumer) = rtrb::RingBuffer::new(512);
+                    for _ in 0..400 {
+                        producer.push(0.5).unwrap();
+                    }
+                    let state = OutputState::new(volume);
+                    let mut gain = start;
+                    let mut out = [0.0; 400];
+                    fill(&mut consumer, &state, &mut gain, &mut out, 1, sample_rate);
+                    let context = format!("volume {volume}, gain {start}, {sample_rate} Hz");
+                    assert!((0.0..=1.0).contains(&gain), "{context}: gain {gain}");
+                    assert!(
+                        out.iter().all(|s| s.is_finite() && s.abs() <= 0.5),
+                        "{context}: a sample past the source"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn a_ring_run_dry_fades_out_then_back_in() {
         let (mut producer, mut consumer) = rtrb::RingBuffer::new(1024);
         for _ in 0..100 {
@@ -554,5 +601,45 @@ mod tests {
         // A layout that doesn't fit the count leaves channels unplaced.
         assert_eq!(positions(3, Some(0x3F))[2], SPA_AUDIO_CHANNEL_AUX0 + 2);
         assert_eq!(positions(1, None)[0], SPA_AUDIO_CHANNEL_MONO);
+    }
+
+    // W1 of the stage 1 audit: a volume that is not a number.
+    #[test]
+    fn a_volume_that_isnt_a_number_never_makes_it_louder() {
+        for start in [0.0, f32::NAN] {
+            let (mut producer, mut consumer) = rtrb::RingBuffer::new(4096);
+            for _ in 0..4000 {
+                producer.push(0.5).unwrap();
+            }
+            let state = OutputState::new(f32::NAN);
+            let mut gain = start;
+            let mut out = [0.0; 4000];
+            fill(&mut consumer, &state, &mut gain, &mut out, 1, 48_000);
+            assert!(
+                out.iter().all(|s| s.is_finite() && s.abs() <= 0.5),
+                "from {start}: gain {gain}, last sample {}",
+                out[3999]
+            );
+        }
+    }
+
+    /// `settings.toml` may say `volume = nan`, which TOML reads, and a clamp keeps NaN. The
+    /// gain used to walk down past zero by one each 5 ms, the samples coming out inverted and
+    /// ever louder, past full scale within 10 ms.
+    #[test]
+    fn a_volume_that_is_not_a_number_never_amplifies() {
+        let (mut producer, mut consumer) = rtrb::RingBuffer::new(4096);
+        for _ in 0..4000 {
+            producer.push(0.5).unwrap();
+        }
+        let state = OutputState::new(f32::NAN);
+        let mut gain = 1.0;
+        let mut out = [0.0; 4000];
+        fill(&mut consumer, &state, &mut gain, &mut out, 1, 48_000);
+        let loudest = out.iter().fold(0.0_f32, |m, s| m.max(s.abs()));
+        assert!(
+            loudest <= 0.5,
+            "loudest sample {loudest} from a source at 0.5; gain now {gain}"
+        );
     }
 }

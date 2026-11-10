@@ -143,6 +143,13 @@ fn itunes_smpb(moov: &[u8]) -> Option<Trim> {
     })
 }
 
+/// How many edits an edit list box of `box_len` bytes holds, of `entry` bytes
+/// each after its 8 of version, flags and count, whatever count it claims: the
+/// count is the file's, and so is how far a bogus one would walk.
+fn edits_held(claimed: u32, box_len: usize, entry: usize) -> usize {
+    (claimed as usize).min(box_len.saturating_sub(8) / entry)
+}
+
 /// The sound track's edit list: where its media starts playing, and for how
 /// long.
 fn edit_list(moov: &[u8]) -> Option<Trim> {
@@ -159,8 +166,8 @@ fn edit_list(moov: &[u8]) -> Option<Trim> {
     let media_scale = timescale(child(child(trak, b"mdia")?, b"mdhd")?)?;
     let elst = child(child(trak, b"edts")?, b"elst")?;
     let version = *elst.first()?;
-    let count = be32(elst, 4)? as usize;
     let entry = if version == 1 { 20 } else { 12 };
+    let count = edits_held(be32(elst, 4)?, elst.len(), entry);
     // The first edit that plays media (an empty one, -1, only delays it).
     (0..count).find_map(|i| {
         let at = 8 + i * entry;
@@ -173,8 +180,14 @@ fn edit_list(moov: &[u8]) -> Option<Trim> {
             )
         };
         let priming = u64::try_from(start).ok()?;
-        let length = (duration > 0 && movie_scale > 0)
-            .then(|| duration * u64::from(media_scale) / u64::from(movie_scale));
+        // A duration too long to count in the media's frames is no length.
+        let length = if duration > 0 && movie_scale > 0 {
+            duration
+                .checked_mul(u64::from(media_scale))
+                .map(|scaled| scaled / u64::from(movie_scale))
+        } else {
+            None
+        };
         Some(Trim {
             priming,
             length,
@@ -256,5 +269,91 @@ mod tests {
                 timescale: None
             }
         );
+    }
+
+    // W5 of the stage 1 audit: an edit list too long to count.
+
+    /// A file whose sound track has one edit, `duration` long at the movie's `movie_scale` and
+    /// starting at `start`, in an edit list of `version`.
+    fn edited(version: u8, duration: u64, start: u64, movie_scale: u32) -> Vec<u8> {
+        let mut elst = 1u32.to_be_bytes().to_vec();
+        if version == 1 {
+            elst.extend_from_slice(&duration.to_be_bytes());
+            elst.extend_from_slice(&start.to_be_bytes());
+        } else {
+            elst.extend_from_slice(&(duration as u32).to_be_bytes());
+            elst.extend_from_slice(&(start as u32).to_be_bytes());
+        }
+        elst.extend_from_slice(&0x0001_0000u32.to_be_bytes());
+        let mut hdlr = vec![0u8; 4];
+        hdlr.extend_from_slice(b"soun");
+        let mdia = [header(b"mdhd", 44_100), boxed(b"hdlr", &full(0, &hdlr))].concat();
+        let trak = [
+            boxed(b"edts", &boxed(b"elst", &full(version, &elst))),
+            boxed(b"mdia", &mdia),
+        ]
+        .concat();
+        let moov = [header(b"mvhd", movie_scale), boxed(b"trak", &trak)].concat();
+        [boxed(b"ftyp", b"iso6"), boxed(b"moov", &moov)].concat()
+    }
+
+    /// How long the music plays, from the edit's duration, in the media's frames: 10 s at the
+    /// movie's 1,000 a second is 441,000 frames at 44.1 kHz. A movie that gives no timescale gives
+    /// no length, rather than a division by zero.
+    #[test]
+    fn the_edit_list_says_how_long_the_music_plays() {
+        let trim = mp4_trim(&mut std::io::Cursor::new(edited(0, 10_000, 2112, 1000))).unwrap();
+        assert_eq!(
+            trim,
+            Trim {
+                priming: 2112,
+                length: Some(441_000),
+                timescale: Some(44_100)
+            }
+        );
+        let trim = mp4_trim(&mut std::io::Cursor::new(edited(0, 10_000, 2112, 0))).unwrap();
+        assert_eq!(trim.length, None);
+    }
+
+    /// A version-1 edit list whose duration is near `u64::MAX` overflows the product with the
+    /// media's timescale: no length, rather than a panic (debug builds) or a wrong one (release).
+    #[test]
+    fn an_edit_too_long_to_count_gives_no_length() {
+        let file = edited(1, u64::MAX / 2, 2112, 1000);
+        let trim = mp4_trim(&mut std::io::Cursor::new(file)).unwrap();
+        assert_eq!(trim.length, None);
+    }
+
+    /// An edit list holds only the edits its box has room for, whatever count it claims.
+    #[test]
+    fn an_edit_list_holds_no_more_edits_than_its_box() {
+        assert_eq!(edits_held(u32::MAX, 8 + 12, 12), 1);
+        assert_eq!(edits_held(2, 8 + 12, 12), 1);
+        assert_eq!(edits_held(1, 8 + 20, 20), 1);
+        assert_eq!(edits_held(3, 8 + 12 * 3, 12), 3);
+        assert_eq!(edits_held(0, 8 + 12, 12), 0);
+        assert_eq!(
+            edits_held(u32::MAX, 3, 12),
+            0,
+            "a box shorter than its head"
+        );
+    }
+
+    /// An edit list that claims four thousand million edits, and holds one that plays nothing,
+    /// is read as the box it is: without the cap it takes minutes in a debug build, so the read
+    /// is given a few seconds, on a thread of its own that a failure leaves behind.
+    #[test]
+    fn an_edit_count_bigger_than_the_box_is_not_walked() {
+        let mut file = edited(0, 10_000, 0xFFFF_FFFF, 1000);
+        let count = file.windows(4).position(|w| w == b"elst").unwrap() + 8;
+        file[count..count + 4].copy_from_slice(&u32::MAX.to_be_bytes());
+        let (done, answer) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = done.send(mp4_trim(&mut std::io::Cursor::new(file)));
+        });
+        let trim = answer
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("read within 5 s: the count is capped");
+        assert_eq!(trim, None);
     }
 }

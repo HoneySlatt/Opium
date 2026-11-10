@@ -348,7 +348,15 @@ impl Player {
 
     /// Below 1.0 the samples are scaled; at 1.0 they pass untouched. Heard
     /// at once, even with the engine waiting on a read.
+    ///
+    /// A value outside `0.0..=1.0` is held to it. One that is not a number or
+    /// not finite (a corrupt setting) is no request at all: the volume stays
+    /// what it was, which is full volume until one has been set, rather than
+    /// jump to a level nobody chose.
     pub fn set_volume(&self, volume: f32) {
+        if !volume.is_finite() {
+            return;
+        }
         let volume = volume.clamp(0.0, 1.0);
         self.volume.store(volume.to_bits(), Ordering::Relaxed);
         self.engine().shared.output_volume(volume);
@@ -430,6 +438,23 @@ mod tests {
         fn seek(&mut self, _: std::io::SeekFrom) -> std::io::Result<u64> {
             Ok(0)
         }
+    }
+
+    #[test]
+    fn a_volume_that_is_not_a_number_changes_nothing() {
+        let player = Player::new();
+        let volume = || f32::from_bits(player.volume.load(Ordering::Relaxed));
+        player.set_volume(f32::NAN);
+        assert_eq!(volume(), 1.0, "full until one is set");
+        player.set_volume(0.3);
+        for bad in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            player.set_volume(bad);
+            assert_eq!(volume(), 0.3, "{bad} must keep the volume as it was");
+        }
+        player.set_volume(7.0);
+        assert_eq!(volume(), 1.0);
+        player.set_volume(-1.0);
+        assert_eq!(volume(), 0.0);
     }
 
     #[test]

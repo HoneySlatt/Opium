@@ -39,8 +39,33 @@ struct Music {
 }
 
 impl Music {
+    /// `ticks` in frames, held at `u64::MAX` when the file's timestamp is
+    /// too large to count.
     fn frames(&self, ticks: u64) -> u64 {
-        ticks * self.ticks.0 / self.ticks.1
+        scaled(ticks, self.ticks.0, self.ticks.1)
+    }
+}
+
+/// A time in seconds as a `Duration`: 0 for a negative one or NaN, `None`
+/// for one too large for a `Duration`. The seconds are a file's.
+fn clock(seconds: f64) -> Option<Duration> {
+    Duration::try_from_secs_f64(seconds.max(0.0)).ok()
+}
+
+/// `value * numer / denom`, held at `u64::MAX` when it doesn't fit: the
+/// values are a file's, and a malformed one must not overflow them.
+/// `denom` must not be 0.
+fn scaled(value: u64, numer: u64, denom: u64) -> u64 {
+    u64::try_from(u128::from(value) * u128::from(numer) / u128::from(denom)).unwrap_or(u64::MAX)
+}
+
+/// `value`, in `scale` units a second, as frames at `sample_rate`; as it
+/// stands when the file gives no scale (frames already). Held at
+/// `u64::MAX` when it doesn't fit.
+fn to_frames(value: u64, sample_rate: u32, scale: Option<u32>) -> u64 {
+    match scale {
+        Some(scale) if scale > 0 => scaled(value, u64::from(sample_rate), u64::from(scale)),
+        _ => value,
     }
 }
 
@@ -103,14 +128,13 @@ impl Decoder {
         });
         let music = match (aac && mp4, ticks) {
             (true, Some(ticks)) => {
-                let to_frames = |v: u64, scale: Option<u32>| match scale {
-                    Some(scale) if scale > 0 => v * u64::from(sample_rate) / u64::from(scale),
-                    _ => v,
-                };
                 let (start, end) = match trim {
                     Some(t) => {
-                        let start = to_frames(t.priming, t.timescale);
-                        (start, t.length.map(|l| start + to_frames(l, t.timescale)))
+                        let start = to_frames(t.priming, sample_rate, t.timescale);
+                        let end = t
+                            .length
+                            .map(|l| start.saturating_add(to_frames(l, sample_rate, t.timescale)));
+                        (start, end)
                     }
                     None => (u64::from(source.priming.unwrap_or(0)), None),
                 };
@@ -127,8 +151,7 @@ impl Decoder {
                 _ => None,
             },
             bits_per_sample: params.bits_per_sample,
-            duration: num_frames
-                .map(|n| Duration::from_secs_f64(n as f64 / f64::from(sample_rate))),
+            duration: num_frames.and_then(|n| clock(n as f64 / f64::from(sample_rate))),
         };
         Ok(Self {
             format,
@@ -214,7 +237,7 @@ impl Decoder {
             .find(|t| t.id == self.track_id)
             .and_then(|t| t.time_base)
             .and_then(|tb| tb.calc_time(seeked.actual_ts))
-            .map(|t| Duration::from_secs_f64(t.as_secs_f64().max(0.0)));
+            .and_then(|t| clock(t.as_secs_f64()));
         Ok(actual.unwrap_or(to))
     }
 }
@@ -249,6 +272,39 @@ mod tests {
         // About a second of mono sound.
         assert!((40_000..=56_000).contains(&frames), "{frames} samples");
     }
+    #[test]
+    fn a_timestamp_too_large_to_count_is_held_not_overflowed() {
+        let music = Music {
+            start: 0,
+            end: None,
+            ticks: (u64::from(u32::MAX) * 192_000, 1),
+        };
+        assert_eq!(music.frames(u64::MAX), u64::MAX);
+        assert_eq!(music.frames(0), 0);
+        // In range, as before: 1,000 ticks a second, at 44.1 kHz.
+        let music = Music {
+            start: 0,
+            end: None,
+            ticks: (44_100, 1000),
+        };
+        assert_eq!(music.frames(10_000), 441_000);
+        assert_eq!(to_frames(u64::MAX, 44_100, Some(1)), u64::MAX);
+        assert_eq!(to_frames(u64::MAX, 44_100, Some(0)), u64::MAX);
+        assert_eq!(to_frames(2112, 44_100, None), 2112);
+        assert_eq!(to_frames(1000, 48_000, Some(24_000)), 2000);
+    }
+
+    #[test]
+    fn a_time_too_large_for_a_duration_is_none_not_a_panic() {
+        // A file saying 2^64 frames at 1 Hz, or a seek landing at that many seconds.
+        assert_eq!(clock(u64::MAX as f64 / 1.0), None);
+        assert_eq!(clock(1e300), None);
+        assert_eq!(clock(f64::INFINITY), None);
+        assert_eq!(clock(f64::NAN), Some(Duration::ZERO));
+        assert_eq!(clock(-3.0), Some(Duration::ZERO));
+        assert_eq!(clock(1.5), Some(Duration::from_millis(1500)));
+    }
+
     #[test]
     fn a_file_saying_it_runs_at_no_rate_is_refused_rather_than_divided_by() {
         // A WAV header saying 0 Hz: it used to reach a division and bring
