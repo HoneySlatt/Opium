@@ -1,7 +1,8 @@
 # 0014. What the devices share, merged field by field
 
 - Status: Accepted; amended by [0034](0034-what-opium-is-to-become.md)
-  (every play kept and shared)
+  (every play kept and shared) and [0046](0046-the-shared-state-sent-in-parts.md) (the state sent in
+  parts)
 - Date: 2026-10-31
 
 ## Context

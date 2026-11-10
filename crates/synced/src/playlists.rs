@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 use opium_core::model::{ItemId, ProviderKind, Track};
 use serde::{Deserialize, Serialize};
 
-use crate::{Latest, Stamp, latest, place};
+use crate::{Latest, PIECE_SLACK, Parts, Stamp, is_playlist_id, json_len, latest, place};
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Playlists {
@@ -231,6 +231,48 @@ impl Playlists {
 
     pub(crate) fn is_empty(&self) -> bool {
         self.lists.is_empty()
+    }
+
+    /// The playlists put in `parts`, as [`crate::Shared::into_parts`] says:
+    /// each one's name, description, cover and deletion as one piece, then
+    /// each of its songs as a piece of its own. A playlist holding nothing
+    /// goes too, as one piece, so that the parts make all of it again.
+    pub(crate) fn cut(self, parts: &mut Parts) {
+        for (id, list) in self.lists {
+            let List {
+                name,
+                description,
+                deleted,
+                songs,
+                cover,
+            } = list;
+            let header = List {
+                name,
+                description,
+                deleted,
+                songs: BTreeMap::new(),
+                cover,
+            };
+            let id_len = json_len(&id);
+            if header != List::default() || songs.is_empty() {
+                let len = id_len + json_len(&header) + PIECE_SLACK;
+                parts.room(len).playlists.lists.insert(id.clone(), header);
+            }
+            for (entry, song) in songs {
+                let len = id_len + json_len(&entry) + json_len(&song) + PIECE_SLACK;
+                let part = parts.room(len);
+                let list = part.playlists.lists.entry(id.clone()).or_default();
+                list.songs.insert(entry, song);
+            }
+        }
+    }
+
+    /// Leaves out the playlists whose id this app doesn't make
+    /// ([`is_playlist_id`]): how many.
+    pub(crate) fn leave_out_bad_ids(&mut self) -> usize {
+        let before = self.lists.len();
+        self.lists.retain(|id, _| is_playlist_id(id));
+        before - self.lists.len()
     }
 
     /// Each playlist's digest, by id: alike on two devices that have it alike.

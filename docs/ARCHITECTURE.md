@@ -168,8 +168,11 @@ has no wake: while music plays, `logic()` asks for a frame every 250 ms to read 
 The node (`connect::Node`, on a one-thread tokio runtime of its own) listens on TCP 47820,
 announces itself and browses over mDNS, and redials paired devices; away from home it uses iroh.
 A connection proves pairing through Noise with the pairing key. On connecting, two devices
-exchange digests, then whatever of `synced::Shared` differs; afterwards each change made by
-`synced::Kept` goes out as it is made. Events (a device seen, a command, a change received) come
+exchange digests, then whatever of `synced::Shared` differs, cut into messages of at most 4 MiB
+(`Shared::into_parts`, [ADR-0046](adr/0046-the-shared-state-sent-in-parts.md)); afterwards each
+change made by `synced::Kept` goes out as it is made. What another device sends is written to disk
+once it stops coming, within 5 s. A list played or queued on another device is cut to what its
+queue keeps. Events (a device seen, a command, a change received) come
 back to the window through a channel and its `Wake`. A handoff carries the queue (`Handoff`) to
 the device that takes over.
 

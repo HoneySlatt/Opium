@@ -15,7 +15,7 @@ const PATTERN: &str = "Noise_NNpsk0_25519_ChaChaPoly_SHA256";
 const MAX_PLAIN: usize = 64 * 1024;
 
 /// The longest message sealed: a whole queue handed over.
-const MAX_SEALED: usize = 32 * 1024 * 1024;
+pub(crate) const MAX_SEALED: usize = 32 * 1024 * 1024;
 
 const TAG: usize = 16;
 const NOISE_MAX: usize = 65535;

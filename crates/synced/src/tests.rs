@@ -614,3 +614,387 @@ fn a_device_whose_clock_is_wrong_doesnt_pin_the_times_everywhere() {
     assert!(!here.merge(wrong), "nothing of it is taken in");
     assert_eq!(here, before);
 }
+
+/// Stage 1 audit, L4: a copy put aside is no first run.
+///
+/// ADR-0014: devices merge "without one device's copy overwriting another's
+/// changes". A computer whose `shared.json` doesn't read starts again; the
+/// history it was given from before the devices shared it (the apps'
+/// `history.json`, never removed) must not come in as played now and push
+/// the phone's own plays out of the 100 kept.
+#[test]
+fn a_copy_put_aside_doesnt_push_the_other_devices_history_out() {
+    let hour_ago = now() - 3_600_000;
+    let mut phone = device("phone");
+    for n in 0..100 {
+        phone.played(track(n), hour_ago + u64::from(n));
+    }
+    let dir = std::env::temp_dir().join(format!("synced-aside-{}", new_id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("shared.json"), b"{ damaged").unwrap();
+    let computer = Kept::open(&dir, || (1000..1100).map(track).collect());
+    phone.merge(computer.everything());
+    computer.flush();
+    drop(computer);
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(
+        history(&phone).first().map(String::as_str),
+        Some("Song 99"),
+        "the phone's last play is still its last"
+    );
+}
+
+/// Stage 1 audit, L9: the playlists moving to their own file are kept
+/// through a write of that file that fails.
+///
+/// "The playlists first: a power cut between the two leaves them in both
+/// files." A write of `playlists.json` that fails (a full disk) must not
+/// leave them in neither.
+#[test]
+fn playlists_moving_to_their_own_file_survive_a_write_that_fails() {
+    let dir = std::env::temp_dir().join(format!("synced-move-fails-{}", new_id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut before = device("a");
+    before.create_playlist("p", "Mix".into(), String::new(), vec![track(1)], 1000);
+    let old = serde_json::json!({ "me": "a", "shared": before.shared });
+    std::fs::write(dir.join("shared.json"), old.to_string()).unwrap();
+    // As a full disk would: a folder stands where the new file's copy goes.
+    std::fs::create_dir(dir.join("playlists.json.part")).unwrap();
+    let kept = Kept::open(&dir, Vec::new);
+    kept.flush();
+    drop(kept);
+    std::fs::remove_dir(dir.join("playlists.json.part")).unwrap();
+    let again = Kept::open(&dir, Vec::new);
+    let kept_on_disk = again.playlist("p").is_some();
+    again.flush();
+    drop(again);
+    let _ = std::fs::remove_dir_all(&dir);
+    assert!(kept_on_disk, "the playlist is still in one of the files");
+}
+
+/// Stage 1 audit, S4: a playlist id another device chose never names a
+/// file outside the covers' folder.
+#[test]
+fn a_playlist_id_from_another_device_stays_in_the_covers_folder() {
+    let dir = std::env::temp_dir().join(format!("synced-{:016x}", rand::random::<u64>()));
+    let kept = Kept::open(&dir, Vec::new);
+    let theirs: Shared = serde_json::from_value(serde_json::json!({
+        "playlists": {"lists": {"../escaped": {
+            "name": {"at": {"at": 1, "device": "x"}, "value": "P"},
+            "cover": {"at": {"at": 1, "device": "x"}, "value": "AAAA"}
+        }}}
+    }))
+    .unwrap();
+    assert!(kept.merge(theirs));
+    let _ = kept.playlists();
+    let outside: Vec<String> = std::fs::read_dir(&dir)
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.starts_with("escaped-"))
+        .collect();
+    let _ = std::fs::remove_dir_all(&dir);
+    assert!(outside.is_empty(), "written outside covers/: {outside:?}");
+}
+
+/// L4, a real first run: the songs played before the devices shared their
+/// history rank below every real play, so that meeting a paired device
+/// they never push its plays out of the latest kept.
+#[test]
+fn songs_played_before_a_first_run_rank_below_every_real_play() {
+    let hour_ago = now() - 3_600_000;
+    let mut phone = device("phone");
+    for n in 0..100 {
+        phone.played(track(n), hour_ago + u64::from(n));
+    }
+    let dir = std::env::temp_dir().join(format!("synced-first-run-{}", new_id()));
+    let computer = Kept::open(&dir, || (1000..1100).rev().map(track).collect());
+    assert_eq!(
+        history(&State::new("x".into(), computer.everything()))[0],
+        "Song 1099"
+    );
+    phone.merge(computer.everything());
+    // Played on the computer now: first, above the phone's.
+    let played = computer.played(track(2000));
+    phone.merge(played);
+    computer.flush();
+    drop(computer);
+    let _ = std::fs::remove_dir_all(&dir);
+    let kept = history(&phone);
+    assert_eq!(kept.len(), history::KEPT);
+    assert_eq!(kept[0], "Song 2000");
+    assert_eq!(kept[1], "Song 99", "the phone's last play is next");
+    assert!(
+        !kept.iter().any(|t| t == "Song 1099"),
+        "older than any real play"
+    );
+}
+
+/// L5: each copy put aside keeps a name of its own, `shared.json`'s and
+/// `playlists.json`'s alike.
+#[test]
+fn a_second_copy_put_aside_keeps_the_first() {
+    let dir = std::env::temp_dir().join(format!("synced-aside-twice-{}", new_id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    for (copy, aside) in [("first", "bad"), ("second", "bad.1")] {
+        std::fs::write(dir.join("shared.json"), format!("{{ {copy} shared")).unwrap();
+        std::fs::write(dir.join("playlists.json"), format!("{{ {copy} lists")).unwrap();
+        let kept = Kept::open(&dir, Vec::new);
+        let (id, _) = kept.create_playlist("Mix".into(), String::new(), vec![track(1)]);
+        kept.flush();
+        drop(kept);
+        for name in ["shared", "playlists"] {
+            let kept_aside = dir.join(format!("{name}.json.{aside}"));
+            let what = if name == "shared" { "shared" } else { "lists" };
+            assert_eq!(
+                std::fs::read_to_string(&kept_aside).unwrap(),
+                format!("{{ {copy} {what}"),
+                "{} keeps the {copy} copy",
+                kept_aside.display()
+            );
+        }
+        // Written again, readable, beside the copies put aside.
+        assert!(Kept::open(&dir, Vec::new).playlist(&id).is_some());
+    }
+    assert_eq!(
+        std::fs::read_to_string(dir.join("shared.json.bad")).unwrap(),
+        "{ first shared",
+        "the first copy is still there"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// L5: a file that doesn't read and can't be put aside is never written
+/// over; the copy goes on in memory.
+#[cfg(unix)]
+#[test]
+fn a_copy_that_cant_be_put_aside_is_never_written_over() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = std::env::temp_dir().join(format!("synced-stuck-{}", new_id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("shared.json"), b"{ damaged shared").unwrap();
+    std::fs::write(dir.join("playlists.json"), b"{ damaged lists").unwrap();
+    // A folder that can't be written: nothing in it can be put aside.
+    let mode = |m| std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(m)).unwrap();
+    mode(0o500);
+    assert!(
+        std::fs::write(dir.join("probe"), b"").is_err(),
+        "the folder refuses to be written (a test run as root can't check this)"
+    );
+    let kept = Kept::open(&dir, Vec::new);
+    let (id, _) = kept.create_playlist("Mix".into(), String::new(), vec![track(1)]);
+    // Writable again: the copy still mustn't replace what is there.
+    mode(0o700);
+    kept.played(track(2));
+    kept.flush();
+    assert!(kept.playlist(&id).is_some(), "it goes on in memory");
+    assert_eq!(titles(kept.history()), ["Song 2"]);
+    drop(kept);
+    let shared = std::fs::read_to_string(dir.join("shared.json"));
+    let lists = std::fs::read_to_string(dir.join("playlists.json"));
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(shared.unwrap(), "{ damaged shared");
+    assert_eq!(lists.unwrap(), "{ damaged lists");
+}
+
+/// A copy holding a little of everything, for cutting into parts: plays, a
+/// clear, a session, settings, playlists used last, songs first seen, and
+/// playlists long and short, renamed, covered, deleted, with songs taken
+/// out and moved, and one holding nothing.
+fn a_bit_of_everything() -> State {
+    const WHEN: u64 = 1_700_000_000;
+    let mut a = device("a");
+    a.played(track(1), 1000);
+    a.clear_history(1500);
+    for n in 2..5 {
+        a.played(track(n), 2000 + u64::from(n));
+    }
+    a.left(session(&[1, 2], 1, 30_000), 3000);
+    a.create_playlist(
+        "long",
+        "Long".into(),
+        "Many".into(),
+        (0..300).map(track).collect(),
+        4000,
+    );
+    a.create_playlist("short", "Short".into(), String::new(), vec![track(7)], 4100);
+    a.cover_playlist("short", Some("AAAA".into()), 4200);
+    a.create_playlist("gone", "Gone".into(), String::new(), vec![track(8)], 4300);
+    a.delete_playlist("gone", 4400);
+    let entries: Vec<String> = a.shared.playlists.get("long").unwrap().songs[..3]
+        .iter()
+        .map(|s| s.entry.clone())
+        .collect();
+    a.remove_from_playlist("long", &entries);
+    let moved = a.shared.playlists.get("long").unwrap().songs[10]
+        .entry
+        .clone();
+    a.move_in_playlist("long", &moved, 0, 4500);
+    // A playlist holding nothing, as a change made of no songs leaves one.
+    a.remove_from_playlist("empty", &[]);
+    a.shared.seen = (0..200).map(|n| (format!("song {n}"), WHEN + n)).collect();
+    a.shared.used = [("long".to_owned(), WHEN * 1000)].into_iter().collect();
+    a.shared.settings.insert(
+        "relay".into(),
+        Latest {
+            at: Stamp {
+                at: 5000,
+                device: "a".into(),
+            },
+            value: "https://relay.example".into(),
+        },
+    );
+    a
+}
+
+#[test]
+fn parts_taken_in_in_any_order_and_twice_make_the_whole() {
+    let whole = a_bit_of_everything().shared;
+    let max = 4096;
+    let parts = whole.clone().into_parts(max);
+    assert!(parts.len() > 5, "cut: {} parts", parts.len());
+    for part in &parts {
+        assert!(json_len(part) <= max, "{} bytes > {max}", json_len(part));
+    }
+    // Into a device of its own copy, in order, the other way round, and each
+    // part twice: the same as the whole taken in at once.
+    let mut b = device("b");
+    b.played(track(50), 2500);
+    b.create_playlist("long", "Mine".into(), String::new(), vec![track(51)], 3500);
+    let mut at_once = b.shared.clone();
+    at_once.merge(whole.clone());
+    let mut in_order = b.shared.clone();
+    for part in parts.iter().cloned() {
+        in_order.merge(part);
+    }
+    let mut backwards = b.shared.clone();
+    for part in parts.iter().rev().chain(&parts).cloned() {
+        backwards.merge(part);
+    }
+    assert_eq!(in_order, at_once);
+    assert_eq!(backwards, at_once);
+    assert_eq!(backwards.digest(), at_once.digest());
+    // Into an empty one: the whole again, the empty playlist with it.
+    let mut empty = Shared::default();
+    for part in parts {
+        empty.merge(part);
+    }
+    assert_eq!(empty, whole);
+}
+
+#[test]
+fn one_playlist_longer_than_a_part_spans_parts_in_its_order() {
+    let mut a = device("a");
+    a.create_playlist(
+        "p",
+        "Mix".into(),
+        String::new(),
+        (0..1000).map(track).collect(),
+        1000,
+    );
+    let max = 16 * 1024;
+    let parts = a.shared.clone().into_parts(max);
+    assert!(parts.len() > 10, "cut: {} parts", parts.len());
+    assert!(parts.iter().all(|p| json_len(p) <= max));
+    let mut b = device("b");
+    for part in parts.into_iter().rev() {
+        b.merge(part);
+    }
+    assert_eq!(b.shared, a.shared);
+    assert_eq!(songs(&b, "p"), songs(&a, "p"));
+}
+
+#[test]
+fn an_empty_copy_has_no_part_and_a_small_one_one() {
+    assert!(Shared::default().into_parts(1024).is_empty());
+    let (change, _) = device("a").played(track(1), 1000);
+    assert_eq!(change.clone().into_parts(1024), [change]);
+}
+
+#[test]
+fn a_piece_longer_than_a_part_goes_alone() {
+    let mut a = device("a");
+    a.create_playlist(
+        "p",
+        "Mix".into(),
+        String::new(),
+        (0..20).map(track).collect(),
+        1000,
+    );
+    a.cover_playlist("p", Some("A".repeat(10_000)), 2000);
+    let max = 2048;
+    let parts = a.shared.clone().into_parts(max);
+    let over: Vec<&Shared> = parts.iter().filter(|p| json_len(*p) > max).collect();
+    assert_eq!(over.len(), 1, "the cover's part alone is over");
+    let alone = over[0].playlists.get("p").expect("the name and cover");
+    assert!(alone.songs.is_empty(), "no song with it");
+    let mut b = device("b");
+    for part in parts {
+        b.merge(part);
+    }
+    assert_eq!(b.shared, a.shared);
+}
+
+#[test]
+fn playlist_ids_this_app_doesnt_make_are_left_out() {
+    let lists: serde_json::Map<String, serde_json::Value> = [
+        "../escaped",
+        "a/b",
+        "a\\b",
+        "..",
+        ".",
+        "",
+        "ABCDEF0123456789",
+        "0123-4567",
+        &"a".repeat(65),
+        "0123456789abcdef",
+    ]
+    .into_iter()
+    .map(|id| {
+        let list = serde_json::json!({"name": {"at": {"at": 1, "device": "x"}, "value": id}});
+        (id.to_owned(), list)
+    })
+    .collect();
+    let mut theirs: Shared =
+        serde_json::from_value(serde_json::json!({ "playlists": { "lists": lists } })).unwrap();
+    assert_eq!(theirs.leave_out_bad_ids(), 9);
+    assert_eq!(
+        theirs.playlists.digests().keys().collect::<Vec<_>>(),
+        ["0123456789abcdef"]
+    );
+    for _ in 0..1000 {
+        assert!(is_playlist_id(&new_id()));
+    }
+}
+
+/// What another device sends, in parts, is written once the parts stop
+/// coming, with no flush asked.
+#[test]
+fn what_another_device_sends_is_written_once_its_parts_stop_coming() {
+    let dir = std::env::temp_dir().join(format!("synced-soon-{}", new_id()));
+    let kept = Kept::open(&dir, Vec::new);
+    kept.flush();
+    let mut a = device("a");
+    let id = "0123456789abcdef";
+    a.create_playlist(
+        id,
+        "Mix".into(),
+        String::new(),
+        (0..200).map(track).collect(),
+        1000,
+    );
+    let parts = a.shared.clone().into_parts(4096);
+    assert!(parts.len() > 3);
+    for part in parts {
+        assert!(kept.merge(part));
+    }
+    let lists = dir.join("playlists.json");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    while !std::fs::read_to_string(&lists).is_ok_and(|t| t.contains("Song 199")) {
+        assert!(std::time::Instant::now() < deadline, "never written");
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    drop(kept);
+    assert!(Kept::open(&dir, Vec::new).playlist(id).is_some());
+    let _ = std::fs::remove_dir_all(&dir);
+}

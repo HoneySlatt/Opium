@@ -20,6 +20,7 @@ use std::sync::{Arc, Mutex, MutexGuard, mpsc};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use opium_core::Handoff;
+use opium_core::files::put_aside;
 use opium_core::model::Track;
 use serde::{Deserialize, Serialize};
 
@@ -31,7 +32,9 @@ pub use playlists::{Playlist, PlaylistSong, Playlists};
 /// same time.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct Stamp {
-    /// Milliseconds since 1970, on the device's clock or later.
+    /// Milliseconds since 1970, on the device's clock or later; for the
+    /// songs played before the devices shared their history, a count from 1
+    /// up, below any real play (see [`Kept::open`]).
     pub at: u64,
     pub device: String,
 }
@@ -248,14 +251,153 @@ impl Shared {
             .max(self.settings.values().map(|s| &s.at).max())
             .map_or(0, |s| s.at)
     }
+
+    /// This copy, or change, cut into parts of at most `max` bytes each as
+    /// JSON, for a device that takes messages only so long; none if it is
+    /// empty.
+    ///
+    /// Taken in by another device in any order, any number of times, the
+    /// parts come to the same as the whole: the merge ignores order and
+    /// repetition (ADR-0014), and each piece a part holds merges on its
+    /// own. The pieces: the history, the last session, the playlists used
+    /// last and the settings, each whole; each song's first sighting; each
+    /// playlist's name, description, cover and deletion together; and each
+    /// song in a playlist, so that one playlist can span parts. A piece
+    /// longer than `max` on its own goes alone, in a part over `max`: none
+    /// comes near in use (a history of 100 songs, a queue of 100, a cover).
+    pub fn into_parts(self, max: usize) -> Vec<Shared> {
+        let Shared {
+            history,
+            playlists,
+            session,
+            seen,
+            used,
+            settings,
+        } = self;
+        let mut parts = Parts::new(max);
+        if history != History::default() {
+            let len = json_len(&history) + PIECE_SLACK;
+            parts.room(len).history = history;
+        }
+        if session.is_some() {
+            let len = json_len(&session) + PIECE_SLACK;
+            parts.room(len).session = session;
+        }
+        if !used.is_empty() {
+            let len = json_len(&used) + PIECE_SLACK;
+            parts.room(len).used = used;
+        }
+        if !settings.is_empty() {
+            let len = json_len(&settings) + PIECE_SLACK;
+            parts.room(len).settings = settings;
+        }
+        for (id, at) in seen {
+            let len = json_len(&id) + json_len(&at) + PIECE_SLACK;
+            parts.room(len).seen.insert(id, at);
+        }
+        playlists.cut(&mut parts);
+        parts.finish()
+    }
+
+    /// Leaves out the playlists whose id this app doesn't make, as a paired
+    /// device may send them: an id is sixteen hexadecimal digits in lower
+    /// case, up to 64 tolerated (see `is_playlist_id`), as a playlist's id
+    /// names its cover's file on this device. What another device sends
+    /// goes through this before [`Kept::merge`]. Returns how many it left
+    /// out.
+    pub fn leave_out_bad_ids(&mut self) -> usize {
+        self.playlists.leave_out_bad_ids()
+    }
+}
+
+/// Whether `id` is a playlist's id as this app makes them: [`new_id`]
+/// makes sixteen hexadecimal digits in lower case, and has since playlists
+/// began. Up to 64 such digits pass, as tolerance of a length that might
+/// change, not a plan to change it. Such an id names a file inside a folder
+/// as it is: no `/`, `\` or `.`, never empty, and no `-`, which ends the
+/// id in its cover's file name.
+pub(crate) fn is_playlist_id(id: &str) -> bool {
+    (1..=64).contains(&id.len()) && id.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+/// The bytes `value` takes as JSON, counted rather than kept.
+pub(crate) fn json_len(value: &impl Serialize) -> usize {
+    struct Count(usize);
+    impl std::io::Write for Count {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0 += bytes.len();
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let mut count = Count(0);
+    let _ = serde_json::to_writer(&mut count, value);
+    count.0
+}
+
+/// What a piece of a part takes as JSON besides its own: its key, a colon,
+/// a comma; and for a song in a playlist, besides its playlist's id, what
+/// holds the playlist's songs (`:{"songs":{` and `}}`), counted with each
+/// of its songs rather than once a part.
+pub(crate) const PIECE_SLACK: usize = 16;
+
+/// The most an empty part takes as JSON:
+/// `{"history":{},"playlists":{"lists":{}},"seen":{}}` and room to spare.
+const PART_BASE: usize = 64;
+
+/// A copy being cut into parts: see [`Shared::into_parts`].
+pub(crate) struct Parts {
+    max: usize,
+    done: Vec<Shared>,
+    part: Shared,
+    /// The most bytes `part` takes as JSON: [`PART_BASE`] and what each of
+    /// its pieces was said to take.
+    len: usize,
+    /// Whether `part` holds a piece yet.
+    holds: bool,
+}
+
+impl Parts {
+    fn new(max: usize) -> Self {
+        Self {
+            max,
+            done: Vec::new(),
+            part: Shared::default(),
+            len: PART_BASE,
+            holds: false,
+        }
+    }
+
+    /// The part to put a piece in that takes `len` bytes of JSON there,
+    /// its key and punctuation counted: the part being filled while the
+    /// piece fits in `max`, else a new one, which a piece longer than
+    /// `max` has to itself.
+    pub(crate) fn room(&mut self, len: usize) -> &mut Shared {
+        if self.holds && self.len + len > self.max {
+            self.done.push(std::mem::take(&mut self.part));
+            self.len = PART_BASE;
+        }
+        self.len += len;
+        self.holds = true;
+        &mut self.part
+    }
+
+    fn finish(mut self) -> Vec<Shared> {
+        if self.holds {
+            self.done.push(self.part);
+        }
+        self.done
+    }
 }
 
 /// This device's copy, kept on disk as it changes. Clones share it.
 #[derive(Clone)]
 pub struct Kept {
     state: Arc<Mutex<State>>,
-    /// Asks for the copy to be written; with a sender, told once it is.
-    save: mpsc::Sender<Option<mpsc::Sender<()>>>,
+    /// Asks for the copy to be written.
+    save: mpsc::Sender<Save>,
     /// The playlists read from disk, after the rest.
     loaded: Arc<Loaded>,
     /// Where the playlists' chosen covers are kept as files, for the apps
@@ -293,6 +435,15 @@ struct State {
     /// The playlists changed since they were last written: kept in a file
     /// of their own, much the largest, they are written only then.
     playlists_changed: bool,
+    /// The playlists are in `shared.json`, as kept before they had a file
+    /// of their own, and not written to theirs yet: `shared.json` keeps
+    /// them until they are.
+    moving: bool,
+    /// Whether `shared.json` may be written: not when it was there, didn't
+    /// read and couldn't be put aside.
+    write_rest: bool,
+    /// Whether `playlists.json` may be written, likewise.
+    write_playlists: bool,
 }
 
 /// `shared.json`: this device's id and its copy, but for the playlists,
@@ -304,10 +455,57 @@ struct Saved {
     shared: Shared,
 }
 
+/// [`Saved`] as written: `shared` a [`Rest`], or the whole [`Shared`]
+/// while the playlists are moving to their own file.
 #[derive(Serialize)]
-struct SavedRef<'a> {
+struct SavedRef<'a, S> {
     me: &'a str,
-    shared: Rest<'a>,
+    shared: S,
+}
+
+/// What reading a file kept here found: see [`read_kept`].
+enum Found<T> {
+    Read(T),
+    /// No file: the first time.
+    Missing,
+    /// A file that didn't read, put aside: the copy starts without it.
+    PutAside,
+    /// A file that didn't read and couldn't be put aside: never to be
+    /// written over, the copy kept in memory only.
+    Stuck,
+}
+
+/// `path` read through `parse`. A file there that can't be read, or that
+/// `parse` refuses, is put aside rather than written over, as `<name>.bad`
+/// or, when taken, the first of `<name>.bad.1`, `.2`… free
+/// ([`put_aside`]); what was done is said on the standard error.
+fn read_kept<T>(path: &Path, parse: impl FnOnce(&[u8]) -> Option<T>) -> Found<T> {
+    let why = match std::fs::read(path) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Found::Missing,
+        Err(e) => format!("can't be read: {e}"),
+        Ok(bytes) => match parse(&bytes) {
+            Some(value) => return Found::Read(value),
+            None => "isn't as this build keeps it".to_owned(),
+        },
+    };
+    match put_aside(path, &path.with_extension("json.bad")) {
+        Ok(aside) => {
+            eprintln!(
+                "synced: {} {why}: put aside as {}",
+                path.display(),
+                aside.display()
+            );
+            Found::PutAside
+        }
+        Err(e) => {
+            eprintln!(
+                "synced: {} {why}, and can't be put aside ({e}): left as it is, never written \
+                 over; what it would keep is kept in memory only until Opium closes",
+                path.display()
+            );
+            Found::Stuck
+        }
+    }
 }
 
 /// What was kept, read again without the songs of a service this build
@@ -375,6 +573,32 @@ impl State {
             clock,
             shared,
             playlists_changed: false,
+            moving: false,
+            write_rest: true,
+            write_playlists: true,
+        }
+    }
+
+    /// `tracks`, the songs played before the devices shared their history,
+    /// the last first, as plays older than any real one: stamped 1, 2… up
+    /// to the last played, rather than now. Stamped now, they would rank
+    /// above every play a paired device made before now, and push those out
+    /// of the latest [`history::KEPT`] once the devices meet. Ranked so,
+    /// the merge's rules stay as they are: each song once at its latest
+    /// stamp, the latest kept, and a clear made anywhere, being later,
+    /// takes them out too.
+    fn played_before(&mut self, tracks: Vec<Track>) {
+        let tracks: Vec<Track> = tracks.into_iter().take(history::KEPT).collect();
+        let count = tracks.len() as u64;
+        for (i, track) in tracks.into_iter().enumerate() {
+            let at = Stamp {
+                at: count - i as u64,
+                device: self.me.clone(),
+            };
+            self.merge(Shared {
+                history: History::play(track, at),
+                ..Shared::default()
+            });
         }
     }
 
@@ -509,46 +733,50 @@ impl State {
 }
 
 impl Kept {
-    /// What `dir` keeps. The first time, `history` gives the songs played
-    /// before, the last first, to start with.
+    /// What `dir` keeps. The first time, with no `shared.json` there,
+    /// `history` gives the songs played before, the last first, to start
+    /// with, ranked below every real play (see [`Stamp::at`]).
+    ///
+    /// A `shared.json` or `playlists.json` there that doesn't read is put
+    /// aside, as `shared.json.bad` or, when taken, `shared.json.bad.1`, `.2`…
+    /// (and `playlists.json.bad` likewise), and the copy starts without
+    /// what it held; for `shared.json`, with a new device id and no history
+    /// from before, as that is no first run. One that can't be put aside is
+    /// left as it is and never written over; the copy then keeps what would
+    /// go in it in memory only. Each is said on the standard error. The
+    /// folder is made if missing. Never fails.
     pub fn open(dir: &Path, history: impl FnOnce() -> Vec<Track>) -> Self {
+        // There once opened, rather than once first written to: an error
+        // shows as the writes'.
+        let _ = std::fs::create_dir_all(dir);
         let path = dir.join("shared.json");
-        let saved = std::fs::read(&path)
-            .ok()
-            .and_then(|b| {
-                serde_json::from_slice::<Saved>(&b)
-                    .ok()
-                    .or_else(|| without_unknown_services(&b))
-            })
-            .filter(|s| !s.me.is_empty());
-        // There but unreadable: put aside rather than written over.
-        if saved.is_none() && path.exists() {
-            let _ = std::fs::rename(&path, path.with_extension("json.bad"));
-        }
-        let fresh = saved.is_none();
-        let saved = saved.unwrap_or_else(|| Saved {
-            me: new_id(),
-            shared: Shared::default(),
+        let found = read_kept(&path, |bytes| {
+            serde_json::from_slice::<Saved>(bytes)
+                .ok()
+                .or_else(|| without_unknown_services(bytes))
+                .filter(|s| !s.me.is_empty())
         });
+        let first_run = matches!(found, Found::Missing);
+        let write_rest = !matches!(found, Found::Stuck);
+        let (saved, read) = match found {
+            Found::Read(saved) => (saved, true),
+            _ => (
+                Saved {
+                    me: new_id(),
+                    shared: Shared::default(),
+                },
+                false,
+            ),
+        };
         // In `shared.json` still, as before they had a file of their own:
         // moved to it.
         let moving = !saved.shared.playlists.is_empty();
         let mut state = State::new(saved.me, saved.shared);
         state.playlists_changed = moving;
-        if fresh {
-            let at = now();
-            let me = state.me.clone();
-            let tracks = history();
-            for (i, track) in tracks.into_iter().take(history::KEPT).enumerate().rev() {
-                let stamp = Stamp {
-                    at: at - i as u64,
-                    device: me.clone(),
-                };
-                state.merge(Shared {
-                    history: History::play(track, stamp),
-                    ..Shared::default()
-                });
-            }
+        state.moving = moving;
+        state.write_rest = write_rest;
+        if first_run {
+            state.played_before(history());
         }
         let state = Arc::new(Mutex::new(state));
         let loaded = Arc::new(Loaded::default());
@@ -557,21 +785,24 @@ impl Kept {
         let lists = dir.join("playlists.json");
         let (kept, done) = (state.clone(), loaded.clone());
         let load = move || {
-            let playlists = std::fs::read(&lists).ok().and_then(|b| {
-                serde_json::from_slice::<Playlists>(&b)
+            let found = read_kept(&lists, |bytes| {
+                serde_json::from_slice::<Playlists>(bytes)
                     .ok()
-                    .or_else(|| playlists_without_unknown_services(&b))
+                    .or_else(|| playlists_without_unknown_services(bytes))
             });
-            if playlists.is_none() && lists.exists() {
-                let _ = std::fs::rename(&lists, lists.with_extension("json.bad"));
-            }
-            if let Some(playlists) = playlists {
+            {
                 let mut state = lock(&kept);
-                state.merge(Shared {
-                    playlists,
-                    ..Shared::default()
-                });
-                state.playlists_changed = moving;
+                match found {
+                    Found::Read(playlists) => {
+                        state.merge(Shared {
+                            playlists,
+                            ..Shared::default()
+                        });
+                        state.playlists_changed = moving;
+                    }
+                    Found::Stuck => state.write_playlists = false,
+                    Found::Missing | Found::PutAside => {}
+                }
             }
             done.finish();
         };
@@ -591,8 +822,8 @@ impl Kept {
                 done.wait();
                 keep(&kept, &path, &saves)
             });
-        if fresh || moving {
-            let _ = save.send(None);
+        if !read || moving {
+            let _ = save.send(Save::Now);
         }
         Self {
             state,
@@ -623,11 +854,17 @@ impl Kept {
     }
 
     /// `playlist` with its chosen cover kept as a file, written the first
-    /// time it is asked for (the one before it gone).
+    /// time it is asked for (the one before it gone). The file is named by
+    /// the playlist's id, so a playlist whose id this app doesn't make,
+    /// which might name a file outside the covers' folder, shows its first
+    /// song's instead.
     fn with_cover(&self, mut playlist: Playlist) -> Playlist {
         let Some(data) = playlist.cover_data.take() else {
             return playlist;
         };
+        if !is_playlist_id(&playlist.id) {
+            return playlist;
+        }
         let name = format!("{}-{:016x}.jpg", playlist.id, digest(&data));
         let path = self.covers.join(&name);
         if !path.exists() {
@@ -682,10 +919,12 @@ impl Kept {
     }
 
     /// Take in what another device sent: whether anything changed here.
+    /// Written once what it sends stops coming for a moment (a second, five
+    /// at most: see `Save::Soon`), or at the next [`Kept::flush`].
     pub fn merge(&self, other: Shared) -> bool {
         let changed = self.with_playlists().merge(other);
         if changed {
-            let _ = self.save.send(None);
+            let _ = self.save.send(Save::Soon);
         }
         changed
     }
@@ -699,7 +938,7 @@ impl Kept {
     fn change(&self, make: impl FnOnce(&mut State) -> (Shared, bool)) -> Shared {
         let (change, changed) = make(&mut lock(&self.state));
         if changed {
-            let _ = self.save.send(None);
+            let _ = self.save.send(Save::Now);
         }
         change
     }
@@ -838,7 +1077,7 @@ impl Kept {
     /// On disk now, before the app closes; a few seconds at most.
     pub fn flush(&self) {
         let (done, wait) = mpsc::channel();
-        if self.save.send(Some(done)).is_ok() {
+        if self.save.send(Save::Flush(done)).is_ok() {
             let _ = wait.recv_timeout(std::time::Duration::from_secs(3));
         }
     }
@@ -908,34 +1147,89 @@ impl Kept {
     }
 }
 
+/// What the copy's writer is asked.
+enum Save {
+    /// A change made here: written at once.
+    Now,
+    /// What another device sent, which comes in parts, a large library's
+    /// in many (see [`Shared::into_parts`]): written once nothing more came
+    /// for [`QUIET`], or [`SOON_AT_MOST`] after the first, rather than all
+    /// of the playlists again after each part. Nothing is lost meanwhile
+    /// that the other device doesn't still hold.
+    Soon,
+    /// Written at once, and the sender told once it is.
+    Flush(mpsc::Sender<()>),
+}
+
+/// How long the writer waits for more of what another device sends.
+const QUIET: std::time::Duration = std::time::Duration::from_secs(1);
+/// The longest it waits so.
+const SOON_AT_MOST: std::time::Duration = std::time::Duration::from_secs(5);
+
 /// Write the copy to `path` each time it changed, once the changes in a
-/// row are in: until no copy is left to change.
-fn keep(state: &Mutex<State>, path: &Path, saves: &mpsc::Receiver<Option<mpsc::Sender<()>>>) {
+/// row are in (see [`Save`]): until no copy is left to change. A file that
+/// may not be written (see [`State::write_rest`]) is left alone.
+fn keep(state: &Mutex<State>, path: &Path, saves: &mpsc::Receiver<Save>) {
     while let Ok(first) = saves.recv() {
-        let mut waiting: Vec<mpsc::Sender<()>> = first.into_iter().collect();
-        while let Ok(more) = saves.try_recv() {
-            waiting.extend(more);
+        let since = std::time::Instant::now();
+        let mut soon = matches!(first, Save::Soon);
+        let mut waiting: Vec<mpsc::Sender<()>> = Vec::new();
+        let mut next = Ok(first);
+        while let Ok(save) = next {
+            match save {
+                Save::Soon => {}
+                Save::Now => soon = false,
+                Save::Flush(done) => {
+                    waiting.push(done);
+                    soon = false;
+                }
+            }
+            let left = SOON_AT_MOST.saturating_sub(since.elapsed());
+            next = if soon && !left.is_zero() {
+                saves.recv_timeout(QUIET.min(left)).map_err(|_| ())
+            } else {
+                saves.try_recv().map_err(|_| ())
+            };
         }
-        // Serialized as it stands, rather than copied first.
-        let (rest, playlists) = {
+        // Serialized as it stands, rather than copied first. The playlists
+        // first: a power cut between the two leaves them in both files,
+        // read again alike.
+        let playlists = {
             let mut state = lock(state);
-            let playlists = std::mem::take(&mut state.playlists_changed)
+            let changed = state.write_playlists && std::mem::take(&mut state.playlists_changed);
+            changed
                 .then(|| serde_json::to_vec(&state.shared.playlists).ok())
-                .flatten();
-            let rest = serde_json::to_vec(&SavedRef {
-                me: &state.me,
-                shared: state.shared.rest(),
-            });
-            (rest, playlists)
+                .flatten()
         };
-        // The playlists first: a power cut between the two leaves them in
-        // both files, read again alike.
-        if let Some(bytes) = playlists
-            && !write(&path.with_file_name("playlists.json"), &bytes)
-        {
-            lock(state).playlists_changed = true;
+        if let Some(bytes) = playlists {
+            let written = write(&path.with_file_name("playlists.json"), &bytes);
+            let mut state = lock(state);
+            if written {
+                state.moving = false;
+            } else {
+                state.playlists_changed = true;
+            }
         }
-        if let Ok(bytes) = rest {
+        // Moving and not written to their own file yet: still in this one,
+        // or they would be in neither.
+        let rest = {
+            let state = lock(state);
+            let me = state.me.as_str();
+            match (state.write_rest, state.moving) {
+                (false, _) => None,
+                (true, true) => serde_json::to_vec(&SavedRef {
+                    me,
+                    shared: &state.shared,
+                })
+                .ok(),
+                (true, false) => serde_json::to_vec(&SavedRef {
+                    me,
+                    shared: state.shared.rest(),
+                })
+                .ok(),
+            }
+        };
+        if let Some(bytes) = rest {
             write(path, &bytes);
         }
         for done in waiting {

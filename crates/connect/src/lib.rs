@@ -75,6 +75,16 @@ const PAIRING_PAUSE_MAX: Duration = Duration::from_secs(3600);
 const SEEN_MAX: usize = 64;
 /// A position this far from where it should be by now is told again.
 const DRIFT_MS: u64 = 1500;
+/// The most bytes of JSON a part of what the devices keep in common takes,
+/// as one message (see [`Shared::into_parts`]): an eighth of the most a
+/// device takes in one ([`wire::MAX_SEALED`], 32 MiB), so that each
+/// message's memory stays bounded, on the phone too. Playlists of any
+/// length go so, in as many messages as they take, as every song is a
+/// piece of its own. A message holds more than this only for one piece
+/// longer on its own, which goes alone; one past the cap, such as a
+/// history of huge songs from a device that misbehaves, is refused by the
+/// device it goes to, as before.
+const SHARED_PART: usize = wire::MAX_SEALED / 8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
@@ -286,6 +296,9 @@ struct Seen {
     retry_at: Instant,
     playing: Option<(Playing, Instant)>,
     upcoming: Vec<Track>,
+    /// Whether it shuffles, as it last said or as last asked of it from
+    /// here, whichever came later: how a long list is cut for it.
+    shuffle: bool,
 }
 
 impl Seen {
@@ -301,6 +314,7 @@ impl Seen {
             retry_at: Instant::now(),
             playing: None,
             upcoming: Vec::new(),
+            shuffle: false,
         }
     }
 }
@@ -582,7 +596,38 @@ impl Node {
     }
 
     /// Ask `to`'s player for something; false if it isn't connected.
+    ///
+    /// A list to play longer than a queue keeps ([`opium_core::queue::LIMIT`])
+    /// goes as `to`'s queue would keep it, shuffling or not as `to` last
+    /// said or was asked here: the run of songs from the one asked for on,
+    /// or that one and others picked from all the list. The song asked for
+    /// is always among them, at the index sent; the whole list would pass
+    /// what a device takes in one message. Songs to play next or to add to
+    /// the queue go likewise as their first [`opium_core::queue::LIMIT`],
+    /// in order: no queue holds more.
     pub fn send(&self, to: &str, command: Command) -> bool {
+        let command = match command {
+            Command::SetShuffle { on } => {
+                if let Some(s) = lock(&self.inner.seen).get_mut(to) {
+                    s.shuffle = on;
+                }
+                command
+            }
+            Command::PlayList { tracks, start } if tracks.len() > opium_core::queue::LIMIT => {
+                let shuffle = lock(&self.inner.seen).get(to).is_some_and(|s| s.shuffle);
+                let (tracks, start) = as_a_queue_keeps(tracks, start, shuffle);
+                Command::PlayList { tracks, start }
+            }
+            Command::PlayNext { mut tracks } => {
+                tracks.truncate(opium_core::queue::LIMIT);
+                Command::PlayNext { tracks }
+            }
+            Command::AddToQueue { mut tracks } => {
+                tracks.truncate(opium_core::queue::LIMIT);
+                Command::AddToQueue { tracks }
+            }
+            command => command,
+        };
         self.inner.send(to, &Message::Command(command))
     }
 
@@ -681,9 +726,21 @@ impl Sharer {
 
     pub fn share(&self, change: Shared) {
         if !change.is_empty() {
-            self.0.broadcast(&Message::Shared(change), None);
+            self.0.broadcast_shared(change, None);
         }
     }
+}
+
+/// Of `tracks`, what a queue shuffling or not keeps when told to play them
+/// from `start` (`opium_core::queue::Queue::replace`), and where `start`'s
+/// song is among them.
+fn as_a_queue_keeps(tracks: Vec<Track>, start: u32, shuffle: bool) -> (Vec<Track>, u32) {
+    let mut queue = opium_core::queue::Queue::new();
+    queue.set_shuffle(shuffle);
+    queue.replace(tracks, start as usize);
+    let (tracks, order, at) = queue.snapshot();
+    let start = order.get(at).copied().unwrap_or(0);
+    (tracks, start as u32)
 }
 
 impl Drop for Node {
@@ -830,6 +887,52 @@ impl Inner {
             return false;
         };
         link.tx.send(Self::encode(message)).is_ok()
+    }
+
+    /// `shared` as the messages that carry it, a part of it each, each
+    /// under [`SHARED_PART`] bytes (but a piece longer on its own: see
+    /// [`Shared::into_parts`]); the device taking them in, in any order,
+    /// comes to the same as with the whole.
+    fn shared_messages(shared: Shared) -> Vec<Arc<[u8]>> {
+        shared
+            .into_parts(SHARED_PART)
+            .into_iter()
+            .map(|part| Self::encode(&Message::Shared(part)))
+            .collect()
+    }
+
+    /// Send `shared` to the devices connected, but `not_to`, in parts made
+    /// once for all; none if no other is connected.
+    fn broadcast_shared(&self, shared: Shared, not_to: Option<&str>) {
+        let links: Vec<mpsc::UnboundedSender<Arc<[u8]>>> = lock(&self.seen)
+            .iter()
+            .filter(|(id, _)| Some(id.as_str()) != not_to)
+            .filter_map(|(_, seen)| Some(seen.link.as_ref()?.tx.clone()))
+            .collect();
+        if links.is_empty() {
+            return;
+        }
+        let messages = Self::shared_messages(shared);
+        for tx in links {
+            for message in &messages {
+                let _ = tx.send(message.clone());
+            }
+        }
+    }
+
+    /// Send `shared` to `to`, in parts, made once its link is known alive,
+    /// outside the lock.
+    fn send_shared(&self, to: &str, shared: Shared) {
+        let tx = lock(&self.seen)
+            .get(to)
+            .and_then(|s| s.link.as_ref())
+            .filter(|l| l.alive())
+            .map(|l| l.tx.clone());
+        if let Some(tx) = tx {
+            for message in Self::shared_messages(shared) {
+                let _ = tx.send(message);
+            }
+        }
     }
 
     /// Connect to `id` if it is paired, in sight or reachable away from
@@ -1000,12 +1103,15 @@ impl Inner {
                 let _ = tx.send(Self::encode(&Message::Themes(local.themes.clone())));
             }
         }
-        // In short, to be sent what differs, if it knows how; else all of it.
-        let _ = tx.send(Self::encode(&if digests {
-            Message::Digest(self.kept.digest())
+        // In short, to be sent what differs, if it knows how; else all of
+        // it, in parts.
+        if digests {
+            let _ = tx.send(Self::encode(&Message::Digest(self.kept.digest())));
         } else {
-            Message::Shared(self.kept.everything())
-        }));
+            for message in Self::shared_messages(self.kept.everything()) {
+                let _ = tx.send(message);
+            }
+        }
         if let Some(away) = self.away_id() {
             let _ = tx.send(Self::encode(&Message::Away(away)));
         }
@@ -1106,6 +1212,11 @@ impl Inner {
         match message {
             Message::Playing(playing) => {
                 if let Some(s) = lock(&self.seen).get_mut(from) {
+                    // A known limit: a `Playing` sent before it took a
+                    // `SetShuffle` asked here can come after, and undo the
+                    // flag until its next one. A list then goes cut as for
+                    // the shuffle it had: nothing lost but the pick.
+                    s.shuffle = playing.shuffle;
                     s.playing = Some((playing, Instant::now()));
                 }
                 (self.events)(Event::Changed);
@@ -1128,18 +1239,26 @@ impl Inner {
                 from: from.to_owned(),
                 themes,
             }),
-            Message::Shared(shared) => {
+            Message::Shared(mut shared) => {
+                // A playlist's id names its cover's file here.
+                let left_out = shared.leave_out_bad_ids();
+                if left_out > 0 {
+                    eprintln!(
+                        "opium connect: {from} sent {left_out} playlists whose id this app \
+                         doesn't make: left out"
+                    );
+                }
                 // New here: the other devices connected may not have it
                 // either.
                 if self.kept.merge(shared.clone()) {
                     (self.events)(Event::Synced);
-                    self.broadcast(&Message::Shared(shared), Some(from));
+                    self.broadcast_shared(shared, Some(from));
                 }
             }
             Message::Digest(theirs) => {
                 let unlike = self.kept.unlike(&theirs);
                 if !unlike.is_empty() {
-                    self.send(from, &Message::Shared(unlike));
+                    self.send_shared(from, unlike);
                 }
             }
             Message::Away(away) => lock(&self.store).set_away(from, away),
@@ -1625,6 +1744,458 @@ mod tests {
         assert_eq!(a_kept.history()[0].id.id, "2");
         drop((a, b));
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Stage 1 audit, W4: a song played on the paired device from Songs, in a
+    /// library of 70,000 songs: the command reaches the device, the song
+    /// asked for among what it gets.
+    #[test]
+    fn a_song_played_on_a_paired_device_from_a_long_list_reaches_it() {
+        let dir = std::env::temp_dir().join(format!("connect-long-list-{}", std::process::id()));
+        let (a_dir, b_dir) = (dir.join("a"), dir.join("b"));
+        let (tx, rx) = std::sync::mpsc::channel();
+        let a = Node::launch(
+            "A".into(),
+            DeviceKind::Computer,
+            &a_dir,
+            Kept::open(&a_dir, Vec::new),
+            None,
+            Box::new(|_| {}),
+            false,
+        );
+        let b = Node::launch(
+            "B".into(),
+            DeviceKind::Phone,
+            &b_dir,
+            Kept::open(&b_dir, Vec::new),
+            None,
+            Box::new(move |e| {
+                let _ = tx.send(e);
+            }),
+            false,
+        );
+        let key = [3; 32];
+        lock(&a.inner.store).pair(b.me(), key);
+        lock(&b.inner.store).pair(a.me(), key);
+        let mut seen = Seen::new(b.me());
+        seen.addrs = vec![SocketAddr::from(([127, 0, 0, 1], b.port))];
+        lock(&a.inner.seen).insert(b.me().id, seen);
+        a.publish(playing(0, false));
+        a.inner.reach(&b.me().id);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !b.peers().iter().any(|p| p.playing.is_some()) {
+            assert!(Instant::now() < deadline, "B never heard A");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+
+        // As `local::track` lists a file: its path, its album's key, its kept cover, its quality.
+        let local = opium_core::model::ProviderKind::Local;
+        let tracks: Vec<Track> = (0..70_000u32)
+            .map(|i| Track {
+                id: opium_core::model::ItemId::new(
+                    local,
+                    format!(
+                        "/srv/music/Some Artist/Some Album {}/{:02} A Song Title {i}.flac",
+                        i / 13,
+                        i % 13 + 1
+                    ),
+                ),
+                title: format!("A Song Title {i}"),
+                artists: vec!["Some Artist".into()],
+                album: Some(format!("Some Album {}", i / 13)),
+                album_id: Some(opium_core::model::ItemId::new(
+                    local,
+                    format!("album:some artist\u{1f}some album {}", i / 13),
+                )),
+                duration: Some(Duration::from_secs(200 + u64::from(i % 100))),
+                track_number: Some(i % 13 + 1),
+                disc_number: None,
+                artwork: Some(opium_core::model::Artwork {
+                    url_template: format!(
+                        "file:///var/lib/opium/local/covers/{:016x}.jpg",
+                        u64::from(i / 13) * 0x9E37_79B9
+                    ),
+                    background: None,
+                }),
+                explicit: false,
+                quality: Some(opium_core::model::AudioQuality {
+                    codec: opium_core::model::Codec::Flac,
+                    sample_rate: Some(44_100),
+                    bit_depth: Some(16),
+                    bitrate_kbps: Some(900),
+                }),
+                in_library: true,
+                library_id: None,
+            })
+            .collect();
+        let start = 41_234;
+        let asked = tracks[start].id.clone();
+        assert!(a.send(
+            &b.me().id,
+            Command::PlayList {
+                tracks,
+                start: start as u32
+            }
+        ));
+
+        let deadline = Instant::now() + Duration::from_secs(20);
+        let got = loop {
+            let left = deadline.saturating_duration_since(Instant::now());
+            match rx.recv_timeout(left) {
+                Ok(Event::Asked {
+                    command: Command::PlayList { tracks, start },
+                    ..
+                }) => break Some((tracks, start)),
+                Ok(_) => continue,
+                Err(_) => break None,
+            }
+        };
+        drop((a, b));
+        let _ = std::fs::remove_dir_all(&dir);
+        let (tracks, start) = got.expect("B never heard the song played on it");
+        assert_eq!(tracks[start as usize].id, asked, "the song asked for");
+        assert!(
+            tracks.len() <= opium_core::queue::LIMIT,
+            "{} songs sent where the queue keeps {}",
+            tracks.len(),
+            opium_core::queue::LIMIT
+        );
+    }
+
+    /// Two nodes on this machine, paired by hand, A reaching B; the second
+    /// gets B's events.
+    fn paired_pair(dir: &Path, b_kept: Kept) -> (Node, Node, std::sync::mpsc::Receiver<Event>) {
+        let (a_dir, b_dir) = (dir.join("a"), dir.join("b"));
+        let (tx, rx) = std::sync::mpsc::channel();
+        let a = Node::launch(
+            "A".into(),
+            DeviceKind::Computer,
+            &a_dir,
+            Kept::open(&a_dir, Vec::new),
+            None,
+            Box::new(|_| {}),
+            false,
+        );
+        let b = Node::launch(
+            "B".into(),
+            DeviceKind::Phone,
+            &b_dir,
+            b_kept,
+            None,
+            Box::new(move |e| {
+                let _ = tx.send(e);
+            }),
+            false,
+        );
+        let key = [6; 32];
+        lock(&a.inner.store).pair(b.me(), key);
+        lock(&b.inner.store).pair(a.me(), key);
+        let mut seen = Seen::new(b.me());
+        seen.addrs = vec![SocketAddr::from(([127, 0, 0, 1], b.port))];
+        lock(&a.inner.seen).insert(b.me().id, seen);
+        a.inner.reach(&b.me().id);
+        (a, b, rx)
+    }
+
+    /// W4 with shuffle on: a long list asked of a device told to shuffle
+    /// just before (as Shuffle All does) goes as the queue picks it then,
+    /// songs from all of it, not the run of songs around the one asked for.
+    #[test]
+    fn a_long_list_shuffled_on_a_paired_device_is_picked_from_all_of_it() {
+        let dir = std::env::temp_dir().join(format!("connect-shuffled-{}", std::process::id()));
+        let b_kept = Kept::open(&dir.join("b"), Vec::new);
+        let (a, b, rx) = paired_pair(&dir, b_kept);
+        // B plays in order, as it said.
+        b.publish(playing(0, false));
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !a.peers().iter().any(|p| p.playing.is_some()) {
+            assert!(Instant::now() < deadline, "A never heard B");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        let tracks: Vec<Track> = (0..1000).map(|i| track(&i.to_string())).collect();
+        assert!(a.send(&b.me().id, Command::SetShuffle { on: true }));
+        assert!(a.send(&b.me().id, Command::PlayList { tracks, start: 500 }));
+        let got = loop {
+            match rx.recv_timeout(Duration::from_secs(5)) {
+                Ok(Event::Asked {
+                    command: Command::PlayList { tracks, start },
+                    ..
+                }) => break Some((tracks, start)),
+                Ok(_) => continue,
+                Err(_) => break None,
+            }
+        };
+        drop((a, b));
+        let _ = std::fs::remove_dir_all(&dir);
+        let (tracks, start) = got.expect("B never heard the list");
+        assert!(tracks.len() <= opium_core::queue::LIMIT);
+        assert_eq!(tracks[start as usize].id.id, "500");
+        let n: Vec<u32> = tracks.iter().map(|t| t.id.id.parse().unwrap()).collect();
+        assert!(n.windows(2).all(|w| w[0] < w[1]), "in the list's order");
+        assert!(
+            n[n.len() - 1] - n[0] + 1 > n.len() as u32,
+            "picked from all of it: {n:?}"
+        );
+    }
+
+    /// W4 for the lists to queue: songs to play next, or to add to the queue,
+    /// from a long collection reach the paired device as its first songs, as
+    /// many as a queue holds, in order.
+    #[test]
+    fn long_lists_queued_on_a_paired_device_reach_it_cut_to_what_a_queue_holds() {
+        let dir = std::env::temp_dir().join(format!("connect-queued-{}", std::process::id()));
+        let b_kept = Kept::open(&dir.join("b"), Vec::new);
+        let (a, b, rx) = paired_pair(&dir, b_kept);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !a.peers().iter().any(|p| p.connected) {
+            assert!(Instant::now() < deadline, "A never reached B");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        // About 45 MB each as a whole: past what a device takes in one message.
+        let songs: Vec<Track> = (0..70_000).map(library_song).collect();
+        let first: Vec<opium_core::model::ItemId> = songs[..opium_core::queue::LIMIT]
+            .iter()
+            .map(|t| t.id.clone())
+            .collect();
+        assert!(a.send(
+            &b.me().id,
+            Command::PlayNext {
+                tracks: songs.clone()
+            }
+        ));
+        assert!(a.send(&b.me().id, Command::AddToQueue { tracks: songs }));
+        let (mut next, mut last) = (None, None);
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while next.is_none() || last.is_none() {
+            let left = deadline.saturating_duration_since(Instant::now());
+            match rx.recv_timeout(left) {
+                Ok(Event::Asked { command, .. }) => match command {
+                    Command::PlayNext { tracks } => next = Some(tracks),
+                    Command::AddToQueue { tracks } => last = Some(tracks),
+                    _ => {}
+                },
+                Ok(_) => {}
+                Err(_) => break,
+            }
+        }
+        drop((a, b));
+        let _ = std::fs::remove_dir_all(&dir);
+        let check = |tracks: Option<Vec<Track>>, what: &str| {
+            let tracks = tracks.unwrap_or_else(|| panic!("B never heard the songs {what}"));
+            assert!(
+                tracks.len() <= opium_core::queue::LIMIT,
+                "{} songs {what} sent where a queue holds {}",
+                tracks.len(),
+                opium_core::queue::LIMIT
+            );
+            let ids: Vec<opium_core::model::ItemId> = tracks.into_iter().map(|t| t.id).collect();
+            assert_eq!(ids, first, "the first songs {what}, in order");
+        };
+        check(next, "to play next");
+        check(last, "to add to the queue");
+    }
+
+    /// S4 where it enters: a playlist whose id could name a file outside its
+    /// folder, sent by a paired device, is left out; the others come in.
+    #[test]
+    fn a_playlist_id_that_could_name_a_file_elsewhere_is_left_out() {
+        let dir = std::env::temp_dir().join(format!("connect-bad-id-{}", std::process::id()));
+        let b_kept = Kept::open(&dir.join("b"), Vec::new);
+        // A's copy, as a device would hold it that took the bad one in.
+        let a_kept = Kept::open(&dir.join("a"), Vec::new);
+        let (good, _) = a_kept.create_playlist("Mix".into(), String::new(), vec![track("1")]);
+        let bad: Shared = serde_json::from_value(serde_json::json!({
+            "playlists": {"lists": {"../escaped": {
+                "name": {"at": {"at": 1, "device": "x"}, "value": "P"}
+            }}}
+        }))
+        .unwrap();
+        assert!(a_kept.merge(bad));
+        a_kept.flush();
+        drop(a_kept);
+        let (a, b, _rx) = paired_pair(&dir, b_kept.clone());
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while b_kept.playlist(&good).is_none() {
+            assert!(Instant::now() < deadline, "B never got A's playlists");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        let taken = b_kept.playlist("../escaped").is_some();
+        drop((a, b));
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(!taken, "the playlist ../escaped was taken in");
+    }
+
+    /// A song as Apple Music lists one in a library, of a usual length:
+    /// about 770 bytes in a playlist, as the devices send it.
+    fn library_song(n: u32) -> Track {
+        use opium_core::model::{Artwork, AudioQuality, Codec, ItemId, ProviderKind};
+        Track {
+            id: ItemId::new(ProviderKind::AppleMusic, format!("i.{n:014}")),
+            title: format!("A song title of usual length {n}"),
+            artists: vec!["An Artist".into()],
+            album: Some("An Album Of Usual Length".into()),
+            album_id: Some(ItemId::new(
+                ProviderKind::AppleMusic,
+                format!("l.{:014}", n / 12),
+            )),
+            duration: Some(Duration::from_millis(215_000)),
+            track_number: Some(n % 12 + 1),
+            disc_number: Some(1),
+            artwork: Some(Artwork {
+                url_template: "https://is1-ssl.mzstatic.com/image/thumb/Music116/v4/3b/2a/1c/3b2a1c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d/196871234567.jpg/{size}x{size}bb.jpg".into(),
+                background: Some(0x1a2b3c),
+            }),
+            explicit: false,
+            quality: Some(AudioQuality {
+                codec: Codec::Aac,
+                sample_rate: Some(44_100),
+                bit_depth: None,
+                bitrate_kbps: Some(256),
+            }),
+            in_library: true,
+            library_id: Some(ItemId::new(ProviderKind::AppleMusic, format!("i.{n:014}"))),
+        }
+    }
+
+    /// How long two devices have to share a library of 100,000 songs: about
+    /// 40 s each in the debug build on a 16-core desktop, far less built for
+    /// release. Room for a slower machine: it stops a link that never
+    /// catches up, as before W3's fix, not a slow one.
+    const LARGE_LIBRARY: Duration = Duration::from_secs(300);
+
+    /// The 100,000-song meetings, one at a time: run together, each took up
+    /// to four times as long, and the suite's time spread as much.
+    static LARGE_LIBRARIES: Mutex<()> = Mutex::new(());
+
+    /// Two paired nodes meet, A holding the playlists `fill` makes, B none:
+    /// whether B comes to hold all A does within `limit`, counted once no
+    /// other such meeting runs.
+    fn a_large_library_reaches_a_paired_device(
+        name: &str,
+        fill: impl FnOnce(&Kept),
+        limit: Duration,
+    ) -> bool {
+        let _one_at_a_time = lock(&LARGE_LIBRARIES);
+        let dir = std::env::temp_dir().join(format!("connect-{name}-{}", std::process::id()));
+        let (a_dir, b_dir) = (dir.join("a"), dir.join("b"));
+        let (a_kept, b_kept) = (Kept::open(&a_dir, Vec::new), Kept::open(&b_dir, Vec::new));
+        fill(&a_kept);
+        let want = a_kept.everything();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let a = Node::launch(
+            "A".into(),
+            DeviceKind::Computer,
+            &a_dir,
+            a_kept.clone(),
+            None,
+            Box::new(|_| {}),
+            false,
+        );
+        let b = Node::launch(
+            "B".into(),
+            DeviceKind::Phone,
+            &b_dir,
+            b_kept.clone(),
+            None,
+            Box::new(move |e| {
+                let _ = tx.send(e);
+            }),
+            false,
+        );
+        let key = [4; 32];
+        lock(&a.inner.store).pair(b.me(), key);
+        lock(&b.inner.store).pair(a.me(), key);
+        let mut seen = Seen::new(b.me());
+        seen.addrs = vec![SocketAddr::from(([127, 0, 0, 1], b.port))];
+        lock(&a.inner.seen).insert(b.me().id, seen);
+        a.inner.reach(&b.me().id);
+        let deadline = Instant::now() + limit;
+        let mut alike = false;
+        while !alike && Instant::now() < deadline {
+            // Compared once nothing came for a moment, as each look copies
+            // all of B's.
+            if rx.recv_timeout(Duration::from_millis(500)).is_err() {
+                alike = b_kept.everything() == want;
+            }
+        }
+        drop((a, b));
+        a_kept.flush();
+        b_kept.flush();
+        drop((a_kept, b_kept));
+        let _ = std::fs::remove_dir_all(&dir);
+        alike
+    }
+
+    /// W3: the bar's 100,000 songs in one playlist go in messages of a part
+    /// each, under the most a device takes, which give the whole back.
+    #[test]
+    fn a_hundred_thousand_songs_in_one_playlist_go_in_messages_a_device_takes() {
+        let dir = std::env::temp_dir().join(format!("connect-parts-{}", std::process::id()));
+        let kept = Kept::open(&dir, Vec::new);
+        kept.create_playlist(
+            "Everything".into(),
+            String::new(),
+            (0..100_000).map(library_song).collect(),
+        );
+        let whole = kept.everything();
+        kept.flush();
+        drop(kept);
+        let _ = std::fs::remove_dir_all(&dir);
+        let messages = Inner::shared_messages(whole.clone());
+        let largest = messages.iter().map(|m| m.len()).max().unwrap_or(0);
+        let all: usize = messages.iter().map(|m| m.len()).sum();
+        println!(
+            "100,000 songs in one playlist: {} messages, {all} bytes, the largest {largest}",
+            messages.len()
+        );
+        // `{"Shared":` and `}` around each part.
+        assert!(largest <= SHARED_PART + 11, "{largest} bytes");
+        assert!(largest < wire::MAX_SEALED);
+        assert!(all > wire::MAX_SEALED, "more than one message holds");
+        let mut again = Shared::default();
+        for message in messages.iter().rev() {
+            let Ok(Message::Shared(part)) = serde_json::from_slice(message) else {
+                panic!("not a part of the shared state");
+            };
+            again.merge(part);
+        }
+        assert!(again == whole, "the parts give the whole back");
+    }
+
+    /// Stage 1 audit, W3: the bar's 100,000 songs, all in one playlist, reach
+    /// a paired device.
+    #[test]
+    fn a_hundred_thousand_songs_in_one_playlist_reach_a_paired_device() {
+        let fill = |kept: &Kept| {
+            kept.create_playlist(
+                "Everything".into(),
+                String::new(),
+                (0..100_000).map(library_song).collect(),
+            );
+        };
+        assert!(
+            a_large_library_reaches_a_paired_device("one-list", fill, LARGE_LIBRARY),
+            "B never came to hold A's playlist"
+        );
+    }
+
+    /// Stage 1 audit, W3: the bar's 100,000 songs, in 100 playlists, reach a
+    /// paired device.
+    #[test]
+    fn a_hundred_thousand_songs_in_a_hundred_playlists_reach_a_paired_device() {
+        let fill = |kept: &Kept| {
+            for p in 0..100 {
+                kept.create_playlist(
+                    format!("Playlist {p}"),
+                    String::new(),
+                    (p * 1000..(p + 1) * 1000).map(library_song).collect(),
+                );
+            }
+        };
+        assert!(
+            a_large_library_reaches_a_paired_device("lists", fill, LARGE_LIBRARY),
+            "B never came to hold A's playlists"
+        );
     }
 
     struct Lends(Vec<u8>);
