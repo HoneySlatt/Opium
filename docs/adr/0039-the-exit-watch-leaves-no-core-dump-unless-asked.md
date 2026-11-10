@@ -1,7 +1,8 @@
 # 0039. The exit watch leaves no core dump unless asked
 
 - Status: Accepted; amends [0024](0024-the-exit-watch-aborts-for-a-core-dump.md) (what the abort
-  leaves)
+  leaves); amended by [0045](0045-no-core-dump-through-the-core-size-limit.md) (the core size
+  limit, not `PR_SET_DUMPABLE`)
 - Date: 2026-11-10
 
 ## Context

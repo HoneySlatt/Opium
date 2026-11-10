@@ -52,9 +52,10 @@ call the app "Music" ([ADR-0023](0023-the-rename-to-opium.md)).
 | [0036](0036-the-phones-ci-job-blocks-even-when-google-fails.md) | The phone's CI job blocks, even when Google fails | Accepted; its remedy narrowed in CONTRIBUTING.md |
 | [0037](0037-uwuis-decisions-of-2026-11-07-taken-into-opium.md) | uwui's decisions of 2026-11-07, taken into Opium | Accepted; amends 0011, 0025 and 0034; amended by 0038 |
 | [0038](0038-opium-measured-against-the-market.md) | Opium measured against the market | Accepted; amends 0025, 0034 and 0037; amended by 0041 |
-| [0039](0039-the-exit-watch-leaves-no-core-dump-unless-asked.md) | The exit watch leaves no core dump unless asked | Accepted; amends 0024 |
+| [0039](0039-the-exit-watch-leaves-no-core-dump-unless-asked.md) | The exit watch leaves no core dump unless asked | Accepted; amends 0024; amended by 0045 |
 | [0040](0040-away-from-home-only-while-a-device-is-paired.md) | Away from home only while a device is paired | Accepted; amends 0015 |
 | [0041](0041-a-paused-protected-songs-session-closes-after-a-long-pause.md) | A paused protected song's session closes after a long pause | Accepted; amends 0038 |
 | [0042](0042-ci-keeps-one-job-of-checks.md) | CI keeps one job of checks | Accepted |
 | [0043](0043-one-instance-per-profile-held-by-a-lock.md) | One instance per profile, held by a lock | Accepted; amends 0018 |
 | [0044](0044-navidromes-password-as-it-is-used.md) | Navidrome's password, as it is used | Accepted; amends 0013 |
+| [0045](0045-no-core-dump-through-the-core-size-limit.md) | No core dump, through the core size limit | Accepted; amends 0039 |
