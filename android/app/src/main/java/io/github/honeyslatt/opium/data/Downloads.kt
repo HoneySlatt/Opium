@@ -27,7 +27,13 @@ import kotlinx.coroutines.withContext
  * as its badge; while songs come, [DownloadService] keeps the app up.
  */
 class Downloads(private val context: Context, private val core: Core, private val scope: CoroutineScope) {
-    private var store: io.github.honeyslatt.opium.core.Downloads? = null
+    /** The store, and what is told it of the services' subscriptions, in order, even while it opens. */
+    private val orders = StoreOrders<io.github.honeyslatt.opium.core.Downloads, ProviderKind> { store, provider ->
+        store.forget(provider)
+    }
+
+    /** The store, once open; none while it opens, or if it couldn't. */
+    private val store get() = orders.open
 
     /** Opium Connect, through which the computer lends what can't be downloaded here. */
     private var lender: io.github.honeyslatt.opium.core.Connect? = null
@@ -82,30 +88,71 @@ class Downloads(private val context: Context, private val core: Core, private va
 
     init {
         scope.launch {
-            store = try {
-                io.github.honeyslatt.opium.core.Downloads.open(core.session, dir.path, key(), listener)
-            } catch (e: OpiumException) {
-                _failed.value = e.message
-                null
+            try {
+                val store = openStore()
+                // A sign-out said while the store couldn't open is told it now: every service whose
+                // songs come through DRM and isn't signed in is. Off the main thread, as each one
+                // told is a write of the store's manifest.
+                withContext(Dispatchers.IO) {
+                    orders.opened(store, notSignedIn = WITH_SUBSCRIPTION.filterNot(core::signedIn))
+                }
+                lender?.let { store?.borrowThrough(it) }
+            } finally {
+                opened.complete(Unit)
             }
-            lender?.let { store?.borrowThrough(it) }
-            opened.complete(Unit)
         }
     }
 
     private val dir = File(context.filesDir, "downloads")
 
+    /** The store, opened with its key; none, and why said, when it can't be this run. Never throws. */
+    private suspend fun openStore(): io.github.honeyslatt.opium.core.Downloads? {
+        val key = key() ?: return null
+        return try {
+            io.github.honeyslatt.opium.core.Downloads.open(core.session, dir.path, key, listener)
+        } catch (e: OpiumException) {
+            _failed.value = e.message
+            null
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // A fault in the core: said, never a crash.
+            _failed.value = "The downloads couldn't open (${e.javaClass.simpleName})"
+            null
+        }
+    }
+
     /**
-     * The store's key, made once. Kept but unreadable (the Keystore's key
-     * gone, as after a restore): what it sealed can't be read again, so it
-     * goes, and a new key starts afresh.
+     * The store's key, made once and kept in the vault. Gone for good (the
+     * Keystore's key lost, as after a restore): what it sealed can't be read
+     * again, so it goes, and a new key starts afresh. Not readable now, or a
+     * new key not kept: none, and why said; nothing is deleted, and the next
+     * start tries again.
      */
-    private suspend fun key(): ByteArray = withContext(Dispatchers.IO) {
-        core.vault.read(KEY)?.let { return@withContext Base64.decode(it, Base64.NO_WRAP) }
-        if (core.vault.has(KEY)) dir.deleteRecursively()
-        ByteArray(32).also {
-            SecureRandom().nextBytes(it)
-            core.vault.write(KEY, Base64.encodeToString(it, Base64.NO_WRAP))
+    private suspend fun key(): ByteArray? = withContext(Dispatchers.IO) {
+        when (val step = downloadsKeyStep(core.vault.read(KEY))) {
+            is DownloadsKeyStep.Use -> try {
+                Base64.decode(step.kept, Base64.NO_WRAP)
+            } catch (e: IllegalArgumentException) {
+                _failed.value = "The downloads' key is damaged"
+                null
+            }
+            is DownloadsKeyStep.MakeNew -> {
+                if (step.sweepFirst) dir.deleteRecursively()
+                val key = ByteArray(32).also { SecureRandom().nextBytes(it) }
+                // A key not kept would seal songs that could never be read again.
+                core.vault.write(KEY, Base64.encodeToString(key, Base64.NO_WRAP)).fold(
+                    { key },
+                    {
+                        _failed.value = "The downloads couldn't keep their key; tried again at the next start"
+                        null
+                    },
+                )
+            }
+            is DownloadsKeyStep.Unavailable -> {
+                _failed.value = "The downloads couldn't read their key (${step.why}); tried again at the next start"
+                null
+            }
         }
     }
 
@@ -169,7 +216,8 @@ class Downloads(private val context: Context, private val core: Core, private va
      * songs no longer play until its subscription is confirmed again; every song kept stays.
      */
     fun forget(provider: ProviderKind) {
-        store?.forget(provider)
+        // Said while the store opens, it is told once it opens, after what was said before.
+        orders.signedOut(provider)
     }
 
     /** Apple Music's and SoundCloud's encrypted songs come from the computer, through `connect`. */
@@ -181,17 +229,21 @@ class Downloads(private val context: Context, private val core: Core, private va
     /**
      * `kind` connected: its subscription confirmed (Apple's asked), so that
      * the songs downloaded through it go on playing for 30 days more, or
-     * stop if it ended.
+     * stop if it ended. Told the store in the order said, even while it
+     * opens; an answer that comes after a sign-out of `kind` is dropped.
      */
     fun confirm(kind: ProviderKind) {
-        scope.launch {
-            opened.await()
-            val active = when (kind) {
-                ProviderKind.APPLE_MUSIC -> runCatching { core.session.appleSubscribed() }.getOrNull() ?: return@launch
-                ProviderKind.SOUND_CLOUD -> true
-                else -> return@launch
+        when (kind) {
+            ProviderKind.APPLE_MUSIC -> {
+                val asked = orders.confirming(kind)
+                scope.launch {
+                    val active = runCatching { core.session.appleSubscribed() }.getOrNull() ?: return@launch
+                    asked.answered { it.subscription(kind, active) }
+                }
             }
-            store?.subscription(kind, active)
+            // SoundCloud's counts as confirmed while signed in.
+            ProviderKind.SOUND_CLOUD -> orders.confirming(kind).answered { it.subscription(kind, true) }
+            else -> {}
         }
     }
 
@@ -200,6 +252,9 @@ class Downloads(private val context: Context, private val core: Core, private va
 
     private companion object {
         const val KEY = "downloads"
+
+        /** The services whose songs come through DRM: the store keeps their subscriptions ([confirm]). */
+        val WITH_SUBSCRIPTION = listOf(ProviderKind.APPLE_MUSIC, ProviderKind.SOUND_CLOUD)
     }
 }
 

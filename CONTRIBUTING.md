@@ -116,11 +116,32 @@ In `nix develop .#android`:
 ```sh
 ./android/build-core.sh                           # the core for arm64 and its Kotlin bindings
 (cd android && gradle assembleRelease)            # android/app/build/outputs/apk/release/app-release.apk
+(cd android && gradle testDebugUnitTest)          # the JVM tests of android/app/src/test/
 ```
 
 - `build-core.sh` builds `opium-ffi` with `cargo-ndk` for arm64-v8a at API level 34, into
   `target-android`, then generates the Kotlin bindings with UniFFI into the app's generated
   sources.
+- `testDebugUnitTest` runs the app's JVM tests, on JUnit 5 with kotlin-test, both for the tests
+  only and never in the APK. They check the data layer's decisions that need no Android
+  (`data/Rules.kt`), on the computer: no phone, no emulator. They need the bindings
+  `build-core.sh` makes. AGP 9 makes unit tests for the debug build only; the task compiles
+  classes and builds no APK. `scripts/check.sh android` does not run them.
+- Gradle checks every file it resolves, plugins and test libraries included, against its SHA-256
+  in [`android/gradle/verification-metadata.xml`](android/gradle/verification-metadata.xml), and
+  fails on any other: a file that changed, or one the list lacks. This pins above all the Kotlin
+  half of `rustls-platform-verifier`, served from a GitHub branch that can move. When a dependency
+  is added or changes version, write the file again over the build and the tests, every task run
+  again so that each resolves what it uses:
+
+  ```sh
+  (cd android && gradle --write-verification-metadata sha256 --rerun-tasks assembleRelease testDebugUnitTest)
+  ```
+
+  Gradle only adds entries: to drop those no longer used, move the file aside first, then run the
+  same command. A change to the file is read in review: only the changed dependencies' entries
+  move. A new verifier is checked against the `.sha1` its branch publishes beside each file:
+  `--write-verification-metadata sha1`, on a copy of the file, gives the SHA-1 of what Gradle took.
 - The Gradle project has no wrapper: `gradle` is the shell's. The shell points Gradle at the SDK's
   own `aapt2`, as Gradle's is built for other Linuxes.
 - The release build is signed with Android's debug key, as the debug build is, so either installs

@@ -65,13 +65,18 @@ class Themes(context: Context) {
         if (file.exists() && runCatching { file.readText() }.getOrNull() == source) return null
         runCatching { parseTheme(source) }.onFailure { return it.message ?: "It isn’t a theme." }
         dir.mkdirs()
-        file.writeText(source)
+        try {
+            file.writeText(source)
+        } catch (e: java.io.IOException) {
+            return "Couldn’t save it: ${e.message ?: e.javaClass.simpleName}"
+        }
         if (refresh) _all.value = read()
         return null
     }
 
     /** Import the theme file the user picked; what is wrong with it, if any.
-     *  Chosen once kept. */
+     *  Chosen once kept. It is the user's from then on, even in place of one
+     *  the desktop shared: the desktop's is kept under another id next time. */
     fun import(uri: Uri): String? {
         val source = runCatching { resolver.openInputStream(uri)?.use { it.readBytes().decodeToString() } }.getOrNull()
             ?: return "Couldn’t read the file."
@@ -79,32 +84,69 @@ class Themes(context: Context) {
             if (c.moveToFirst()) c.getString(0) else null
         } ?: "theme.toml"
         val id = idOf(name.substringBeforeLast('.'))
-        return keep(id, source) ?: run {
-            choose(id)
-            null
+        // Marked the user's before it is written, and marked back if it isn't: should the app
+        // stop between the two, or the marking back fail, the desktop's theme there counts as the
+        // user's, which loses nothing. Not marked, it isn't written: the desktop's would replace it.
+        val fromDesktop = fromDesktop()
+        if (id in fromDesktop.ids && !saveFromDesktop(fromDesktop.copy(ids = fromDesktop.ids - id))) {
+            return "Couldn’t save the settings."
         }
+        keep(id, source)?.let { problem ->
+            if (id in fromDesktop.ids) saveFromDesktop(fromDesktop)
+            return problem
+        }
+        choose(id)
+        return null
     }
 
     /** A file's stem as an id: lower case, without what a file name can't hold. */
     private fun idOf(name: String) =
         name.lowercase().replace(Regex("[^a-z0-9._-]+"), "-").trim('-').ifEmpty { "theme" }
 
-    /** The desktop's themes, all of them: kept, replacing those of the same
-     *  id; those it sent before and no longer has, taken away. */
+    /** The desktop's themes, all of them, kept beside the user's own, which
+     *  they never replace nor remove ([shareDesktopThemes] says how); those it
+     *  sent before and no longer has, taken away. */
     fun shared(themes: List<io.github.honeyslatt.opium.core.connect.SharedTheme>) {
-        val before = prefs.getStringSet("desktop-themes", emptySet()).orEmpty()
-        // Read again once at the end, not once for each theme.
-        val now = themes.filter { keep(it.id, it.source, refresh = false) == null }.map { idOf(it.id) }.toSet()
-        (before - now).forEach { remove(it) }
-        prefs.edit().putStringSet("desktop-themes", now).apply()
+        val held = dir.listFiles { f -> f.extension == "toml" }.orEmpty().map { it.nameWithoutExtension }.toSet()
+        // Settings that don't save leave every file as it was: the desktop's next share tries again.
+        shareDesktopThemes(
+            themes.map { idOf(it.id) to it.source },
+            held,
+            fromDesktop(),
+            // Read again once at the end, not once for each theme.
+            keep = { id, source -> keep(id, source, refresh = false) == null },
+            remove = ::remove,
+            save = ::saveFromDesktop,
+        )
         val read = read()
         if (read != _all.value) _all.value = read
     }
+
+    /** What the settings keep of the desktop's themes: the files that hold them, and where each is. */
+    private fun fromDesktop() = FromDesktop(
+        ids = prefs.getStringSet(FROM_DESKTOP, emptySet()).orEmpty(),
+        // Each "desktop id=phone id": both made safe, neither holds a '='.
+        places = prefs.getStringSet(PLACES, emptySet()).orEmpty().mapNotNull { place ->
+            place.split('=').takeIf { it.size == 2 }?.let { (desktop, phone) -> desktop to phone }
+        }.toMap(),
+    )
+
+    /** Whether the settings kept `fromDesktop`: written at once, as what may be overwritten depends on it. */
+    private fun saveFromDesktop(fromDesktop: FromDesktop): Boolean =
+        prefs.edit()
+            .putStringSet(FROM_DESKTOP, fromDesktop.ids)
+            .putStringSet(PLACES, fromDesktop.places.map { (desktop, phone) -> "$desktop=$phone" }.toSet())
+            .commit()
 
     /** Take a theme away; Stock again if it was in use. */
     fun remove(id: String) {
         File(dir, "$id.toml").delete()
         _all.value = read()
         if (_chosen.value == id) choose("stock")
+    }
+
+    private companion object {
+        const val FROM_DESKTOP = "desktop-themes"
+        const val PLACES = "desktop-theme-places"
     }
 }

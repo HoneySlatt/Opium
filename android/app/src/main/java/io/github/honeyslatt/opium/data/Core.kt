@@ -66,11 +66,12 @@ class Core(context: Context) {
     val appleProfile: StateFlow<io.github.honeyslatt.opium.core.AppleProfile?> = _appleProfile.asStateFlow()
 
     init {
-        // The account token from before the vault: moved in.
+        // The account token from before the vault: moved in. Left in place when it
+        // can't be, to move at the next start.
         val old = File(context.filesDir, "apple-token")
         if (old.exists()) {
-            vault.write(APPLE, old.readText())
-            old.delete()
+            val token = runCatching { old.readText() }.getOrNull()
+            if (token != null && vault.write(APPLE, token).isSuccess) old.delete()
         }
     }
 
@@ -183,16 +184,27 @@ class Core(context: Context) {
         connections.getValue(kind).value = Connection.Off
     }
 
-    /** The token Apple's sign-in page left, kept and used. */
+    /** The token Apple's sign-in page left, kept and used; failed if it can't be kept. */
     suspend fun signedInToApple(token: String): Connection {
-        vault.write(APPLE, token)
+        vault.write(APPLE, token).onFailure { return notKept(ProviderKind.APPLE_MUSIC, it) }
         return connect(ProviderKind.APPLE_MUSIC)
     }
 
-    /** The tokens SoundCloud's web player left, kept and used. */
+    /** The tokens SoundCloud's web player left, kept and used; failed if they can't be kept. */
     suspend fun signedInToSoundCloud(oauth: String, refresh: String?): Connection {
-        keepSoundCloud(oauth, refresh)
+        keepSoundCloud(oauth, refresh).onFailure { return notKept(ProviderKind.SOUND_CLOUD, it) }
         return connect(ProviderKind.SOUND_CLOUD)
+    }
+
+    /**
+     * A sign-in the vault couldn't keep (the Keystore failing, the disk full): not used, and shown
+     * failed, to try again. The vault still holds what it held: the next start finds no sign-in,
+     * or the service's older one, kept before, and uses that.
+     */
+    private fun notKept(kind: ProviderKind, error: Throwable): Connection {
+        session.disconnect(kind)
+        return Connection.Failed("Couldn’t keep the sign-in on this phone (${error.javaClass.simpleName}); try again")
+            .also { connections.getValue(kind).value = it }
     }
 
     /**
@@ -208,7 +220,7 @@ class Core(context: Context) {
         }
         val got = attempt(kind) { session.connectNavidrome(credentials) }
         if (got is Connection.Connected) {
-            vault.write(kind.vaultName, credentials)
+            vault.write(kind.vaultName, credentials).onFailure { return notKept(kind, it) }
             prefs.edit().putBoolean("enabled-${kind.name}", true).apply()
             // A session on its own API too, for the changes that need one
             // (a playlist's cover); kept with the rest, never the password.
@@ -227,27 +239,48 @@ class Core(context: Context) {
         return opened
     }
 
-    /** The Navidrome sign-in as it stands, its session renewed, kept in place of the last. */
+    /**
+     * The Navidrome sign-in as it stands, its session renewed, kept in place of the last. Not
+     * kept (the Keystore failing), the last one stays, and is used at the next start.
+     */
     fun keepNavidrome() {
-        session.navidromeKept()?.let { vault.write(ProviderKind.NAVIDROME.vaultName, it) }
+        session.navidromeKept()?.let { kept ->
+            vault.write(ProviderKind.NAVIDROME.vaultName, kept).onFailure { notRenewed("Navidrome", it) }
+        }
     }
 
-    private fun keepSoundCloud(oauth: String, refresh: String?) {
+    private fun keepSoundCloud(oauth: String, refresh: String?): Result<Unit> =
         vault.write(SOUNDCLOUD, JSONObject().put("oauth", oauth).put("refresh", refresh ?: JSONObject.NULL).toString())
+
+    /**
+     * SoundCloud renews its tokens as they expire: the new ones are kept. Not kept (the
+     * Keystore failing), the last ones stay; if SoundCloud no longer takes them at the next
+     * start, it asks to sign in again.
+     */
+    private val keeper = object : TokenKeeper {
+        override fun keep(oauth: String, refresh: String?) {
+            keepSoundCloud(oauth, refresh).onFailure { notRenewed("SoundCloud", it) }
+        }
     }
 
-    /** SoundCloud renews its tokens as they expire: the new ones are kept. */
-    private val keeper = object : TokenKeeper {
-        override fun keep(oauth: String, refresh: String?) = keepSoundCloud(oauth, refresh)
+    /** A sign-in renewed but not kept, written to the system's log: nothing else can tell. */
+    private fun notRenewed(service: String, error: Throwable) {
+        android.util.Log.w("Opium", "$service: couldn't keep the renewed sign-in (${error.javaClass.simpleName}: ${error.message})")
     }
 
     private suspend fun connect(kind: ProviderKind): Connection {
-        val kept = vault.read(kind.vaultName)
-        if (kept == null) {
-            // Kept but unreadable (its key gone, as after a restore): signed out, and told so.
-            if (!vault.has(kind.vaultName)) return Connection.Off.also { connections.getValue(kind).value = it }
-            vault.delete(kind.vaultName)
-            return Connection.Failed("Sign in again").also { connections.getValue(kind).value = it }
+        val state = connections.getValue(kind)
+        val kept = when (val step = signInStep(vault.read(kind.vaultName))) {
+            SignInStep.NotSignedIn -> return Connection.Off.also { state.value = it }
+            // Gone for good (its key lost, as after a restore): signed out, and told so.
+            SignInStep.SignInAgain -> {
+                vault.delete(kind.vaultName)
+                return Connection.Failed("Sign in again").also { state.value = it }
+            }
+            // Not readable now: kept, and tried again with the network or at the next start.
+            is SignInStep.TryLater ->
+                return Connection.Failed("Couldn’t read the sign-in kept on this phone (${step.why})").also { state.value = it }
+            is SignInStep.Use -> step.kept
         }
         return attempt(kind) {
             when (kind) {
@@ -274,6 +307,10 @@ class Core(context: Context) {
             // Called off midway: not left Connecting for good.
             state.value = Connection.Failed("cancelled")
             throw e
+        } catch (e: Exception) {
+            // Unforeseen (a kept sign-in that doesn't parse, a fault in the core): failed, never
+            // a crash. Its message is left out: it may quote the sign-in.
+            Connection.Failed("Couldn’t sign in (${e.javaClass.simpleName})")
         }
         if (kind == ProviderKind.APPLE_MUSIC) {
             _appleProfile.value = if (state.value is Connection.Connected) runCatching { session.appleProfile() }.getOrNull() else null

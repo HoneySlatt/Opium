@@ -38,6 +38,9 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    // The JVM tests of `src/test/`, on JUnit 5.
+    testOptions.unitTests.all { it.useJUnitPlatform() }
+
     // The Rust core and its Kotlin bindings, made by `../build-core.sh`.
     sourceSets["main"].kotlin.directories += "build/generated/uniffi"
     sourceSets["main"].jniLibs.directories += "build/generated/jniLibs"
@@ -62,4 +65,8 @@ dependencies {
     implementation("net.java.dev.jna:jna:5.19.1@aar")
     // Its version must be the one in Cargo.lock.
     implementation("org.rustls:rustls-platform-verifier:0.2.0")
+
+    // For the JVM tests only, never in the APK: kotlin-test on JUnit 5, at the Kotlin
+    // version the build compiles with (the Compose compiler plugin's, above).
+    testImplementation("org.jetbrains.kotlin:kotlin-test-junit5:2.4.21")
 }
