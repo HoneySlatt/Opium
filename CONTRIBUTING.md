@@ -340,8 +340,10 @@ The three XDG variables move every file the app keeps. They do **not** move:
   profile is a new device on the owner's phone; a copied `connect.json` *is* the owner's computer,
   which merges into the phone's real history, playlists and session;
 - **the sound card**: PipeWire plays on the owner's speakers;
-- **the Widevine CDM**, found under `$XDG_CONFIG_HOME`: a test profile finds none unless
-  `WIDEVINE_CDM` names it.
+- **the Widevine CDM**, looked for under `$XDG_CONFIG_HOME`, in Google Chrome's install folder and
+  under `$HOME` (Flatpak browsers, Firefox): a test profile that keeps `HOME` can find and load the
+  owner's. Set `WIDEVINE_CDM` to a path that does not exist to load none, as the recipe below
+  does, or to the CDM a test needs, with the owner's go.
 
 ### A throwaway profile
 
@@ -353,7 +355,7 @@ cargo build --release -p app-desktop
 test=$(mktemp -d /tmp/opium-test.XXXXXX)
 unshare --user --map-current-user --net env \
     XDG_CONFIG_HOME="$test/config" XDG_CACHE_HOME="$test/cache" XDG_DATA_HOME="$test/data" \
-    DBUS_SESSION_BUS_ADDRESS=unix:path=/nonexistent \
+    DBUS_SESSION_BUS_ADDRESS=unix:path=/nonexistent WIDEVINE_CDM=/nonexistent \
     OPIUM_SCREENSHOT="$test/shot.png" OPIUM_SCREENSHOT_AFTER=6 \
     target/release/opium
 rm -rf "$test"
@@ -477,7 +479,8 @@ from opening. The cause is not found ([ADR-0021](docs/adr/0021-the-exit-watch.md
 - **A test build started on a profile where Opium already runs exits at once**: it raised the
   running window, or says the bus did not reach it ([ADR-0043](docs/adr/0043-one-instance-per-profile-held-by-a-lock.md)). On a throwaway profile it runs beside
   the owner's.
-- **With a test `XDG_CONFIG_HOME`, no Widevine CDM is found**: set `WIDEVINE_CDM`.
+- **A test `XDG_CONFIG_HOME` does not hide the owner's Widevine CDM**: the search also looks in
+  Chrome's install folder and under `$HOME`. `WIDEVINE_CDM=/nonexistent` loads none.
 - **The screenshot mode may never save**: it waits for frames the compositor may not send. Its
   record of runs is in [the debt](docs/debt.md); the one setting seen to work is a headless Weston at
   3840x2160 under its kiosk shell (`scripts/measure/weston.sh <socket> 3840x2160 <mHz> kiosk`). To end a test run by the app's own exit path, run it with a session bus of its own
