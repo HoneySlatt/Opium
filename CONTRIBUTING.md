@@ -410,9 +410,14 @@ Closing the app sometimes hung, the window gone and the process left, which then
 from opening. The cause is not found ([ADR-0021](docs/adr/0021-the-exit-watch.md)).
 
 - The exit watch ends the process five seconds after everything is saved. It appends where the
-  teardown stood to `exit.log` in the cache folder, then aborts, which leaves a core dump of every
-  thread ([ADR-0024](docs/adr/0024-the-exit-watch-aborts-for-a-core-dump.md)).
-- Read `exit.log` first, then the core dump, before guessing:
+  teardown stood to `exit.log` in the cache folder, then aborts
+  ([ADR-0024](docs/adr/0024-the-exit-watch-aborts-for-a-core-dump.md)). Opium turns core dumps
+  off at start, as one would hold its secrets
+  ([ADR-0045](docs/adr/0045-no-core-dump-through-the-core-size-limit.md)): the abort leaves no
+  dump unless the app was started with `OPIUM_CORE_DUMPS=1`, which only a throwaway profile may
+  use.
+- Read `exit.log` first, then, from a run on a throwaway profile with `OPIUM_CORE_DUMPS=1`, the core
+  dump, before guessing:
 
   ```sh
   coredumpctl list opium

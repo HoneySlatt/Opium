@@ -35,5 +35,5 @@ mpris-server = { version = "=0.11.0", features = ["unstable"] }
 connect = { version = "0.1.0", path = "../connect" }
 synced = { path = "../synced" }
 downloads = { path = "../downloads", features = ["keyring"] }
-# `flock`, for the one instance per profile (`instance`).
+# `flock`, for the one instance per profile (`instance`); `setrlimit`, for no core dump (`exit`).
 libc = "0.2.191"

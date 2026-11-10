@@ -17,6 +17,8 @@ mod ui;
 use desktop::{backend, devices, mpris, settings};
 
 fn main() -> eframe::Result {
+    // No core dump, which would hold the secrets (ADR-0045).
+    desktop::exit::keep_core_dumps_off();
     // One Opium per profile, held until the process ends (ADR-0043).
     let _instance = match desktop::instance::take() {
         Ok(instance) => instance,
