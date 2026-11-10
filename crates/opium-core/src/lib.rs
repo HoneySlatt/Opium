@@ -1,6 +1,7 @@
 pub mod color;
 pub mod cover;
 pub mod dedupe;
+pub mod files;
 pub mod growing;
 pub mod model;
 pub mod palette;
