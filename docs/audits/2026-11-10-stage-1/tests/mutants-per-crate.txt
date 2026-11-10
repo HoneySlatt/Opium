@@ -1,0 +1,20 @@
+# cargo mutants --list --workspace --exclude 'crates/widevine/src/tests/**', at 46e7a5a: mutants per crate
+   9819 app-desktop
+   1174 apple-music
+    924 cenc
+    892 opium-core
+    492 player
+    455 desktop
+    434 widevine
+    389 opium-ffi
+    352 connect
+    347 soundcloud
+    324 local
+    322 synced
+    306 navidrome
+    187 downloads
+    101 lyrics
+     67 browser-signin
+     60 motion
+     28 services
+  16673 in all

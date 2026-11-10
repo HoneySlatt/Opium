@@ -1,0 +1,145 @@
+# What cargo-deny checks of Opium's dependencies: `cargo deny check`, in CI beside scripts/check.sh.
+# It passes on Cargo.lock at 46e7a5a only through the exceptions below, each with its reason and
+# what lifts it; an exception that no longer matches is reported, to be deleted.
+
+[graph]
+# The platforms Opium is built for: the desktop on Linux (flake.nix: x86_64 and aarch64) and the
+# phone's core (android/build-core.sh: arm64 only).
+targets = ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu", "aarch64-linux-android"]
+# Every feature of the workspace's crates, so that the fuzzing entry points and the keyring are seen.
+all-features = true
+
+[advisories]
+# Vulnerabilities, unsound code and unmaintained crates anywhere in the graph are errors.
+unmaintained = "all"
+yanked = "deny"
+ignore = [
+    # Each lifted by one command, `cargo update -p zstd -p zstd-safe -p async-executor`, which takes
+    # zstd 0.13.4, zstd-safe 7.4.0 and async-executor 1.14.1 within the same requirements; then
+    # these four lines go.
+    { id = "RUSTSEC-2026-0391", reason = "zstd 0.13.3, only under wreq-util's emulation (SoundCloud's changes); no with_context constructor is seen in the release binary. Lifted by the update above" },
+    { id = "RUSTSEC-2026-0398", reason = "zstd-safe 7.3.0: Seekable::decompress, behind zstd's `seekable` feature, which nothing enables (not compiled). Lifted by the update above" },
+    { id = "RUSTSEC-2026-0403", reason = "zstd-safe 7.3.0: stream decoding of a legacy frame, reached only through a zstd-compressed TLS certificate, which the Chrome147 profile is not known to offer. Lifted by the update above" },
+    { crate = "async-executor@1.14.0", reason = "yanked; under zbus 5 (oo7, ashpd) and eframe's accesskit. Lifted by the update above" },
+    # Unmaintained, with no maintained release to move to; none is reached by input from outside.
+    { id = "RUSTSEC-2026-0374", reason = "basic-toml: build time only, in askama's derive inside uniffi_bindgen, the Kotlin bindings' generator; never in a shipped binary. Lifted when uniffi's askama leaves it" },
+    { id = "RUSTSEC-2024-0436", reason = "paste: a proc-macro, build time only, for lofty (local) and netlink-packet-core (iroh's netwatch); no code of it ships. Lifted with their updates" },
+    { id = "RUSTSEC-2026-0192", reason = "ttf-parser: winit 0.30's title bar (sctk-adwaita) under eframe 0.37, frozen with app-desktop until uwui (ADR-0026)" },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names: zbus 5, under eframe's accesskit (frozen, ADR-0026), ashpd 0.13 and oo7 0.6; merged into zbus 6, which mpris-server uses. Lifted once all three are on zbus 6" },
+    { id = "RUSTSEC-2026-0370", reason = "zvariant: as zbus_names, RUSTSEC-2026-0371" },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive: as zbus_names, RUSTSEC-2026-0371" },
+]
+
+[licenses]
+# The licences GPL-3.0-or-later can take in (ADR-0001), as the dependencies use them today. Most
+# ask for their notice to ship with a binary: the third-party list due before the first release.
+allow = [
+    "GPL-3.0-or-later", # Opium's own crates
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception", # target-lexicon, build time only
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "CC0-1.0", # notify
+    "ISC",
+    "MIT",
+    "MPL-2.0", # symphonia, uniffi, mpris-server: copyleft per file, used unchanged
+    "Unicode-3.0", # ICU4X's tables, under url; unicode-ident
+    "Zlib",
+]
+confidence-threshold = 0.93
+exceptions = [
+    # egui's fonts, kept as the last fallbacks for emoji (app-desktop/src/fonts.rs); both licences
+    # ask for their texts beside the program.
+    { crate = "epaint_default_fonts", allow = ["OFL-1.1", "Ubuntu-font-1.0"] },
+    # Mozilla's root certificates, data, for wreq and ureq; the licence asks for its text beside
+    # the data.
+    { crate = "webpki-roots", allow = ["CDLA-Permissive-2.0"] },
+    { crate = "webpki-root-certs", allow = ["CDLA-Permissive-2.0"] },
+    # FFmpeg's bindings, for animated covers (crates/motion).
+    { crate = "ffmpeg-next", allow = ["WTFPL"] },
+    { crate = "ffmpeg-sys-next", allow = ["WTFPL"] },
+]
+
+[bans]
+# A second version of a crate is an error unless listed: each costs build time and size.
+multiple-versions = "deny"
+# The only wildcards are the workspace's own path dependencies. cargo-deny ignores them only in
+# crates that are not published (`publish = false`), which these do not say yet.
+wildcards = "allow"
+deny = [
+    { crate = "openssl-sys", reason = "TLS is rustls's, and BoringSSL's for SoundCloud's changes alone" },
+    { crate = "native-tls", reason = "as openssl-sys" },
+    { crate = "async-std", reason = "discontinued (RUSTSEC-2025-0052); D-Bus runs on async-io (ADR-0020)" },
+]
+features = [
+    { crate = "zbus", deny = ["tokio"] },   # ADR-0020: D-Bus over async-io
+    { crate = "ashpd", deny = ["tokio"] },  # ADR-0020
+    { crate = "oo7", deny = ["tokio"] },    # ADR-0020
+]
+skip = [
+    # The window's stack, frozen with app-desktop until uwui (ADR-0026): winit 0.30, its title bar,
+    # egui's SVG, clipboard and wgpu.
+    { crate = "bitflags@1.3.2", reason = "png 0.17, under tiny-skia (sctk-adwaita, resvg)" },
+    { crate = "calloop@0.13.0", reason = "winit 0.30, smithay-client-toolkit 0.19" },
+    { crate = "calloop-wayland-source@0.3.0", reason = "smithay-client-toolkit 0.19" },
+    { crate = "smithay-client-toolkit@0.19.2", reason = "winit 0.30; 0.20 is smithay-clipboard's" },
+    { crate = "rustix@0.38.44", reason = "winit 0.30, calloop 0.13, smithay-client-toolkit 0.19" },
+    { crate = "linux-raw-sys@0.4.15", reason = "rustix 0.38" },
+    { crate = "thiserror@1.0.69", reason = "calloop 0.13, smithay-client-toolkit 0.19; on the phone, jni 0.21 (iroh's netdev)" },
+    { crate = "thiserror-impl@1.0.69", reason = "thiserror 1" },
+    { crate = "png@0.17.16", reason = "tiny-skia 0.11" },
+    { crate = "kurbo@0.11.3", reason = "usvg 0.45 (egui_extras' SVG)" },
+    { crate = "roxmltree@0.20.0", reason = "usvg 0.45" },
+    { crate = "quick-xml@0.41.0", reason = "wayland-scanner; apple-music's is 0.42" },
+    { crate = "itertools@0.13.0", reason = "bindgen 0.72, build time" },
+    { crate = "rustc-hash@1.1.0", reason = "naga and wgpu-core 30" },
+    { crate = "hashbrown@0.15.5", reason = "petgraph 0.8, under arboard's wl-clipboard-rs" },
+    { crate = "hashbrown@0.16.1", reason = "gpu-allocator 0.28 (wgpu)" },
+    { crate = "foldhash@0.1.5", reason = "hashbrown 0.15" },
+    { crate = "phf@0.11.3", reason = "mime_guess2 (egui_extras)" },
+    { crate = "phf_shared@0.11.3", reason = "phf 0.11" },
+    # D-Bus: zbus 5 under eframe's accesskit (frozen), ashpd 0.13 and oo7 0.6; mpris-server is on 6.
+    { crate = "zbus@5.19.0", reason = "accesskit_unix, ashpd 0.13, oo7 0.6" },
+    { crate = "zbus_macros@5.19.0", reason = "zbus 5" },
+    # Two releases of the same family in third-party crates Opium only uses.
+    { crate = "nom@8.0.0", reason = "libspa (the player's PipeWire) and tree_magic_mini (arboard); m3u8-rs (apple-music) and bindgen's cexpr are on 7" },
+    { crate = "base64@0.22.1", reason = "tokio-websockets (iroh-relay) and usvg; Opium's own are on 0.23" },
+    { crate = "bindgen@0.72.1", reason = "build time: btls-sys, libspa-sys, pipewire-sys; ffmpeg-sys-next is on 0.73" },
+    { crate = "shlex@1.3.0", reason = "bindgen 0.72, build time" },
+    { crate = "brotli@8.0.4", reason = "wreq-util's certificate compression; reqwest's is 9" },
+    { crate = "brotli-decompressor@5.0.3", reason = "brotli 8" },
+    { crate = "alloc-no-stdlib@2.0.4", reason = "brotli 8" },
+    { crate = "alloc-stdlib@0.2.4", reason = "brotli 8" },
+    { crate = "miniz_oxide@0.8.9", reason = "png 0.17 and 0.18; flate2 is on 0.9" },
+    { crate = "lru@0.18.5", reason = "iroh-relay and n0-dns-resolver; wreq is on 0.19" },
+    { crate = "netlink-packet-core@0.8.2", reason = "iroh's netwatch; its netdev is on 0.9" },
+    { crate = "netlink-packet-route@0.31.0", reason = "iroh's netwatch" },
+    { crate = "netlink-sys@0.8.8", reason = "iroh's netwatch" },
+    { crate = "spin@0.9.9", reason = "flume (mdns-sd); futures-buffered is on 0.10" },
+    { crate = "syn@2.0.119", reason = "proc-macros not yet on syn 3, build time" },
+    { crate = "jni@0.21.1", reason = "the phone: netdev (iroh); opium-ffi and rustls-platform-verifier are on 0.22" },
+    { crate = "jni-sys@0.3.1", reason = "jni 0.21 and ndk" },
+    # RustCrypto's previous generation, under oo7 0.6, snow 0.10 and spake2 0.4; Opium's own crates
+    # and iroh's ed25519 are on the current one.
+    { crate = "digest@0.10.7", reason = "oo7, snow, spake2" },
+    { crate = "sha2@0.10.9", reason = "oo7, snow, spake2" },
+    { crate = "hmac@0.12.1", reason = "oo7, hkdf, pbkdf2" },
+    { crate = "md-5@0.10.6", reason = "oo7" },
+    { crate = "block-buffer@0.10.4", reason = "digest 0.10" },
+    { crate = "crypto-common@0.1.7", reason = "digest 0.10, aead, cipher" },
+    { crate = "cpufeatures@0.2.17", reason = "sha2 0.10, aes, chacha20 0.9" },
+    { crate = "chacha20@0.9.1", reason = "chacha20poly1305 (snow)" },
+    { crate = "curve25519-dalek@4.1.3", reason = "snow 0.10, spake2 0.4; iroh is on 5" },
+    { crate = "getrandom@0.2.17", reason = "ring and rand_core 0.6" },
+    { crate = "getrandom@0.3.4", reason = "ahash (egui) and snow" },
+    { crate = "rand_core@0.6.4", reason = "spake2, curve25519-dalek 4, rand 0.8" },
+    { crate = "rand_core@0.9.5", reason = "rand 0.9" },
+    { crate = "rand@0.9.5", reason = "num-bigint-dig (oo7)" },
+    # Opium's own: connect asks rand 0.8 for one call (store.rs:252) where the workspace uses 0.10.
+    { crate = "rand@0.8.8", reason = "connect's `random`; lifted when it calls rand 0.10 or getrandom 0.4" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

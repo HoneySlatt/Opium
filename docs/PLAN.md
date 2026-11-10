@@ -9,7 +9,9 @@ Every milestone ends with the definition of done in [`AGENTS.md`](../AGENTS.md#d
 
 ## Current
 
-- Stage 1 — Under the method: M1.8, the stage audit, is next, and every other milestone is done.
+- Stage 1 — Under the method: M1.8, the stage audit, is recorded
+  ([audit](audits/2026-11-10-stage-1.md)); the owner is deciding on its findings. Every other
+  milestone is done.
 - After it, Opium waits for its port in uwui's first stage, after SlimeEngine's Stage 6d, fixing
   only a loss of data, a crash, a security flaw or a service that stops working
   ([ADR-0035](adr/0035-the-port-in-uwuis-first-stage-stage-1-finished-first.md)).
@@ -30,7 +32,7 @@ Every milestone ends with the definition of done in [`AGENTS.md`](../AGENTS.md#d
 | [M1.5](history.md#m15--the-phones-core-checked) | The Android shell builds from an empty store and the phone's core is checked | Done |
 | [M1.6](history.md#m16--what-the-window-needs-from-a-ui-framework) | SlimeEngine's Stage 6d can read, in this repository, what Opium's window needs | Done |
 | [M1.7](history.md#m17--the-quality-bar-measured) | The owner decides Opium's budgets with today's figures in hand | Done |
-| [M1.8](#m18--the-stage-audit) | The whole project examined before Stage 1 closes | Planned |
+| [M1.8](#m18--the-stage-audit) | The whole project examined before Stage 1 closes | Audit recorded; the owner deciding on its findings |
 | [M1.9](history.md#m19--what-stands-between-opium-and-a-permissive-licence) | What stops MIT OR Apache-2.0 is known, and the code to write again is specified | Done |
 | [M1.10](history.md#m110-to-m112--kopuzs-code-written-again) | `cenc` written again in a clean room | Done |
 | [M1.11](history.md#m110-to-m112--kopuzs-code-written-again) | `widevine` written again in a clean room | Done |
@@ -47,18 +49,21 @@ built in this stage.
 
 ### M1.8 — The stage audit
 
-- **Goal.** Stage 1 closes on a project examined whole, so that Stage 2 starts from known facts.
+- **Goal.** Stage 1 closes on a project examined whole, so that the next stage starts from known
+  facts.
 - **Delivers.** A stage audit over every dimension of the method: correctness; edge cases;
-  performance, every budget measured again; resources at rest; security and privacy; data safety;
-  tests, with mutation testing (`cargo mutants`), none skipped or flaky; readability; documentation;
-  dependencies; accessibility; debt. One fresh reviewer per dimension, each finding verified by a
-  test, a measurement or the exact line. Two checks of reading: a fresh agent builds, runs and
-  tests Opium from the README alone and answers a newcomer's questions from the documents; another
-  explains a module from its links. Recorded in [`audits/`](audits/README.md); open items added to
-  the [known debt](debt.md).
+  performance, every budget that can be checked today measured again; resources at rest; security
+  and privacy; data safety; tests, with mutation testing (`cargo mutants`), none skipped or flaky;
+  readability; documentation; dependencies; accessibility; debt. One fresh reviewer per dimension,
+  each finding verified by a test, a measurement or the exact line. Two checks of reading: a fresh
+  agent builds, runs and tests Opium from the README alone and answers a newcomer's questions from
+  the documents; another explains a module from its links. Recorded in
+  [`audits/`](audits/README.md); open items added to the [known debt](debt.md).
 - **Done when.** The audit is recorded and the owner has decided on its findings; Stage 1 moves to
   [`history.md`](history.md).
-- **Measured.** Every budget of the quality bar, again.
+- **Measured.** Every budget of the quality bar that can be checked today, again. The owner set the
+  audit's scope on 2026-11-10: mutation testing leaves out `app-desktop` and `opium-ffi`, the rivals
+  are not measured ([audit](audits/2026-11-10-stage-1.md#scope)).
 - **By hand.** The owner decides the fixes that change direction.
 
 ## Ideas

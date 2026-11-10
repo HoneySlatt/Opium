@@ -1,0 +1,23 @@
+# Proofs for the edge-case findings of task m18-edges (M1.8's stage audit).
+# A workspace of its own, outside Opium's, so that nothing tracked changes:
+# it reaches the crates by path and uses only their public items. Where an
+# item is private, the test says so and copies the lines it proves, verbatim.
+[package]
+name = "m18-edges-repro"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+downloads = { path = "../../../../../crates/downloads" }
+synced = { path = "../../../../../crates/synced" }
+opium-core = { path = "../../../../../crates/opium-core" }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+toml = "1.1.8"
+tokio = { version = "1.54.1", features = ["rt", "time"] }
+async-trait = "0.1.92"
+# As opium-core has it, so that nothing more is built.
+image = { version = "0.25.10", default-features = false, features = ["jpeg", "png"] }

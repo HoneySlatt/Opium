@@ -10,6 +10,83 @@ the desktop runs on a [throwaway profile](../CONTRIBUTING.md#a-throwaway-profile
 cited live in [`scripts/measure/`](../scripts/measure/), each described at its head
 ([CONTRIBUTING.md](../CONTRIBUTING.md#measuring)).
 
+## The stage audit, M1.8 (2026-11-10)
+
+The quality bar measured again at `46e7a5a` ([audit](audits/2026-11-10-stage-1.md)). Machine and
+software as [M1.14](#the-desktop-window-under-egui): Ryzen 7 5800X, RX 6800-class GPU at power level
+`high`, Mesa 26.2.6, Linux 7.3.1. Library: `scripts/measure/library.py`'s 8,500 songs. Nothing
+played, nothing paired, no service signed in, the session bus pointed nowhere.
+
+**At rest**, `scripts/measure/rest.sh` in a headless Weston (2560x1440 at 240 Hz), 30 s to settle
+then 60 s sampled, the load average 6 to 27 (other work on the machine):
+
+| Condition | Runs | Wake-ups a second | CPU | By thread |
+|---|---|---|---|---|
+| Offline (`unshare --user --map-current-user --net`) | 3 | 27.25, 30.30, 33.04 | 0.60–0.82 % | `connect` 22.9–28.8, in bursts of 645 to 797 every 21 to 25 s; `blocking-1` 2.0; `theme-watch` 1.0; `player` 1.0; `mDNS_daemon` 0.2 |
+| Online | 2 | 7.50, 7.35 | 0.05–0.07 % | `connect` 3.0–3.2, in bursts of 44 to 70 every 24 s; the others as offline |
+
+Memory at rest in the same runs: VmRSS 202 to 208 MiB (RssAnon 92 to 98, RssFile 108 to 110), flat
+over 95 s.
+
+The script cuts the network, as [CONTRIBUTING](../CONTRIBUTING.md#measuring) says. The
+[baseline](#1-at-rest-cpu-time-and-wake-ups) was taken online, with one run offline (41.5 a second,
+its window covered): the online runs compare with the first, the offline ones with that run.
+Offline, `unshare` also takes the loopback down, which a real loss of network does not: the bursts'
+size may differ there.
+
+**GPU power at rest**, `scripts/measure/power-compare.sh` on the owner's desktop, the window on its
+1920x1080 display (the series below that was left out), 3 pairs of 30 s at 10 Hz, the load average
+0.5 to 1.0: 33 W median closed and open in every pair (means 32.7 to 33.0), so 0 W of Opium's; open,
+7.0 to 7.2 wake-ups a second, 0.067 % CPU.
+
+**The window's scenarios**, `scripts/measure/frames.py` as [M1.14](#the-desktop-window-under-egui)
+ran them, on the owner's 4K display at 240 Hz, scale 1.5, the window full screen at 1.65 pixels a
+point, the load average 0.2 to 3.6. Of the three runs of `scroll-songs`, one alone scrolled the
+whole library (441,064 points): one was left out (two frames begun and not drawn; it recorded
+853,559 points, twice the list), and one stopped after 7,066 points, though `frames.py`'s checks
+passed it, as they do not compare the distance scrolled with the list. Three more runs later the
+same day are not counted: the load average rose to 10 during them (1,274 intervals over 6.25 ms of
+49,345), one ran in a window of 3816x2082 (it scrolled the whole list), one stopped short at 411,933
+points, and one scrolled the whole list, with 1,232 of its 24,656 intervals over 6.25 ms.
+
+| Measure | Runs | Figure | M1.14 |
+|---|---|---|---|
+| Start to the first useful frame | 10 | median 156.0 ms, at most 160.2 | median 152.0 ms |
+| Resident memory at the first useful frame | 20 | 226 to 231 MiB | 199 to 232 MiB |
+| Highest resident memory: Songs scrolled / Albums grid / `animate` | 1 / 5 / 3 | 245.7 / 370.8 to 401.4 / 377.8 to 397.7 MiB | 235 to 249 / 365 to 395 / 376 to 391 MiB |
+
+| Phase | Intervals | Interval median / p99 / max | Late (over 6.25 ms / 8.33 ms) | CPU median / p99 / max |
+|---|---|---|---|---|
+| Scrolling Songs, the whole library, one run | 26,476 | 4.17 / 4.36 / 5.96 ms | 0 / 0 | 0.61 / 0.86 / 1.8 ms |
+| The Albums grid's first 3 s | 270 | 4.17 / 37.6 / 53.5 ms | 15 / 15 | 0.70 / 32.7 / 50.4 ms |
+| Scrolling the Albums grid to its end | 6,010 | 4.16 / 5.75 / 7.5 ms | 2 / 0 | 0.68 / 2.29 / 3.2 ms |
+| Moving between pages | 3,301 | 4.17 / 4.36 / 45.8 ms | 9 / 9 | 0.65 / 1.47 / 43.5 ms |
+| The queue drawer | 1,008 | 4.17 / 4.33 / 4.5 ms | 0 / 0 | 0.55 / 1.05 / 2.2 ms |
+| Now Playing | 1,255 | 4.17 / 4.33 / 4.5 ms | 0 / 0 | 0.47 / 0.93 / 1.9 ms |
+
+The 3 s at rest after the first useful frame: 19 of 1,089 intervals over 6.25 ms and 9 over 8.33 ms
+in `start`, against M1.14's 20 and 9 of 1,086. A first series the same day opened on the owner's
+other display, 1920x1080 at about 180 Hz, and was left out whole; its start, 139 to 151 ms, does not
+compare.
+
+**The phone**, `scripts/measure/phone.py 10 <out>` over adb, the owner's Pixel 10 on GrapheneOS
+(Android 17, build `CP3A.261005.005` as at [M1.14](#the-phone-under-compose), but its release
+`2026110801`, a system update since), the same release APK as M1.14 (installed 2026-11-07, compiled
+ahead of time), the owner's library, the Stock theme; nothing played. The script's checks before
+each step held throughout.
+
+| Measure | Figure | M1.14 |
+|---|---|---|
+| Cold start, `am start -W` TotalTime | median 590 ms, 575 to 857 (n=10) | median 543 ms |
+| Hot start | median 28 ms, 20 to 35 (n=10) | median 27.5 ms |
+| Memory 5 s after a cold start | 276.5 MiB PSS, 413 MiB RSS | 273 MiB PSS |
+| Memory after the scrolls and the tabs | 394 MiB PSS, 527 MiB RSS | 380 MiB PSS |
+| Scrolling Songs, 24 flings | 2,317 frames: 50th 5 ms, 90th 6, 99th 8; 3 janky; GPU 99th 2 ms | 1 janky |
+| Scrolling Albums, 24 flings | 3,462 frames: 50th 5 ms, 90th 5, 99th 7; 2 janky; GPU 99th 2 ms | none janky |
+| The four tabs in turn, 4 rounds | 699 frames: 50th 5 ms, 90th 6, 99th 20; 8 janky; GPU 99th 3 ms | 7 janky, 99th 19 |
+
+The app is the same build as M1.14's; the system is not, so the differences may be the system's.
+
 ## The figures to beat on uwui, M1.14 (2026-11-07)
 
 What uwui must match when it ports Opium

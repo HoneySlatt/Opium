@@ -1,0 +1,18 @@
+# A standalone crate, outside the Opium workspace, that runs the m18-data
+# findings against the workspace's own crates through their public items.
+# Built offline with a copy of the workspace's Cargo.lock.
+[package]
+name = "m18-data-proofs"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+downloads = { path = "../../../../../crates/downloads" }
+synced = { path = "../../../../../crates/synced" }
+opium-core = { path = "../../../../../crates/opium-core" }
+serde = { version = "1.0.229", features = ["derive"] }
+toml = "1.1.8"
+serde_json = "1.0.154"

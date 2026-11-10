@@ -1,0 +1,17 @@
+[package]
+name = "m18-perf-bench"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# Its own workspace: a scratch program for the M1.8 performance audit, never part of Opium's.
+[workspace]
+
+[dependencies]
+opium-core = { path = "../../../../../crates/opium-core" }
+# Only to size a Track as Opium Connect sends it (`connect::Inner::encode`); the workspace's own.
+serde_json = "1.0.154"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

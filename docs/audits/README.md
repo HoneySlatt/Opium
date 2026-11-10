@@ -12,5 +12,4 @@ items go to the known debt, [`../debt.md`](../debt.md).
 | [2026-11-05](2026-11-05-widevine-clean-room.md) | `widevine` written again in a clean room: the same evidence, and the first runs on the owner's CDM (M1.11) |
 | [2026-11-06](2026-11-06-apple-music-clean-room.md) | `apple-music`'s derived items written again in a clean room: the same evidence, and the figures on the owner's account (M1.12) |
 | [2026-11-06](2026-11-06-kopuz-whole-tree.md) | Opium's whole tree compared with Kopuz at both revisions, every long run read by hand; one part still adapted, kept by the owner; the credits made true (M1.13) |
-
-The next is the stage audit that closes Stage 1 ([M1.8](../PLAN.md#m18--the-stage-audit)).
+| [2026-11-10](2026-11-10-stage-1.md) | The stage audit that closes Stage 1: every dimension, what each left out, its proofs beside it (M1.8) |
