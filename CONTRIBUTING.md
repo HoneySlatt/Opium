@@ -240,7 +240,11 @@ WAYLAND_DISPLAY=wayland-0 OPIUM_MEASURE_PIXELS=3840x2160 \
   - the driving: `OPIUM_MEASURE=<scenario>` and `OPIUM_MEASURE_OUT=<file>`, as `run.sh` and
     `frames.py` pass them;
   - the record, as `frames.py` reads it: `#` lines `key=value`, among them `pixels_per_point`,
-    `window_pixels`, `ended` (`done`, or `end` for a scroll at its end) and `undrawn` (0); then the
+    `window_points` and `window_pixels` (`WxH`), `ended` (`done`, or `end` for a scroll at its end),
+    `undrawn` (0), `scrolled` (the points scrolled in all) and, for `scroll-songs`, `rows_points`
+    (the height of Songs' rows, in points): a `scroll-songs` run whose `scrolled` does not reach
+    the end of those rows is left out (`frames.py`'s `scroll_reach`, tested by
+    `scripts/measure/test_frames.py`, which `scripts/check.sh` runs); then the
     line `start_us,cpu_us,phase,continued,scrolled` and one line a frame drawn: its start in
     microseconds of the Unix epoch; its CPU time, the work of the interface, of turning it into
     triangles and of the drawing calls, without the GPU nor the wait for the display (egui's

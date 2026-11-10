@@ -81,6 +81,10 @@ cargo clippy -p apple-music --all-targets --features fuzzing --locked -- -D warn
 step "build and tests"
 cargo test --workspace --locked
 
+# frames.py judges which runs' figures stand (a scroll that stopped short is left out).
+step "the measuring scripts' tests"
+python3 -I scripts/measure/test_frames.py
+
 step "documentation"
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked
 

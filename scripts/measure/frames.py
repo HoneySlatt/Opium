@@ -31,7 +31,9 @@ was started (<scenario>-<n>-mem.json) and the app's standard error (<scenario>-<
 A run is left out of the figures together, and said on standard error, if it never showed the
 library, if a frame was begun but not drawn (`undrawn`: the window hidden, or the compositor
 withholding frames), if its scenario did not end by itself
-(`ended`), if it was not drawn at OPIUM_MEASURE_PIXELS_PER_POINT (1.65 by default: the owner's
+(`ended`), if a `scroll-songs` run did not scroll the whole list (see `scroll_reach`: the record's
+`rows_points`, the height of the list's rows, against the distance `scrolled`; the list is
+the library's, without copies of a song across services), if it was not drawn at OPIUM_MEASURE_PIXELS_PER_POINT (1.65 by default: the owner's
 scale 1.5 at the interface's 100 %), or, with OPIUM_MEASURE_PIXELS set (3840x2160), if its
 window had another size. Refuses to start if an Opium
 already runs. Run inside `nix develop`.
@@ -162,9 +164,63 @@ def summary(found):
     return result
 
 
+# What the egui window's scroll does, from crates/app-desktop/src/measure.rs and ui/songs.rs.
+# A row of the Songs list, in points (ui/tracks.rs `ROW`): for records that predate `rows_points`.
+SONGS_ROW_POINTS = 52.0
+# The most a page can be taller than its rows: its header and foot, with the banner layout
+# (ui/songs.rs: detail::BANNER + ACTIONS, tracks::HEAD_SPACE, a foot of 52 and 104 below it).
+# The stock layout's is 372.
+LIST_EXTRA_POINTS = 629.0
+# How fast the scroll goes, in points a second (measure.rs `SCROLL_SPEED`).
+SCROLL_SPEED = 4000.0
+# A frame this late, in seconds, is far beyond the display's pace (4 ms at 240 Hz).
+LATE_FRAME = 0.25
+# The scroll counts a frame's whole push once the page took any of it, so the last one may
+# overshoot the end by up to a frame's push: SCROLL_SPEED x LATE_FRAME = 1,000 points.
+LAST_STEP_POINTS = SCROLL_SPEED * LATE_FRAME
+
+
+def scroll_reach(facts):
+    """Why a `scroll-songs` run's distance does not cover its list; empty if it does.
+
+    The record says the height of the list's rows in points (`rows_points`; for an older record,
+    its `songs` x SONGS_ROW_POINTS, said on standard error), the window's size (`window_points`,
+    "WxH") and how far the scroll went (`scrolled`). The page ends at its rows plus a header and
+    a foot (372 points, 629 with the banner layout) less one window's height, and a run that
+    went the whole way counted at least that distance (every push the page took counts whole),
+    and at most one frame's push more. So a fit run has `scrolled` between `rows_points` less
+    the window's height and `rows_points` plus 629 plus LAST_STEP_POINTS (the push of a frame
+    0.25 s late at 4,000 points a second: 1,000). Shorter is a scroll that stopped; longer, one
+    counted twice (the audit's runs: 7,066 and 411,933 stopped, 853,559 went on, of 441,064).
+
+    `rows_points` counts the library, not the rows laid out: it holds for a library without
+    copies of a song across services, fully loaded before the scroll, as library.py makes it.
+    """
+    try:
+        window = float(facts["window_points"].split("x")[1])
+        scrolled = float(facts["scrolled"])
+        if "rows_points" in facts:
+            rows = float(facts["rows_points"])
+        else:
+            rows = float(facts["songs"]) * SONGS_ROW_POINTS
+            print("the record has no rows_points: the list's height taken as songs x "
+                  f"{SONGS_ROW_POINTS:.0f} points", file=sys.stderr)
+    except (KeyError, IndexError, ValueError):
+        return ["the record does not say the list's height (rows_points, or songs), the window's "
+                "(window_points) or how far it scrolled: the run is left out"]
+    least, most = rows - window, rows + LIST_EXTRA_POINTS + LAST_STEP_POINTS
+    # Written so that a NaN fails.
+    if not least <= scrolled <= most:
+        return [f"scrolled {scrolled:.0f} points, where the list's {rows:.0f} should take "
+                f"{least:.0f} to {most:.0f}"]
+    return []
+
+
 def unfit(facts):
     """Why a run's figures may not stand with the others; empty if they may."""
     reasons = []
+    if scenario == "scroll-songs":
+        reasons += scroll_reach(facts)
     if facts.get("undrawn", "0") != "0":
         reasons.append(f"{facts['undrawn']} frames begun but not drawn")
     if facts.get("ended") not in ("done", "end"):

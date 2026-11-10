@@ -463,13 +463,18 @@ impl Measure {
     }
 }
 
-/// The record's `#` lines on what was drawn: the songs, the scale, the
-/// window's size in points and in pixels.
+/// The record's `#` lines on what was drawn: the songs, the height of
+/// Songs' rows in points (`frames.py` holds a scroll to it), the scale, the
+/// window's size in points and in pixels. The rows' height counts the
+/// library, not the rows laid out: it holds for a library without copies of a
+/// song across services, fully loaded before the scroll, as
+/// `scripts/measure/library.py` makes it.
 fn facts(ctx: &egui::Context, songs: usize) -> String {
     let ppp = ctx.pixels_per_point();
     let rect = ctx.content_rect();
     format!(
-        "# songs={songs}\n# pixels_per_point={ppp}\n# window_points={}x{}\n# window_pixels={}x{}\n",
+        "# songs={songs}\n# rows_points={}\n# pixels_per_point={ppp}\n# window_points={}x{}\n# window_pixels={}x{}\n",
+        songs as f32 * crate::ui::tracks::ROW,
         rect.width().round(),
         rect.height().round(),
         (rect.width() * ppp).round(),
