@@ -67,6 +67,13 @@ impl Query {
         self.duration
             .is_none_or(|d| d.abs_diff(found) <= SAME_LENGTH)
     }
+
+    /// [`Self::same_length`] for a length a site gives in seconds, which may be
+    /// anything JSON can hold: a negative one counts as 0, and one too large
+    /// for a `Duration` matches no song.
+    fn same_length_in_seconds(&self, seconds: f64) -> bool {
+        Duration::try_from_secs_f64(seconds.max(0.0)).is_ok_and(|found| self.same_length(found))
+    }
 }
 
 /// Lowercase letters and digits only: what titles share across sites.
@@ -209,7 +216,7 @@ impl Finder {
             same_title(query, e["trackName"].as_str().unwrap_or_default())
                 && e["duration"]
                     .as_f64()
-                    .is_none_or(|d| query.same_length(Duration::from_secs_f64(d.max(0.0))))
+                    .is_none_or(|seconds| query.same_length_in_seconds(seconds))
         };
         // Synced first, else the first that fits.
         entries
@@ -361,5 +368,17 @@ mod tests {
         assert!(same_title(&query("Alive", 60), "Alive"));
         assert!(q.same_length(Duration::from_millis(228_918)));
         assert!(!q.same_length(Duration::from_secs(154)));
+    }
+
+    #[test]
+    fn a_length_a_site_gives_in_seconds_may_be_anything() {
+        let q = query("Work", 227);
+        assert!(q.same_length_in_seconds(228.9));
+        assert!(!q.same_length_in_seconds(154.0));
+        assert!(!q.same_length_in_seconds(-5.0));
+        assert!(!q.same_length_in_seconds(1e300));
+        assert!(!q.same_length_in_seconds(f64::INFINITY));
+        assert!(!q.same_length_in_seconds(f64::NAN));
+        assert!(query("Short", 0).same_length_in_seconds(-5.0));
     }
 }

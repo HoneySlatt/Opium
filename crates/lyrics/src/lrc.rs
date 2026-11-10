@@ -55,7 +55,7 @@ fn enhanced(text: &str, line_end: Option<Duration>, shift: i64) -> (String, Vec<
     while !rest.is_empty() {
         let (at, after) = match rest.strip_prefix('<').and_then(|r| r.split_once('>')) {
             Some((tag, after)) => match millis(tag) {
-                Some(ms) => (Some(ms - shift), after),
+                Some(ms) => (Some(ms.saturating_sub(shift)), after),
                 None => (None, rest),
             },
             None => (None, rest),
@@ -98,7 +98,8 @@ fn enhanced(text: &str, line_end: Option<Duration>, shift: i64) -> (String, Vec<
     )
 }
 
-/// The `[offset:±ms]` tag: positive is earlier.
+/// The `[offset:±ms]` tag: positive is earlier. Any `i64` is read: a time is
+/// shifted by it with a saturating subtraction.
 fn offset(text: &str) -> i64 {
     text.lines()
         .find_map(|l| {
@@ -153,7 +154,7 @@ pub fn parse(text: &str, title: &str) -> Option<Lyrics> {
             continue;
         }
         for at in times {
-            let at = (at - shift).max(0);
+            let at = at.saturating_sub(shift).max(0);
             if !is_credit(words, at, title) {
                 timed_lines.push((at, words.to_owned()));
             }
@@ -266,5 +267,40 @@ mod tests {
         let l = parse("First\nSecond\n", "x").unwrap();
         assert!(!l.synced);
         assert_eq!(l.lines.len(), 2);
+    }
+
+    // W11 of the stage 1 audit: an LRC offset at the end of its range.
+    #[test]
+    fn an_offset_at_the_end_of_its_range_does_not_overflow() {
+        for shift in [i64::MIN, i64::MAX] {
+            let text = format!(
+                "[offset:{shift}]\n[00:01.00]<00:01.00>One <00:02.00>two\n[00:03.00]Three\n"
+            );
+            let lyrics = parse(&text, "Song").expect("two timed lines");
+            assert!(lyrics.synced);
+            let starts: Vec<u128> = lyrics.lines.iter().map(|l| l.start.as_millis()).collect();
+            assert!(starts.windows(2).all(|w| w[0] <= w[1]), "{starts:?}");
+        }
+    }
+
+    /// `[offset:…]` is read as any `i64`: far out of range it saturates, so lines start at 0 (a
+    /// time pushed earlier than the song) or far on, never wrapped round.
+    #[test]
+    fn an_offset_far_out_of_range_neither_panics_nor_wraps() {
+        let text = "[offset:-9223372036854775808]\n[00:01.00]one\n[00:02.00]two <00:02.50>words\n";
+        let lyrics = parse(text, "").expect("two lines");
+        assert_eq!(lyrics.lines.len(), 2);
+    }
+
+    #[test]
+    fn a_saturated_offset_puts_times_at_the_ends_not_wrapped_round() {
+        let late = "[offset:-9223372036854775808]\n[00:01.00]<00:01.00>One\n";
+        let line = &parse(late, "").unwrap().lines[0];
+        assert_eq!(line.start, Duration::from_millis(i64::MAX as u64));
+        assert_eq!(line.words[0].start, Duration::from_millis(i64::MAX as u64));
+        let early = "[offset:9223372036854775807]\n[00:01.00]<00:01.00>One\n";
+        let line = &parse(early, "").unwrap().lines[0];
+        assert_eq!(line.start, Duration::ZERO);
+        assert_eq!(line.words[0].start, Duration::ZERO);
     }
 }
