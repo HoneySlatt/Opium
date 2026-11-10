@@ -27,6 +27,7 @@ fn on_a_bus_of_its_own(test: &str) -> bool {
         return true;
     }
     let status = Command::new("dbus-run-session")
+        .arg(format!("--config-file={}", bus_config().display()))
         .arg("--")
         .arg(std::env::current_exe().expect("the test binary"))
         .args(["--exact", test, "--test-threads=1", "--nocapture"])
@@ -38,6 +39,35 @@ fn on_a_bus_of_its_own(test: &str) -> bool {
         "{test} failed on a session bus of its own"
     );
     false
+}
+
+/// A session bus's configuration of the test's own, written to its folder
+/// under the temporary one: `dbus-run-session`'s default is a file of the
+/// system's (`/etc/dbus-1/session.conf`), which not every machine has.
+fn bus_config() -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("opium-test-bus-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("the test's folder");
+    let path = dir.join("session.conf");
+    std::fs::write(
+        &path,
+        format!(
+            r#"<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-BUS Bus Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
+<busconfig>
+  <type>session</type>
+  <listen>unix:dir={}</listen>
+  <policy context="default">
+    <allow send_destination="*" eavesdrop="true"/>
+    <allow eavesdrop="true"/>
+    <allow own="*"/>
+  </policy>
+</busconfig>
+"#,
+            dir.display()
+        ),
+    )
+    .expect("the bus's configuration");
+    path
 }
 
 fn no_wake() -> desktop::Wake {
