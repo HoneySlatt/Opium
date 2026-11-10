@@ -532,17 +532,10 @@ impl SoundCloud {
     /// An artist's own tracks as singles, newest first, up to
     /// [`UPLOADS_MAX`].
     async fn uploads(&self, artist: &ItemId) -> Result<Vec<Album>> {
-        let mut page: types::Collection<types::Track> = self
+        let first = self
             .page(&format!("/users/{}/tracks", artist.id), None)
             .await?;
-        let mut tracks = std::mem::take(&mut page.collection);
-        while let Some(next) = page.next_href.take()
-            && tracks.len() < UPLOADS_MAX
-        {
-            page = self.get(&next).await?;
-            tracks.append(&mut page.collection);
-        }
-        tracks.truncate(UPLOADS_MAX);
+        let tracks = uploads_from(first, |next| async move { self.get(&next).await }).await?;
         let mut singles: Vec<Album> = tracks.into_iter().map(convert::single).collect();
         singles.sort_by(|a, b| b.released.cmp(&a.released));
         Ok(singles)
@@ -679,6 +672,7 @@ impl Provider for SoundCloud {
         let page: types::Collection<types::TrackLike> = self
             .page(&format!("/users/{}/track_likes", self.me.id), cursor)
             .await?;
+        let next = onward(&page, cursor.map(|c| c.0.as_str())).map(Cursor);
         Ok(Page {
             items: page
                 .collection
@@ -694,7 +688,7 @@ impl Provider for SoundCloud {
                     }
                 })
                 .collect(),
-            next: page.next_href.map(Cursor),
+            next,
         })
     }
 
@@ -716,12 +710,11 @@ impl Provider for SoundCloud {
                 .map(|n| Cursor(n.to_owned()))
         };
         if cursor.is_some_and(|c| c.0.starts_with(LIKED)) {
+            let asked = after(LIKED);
             let page: types::Collection<types::Like> = self
-                .page(
-                    &format!("/users/{}/likes", self.me.id),
-                    after(LIKED).as_ref(),
-                )
+                .page(&format!("/users/{}/likes", self.me.id), asked.as_ref())
                 .await?;
+            let next = onward(&page, asked.as_ref().map(|c| c.0.as_str()));
             return Ok(Page {
                 items: page
                     .collection
@@ -729,22 +722,21 @@ impl Provider for SoundCloud {
                     .filter_map(|like| like.playlist)
                     .map(|p| convert::playlist(p, me))
                     .collect(),
-                next: page.next_href.map(|n| Cursor(format!("{LIKED}{n}"))),
+                next: next.map(|n| Cursor(format!("{LIKED}{n}"))),
             });
         }
+        let asked = after(OWN);
         let page: types::Collection<types::Playlist> = self
-            .page(
-                &format!("/users/{}/playlists", self.me.id),
-                after(OWN).as_ref(),
-            )
+            .page(&format!("/users/{}/playlists", self.me.id), asked.as_ref())
             .await?;
+        let next = onward(&page, asked.as_ref().map(|c| c.0.as_str()));
         Ok(Page {
             items: page
                 .collection
                 .into_iter()
                 .map(|p| convert::playlist(p, me))
                 .collect(),
-            next: Some(Cursor(match page.next_href {
+            next: Some(Cursor(match next {
                 Some(n) => format!("{OWN}{n}"),
                 None => LIKED.to_owned(),
             })),
@@ -1048,6 +1040,43 @@ impl Provider for SoundCloud {
     }
 }
 
+/// The address to go on from after `page`, which was asked for at `asked` (none for a list's
+/// first page): none when it names the address just asked, or when the page came empty. Whoever
+/// follows the cursors would else ask for the same page for ever.
+fn onward<T>(page: &types::Collection<T>, asked: Option<&str>) -> Option<String> {
+    page.next_href
+        .clone()
+        .filter(|next| !page.collection.is_empty() && Some(next.as_str()) != asked)
+}
+
+/// The tracks of `page` and of the pages after it, each fetched by `more` from the address
+/// the one before names, up to [`UPLOADS_MAX`]. The list ends, as read so far and without an
+/// error, at a page with no track or at an address already asked: the pages read are good,
+/// and the cap already makes this list a part of the artist's uploads.
+async fn uploads_from<F, Fut>(
+    mut page: types::Collection<types::Track>,
+    mut more: F,
+) -> Result<Vec<types::Track>>
+where
+    F: FnMut(String) -> Fut,
+    Fut: std::future::Future<Output = Result<types::Collection<types::Track>>>,
+{
+    let mut tracks = std::mem::take(&mut page.collection);
+    let mut asked = std::collections::HashSet::new();
+    while let Some(next) = page.next_href.take()
+        && tracks.len() < UPLOADS_MAX
+        && asked.insert(next.clone())
+    {
+        page = more(next).await?;
+        if page.collection.is_empty() {
+            break;
+        }
+        tracks.append(&mut page.collection);
+    }
+    tracks.truncate(UPLOADS_MAX);
+    Ok(tracks)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1062,6 +1091,143 @@ mod tests {
             Some("web-app")
         );
         assert_eq!(jwt_client_id("2-12345-old-style"), None);
+    }
+}
+
+// Stage 1 audit W2: an artist's uploads are not asked for for ever.
+#[cfg(test)]
+mod uploads_paging {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    /// More requests than any honest list needs: past it, the fake gives up, so that a loop
+    /// without end fails the test instead of hanging it.
+    const GIVE_UP: usize = 50;
+
+    fn page(ids: &[u64], next_href: Option<&str>) -> types::Collection<types::Track> {
+        types::Collection {
+            collection: ids
+                .iter()
+                .map(|&id| types::Track {
+                    id,
+                    ..Default::default()
+                })
+                .collect(),
+            next_href: next_href.map(str::to_owned),
+        }
+    }
+
+    /// The uploads read from `first` when each later page is `answer(n, address)`, `n` counting
+    /// the requests from 1; with how many were made.
+    async fn read(
+        first: types::Collection<types::Track>,
+        answer: impl Fn(usize, &str) -> types::Collection<types::Track>,
+    ) -> (Result<Vec<types::Track>>, usize) {
+        let asked = AtomicUsize::new(0);
+        let tracks = uploads_from(first, |address| {
+            let n = asked.fetch_add(1, Ordering::SeqCst) + 1;
+            let reply = if n > GIVE_UP {
+                Err(Error::Protocol(format!(
+                    "still asking after {GIVE_UP} requests"
+                )))
+            } else {
+                Ok(answer(n, &address))
+            };
+            async move { reply }
+        })
+        .await;
+        (tracks, asked.into_inner())
+    }
+
+    #[tokio::test]
+    async fn pages_are_followed_to_the_last() {
+        let (tracks, asked) = read(page(&[1], Some("p1")), |n, address| {
+            assert_eq!(address, format!("p{n}"));
+            match n {
+                1 => page(&[2], Some("p2")),
+                _ => page(&[3], None),
+            }
+        })
+        .await;
+        let ids: Vec<u64> = tracks.unwrap().iter().map(|t| t.id).collect();
+        assert_eq!(ids, [1, 2, 3]);
+        assert_eq!(asked, 2);
+    }
+
+    #[tokio::test]
+    async fn an_empty_page_ends_the_list_whatever_it_names_next() {
+        let (tracks, asked) = read(page(&[1], Some("p1")), |n, _| {
+            page(&[], Some(&format!("p{}", n + 1)))
+        })
+        .await;
+        assert_eq!(tracks.unwrap().len(), 1);
+        assert_eq!(asked, 1);
+    }
+
+    #[tokio::test]
+    async fn a_next_address_already_asked_ends_the_list() {
+        let (tracks, asked) = read(page(&[1], Some("same")), |n, _| {
+            page(&[n as u64 + 1], Some("same"))
+        })
+        .await;
+        let ids: Vec<u64> = tracks.unwrap().iter().map(|t| t.id).collect();
+        assert_eq!(ids, [1, 2]);
+        assert_eq!(asked, 1);
+    }
+
+    #[tokio::test]
+    async fn an_address_that_comes_back_later_ends_the_list() {
+        let (tracks, asked) = read(page(&[1], Some("a")), |n, _| {
+            page(&[n as u64 + 1], Some(if n % 2 == 1 { "b" } else { "a" }))
+        })
+        .await;
+        assert_eq!(tracks.unwrap().len(), 3);
+        assert_eq!(asked, 2);
+    }
+
+    #[tokio::test]
+    async fn no_more_than_the_most_are_kept() {
+        let ids: Vec<u64> = (0..UPLOADS_MAX as u64).collect();
+        let (tracks, asked) = read(page(&ids, Some("p1")), |n, _| {
+            page(&[9_999], Some(&format!("p{}", n + 1)))
+        })
+        .await;
+        assert_eq!(tracks.unwrap().len(), UPLOADS_MAX);
+        assert_eq!(asked, 0);
+    }
+}
+
+// Stage 1 audit W2: a cursor handed back never leads to the page just asked for.
+#[cfg(test)]
+mod cursors {
+    use super::*;
+
+    fn page(ids: &[u64], next_href: Option<&str>) -> types::Collection<u64> {
+        types::Collection {
+            collection: ids.to_vec(),
+            next_href: next_href.map(str::to_owned),
+        }
+    }
+
+    #[test]
+    fn a_next_address_is_kept() {
+        assert_eq!(onward(&page(&[1], Some("b")), None).as_deref(), Some("b"));
+        assert_eq!(
+            onward(&page(&[1], Some("b")), Some("a")).as_deref(),
+            Some("b")
+        );
+        assert_eq!(onward(&page(&[1], None), Some("a")), None);
+    }
+
+    #[test]
+    fn the_address_just_asked_is_not_handed_back() {
+        assert_eq!(onward(&page(&[1], Some("a")), Some("a")), None);
+    }
+
+    #[test]
+    fn an_empty_page_hands_back_nothing() {
+        assert_eq!(onward(&page(&[], Some("b")), Some("a")), None);
+        assert_eq!(onward(&page(&[], Some("b")), None), None);
     }
 }
 

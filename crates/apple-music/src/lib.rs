@@ -705,9 +705,17 @@ impl AppleMusic {
                 next: None,
             });
         };
+        // No cursor back to the page just asked for, or to an offset not past it: whoever
+        // follows cursors would ask for it for ever.
+        let starts = offset_in(path).unwrap_or(0);
+        let next = resp
+            .next
+            .filter(|next| offset_moves_on(next, starts))
+            .map(|next| next_page_path(&next, first))
+            .filter(|next| next != path);
         Ok(Page {
             items: resp.data.into_iter().map(convert).collect(),
-            next: resp.next.map(|next| Cursor(next_page_path(&next, first))),
+            next: next.map(Cursor),
         })
     }
 }
@@ -768,6 +776,10 @@ impl AppleMusic {
     /// Every library song: `each` gets them in order, and whether that was
     /// the last page; all at once, each as released now (see
     /// `released_now`).
+    ///
+    /// Fails with a protocol error, after handing over the page that showed it, when a page's
+    /// `next` goes back, stays where it was asked or names an address already asked: the list is
+    /// then not whole, so `each` is never told of a last page.
     pub async fn each_library_track(&self, each: impl FnMut(Vec<Track>, bool)) -> Result<()> {
         self.each_released_now(&library_songs_path(), each).await
     }
@@ -885,11 +897,21 @@ impl AppleMusic {
         self.each_released_now(&first, each).await
     }
 
+    /// Every album of the library: `each` gets them page by page, in order, and whether that was the last page.
+    ///
+    /// Fails with a protocol error, after handing over the page that showed it, when a page's
+    /// `next` goes back, stays where it was asked or names an address already asked: the list is
+    /// then not whole, so `each` is never told of a last page.
     pub async fn each_library_album(&self, each: impl FnMut(Vec<Album>, bool)) -> Result<()> {
         self.each_page(&library_albums_path(), convert::album, usize::MAX, each)
             .await
     }
 
+    /// Every artist of the library: `each` gets them page by page, in order, and whether that was the last page.
+    ///
+    /// Fails with a protocol error, after handing over the page that showed it, when a page's
+    /// `next` goes back, stays where it was asked or names an address already asked: the list is
+    /// then not whole, so `each` is never told of a last page.
     pub async fn each_library_artist(&self, each: impl FnMut(Vec<Artist>, bool)) -> Result<()> {
         self.each_page(
             &library_artists_path(),
@@ -951,6 +973,11 @@ impl AppleMusic {
         Ok(albums)
     }
 
+    /// Every playlist of the library: `each` gets them page by page, in order, and whether that was the last page.
+    ///
+    /// Fails with a protocol error, after handing over the page that showed it, when a page's
+    /// `next` goes back, stays where it was asked or names an address already asked: the list is
+    /// then not whole, so `each` is never told of a last page.
     pub async fn each_library_playlist(&self, each: impl FnMut(Vec<Playlist>, bool)) -> Result<()> {
         self.each_page(
             &library_playlists_path(),
@@ -1075,7 +1102,13 @@ impl AppleMusic {
         Ok(resp.map(|r| r.data).unwrap_or_default())
     }
 
-    /// The rest of a list after its first `got` items, one page after another.
+    /// The rest of a list after its first `got` items, one page after another. `got` is where
+    /// the page `next` names starts.
+    ///
+    /// Fails, after handing over the page that showed it, when a page's `next` does not start
+    /// past the page itself or names an address already asked: Apple would be asked for the
+    /// same page for ever. An error and not an end, because the list is not whole and `each`
+    /// must not be told it is.
     async fn each_page_in_turn<A, T>(
         &self,
         first: &str,
@@ -1089,8 +1122,10 @@ impl AppleMusic {
         A: DeserializeOwned,
     {
         let mut next = Some(next);
+        let mut asked = std::collections::HashSet::new();
         while let Some(path) = next.take() {
             let path = next_page_path(&path, first);
+            asked.insert(path.clone());
             let Some(resp) = self
                 .fetch::<types::Response<types::Resource<A>>>(&path)
                 .await?
@@ -1099,13 +1134,24 @@ impl AppleMusic {
                 each(Vec::new(), true);
                 break;
             };
+            let starts = got;
             got = resp
                 .next
                 .as_deref()
                 .and_then(offset_in)
                 .unwrap_or(got + resp.data.len());
-            next = resp.next.filter(|_| got < limit);
-            each(resp.data.into_iter().map(convert).collect(), next.is_none());
+            let stuck = resp.next.as_deref().and_then(|n| {
+                let after = next_page_path(n, first);
+                (!offset_moves_on(n, starts) || asked.contains(&after)).then_some(after)
+            });
+            next = resp.next.filter(|_| got < limit && stuck.is_none());
+            let last = next.is_none() && stuck.is_none();
+            each(resp.data.into_iter().map(convert).collect(), last);
+            if let Some(after) = stuck {
+                return Err(Error::Protocol(format!(
+                    "{after}: the list's next page does not move on"
+                )));
+            }
         }
         Ok(())
     }
@@ -1120,6 +1166,12 @@ fn offset_in(next: &str) -> Option<usize> {
         .query_pairs()
         .find(|(k, _)| k == "offset")
         .and_then(|(_, v)| v.parse().ok())
+}
+
+/// Whether `next` starts past `starts`. A `next` with no offset, a cursor of another kind, is
+/// not judged here: only an address asked twice shows that it goes round.
+fn offset_moves_on(next: &str, starts: usize) -> bool {
+    offset_in(next).is_none_or(|offset| offset > starts)
 }
 
 /// The address of the page after one: Apple's `next` for it, completed with each query
@@ -1323,6 +1375,8 @@ impl Provider for AppleMusic {
         };
         let mut tracks = Vec::new();
         let mut cursor = None;
+        // A page that names a cursor already asked would be asked for for ever.
+        let mut asked = std::collections::HashSet::new();
         loop {
             let page = self.page(&first, cursor.as_ref(), convert::track).await?;
             tracks.extend(page.items.into_iter().map(|mut t| {
@@ -1330,6 +1384,12 @@ impl Provider for AppleMusic {
                 t
             }));
             match page.next {
+                Some(next) if !asked.insert(next.0.clone()) => {
+                    return Err(Error::Protocol(format!(
+                        "{}: the album's next page does not move on",
+                        next.0
+                    )));
+                }
                 Some(next) => cursor = Some(next),
                 None => {
                     self.released_now(&mut tracks).await;
@@ -2654,6 +2714,209 @@ mod http_tests {
                 format!("/v1/me/library/albums?offset=2{rest}")
             ]
         );
+    }
+
+    // Stage 1 audit W2: a `next` that never moves on must not be asked for for ever.
+    /// A list whose `next` never moves on: asked a few times at most, not for ever.
+    #[tokio::test]
+    async fn a_next_page_that_never_moves_on_is_not_asked_for_ever() {
+        let server = apple_server(|_| {
+            json_reply(&json!({
+                "data": [{ "id": "l.x", "type": "library-albums", "attributes": { "name": "Made-up album" } }],
+                "next": "/v1/me/library/albums?offset=1",
+            }))
+        });
+        let am = apple_music(&server).await;
+        let ended = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            am.each_library_album(|_, _| {}),
+        )
+        .await;
+        let asked = server.requests_to("/v1/me/library/albums").len();
+        assert!(ended.is_ok(), "still asking after {asked} requests");
+        assert!(asked <= 3, "{asked} requests for a list of one page");
+    }
+
+    /// A list whose `next` goes back to an earlier offset ends, as an error that keeps the
+    /// pages already handed over.
+    #[tokio::test]
+    async fn a_next_page_that_goes_back_ends_the_list_with_an_error() {
+        let server = apple_server(|request| {
+            let next = if request.path.contains("offset=5") {
+                "/v1/me/library/albums?offset=2"
+            } else {
+                "/v1/me/library/albums?offset=5"
+            };
+            json_reply(&json!({
+                "data": [{ "id": "l.x", "type": "library-albums", "attributes": { "name": "Made-up album" } }],
+                "next": next,
+            }))
+        });
+        let am = apple_music(&server).await;
+        let mut pages = 0;
+        let ended = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            am.each_library_album(|_, last| {
+                assert!(!last, "a list cut short is never the whole");
+                pages += 1;
+            }),
+        )
+        .await;
+        let asked = server.requests_to("/v1/me/library/albums").len();
+        let ended = ended.unwrap_or_else(|_| panic!("still asking after {asked} requests"));
+        let error = ended.unwrap_err();
+        assert!(error.to_string().contains("offset=2"), "{error}");
+        assert_eq!(pages, asked, "every page read was handed over");
+        assert!(asked <= 3, "{asked} requests");
+    }
+
+    /// A `next` with no offset that names an address already asked ends the list too.
+    #[tokio::test]
+    async fn a_next_address_already_asked_ends_the_list_with_an_error() {
+        let server = apple_server(|_| {
+            json_reply(&json!({
+                "data": [{ "id": "l.x", "type": "library-albums", "attributes": { "name": "Made-up album" } }],
+                "next": "/v1/me/library/albums?cursor=same",
+            }))
+        });
+        let am = apple_music(&server).await;
+        let ended = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            am.each_library_album(|_, _| {}),
+        )
+        .await;
+        let asked = server.requests_to("/v1/me/library/albums").len();
+        let ended = ended.unwrap_or_else(|_| panic!("still asking after {asked} requests"));
+        assert!(ended.is_err());
+        assert!(asked <= 3, "{asked} requests");
+    }
+
+    /// A list paged by a cursor that is not an offset goes on past a page that comes empty
+    /// (every item of it unreadable), to the address that page names.
+    #[tokio::test]
+    async fn a_cursor_list_goes_on_past_a_page_of_unreadable_items() {
+        let server = apple_server(|request| {
+            let album = json!({ "id": "l.x", "type": "library-albums", "attributes": { "name": "Made-up album" } });
+            let (data, next) = if request.path.contains("cursor=b") {
+                (
+                    json!([{ "id": "l.bad", "type": "library-albums", "attributes": 7 }]),
+                    Some("/v1/me/library/albums?cursor=c"),
+                )
+            } else if request.path.contains("cursor=c") {
+                (json!([album]), None)
+            } else {
+                (json!([album]), Some("/v1/me/library/albums?cursor=b"))
+            };
+            json_reply(&json!({ "data": data, "next": next }))
+        });
+        let am = apple_music(&server).await;
+        let (mut albums, mut whole) = (0, false);
+        let ended = am
+            .each_library_album(|page, last| {
+                albums += page.len();
+                whole |= last;
+            })
+            .await;
+        assert!(ended.is_ok(), "{ended:?}");
+        assert_eq!((albums, whole), (2, true));
+    }
+
+    /// A `next` that keeps the offset it was asked at, whatever else in it changes with each
+    /// answer, does not move on: only the offset can say so, as no address repeats.
+    #[tokio::test]
+    async fn a_next_page_at_the_same_offset_under_new_addresses_ends_the_list() {
+        let answers = AtomicUsize::new(0);
+        let server = apple_server(move |_| {
+            let n = answers.fetch_add(1, Ordering::SeqCst);
+            json_reply(&json!({
+                "data": [{ "id": "l.x", "type": "library-albums", "attributes": { "name": "Made-up album" } }],
+                "next": format!("/v1/me/library/albums?offset=1&session={n}"),
+            }))
+        });
+        let am = apple_music(&server).await;
+        let ended = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            am.each_library_album(|_, _| {}),
+        )
+        .await;
+        let asked = server.requests_to("/v1/me/library/albums").len();
+        let ended = ended.unwrap_or_else(|_| panic!("still asking after {asked} requests"));
+        assert!(ended.is_err());
+        assert!(asked <= 3, "{asked} requests");
+    }
+
+    /// A function that hands back a cursor hands back none when it is the address it was just
+    /// asked for, or an offset it was not moved on to.
+    #[tokio::test]
+    async fn a_cursor_that_does_not_move_on_is_not_handed_back() {
+        let server = apple_server(|request| {
+            let next = if request.path.contains("offset=5") {
+                "/v1/me/library/albums?offset=2"
+            } else if request.path.contains("offset=7") {
+                "/v1/me/library/albums?offset=7"
+            } else {
+                "/v1/me/library/albums?offset=5"
+            };
+            json_reply(&json!({
+                "data": [{ "id": "l.x", "type": "library-albums", "attributes": { "name": "Made-up album" } }],
+                "next": next,
+            }))
+        });
+        let am = apple_music(&server).await;
+        let first = am.library_albums(None).await.unwrap();
+        let five = first.next.expect("from the first page on to offset 5");
+        // Back to 2 from 5.
+        assert!(am.library_albums(Some(&five)).await.unwrap().next.is_none());
+        // 7 asked, 7 named.
+        let seven = Cursor("/v1/me/library/albums?offset=7&limit=100".into());
+        assert!(
+            am.library_albums(Some(&seven))
+                .await
+                .unwrap()
+                .next
+                .is_none()
+        );
+    }
+
+    /// An album's songs end at a page whose next page is the one just asked for: the songs
+    /// read are given.
+    #[tokio::test]
+    async fn an_albums_songs_end_at_a_next_page_that_does_not_move_on() {
+        let server = apple_server(|_| {
+            json_reply(&json!({
+                "data": [upload("i.A")],
+                "next": "/v1/me/library/albums/l.1/tracks?offset=100",
+            }))
+        });
+        let am = apple_music(&server).await;
+        let album = ItemId::new(ProviderKind::AppleMusic, "l.1");
+        let ended =
+            tokio::time::timeout(std::time::Duration::from_secs(5), am.album_tracks(&album)).await;
+        let asked = server.requests_to("/v1/me/library/albums/l.1/tracks").len();
+        let ended = ended.unwrap_or_else(|_| panic!("still asking after {asked} requests"));
+        assert_eq!(ended.unwrap().len(), 2);
+        assert!(asked <= 3, "{asked} requests");
+    }
+
+    /// An album's songs, read by cursors that go round (a, b, a), fail rather than go on.
+    #[tokio::test]
+    async fn an_albums_songs_stop_at_a_cursor_that_comes_back() {
+        let server = apple_server(|request| {
+            let next = if request.path.contains("cursor=a") {
+                "/v1/me/library/albums/l.1/tracks?cursor=b"
+            } else {
+                "/v1/me/library/albums/l.1/tracks?cursor=a"
+            };
+            json_reply(&json!({ "data": [upload("i.A")], "next": next }))
+        });
+        let am = apple_music(&server).await;
+        let album = ItemId::new(ProviderKind::AppleMusic, "l.1");
+        let ended =
+            tokio::time::timeout(std::time::Duration::from_secs(5), am.album_tracks(&album)).await;
+        let asked = server.requests_to("/v1/me/library/albums/l.1/tracks").len();
+        let ended = ended.unwrap_or_else(|_| panic!("still asking after {asked} requests"));
+        assert!(ended.is_err());
+        assert!(asked <= 4, "{asked} requests");
     }
 
     fn station() -> ItemId {

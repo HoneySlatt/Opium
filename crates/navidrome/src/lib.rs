@@ -606,9 +606,11 @@ impl Navidrome {
 
     /// The cursor after `got` items at `offset`, unless the list ended: a
     /// server may hand back pages shorter than asked, so only an empty one
-    /// ends it.
+    /// ends it. Never a cursor that is not past `offset` (a cursor of a huge offset would
+    /// overflow, and one that does not grow would be asked for again for ever).
     fn next(offset: usize, got: usize) -> Option<Cursor> {
-        (got > 0).then(|| Cursor((offset + got).to_string()))
+        let next = offset.checked_add(got)?;
+        (next > offset).then(|| Cursor(next.to_string()))
     }
 
     async fn playlist_of(&self, playlist: &ItemId) -> Result<types::Playlist> {
@@ -1187,6 +1189,24 @@ impl Provider for Navidrome {
 
 #[cfg(test)]
 mod tests {
+    use super::Navidrome;
+
+    // Stage 1 audit W2: a cursor handed back is always past the offset it was asked at; a page
+    // the same as the one before is out of reach (the server's answer is not compared).
+    #[test]
+    fn a_cursor_goes_past_the_offset_or_is_not_handed_back() {
+        assert_eq!(Navidrome::next(5, 3).map(|c| c.0), Some("8".into()));
+        assert!(
+            Navidrome::next(5, 0).is_none(),
+            "an empty page ends the list"
+        );
+        assert!(
+            Navidrome::next(usize::MAX, 1).is_none(),
+            "an offset that cannot grow ends it"
+        );
+        assert!(Navidrome::next(usize::MAX - 1, 5).is_none());
+    }
+
     // Stage 1 audit S2: an address typed with a password must not reach a kept address.
     #[test]
     fn a_password_typed_in_the_address_goes_into_no_kept_address() {
