@@ -352,7 +352,7 @@ impl<'a> Covers<'a> {
     /// decode or can't be kept.
     pub fn keep(&self, bytes: &[u8]) -> Option<String> {
         let path = self.folder.join(format!("{:016x}.jpg", fnv(bytes)));
-        if !path.exists() && !self.make_once(bytes, &path) {
+        if !made(&path) && !self.make_once(bytes, &path) {
             return None;
         }
         Some(path.to_string_lossy().into_owned())
@@ -385,6 +385,12 @@ impl<'a> Covers<'a> {
     }
 }
 
+/// Whether the cover at `path` is made: there and not empty, as a power cut
+/// can leave a cache written without a flush ([`Mode::Cache`]).
+fn made(path: &Path) -> bool {
+    std::fs::metadata(path).is_ok_and(|kept| kept.len() > 0)
+}
+
 /// The covers being made now, by their path, and the signal that one is
 /// done.
 static MAKING: (Mutex<Vec<PathBuf>>, Condvar) = (Mutex::new(Vec::new()), Condvar::new());
@@ -402,7 +408,7 @@ impl<'a> Making<'a> {
         while making.iter().any(|other| other == path) {
             making = done.wait(making).unwrap_or_else(|e| e.into_inner());
         }
-        if path.exists() {
+        if made(path) {
             return None;
         }
         making.push(path.to_owned());
@@ -704,6 +710,31 @@ pub(crate) mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
         assert!(told.iter().all(Option::is_some), "{told:?}");
         assert_eq!(MADE.load(Ordering::SeqCst), 1, "times the cover was made");
+    }
+
+    /// A cache is written without a flush: a power cut can leave the cover's
+    /// file empty, which the next scan makes again rather than take as made.
+    #[test]
+    fn a_cover_left_empty_by_a_power_cut_is_made_again() {
+        fn square(bytes: &[u8]) -> Option<Vec<u8>> {
+            Some(bytes.to_vec())
+        }
+        let dir = own_folder("left-empty");
+        let covers = Covers {
+            square,
+            ..Covers::new(&dir)
+        };
+        let path = covers.keep(b"a picture").expect("made");
+        std::fs::write(&path, b"").unwrap();
+        let again = Covers {
+            square,
+            ..Covers::new(&dir)
+        }
+        .keep(b"a picture");
+        let kept = std::fs::read(&path).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(again.as_deref(), Some(path.as_str()));
+        assert_eq!(kept, b"a picture", "the cover made again");
     }
 
     #[test]

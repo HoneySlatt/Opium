@@ -2453,7 +2453,11 @@ async fn run(
             Request::Motion { url, size } => {
                 tokio::spawn(async move {
                     let result = match crate::covers::motion_file(&url, size) {
-                        Some(path) if path.exists() => Ok(path),
+                        // An empty file, which a power cut can leave of a
+                        // cache, is fetched again.
+                        Some(path) if std::fs::metadata(&path).is_ok_and(|f| f.len() > 0) => {
+                            Ok(path)
+                        }
                         _ => match am.motion_video(&url, size).await {
                             Ok(bytes) => tokio::task::spawn_blocking({
                                 let url = url.clone();

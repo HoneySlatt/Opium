@@ -121,9 +121,13 @@ pub fn fetch_later(job: Job) {
     ready.notify_one();
 }
 
-/// The cover kept for `url`, if it was.
+/// The cover kept for `url`, if it was: none for an empty file, which a
+/// power cut can leave of a cache written without a flush, so that it is
+/// fetched again.
 pub fn read(url: &str) -> Option<Vec<u8>> {
-    std::fs::read(file(url)?).ok()
+    std::fs::read(file(url)?)
+        .ok()
+        .filter(|bytes| !bytes.is_empty())
 }
 
 /// Keep the cover downloaded from `url`, whole or not at all, as a cache
