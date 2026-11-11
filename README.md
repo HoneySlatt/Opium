@@ -37,8 +37,8 @@ with Jetpack Compose, over the same Rust core.
 - **Your files:** choose music folders in Settings and their FLAC, ALAC, WAV,
   AIFF, MP3, AAC, Ogg Vorbis and Opus files join the library, with their tags
   and covers, watched as they change. Their tags can be edited, as in iTunes.
-  A file opened from the file manager or the command line plays; one dropped
-  on the window plays under X11, not yet under Wayland.
+  A file opened from the file manager or the command line plays; dropping one
+  on the window does nothing under Wayland.
 - **Sound:** each track plays at its own sample rate through PipeWire, without
   resampling, while other apps' sound still plays. You get Apple Music's AAC
   256 and its Spatial Audio for headphones, SoundCloud's original uploads when the artist allows downloads, and

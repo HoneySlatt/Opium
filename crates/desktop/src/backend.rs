@@ -444,8 +444,9 @@ pub enum Reply {
     },
 }
 
-/// What a fetch hands the player: a track, a station's stream, or a whole
-/// file in memory.
+/// What a fetch hands the player: an Apple Music stream decrypting ahead,
+/// a SoundCloud song in memory, a Navidrome file still downloading, a file
+/// of the computer, a station's stream, or a sealed download.
 pub enum Playable {
     /// An Apple Music track, the bit rate of its encode when known, and
     /// whether it is Spatial Audio.

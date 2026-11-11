@@ -194,7 +194,7 @@ the device that takes over.
    time through the app's `Fetcher` (on the desktop, as playing would, the CDM decrypting).
 2. The bytes are written through `sealed::Writer` into a `.part` file of an opaque name, then kept:
    the manifest is written aside and renamed into place.
-3. Played back: the backend finds the song in the store, `Store::open_song` checks its standing
+3. Played back: the backend finds the song in the store (`Downloads::open`), `Store::judge` checks its standing
    (a DRM song plays while its service's subscription was confirmed in the last 30 days), and the
    player reads it through `sealed::Reader`, which decrypts chunk by chunk and seeks anywhere.
 4. Each time Apple Music connects, `AppleMusic::subscribed` confirms the subscription again.

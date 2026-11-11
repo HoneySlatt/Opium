@@ -133,7 +133,9 @@ impl Downloads {
                     for (provider, active, at) in said {
                         store.note_subscription(provider, active, at);
                     }
-                    // One write, on the caller's thread, once per start.
+                    // One write, on the caller's thread (an async worker),
+                    // once per start: the exception to `keep_progress_soon`'s
+                    // rule, which the debt records.
                     if let Err(e) = store.note_time(now()) {
                         eprintln!("downloads: couldn't save the manifest: {e}");
                     }

@@ -133,7 +133,8 @@ In `nix develop .#android`:
 - `build-core.sh` builds `opium-ffi` with `cargo-ndk` for arm64-v8a at API level 34, into
   `target-android`, then generates the Kotlin bindings with UniFFI into the app's generated
   sources.
-- `testDebugUnitTest` runs the app's JVM tests, on JUnit 5 with kotlin-test, both for the tests
+- `testDebugUnitTest` runs the app's JVM tests, on JUnit 5 with kotlin-test (the owner's go,
+  2026-11-10), both for the tests
   only and never in the APK. They check the data layer's decisions that need no Android
   (`data/Rules.kt`), on the computer: no phone, no emulator. They need the bindings
   `build-core.sh` makes. AGP 9 makes unit tests for the debug build only; the task compiles

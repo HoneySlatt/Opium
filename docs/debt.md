@@ -36,6 +36,10 @@ number there (L1, S2, W3…), and their failing tests are kept beside it.
   instances given other config folders but one cache folder could lose a cache write. A launch
   during a start or a teardown longer than 2 s (a cold start on a slow machine) exits without
   handing its files over (`main.rs`, frozen).
+- **The window's thread waits on the shared state** at 100,000 songs: the writer serializes every
+  playlist under the state's lock (up to 77 ms measured), and each sync's part makes the window
+  read every playlist again (46 ms), up to 19 times for a playlist of 100,000 songs, which W3's fix
+  made reachable; the same holds when a playlist's cover is asked of the shared state.
 - **The settings are saved on the window's thread** (`Settings::save`, frozen callers), flushed to
   disk with their folder since M1.15: a few milliseconds a change on a slow disk.
 - **`frames.py` checks Songs' scroll only**: the record does not give the Albums grid's length
@@ -93,7 +97,9 @@ number there (L1, S2, W3…), and their failing tests are kept beside it.
   sealed file again.
 - **Formats without a version**: the shared state's, the pairings', the caches' and the settings'
   (since M1.15 the settings keep the keys they do not know, written back unchanged).
-- **Paging**: a server that ignores Navidrome's offset sends the same page for ever; Apple's lists
+- **Paging**: Apple's page-by-page reader ends quietly a list whose next page does not move on,
+  where the reader of whole lists says so with an error; SoundCloud's and Navidrome's end quietly
+  too; a server that ignores Navidrome's offset sends the same page for ever; Apple's lists
   paged by cursors that never repeat but come empty are followed; a list whose `meta.total` is huge
   with a page of one is asked that many times.
 - **A library of 100,000 songs**: 606 bytes of the window's heap a song; the files' search folding
@@ -127,6 +133,11 @@ number there (L1, S2, W3…), and their failing tests are kept beside it.
   so Kotlin that no longer matches the core passes CI; built by hand (`build-core.sh`,
   `gradle assembleRelease`). With the Gradle wrapper; the PLAN's
   [Ideas](PLAN.md#ideas) hold it.
+- **Tests**, besides the stage 1 audit's (its *Tests* section): the downloads queue's tests wait on
+  `busy()` with no deadline; Opium Connect's wire tests have no deadline; a test of file times
+  passes falsely on coarse clocks; one times the fake CDM; `synced-settings-<pid>` is never cleared
+  first; fuzz targets built only on the weekly run; 88 documented functions that return a `Result`
+  without an *Errors* section; `rfc3339` written twice.
 - **Tests**: the phone's JVM tests cover only the vault's reads, the desktop's themes and the
   downloads' orders, and CI runs neither them nor Gradle's dependency verification (built by hand);
   `connect`'s two tests of 100,000 songs take one to three minutes in a debug build; Navidrome's
@@ -136,11 +147,21 @@ number there (L1, S2, W3…), and their failing tests are kept beside it.
   not fuzzed (only `cenc`'s and `apple-music`'s are).
 - **The examples `am fetch`, `am live` and `sc fetch` write decrypted protected audio to a file**,
   against the DRM rules; the owner keeps them until the first release (2026-11-10).
+- **Navidrome addresses kept as `http://` before M1.15**, when an address typed without a scheme
+  became one even for a server on the internet, stay so (ADR-0044 migrates nothing): the salted
+  token and the password typed again at a session's lapse go in clear until the user signs in
+  again. A migration is the owner's call.
 - **Addresses kept before M1.15** with a Navidrome user and password in them (S2): the password
   stays in `navidrome/credentials.json` until the user signs in again (`connect` now refuses such
   credentials), and in the covers' addresses kept in the caches, the history, the session and
   Opium's playlists, which go to every paired device at each sync (`scrub_kept` strips the signed
   query, not `user:password@`). A one-time scrub is the owner's call.
+- **The downloads' manifest is written on the backend's thread and, on the phone, the main thread**
+  at a confirmation or a sign-out (`Downloads.kt`'s `confirm`, Settings' sign-out), and on an async
+  worker once a start: a flush of the file and its folder each time; not measured on the phone.
+- **The sweep of partial files at start** runs in the config folder, where Amane writes Opium's
+  `theme.toml`: an Amane write in flight at Opium's start, if it names its partial file `*.part`,
+  would be removed; how Amane names it is not known.
 - **The 30 days count the clock's forward motion** (`downloads::store`), read at each start,
   confirmation, download and song opened to play: a clock set back hides the time between two
   readings, while the app is closed or open with nothing downloaded played, and up to an hour

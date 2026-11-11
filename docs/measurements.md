@@ -40,8 +40,8 @@ process's start to the files' index written, before the fix (`7b9d019`) 10,590, 
 (the 10 s connect timeout), after it (`a28d0ee`) 584, 368 and 373 ms.
 
 **Warm start**, `scripts/measure/startup.py` in the same Weston, 10 runs each, to the first frame
-saved: median 524.5 ms with M1.15, 719.0 ms before it (the start no longer waits for Apple Music and
-SoundCloud).
+saved: median 524.5 ms with M1.15, 719.0 ms before it. The cause is not established: with nothing
+signed in, neither build waited on a service, and the figure includes encoding the frame saved.
 
 **Writing a file whole**, 300 files of 60,000 bytes on the same disk, Opium's `write_whole`: 1.33 to
 1.41 ms a file with the flush kept files need, 0.05 to 0.06 ms without it (`Mode::Cache`, which the
