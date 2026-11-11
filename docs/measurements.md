@@ -43,6 +43,10 @@ process's start to the files' index written, before the fix (`7b9d019`) 10,590, 
 saved: median 524.5 ms with M1.15, 719.0 ms before it (the start no longer waits for Apple Music and
 SoundCloud).
 
+**Writing a file whole**, 300 files of 60,000 bytes on the same disk, Opium's `write_whole`: 1.33 to
+1.41 ms a file with the flush kept files need, 0.05 to 0.06 ms without it (`Mode::Cache`, which the
+caches use since `54dbe57`).
+
 **The window's frames**, `scripts/measure/frames.py` on the owner's 4K display at 240 Hz, as
 [M1.14](#the-figures-to-beat-on-uwui-m114-2026-11-07) ran them, the load average 1.5, one run of
 each (a `start` first, dropped):
