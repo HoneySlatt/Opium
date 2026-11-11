@@ -314,6 +314,12 @@ impl Shared {
     }
 }
 
+/// The length of what the base64 `data` holds, padding aside.
+fn decoded_len(data: &str) -> u64 {
+    let padding = data.bytes().rev().take_while(|&b| b == b'=').count();
+    (data.len() / 4 * 3).saturating_sub(padding) as u64
+}
+
 /// Whether `id` is a playlist's id as this app makes them: [`new_id`]
 /// makes sixteen hexadecimal digits in lower case, and has since playlists
 /// began. Up to 64 such digits pass, as tolerance of a length that might
@@ -873,9 +879,9 @@ impl Kept {
         let name = format!("{}-{:016x}.jpg", playlist.id, digest(&data));
         let path = self.covers.join(&name);
         // A cache of the cover kept in the playlist itself, written without a
-        // flush (it is asked for on the window's thread): an empty file, which
-        // a power cut can leave, is written again.
-        if !std::fs::metadata(&path).is_ok_and(|kept| kept.len() > 0) {
+        // flush (it is asked for on the window's thread): a file a power cut
+        // left empty or cut short, not the cover's length, is written again.
+        if !std::fs::metadata(&path).is_ok_and(|kept| kept.len() == decoded_len(&data)) {
             use base64::Engine;
             let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(&data) else {
                 return playlist;

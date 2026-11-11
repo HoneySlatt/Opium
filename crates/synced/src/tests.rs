@@ -475,6 +475,24 @@ fn a_chosen_covers_file_left_empty_is_written_again() {
     assert_eq!(written, b"jpeg one");
 }
 
+/// A chosen cover's file cut short by a power cut is written again too: its
+/// length is the cover's own.
+#[test]
+fn a_chosen_covers_file_cut_short_is_written_again() {
+    let dir = std::env::temp_dir().join(format!("synced-cover-short-{}", new_id()));
+    let kept = Kept::open(&dir, Vec::new);
+    let (id, _) = kept.create_playlist("Mix".into(), String::new(), vec![track(1)]);
+    kept.cover_playlist(&id, Some(b"a cover of some thirty-five bytes!"));
+    let cover = kept.playlist(&id).unwrap().cover.unwrap();
+    let path = cover.strip_prefix("file://").unwrap().to_owned();
+    std::fs::write(&path, b"a cover ").unwrap();
+    let _ = kept.playlist(&id).unwrap().cover.unwrap();
+    let written = std::fs::read(&path).unwrap();
+    close(kept);
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(written, b"a cover of some thirty-five bytes!");
+}
+
 fn session(songs: &[u32], at: u32, position_ms: u64) -> Handoff {
     Handoff {
         tracks: songs.iter().copied().map(track).collect(),
