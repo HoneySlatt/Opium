@@ -4910,7 +4910,11 @@ impl App {
                         Err(e) => self.notify(format!("Sign-in didn't finish: {e}"), now),
                     }
                 }
-                Reply::NotSignedIn => self.connection = Connection::NotSignedIn,
+                Reply::NotSignedIn => {
+                    self.connection = Connection::NotSignedIn;
+                    // No longer connecting: a page left waiting on it is asked again.
+                    self.browse_page();
+                }
                 Reply::SoundCloud(_) if !self.service_on(ProviderKind::SoundCloud) => {}
                 Reply::Navidrome(_) if !self.service_on(ProviderKind::Navidrome) => {}
                 Reply::SoundCloud(result) => {
@@ -4966,6 +4970,7 @@ impl App {
                     }
                     self.apple_retry = Some(retry_after(self.apple_retry, now));
                     self.connection = Connection::Failed(e);
+                    self.browse_page();
                 }
                 Reply::Failed(e) => self.notify(e, now),
                 // A service turned off since says nothing more.
