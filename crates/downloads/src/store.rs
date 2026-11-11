@@ -552,22 +552,31 @@ impl Store {
         active: bool,
         now: u64,
     ) -> io::Result<()> {
-        self.note_subscription(provider, active, now);
-        self.save()
+        if self.note_subscription(provider, active, now) {
+            self.save()?;
+        }
+        Ok(())
     }
 
     /// As [`Store::subscription`], kept in memory until the manifest is
-    /// next saved.
-    pub(crate) fn note_subscription(&mut self, provider: ProviderKind, active: bool, now: u64) {
+    /// next saved: whether it changed what the manifest holds (a service
+    /// said not active that was never confirmed changes nothing).
+    pub(crate) fn note_subscription(
+        &mut self,
+        provider: ProviderKind,
+        active: bool,
+        now: u64,
+    ) -> bool {
         self.note_reading(now);
         let name = service(provider);
         let mut elapsed = lock(&self.elapsed);
         if active {
             self.confirmed.insert(name.clone(), now);
             elapsed.insert(name, Elapsed::confirmed_at(now));
+            true
         } else {
-            self.confirmed.remove(&name);
-            elapsed.remove(&name);
+            let confirmed = self.confirmed.remove(&name).is_some();
+            elapsed.remove(&name).is_some() || confirmed
         }
     }
 
