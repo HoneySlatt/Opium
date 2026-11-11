@@ -36,12 +36,13 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs::{File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::Mutex;
 
 use opium_core::files::{Mode, put_aside, write_whole};
 use opium_core::model::{ItemId, ProviderKind, Track};
 use serde::{Deserialize, Serialize};
 
+use crate::lock;
 use crate::sealed::{self, Key};
 
 /// How long a song that came through DRM plays without the subscription
@@ -428,8 +429,11 @@ impl Store {
     }
 
     /// The song kept as `id`, opened, if it is kept and plays at `now`, as
-    /// [`Store::standing`] judges it, with its write.
-    pub fn open_song(&self, id: &ItemId, now: u64) -> Option<io::Result<Open>> {
+    /// [`Store::standing`] judges it, with its write. For the tests: the
+    /// downloads open through `Downloads::open`, which writes off its
+    /// caller's thread.
+    #[cfg(test)]
+    pub(crate) fn open_song(&self, id: &ItemId, now: u64) -> Option<io::Result<Open>> {
         let item = self.items.get(id)?;
         if self.standing(item, now) == Standing::Expired {
             return None;
@@ -578,14 +582,6 @@ impl Store {
         self.note_reading(now);
         self.save()
     }
-}
-
-/// `mutex` locked; a thread that panicked holding it left a map whose every
-/// state is whole, so its poison is ignored.
-fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 /// The names of the files in `dir`; those that aren't UTF-8, none of the

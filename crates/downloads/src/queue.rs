@@ -101,9 +101,7 @@ pub struct Downloads {
     runtime: Handle,
 }
 
-fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    m.lock().unwrap_or_else(|e| e.into_inner())
-}
+use crate::lock;
 
 impl Downloads {
     /// Made within a tokio runtime, where the downloads then run; the store
