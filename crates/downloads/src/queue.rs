@@ -145,9 +145,9 @@ impl Downloads {
         self.tell();
     }
 
-    /// What is kept, to the listener. An expiry it finds that the manifest
-    /// doesn't keep yet is written on a blocking thread
-    /// ([`Store::standing`] says why).
+    /// What is kept, to the listener. The time it counts, when the manifest
+    /// should keep it, is written on a blocking thread ([`Store::standing`]
+    /// says when).
     pub fn tell(&self) {
         let now = now();
         let kept = match &*lock(&self.store) {
@@ -160,10 +160,8 @@ impl Downloads {
                         added: item.added,
                     })
                     .collect();
-                if kept.iter().any(|song| song.standing == Standing::Expired)
-                    && store.expiry_unsaved()
-                {
-                    self.keep_expiry_soon();
+                if store.progress_unsaved() {
+                    self.keep_progress_soon();
                 }
                 kept
             }
@@ -172,18 +170,19 @@ impl Downloads {
         self.listener.kept(kept);
     }
 
-    /// The song kept as `id`, opened to play, if it is kept and plays. An
-    /// expiry it finds is kept as [`Downloads::tell`] keeps one.
+    /// The song kept as `id`, opened to play, if it is kept and plays. The
+    /// time it counts is kept as [`Downloads::tell`] keeps it.
     pub fn open(&self, id: &ItemId) -> Option<Open> {
         let store = lock(&self.store);
         let StoreState::Open(store) = &*store else {
             return None;
         };
         let item = store.get(id)?;
-        if store.judge(item, now()) == Standing::Expired {
-            if store.expiry_unsaved() {
-                self.keep_expiry_soon();
-            }
+        let standing = store.judge(item, now());
+        if store.progress_unsaved() {
+            self.keep_progress_soon();
+        }
+        if standing == Standing::Expired {
             return None;
         }
         match store.open_item(item) {
@@ -196,13 +195,13 @@ impl Downloads {
         }
     }
 
-    /// The store's latest time seen written into its manifest, on a blocking
+    /// The time the store counts written into its manifest, on a blocking
     /// thread, never the caller's: the window's or an async worker's.
-    fn keep_expiry_soon(&self) {
+    fn keep_progress_soon(&self) {
         let store = self.store.clone();
         self.runtime.spawn_blocking(move || {
             if let StoreState::Open(store) = &*lock(&store) {
-                store.keep_expiry_seen();
+                store.keep_progress();
             }
         });
     }
@@ -828,7 +827,8 @@ mod tests {
     }
 
     /// An expiry the downloads find reaches the manifest, so that a restart
-    /// with the clock set back finds it too.
+    /// with the clock set back finds it too: the time counted, crossing the
+    /// 30 days, written from a blocking thread.
     #[tokio::test(flavor = "multi_thread")]
     async fn an_expiry_the_downloads_find_reaches_the_manifest() {
         let dir = std::env::temp_dir().join(format!("queue-{:016x}", rand::random::<u64>()));
@@ -844,25 +844,31 @@ mod tests {
             let StoreState::Open(store) = &*state else {
                 panic!("the store is open");
             };
-            // The clock read far ahead, judging a song that always plays.
+            // The clock read far ahead, judging a song that always plays,
+            // without the write `Store::standing` would make.
             let without_drm = store
                 .get(&ItemId::new(ProviderKind::SoundCloud, "2"))
                 .unwrap();
-            assert_eq!(store.standing(without_drm, far), Standing::Plays);
+            assert_eq!(store.judge(without_drm, far), Standing::Plays);
         }
         downloads.tell();
         assert_eq!(standing(&told, "1"), Some(Standing::Expired));
-        let kept_seen = || {
+        let kept_progress = || {
             let bytes = std::fs::read(dir.join("manifest.json")).unwrap();
             let manifest: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-            manifest["seen"]["SoundCloud"].as_u64().unwrap_or(0)
+            manifest["elapsed"]["SoundCloud"]["progress"]
+                .as_u64()
+                .unwrap_or(0)
         };
         let deadline = Instant::now() + Duration::from_secs(5);
-        while kept_seen() < far && Instant::now() < deadline {
+        while kept_progress() < crate::store::PROTECTED_FOR && Instant::now() < deadline {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
-        let seen = kept_seen();
+        let progress = kept_progress();
         let _ = std::fs::remove_dir_all(&dir);
-        assert_eq!(seen, far);
+        assert!(
+            progress >= crate::store::PROTECTED_FOR,
+            "the manifest counts {progress} s"
+        );
     }
 }

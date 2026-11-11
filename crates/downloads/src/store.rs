@@ -5,21 +5,33 @@
 //! A song that came through a service's DRM plays only while that service's
 //! subscription was confirmed in the last [`PROTECTED_FOR`]: each time the
 //! app is online it is confirmed again, and once the subscription ends, or
-//! the service is signed out of, its songs stop playing. The store judges
-//! each service's songs at the latest time it has seen since that service
-//! last confirmed, so that a clock set back offline doesn't bring an expired
-//! song back; only that service's confirmation, online, takes its time back
-//! ([`Store::subscription`]). A clock that reads more than [`CLOCK_SLACK`]
-//! before a confirmation finds that service's songs expired too, so that a
-//! confirmation made with the clock far ahead doesn't hold for good.
+//! the service is signed out of, its songs stop playing.
 //!
+//! Those 30 days are counted from the clock's readings, not read off it: for
+//! each service, the store adds up how far the clock moved forward, reading
+//! after reading, since that service last confirmed. A clock set back adds
+//! nothing, and the time after it counts again, so setting it back, before
+//! the 30 days end or after, gains nothing; a confirmation, online, starts
+//! the count again ([`Store::subscription`]). The readings are the app's
+//! start, each confirmation, and each judgement of a song
+//! ([`Store::standing`]).
+//! The count is kept in the manifest, at each start and confirmation, once
+//! it reaches the 30 days, and each time it grows by an hour; the next start
+//! counts on from it.
+//!
+//! The limit left: a clock set back between two readings hides the time
+//! between them, as the second reads no later than the first. So the time
+//! while the app is closed, with the time counted since the last save, is
+//! lost when the clock is set back before the next start.
+//!
+//! One store at a time holds its folder ([`Store::open`]), in any process.
 //! A kept song's sealed file is deleted when the song is removed or kept
 //! again, and otherwise only by the sweep [`Store::open`] makes, under the
 //! rule it states, so that no song is lost with a manifest that doesn't
 //! read.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::fs::File;
+use std::fs::{File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
@@ -34,11 +46,14 @@ use crate::sealed::{self, Key};
 /// being confirmed again, in seconds: 30 days, as Apple Music has it.
 pub const PROTECTED_FOR: u64 = 30 * 24 * 60 * 60;
 
-/// How far before a service's confirmation the clock may read and its
-/// protected songs still play: a day, for a clock put right after it.
-pub const CLOCK_SLACK: u64 = 24 * 60 * 60;
+/// How far a service's count of the time since its confirmation may grow
+/// before the manifest is written with it, in seconds: an hour.
+const SAVE_EVERY: u64 = 60 * 60;
 
 const MANIFEST: &str = "manifest.json";
+/// The file in the store's folder whose lock a [`Store`] holds, so that one
+/// store at a time opens the folder. Empty: only its lock matters.
+const LOCK: &str = "store.lock";
 /// Where a manifest that doesn't read is put aside: this name, or this name
 /// followed by `.1`, `.2`… ([`put_aside`]).
 const PUT_ASIDE: &str = "manifest.corrupt.json";
@@ -78,10 +93,11 @@ pub struct Song {
 
 /// The list of the songs kept, in `manifest.json`, written whole each time.
 ///
-/// `seen` and `unnamed_songs` came within version 1, and are optional: an
+/// `elapsed` and `unnamed_songs` came within version 1, and are optional: an
 /// older build reads such a manifest whole, ignores them, and drops them when
 /// it writes it again; it may then sweep the sealed files `unnamed_songs`
-/// kept.
+/// kept. A manifest without `elapsed` counts each confirmed service's time
+/// from its confirmation, as if the clock was last read then.
 #[derive(Default, Serialize, Deserialize)]
 struct Manifest {
     version: u32,
@@ -89,16 +105,44 @@ struct Manifest {
     /// When each service last confirmed its subscription, in seconds since
     /// the epoch, by its name.
     confirmed: BTreeMap<String, u64>,
-    /// By service's name, the latest time the store has seen since that
-    /// service last confirmed, in seconds since the epoch ([`Store::seen`]).
+    /// By service's name, how far the clock moved forward since that service
+    /// last confirmed ([`Elapsed`]).
     #[serde(default)]
-    seen: BTreeMap<String, u64>,
+    elapsed: BTreeMap<String, Elapsed>,
     /// The folder was once found with sealed files beside no manifest read
     /// whole (none, or one put aside): any sealed file this manifest doesn't
     /// name may be one of its songs, and is never swept. Never cleared, by
     /// design: nothing tells such a file from a leftover.
     #[serde(default)]
     unnamed_songs: bool,
+}
+
+/// How far the clock moved forward since a service last confirmed its
+/// subscription, counted from the clock's readings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+struct Elapsed {
+    /// The last reading, in seconds since the epoch.
+    last: u64,
+    /// The seconds the clock moved forward, from one reading to the next,
+    /// since the confirmation. A reading lower than the last adds nothing.
+    progress: u64,
+}
+
+impl Elapsed {
+    /// As a confirmation at `now` leaves it: nothing counted yet.
+    fn confirmed_at(now: u64) -> Self {
+        Self {
+            last: now,
+            progress: 0,
+        }
+    }
+
+    /// The clock reads `now`: what it moved forward since the last reading,
+    /// if anything, is counted.
+    fn reading(&mut self, now: u64) {
+        self.progress = self.progress.saturating_add(now.saturating_sub(self.last));
+        self.last = now;
+    }
 }
 
 /// Whether a kept song plays.
@@ -121,21 +165,23 @@ pub struct Open {
     pub spatial: bool,
 }
 
+/// The songs kept in a folder, and how their services stand.
 pub struct Store {
     dir: PathBuf,
     key: Key,
     items: HashMap<ItemId, Item>,
     confirmed: BTreeMap<String, u64>,
-    /// By service's name, the latest time the store has seen, in seconds
-    /// since the epoch: the largest `now` it was given since that service's
-    /// last confirmation, which sets it to its own `now`, lower or not. Its
-    /// songs are judged no earlier. Behind a lock so that judging, through
-    /// `&self`, raises it.
-    seen: Mutex<BTreeMap<String, u64>>,
-    /// The `seen` the manifest on disk holds: as read, or as last written.
-    seen_saved: Mutex<BTreeMap<String, u64>>,
+    /// By service's name, how far the clock moved forward since its last
+    /// confirmation: an entry for each service `confirmed` names, and no
+    /// other. Behind a lock so that judging, through `&self`, counts.
+    elapsed: Mutex<BTreeMap<String, Elapsed>>,
+    /// Each service's `progress` as the manifest on disk holds it: as read,
+    /// or as last written.
+    progress_saved: Mutex<BTreeMap<String, u64>>,
     /// Kept in the manifest: [`Manifest::unnamed_songs`].
     unnamed_songs: bool,
+    /// [`LOCK`], open, its lock held for as long as the store lives.
+    _lock: File,
 }
 
 fn service(provider: ProviderKind) -> String {
@@ -152,8 +198,39 @@ fn private_dir(dir: &Path) -> io::Result<()> {
     std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))
 }
 
+/// [`LOCK`] in `dir`, open, with its exclusive lock held: released as the
+/// file closes, and by the kernel when the process ends in any way. The lock
+/// belongs to this opening of the file, so a second one fails in this
+/// process as in any other.
+///
+/// # Errors
+///
+/// [`io::ErrorKind::ResourceBusy`] while another holds it: another Opium on
+/// another profile, with the same data folder. Otherwise, the file can't be
+/// made or opened, or its file system refuses the lock.
+fn lock_folder(dir: &Path) -> io::Result<File> {
+    use std::os::unix::fs::OpenOptionsExt;
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .mode(0o600)
+        .open(dir.join(LOCK))?;
+    match file.try_lock() {
+        Ok(()) => Ok(file),
+        Err(std::fs::TryLockError::WouldBlock) => Err(io::Error::new(
+            io::ErrorKind::ResourceBusy,
+            "another Opium, on another profile sharing this data folder, holds them",
+        )),
+        Err(std::fs::TryLockError::Error(e)) => Err(e),
+    }
+}
+
 impl Store {
-    /// The store in `dir`, made if missing.
+    /// The store in `dir`, made if missing, held by this store alone until
+    /// it is dropped: the folder's lock is taken first, before anything is
+    /// read or swept.
     ///
     /// A manifest that doesn't read (damaged, or a later version's) is put
     /// aside as `manifest.corrupt.json`, or that name followed by `.1`,
@@ -168,10 +245,13 @@ impl Store {
     ///
     /// # Errors
     ///
-    /// The folder can't be made or listed; the manifest can't be read (but
-    /// for a missing one) or put aside.
+    /// [`io::ErrorKind::ResourceBusy`] while another store holds the folder,
+    /// in this process or another; the folder's lock can't be taken
+    /// otherwise; the folder can't be made or listed; the manifest can't be
+    /// read (but for a missing one) or put aside.
     pub fn open(dir: &Path, key: Key) -> io::Result<Self> {
         private_dir(dir)?;
+        let lock = lock_folder(dir)?;
         let path = dir.join(MANIFEST);
         let (manifest, read_whole) = match std::fs::read(&path) {
             Ok(bytes) => match serde_json::from_slice::<Manifest>(&bytes) {
@@ -199,6 +279,20 @@ impl Store {
         // doesn't let the sweep take its songs.
         let unnamed_songs = manifest.unnamed_songs || (!read_whole && holds_songs);
         let put_aside_here = names.iter().any(|name| name.starts_with(PUT_ASIDE));
+        // Each confirmed service's count, as kept, or from its confirmation.
+        let elapsed: BTreeMap<String, Elapsed> = manifest
+            .confirmed
+            .iter()
+            .map(|(name, &at)| {
+                let kept = manifest.elapsed.get(name).copied();
+                (name.clone(), kept.unwrap_or(Elapsed::confirmed_at(at)))
+            })
+            .collect();
+        let progress_saved = manifest
+            .elapsed
+            .iter()
+            .map(|(name, elapsed)| (name.clone(), elapsed.progress))
+            .collect();
         let store = Self {
             dir: dir.to_owned(),
             key,
@@ -208,9 +302,10 @@ impl Store {
                 .map(|item| (item.track.id.clone(), item))
                 .collect(),
             confirmed: manifest.confirmed,
-            seen: Mutex::new(manifest.seen.clone()),
-            seen_saved: Mutex::new(manifest.seen),
+            elapsed: Mutex::new(elapsed),
+            progress_saved: Mutex::new(progress_saved),
             unnamed_songs,
+            _lock: lock,
         };
         store.sweep(&names, !unnamed_songs && !put_aside_here);
         Ok(store)
@@ -228,13 +323,10 @@ impl Store {
         }
     }
 
-    /// Note that the clock reads `now`: each confirmed service's latest time
-    /// seen becomes the later of it and `now`.
+    /// Note that the clock reads `now`, for each confirmed service.
     fn note_reading(&self, now: u64) {
-        let mut seen = lock(&self.seen);
-        for name in self.confirmed.keys() {
-            let at = seen.entry(name.clone()).or_default();
-            *at = (*at).max(now);
+        for elapsed in lock(&self.elapsed).values_mut() {
+            elapsed.reading(now);
         }
     }
 
@@ -246,20 +338,23 @@ impl Store {
             version: u32,
             items: Vec<&'a Item>,
             confirmed: &'a BTreeMap<String, u64>,
-            seen: &'a BTreeMap<String, u64>,
+            elapsed: &'a BTreeMap<String, Elapsed>,
             unnamed_songs: bool,
         }
-        let seen = lock(&self.seen).clone();
+        let elapsed = lock(&self.elapsed).clone();
         let json = serde_json::to_vec(&Out {
             version: VERSION,
             items,
             confirmed: &self.confirmed,
-            seen: &seen,
+            elapsed: &elapsed,
             unnamed_songs: self.unnamed_songs,
         })
         .map_err(io::Error::other)?;
         write_whole(&self.dir.join(MANIFEST), &json, Mode::Default)?;
-        *lock(&self.seen_saved) = seen;
+        *lock(&self.progress_saved) = elapsed
+            .into_iter()
+            .map(|(name, elapsed)| (name, elapsed.progress))
+            .collect();
         Ok(())
     }
 
@@ -271,73 +366,62 @@ impl Store {
         self.items.values()
     }
 
-    /// How `item` stands when the clock reads `now`: judged at the later of
-    /// `now` and the latest time the store has seen since its service last
-    /// confirmed, which `now` then raises. A song that came without DRM
-    /// always plays; a protected one is `Expired` too when the clock reads
-    /// more than [`CLOCK_SLACK`] before its service's confirmation.
+    /// How `item` stands when the clock reads `now`, which is counted first
+    /// (see the module's head): a song that came without DRM always plays; a
+    /// protected one plays until its service's count reaches
+    /// [`PROTECTED_FOR`], the time left told from `now`.
     ///
-    /// When it finds a protected song `Expired` while the manifest's latest
-    /// time doesn't reach the end of a subscription's 30 days that the clock
-    /// has passed, it saves the manifest, on the caller's thread, so that a
-    /// restart with the clock set back finds it `Expired` too; a failed save
-    /// is printed. Where it may not wait, [`Downloads`](crate::queue::Downloads)
-    /// judges through `Store::judge` and makes that write on a blocking
-    /// thread.
+    /// When the count of a service crossed [`PROTECTED_FOR`], or grew by an
+    /// hour, since the manifest was last written, it saves the manifest, on
+    /// the caller's thread, so that a restart with the clock set back finds
+    /// the count as it was; a failed save is printed. Where it may not wait,
+    /// [`Downloads`](crate::queue::Downloads) judges through `Store::judge`
+    /// and makes that write on a blocking thread.
     pub fn standing(&self, item: &Item, now: u64) -> Standing {
         let standing = self.judge(item, now);
-        if standing == Standing::Expired {
-            self.keep_expiry_seen();
-        }
+        self.keep_progress();
         standing
     }
 
     /// As [`Store::standing`], without the write: the caller makes it,
-    /// through [`Store::keep_expiry_seen`], where it may wait.
+    /// through [`Store::keep_progress`], where it may wait.
     pub(crate) fn judge(&self, item: &Item, now: u64) -> Standing {
         self.note_reading(now);
         if !item.protected {
             return Standing::Plays;
         }
         let name = service(item.track.id.provider);
-        let Some(&at) = self.confirmed.get(&name) else {
+        let Some(elapsed) = lock(&self.elapsed).get(&name).copied() else {
             return Standing::Expired;
         };
-        // A confirmation the clock hasn't reached was made with the clock
-        // ahead, or the clock was set back since: neither is trusted.
-        if now.saturating_add(CLOCK_SLACK) < at {
-            return Standing::Expired;
-        }
-        let judged = lock(&self.seen).get(&name).copied().unwrap_or(now).max(now);
-        let until = at.saturating_add(PROTECTED_FOR);
-        if judged < until {
-            Standing::PlaysUntil(until)
+        if elapsed.progress < PROTECTED_FOR {
+            Standing::PlaysUntil(now.saturating_add(PROTECTED_FOR - elapsed.progress))
         } else {
             Standing::Expired
         }
     }
 
-    /// Whether the latest time seen has passed the end of a subscription's
-    /// 30 days that the manifest's latest time doesn't reach: a restart with
-    /// the clock set back would bring its protected songs back.
-    pub(crate) fn expiry_unsaved(&self) -> bool {
-        let seen = lock(&self.seen);
-        let saved = lock(&self.seen_saved);
-        self.confirmed.iter().any(|(name, at)| {
-            let until = at.saturating_add(PROTECTED_FOR);
-            let seen = seen.get(name).copied().unwrap_or(0);
+    /// Whether a service's count should reach the manifest now: since it was
+    /// last written, the count crossed [`PROTECTED_FOR`] (a restart with the
+    /// clock set back would bring its protected songs back), or it grew by
+    /// [`SAVE_EVERY`] (it would lose that much).
+    pub(crate) fn progress_unsaved(&self) -> bool {
+        let elapsed = lock(&self.elapsed);
+        let saved = lock(&self.progress_saved);
+        elapsed.iter().any(|(name, elapsed)| {
             let saved = saved.get(name).copied().unwrap_or(0);
-            saved < until && until <= seen
+            let crossed = saved < PROTECTED_FOR && PROTECTED_FOR <= elapsed.progress;
+            crossed || elapsed.progress >= saved.saturating_add(SAVE_EVERY)
         })
     }
 
-    /// Save the manifest if [`Store::expiry_unsaved`]; a failed save is
+    /// Save the manifest if [`Store::progress_unsaved`]; a failed save is
     /// printed, and tried again at the next judgement that needs it.
-    pub(crate) fn keep_expiry_seen(&self) {
-        if self.expiry_unsaved()
+    pub(crate) fn keep_progress(&self) {
+        if self.progress_unsaved()
             && let Err(e) = self.save()
         {
-            eprintln!("downloads: couldn't keep the time seen: {e}");
+            eprintln!("downloads: couldn't keep the time counted: {e}");
         }
     }
 
@@ -446,15 +530,11 @@ impl Store {
     /// protected songs play for [`PROTECTED_FOR`] more, counted from `now`,
     /// or no longer. A sign-out says it is not.
     ///
-    /// A confirmation is the service's word, online: it sets that service's
-    /// latest time seen to `now`, lower or not, so that one clock reading far
-    /// ahead doesn't hold for good; another service's is left alone. The
-    /// clock is still trusted at the moment of a confirmation: set back
-    /// then, the service's songs play 30 days from that reading, gaining at
-    /// most how far the clock was set back; set ahead then, they play only
-    /// while the clock reads no more than [`CLOCK_SLACK`] before it, until
-    /// the next confirmation. Not active, `now` is only a reading, judged as
-    /// any other.
+    /// `now` is a reading of the clock, counted for every service first. A
+    /// confirmation is the service's word, online: it starts that service's
+    /// count again from `now`, whatever the clock reads, so that one reading
+    /// far ahead, which counts that far, doesn't keep its songs expired for
+    /// good; another service's count is left alone.
     ///
     /// # Errors
     ///
@@ -473,20 +553,21 @@ impl Store {
     /// As [`Store::subscription`], kept in memory until the manifest is
     /// next saved.
     pub(crate) fn note_subscription(&mut self, provider: ProviderKind, active: bool, now: u64) {
+        self.note_reading(now);
         let name = service(provider);
+        let mut elapsed = lock(&self.elapsed);
         if active {
             self.confirmed.insert(name.clone(), now);
-            lock(&self.seen).insert(name, now);
+            elapsed.insert(name, Elapsed::confirmed_at(now));
         } else {
-            self.note_reading(now);
             self.confirmed.remove(&name);
-            lock(&self.seen).remove(&name);
+            elapsed.remove(&name);
         }
     }
 
-    /// Note that the clock reads `now`, and save the manifest with the
-    /// latest time the store has seen, so that it judges no earlier after a
-    /// restart, a clock set back meanwhile.
+    /// Note that the clock reads `now`, and save the manifest with each
+    /// service's count, so that a restart, a clock set back meanwhile, counts
+    /// on from it.
     ///
     /// # Errors
     ///
@@ -722,7 +803,11 @@ mod tests {
         drop(pending);
         drop(store);
         Store::open(&dir.0, key).unwrap();
-        assert_eq!(std::fs::read_dir(&dir.0).unwrap().count(), 0);
+        let left: Vec<String> = std::fs::read_dir(&dir.0)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(left, [LOCK], "nothing but the store's lock");
     }
 
     #[test]
@@ -1115,7 +1200,7 @@ mod tests {
         );
     }
 
-    /// One service's confirmation leaves another's time seen alone: a
+    /// One service's confirmation leaves another's count alone: a
     /// SoundCloud sign-in, with the clock set back and Apple out of reach,
     /// doesn't bring Apple's expired songs back.
     #[test]
@@ -1143,10 +1228,12 @@ mod tests {
         assert_eq!(store.standing(&item, t + 2 * DAY), Standing::Expired);
     }
 
-    /// A confirmation made with the clock far ahead doesn't hold once the
-    /// clock is right again; the next confirmation does.
+    /// A confirmation made with the clock far ahead holds once the clock is
+    /// put right, as any confirmation does: for 30 days of the clock moving
+    /// forward from there, not for good. The next confirmation starts the
+    /// count again.
     #[test]
-    fn a_confirmation_made_with_the_clock_far_ahead_doesnt_hold() {
+    fn a_confirmation_made_with_the_clock_far_ahead_doesnt_hold_for_good() {
         let dir = dir();
         let key = sealed::new_key();
         let t = 1_800_000_000;
@@ -1164,18 +1251,27 @@ mod tests {
             .unwrap();
         drop(store);
         let mut store = Store::open(&dir.0, key).unwrap();
-        assert_eq!(store.standing(&item, t + 365 * DAY), Standing::Expired);
-        // A clock put right within a day of the confirmation is forgiven.
+        // Put right, a year after `t`: 30 days from here.
+        let right = t + 365 * DAY;
         assert_eq!(
-            store.standing(&item, ahead - DAY + 1),
-            Standing::PlaysUntil(ahead + PROTECTED_FOR)
+            store.standing(&item, right),
+            Standing::PlaysUntil(right + PROTECTED_FOR)
         );
+        assert_eq!(
+            store.standing(&item, right + PROTECTED_FOR - 1),
+            Standing::PlaysUntil(right + PROTECTED_FOR)
+        );
+        assert_eq!(
+            store.standing(&item, right + PROTECTED_FOR),
+            Standing::Expired
+        );
+        let again = right + 40 * DAY;
         store
-            .subscription(ProviderKind::AppleMusic, true, t + 365 * DAY)
+            .subscription(ProviderKind::AppleMusic, true, again)
             .unwrap();
         assert_eq!(
-            store.standing(&item, t + 366 * DAY),
-            Standing::PlaysUntil(t + 365 * DAY + PROTECTED_FOR)
+            store.standing(&item, again + DAY),
+            Standing::PlaysUntil(again + PROTECTED_FOR)
         );
     }
 
@@ -1271,12 +1367,12 @@ mod tests {
                 10,
             );
         }
-        // As written before the latest time seen and the unnamed songs.
+        // As written before the time counted and the unnamed songs.
         let path = dir.0.join(MANIFEST);
         let mut manifest: serde_json::Value =
             serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         let fields = manifest.as_object_mut().unwrap();
-        assert!(fields.remove("seen").is_some());
+        assert!(fields.remove("elapsed").is_some());
         assert!(fields.remove("unnamed_songs").is_some());
         std::fs::write(&path, serde_json::to_vec(&manifest).unwrap()).unwrap();
         let store = Store::open(&dir.0, key).unwrap();
@@ -1314,6 +1410,107 @@ mod tests {
             .filter(|e| e.file_name().to_string_lossy().ends_with(".sealed"))
             .count();
         assert_eq!(sealed, 1, "the song's file is still there");
+    }
+
+    // The stage 1 audit's L2: two instances on other config folders shared one downloads folder,
+    // and each rewrote the manifest from its own copy.
+
+    #[test]
+    fn a_second_store_on_one_folder_is_refused_while_the_first_lives() {
+        let dir = dir();
+        let key = sealed::new_key();
+        let mut first = Store::open(&dir.0, key).unwrap();
+        keep(
+            &mut first,
+            song(ProviderKind::Navidrome, "1", false),
+            b"music",
+            10,
+        );
+        let Err(refused) = Store::open(&dir.0, key) else {
+            panic!("a second store opened on a folder the first holds");
+        };
+        assert_eq!(refused.kind(), io::ErrorKind::ResourceBusy);
+        assert!(
+            refused.to_string().contains("another Opium"),
+            "says who holds it: {refused}"
+        );
+        assert_eq!(sealed_files(&dir.0), 1, "the refused store swept nothing");
+        drop(first);
+        let again = Store::open(&dir.0, key).expect("opened once the first is gone");
+        assert!(
+            again
+                .get(&ItemId::new(ProviderKind::Navidrome, "1"))
+                .is_some()
+        );
+    }
+
+    // The M1.15 review: a clock set back *before* the 30 days end. Each test expects the rule to
+    // hold (AGENTS.md: "offline it plays only within 30 days of a confirmed subscription").
+
+    /// In one session: day 29, the clock set back to day 1, then 28 real days more.
+    #[test]
+    fn a_clock_set_back_before_the_30_days_end_doesnt_make_them_last_longer() {
+        let dir = dir();
+        let mut store = Store::open(&dir.0, sealed::new_key()).unwrap();
+        let t = 1_800_000_000;
+        // Downloaded online at `t`: its service confirmed then.
+        keep(
+            &mut store,
+            song(ProviderKind::AppleMusic, "1", true),
+            b"music",
+            t,
+        );
+        let item = store.items().next().unwrap().clone();
+        // Offline from now on. 29 real days after the confirmation: plays, as it should.
+        assert!(matches!(
+            store.standing(&item, t + 29 * DAY),
+            Standing::PlaysUntil(_)
+        ));
+        // The user sets the clock back to day 1.
+        assert!(matches!(
+            store.standing(&item, t + DAY),
+            Standing::PlaysUntil(_)
+        ));
+        // 28 real days pass: the clock reads day 29 again, 57 real days after the confirmation.
+        assert_eq!(
+            store.standing(&item, t + 29 * DAY),
+            Standing::Expired,
+            "a protected song plays 57 days after its last confirmation, offline"
+        );
+    }
+
+    /// The same across restarts, as many times as the user likes: each session of 29 days runs
+    /// the clock from day 0 to day 29, and the clock is set back 29 days before the next start.
+    /// Named for the defect it guards against.
+    #[test]
+    fn a_clock_set_back_before_each_start_never_lets_the_song_expire() {
+        let dir = dir();
+        let key = sealed::new_key();
+        let t = 1_800_000_000;
+        let item = {
+            let mut store = Store::open(&dir.0, key).unwrap();
+            keep(
+                &mut store,
+                song(ProviderKind::AppleMusic, "1", true),
+                b"music",
+                t,
+            );
+            store.items().next().unwrap().clone()
+        };
+        let mut real_days = 0;
+        for _ in 0..4 {
+            let store = Store::open(&dir.0, key).unwrap();
+            for day in 0..=29 {
+                let _ = store.standing(&item, t + day * DAY);
+            }
+            real_days += 29;
+        }
+        let store = Store::open(&dir.0, key).unwrap();
+        assert_eq!(
+            store.standing(&item, t + 29 * DAY),
+            Standing::Expired,
+            "a protected song plays {real_days} days after its last confirmation, offline"
+        );
     }
 
     /// Thirty days from the last confirmation of the subscription, as Apple Music allows, and not
