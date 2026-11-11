@@ -22,12 +22,19 @@ const SITE: browser_signin::Site<'static> = browser_signin::Site {
 /// How long the user has to pass the check.
 const CHECK_WITHIN: Duration = Duration::from_secs(600);
 
+/// Keeps the guard's cookie, renewed, where [`ChromeLike`] reads it at its
+/// next start; the backend's keeps it only while the sign-in it was renewed
+/// for is there.
+pub type KeepCookie = Box<dyn Fn(&str) + Send + Sync>;
+
 pub struct ChromeLike {
     http: wreq::Client,
     browser: OsString,
     profile: PathBuf,
     /// Where the cookie is kept between runs, readable by the user only.
     kept: PathBuf,
+    /// Writes it there.
+    keep: KeepCookie,
     /// The cookie, once read; held while a change is sent, one at a time.
     cookie: tokio::sync::Mutex<Option<String>>,
     /// Tells the user what to do in the browser.
@@ -35,10 +42,17 @@ pub struct ChromeLike {
 }
 
 impl ChromeLike {
+    /// The sign-in browser `browser` with its profile `profile`; the cookie
+    /// read from `kept`, and written back there through `keep`.
+    ///
+    /// # Errors
+    ///
+    /// The HTTP client can't be built.
     pub fn new(
         browser: OsString,
         profile: PathBuf,
         kept: PathBuf,
+        keep: KeepCookie,
         notify: Box<dyn Fn(String) + Send + Sync>,
     ) -> Result<Self> {
         let http = wreq::Client::builder()
@@ -52,6 +66,7 @@ impl ChromeLike {
             browser,
             profile,
             kept,
+            keep,
             cookie: tokio::sync::Mutex::new(None),
             notify,
         })
@@ -80,7 +95,7 @@ impl ChromeLike {
     }
 
     fn keep(&self, cookie: &str) {
-        crate::backend::write_private(&self.kept, cookie.as_bytes()).ok();
+        (self.keep)(cookie);
     }
 
     async fn once(&self, change: &Change, cookie: &mut Option<String>) -> Result<Answer> {

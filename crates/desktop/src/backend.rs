@@ -726,6 +726,23 @@ fn keep_soundcloud_tokens_while_signed_in(sign_outs: &SignOuts) -> soundcloud::O
     })
 }
 
+/// What keeps, at `path`, the bot guard's cookie that SoundCloud renews for
+/// the sign-in there is now, in the changes sent through its browser: none
+/// once that sign-in was signed out of, so that a change still under way
+/// never writes back the cookie the sign-out deleted, as
+/// [`keep_soundcloud_tokens_while_signed_in`] does for the tokens.
+fn keep_soundcloud_cookie_while_signed_in(
+    sign_outs: &SignOuts,
+    path: PathBuf,
+) -> crate::soundcloud_browser::KeepCookie {
+    let (sign_outs, since) = (sign_outs.clone(), sign_outs.count(ProviderKind::SoundCloud));
+    Box::new(move |cookie| {
+        sign_outs.unless_signed_out_since(ProviderKind::SoundCloud, since, || {
+            let _ = write_private(&path, cookie.as_bytes());
+        });
+    })
+}
+
 fn kept_soundcloud_tokens() -> Option<soundcloud::Tokens> {
     let text = std::fs::read_to_string(soundcloud_dir().join("tokens.json")).ok()?;
     let json: serde_json::Value = serde_json::from_str(&text).ok()?;
@@ -948,8 +965,12 @@ async fn connect_navidrome(keep: impl FnOnce(&navidrome::Credentials)) -> Ended 
 }
 
 /// Connect to SoundCloud with the kept tokens, `keep` keeping those it
-/// renews.
-async fn connect_soundcloud(replies: &Replies, keep: soundcloud::OnTokens) -> Ended {
+/// renews and `keep_cookie` its bot guard's cookie.
+async fn connect_soundcloud(
+    replies: &Replies,
+    keep: soundcloud::OnTokens,
+    keep_cookie: crate::soundcloud_browser::KeepCookie,
+) -> Ended {
     let unconnected = |told| Ended {
         connection: Connection::SoundCloud(None),
         told: Some(told),
@@ -967,6 +988,7 @@ async fn connect_soundcloud(replies: &Replies, keep: soundcloud::OnTokens) -> En
         browser,
         soundcloud_dir().join("browser-profile"),
         soundcloud_dir().join("datadome"),
+        keep_cookie,
         Box::new(move |message| notify.send(Reply::Changed(Ok(message)))),
     )
     .ok()
@@ -1436,9 +1458,11 @@ async fn run(
     }
     if on(ProviderKind::SoundCloud) {
         let keep = keep_soundcloud_tokens_while_signed_in(&sign_outs);
+        let keep_cookie =
+            keep_soundcloud_cookie_while_signed_in(&sign_outs, soundcloud_dir().join("datadome"));
         let replies = replies.clone();
         connects.start(ProviderKind::SoundCloud, true, async move {
-            connect_soundcloud(&replies, keep).await
+            connect_soundcloud(&replies, keep, keep_cookie).await
         });
     }
     if on(ProviderKind::Navidrome) {
@@ -1794,8 +1818,12 @@ async fn run(
                     }
                     (ProviderKind::SoundCloud, true) => {
                         let keep = keep_soundcloud_tokens_while_signed_in(&sign_outs);
+                        let keep_cookie = keep_soundcloud_cookie_while_signed_in(
+                            &sign_outs,
+                            soundcloud_dir().join("datadome"),
+                        );
                         connects.start(provider, true, async move {
-                            connect_soundcloud(&replies, keep).await
+                            connect_soundcloud(&replies, keep, keep_cookie).await
                         });
                     }
                     (ProviderKind::Navidrome, true) => {
@@ -1847,8 +1875,12 @@ async fn run(
             Request::ReconnectSoundCloud => {
                 signed_out.remove(&ProviderKind::SoundCloud);
                 let keep = keep_soundcloud_tokens_while_signed_in(&sign_outs);
+                let keep_cookie = keep_soundcloud_cookie_while_signed_in(
+                    &sign_outs,
+                    soundcloud_dir().join("datadome"),
+                );
                 connects.start(ProviderKind::SoundCloud, true, async move {
-                    connect_soundcloud(&replies, keep).await
+                    connect_soundcloud(&replies, keep, keep_cookie).await
                 });
                 continue;
             }

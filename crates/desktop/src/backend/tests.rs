@@ -7,7 +7,10 @@ use opium_core::model::{ItemId, ProviderKind};
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::oneshot;
 
-use super::{Arrived, Asked, Connection, Connects, Ended, Request, SignOuts, list_copy, waits_on};
+use super::{
+    Arrived, Asked, Connection, Connects, Ended, Request, SignOuts,
+    keep_soundcloud_cookie_while_signed_in, list_copy, waits_on,
+};
 use crate::SearchScope;
 
 const APPLE: ProviderKind = ProviderKind::AppleMusic;
@@ -183,6 +186,41 @@ fn tokens_are_kept_only_while_the_sign_in_they_renew_is_there() {
     let since = sign_outs.count(ProviderKind::SoundCloud);
     sign_outs.unless_signed_out_since(ProviderKind::SoundCloud, since, || kept += 1);
     assert_eq!(kept, 3);
+}
+
+/// SoundCloud's bot-guard cookie, renewed by the answer to a change still
+/// under way as the user signs out, is not written back once the sign-out
+/// has deleted it: as the tokens (the test before), the sign-in is gone.
+#[test]
+fn the_bot_guards_cookie_is_kept_only_while_the_sign_in_it_was_renewed_for_is_there() {
+    let dir = std::env::temp_dir().join(format!("desktop-datadome-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let path = dir.join("soundcloud").join("datadome");
+    let sign_outs = SignOuts::default();
+    let keep = keep_soundcloud_cookie_while_signed_in(&sign_outs, path.clone());
+    keep("first");
+    let first = std::fs::read(&path).ok();
+
+    // Another service's sign-out changes nothing.
+    sign_outs.sign_out(APPLE);
+    keep("second");
+    let second = std::fs::read(&path).ok();
+
+    // Signed out of: counted, then the cookie deleted, as `forget_sign_in` does.
+    sign_outs.sign_out(ProviderKind::SoundCloud);
+    let _ = std::fs::remove_file(&path);
+    keep("renewed after the sign-out");
+    let written_back = path.exists();
+
+    // A sign-in made since keeps its own.
+    keep_soundcloud_cookie_while_signed_in(&sign_outs, path.clone())("a new sign-in's");
+    let new = std::fs::read(&path).ok();
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert_eq!(first.as_deref(), Some(&b"first"[..]));
+    assert_eq!(second.as_deref(), Some(&b"second"[..]));
+    assert!(!written_back, "renewed after the sign-out: written back");
+    assert_eq!(new.as_deref(), Some(&b"a new sign-in's"[..]));
 }
 
 #[test]
