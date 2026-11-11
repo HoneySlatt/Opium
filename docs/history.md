@@ -168,9 +168,10 @@ One milestone each, in this order: `cenc`, then `widevine`, then `apple-music`.
 - **Measured** ([figures](measurements.md#the-audits-fixes-m115-2026-11-11)): rest and the window's
   frames no worse. A regression found on the way, Home left loading at rest in 12 runs of 40 by the
   new order of the start's answers, was fixed in the frozen window, with the owner's go.
-- **By hand, with the owner**: the release APK built at `114fc3f` (its JVM tests and
-  `scripts/check.sh android` passing there) and installed on the phone on 2026-11-11, not
-  debuggable, which started with no crash in its log;
+- **By hand, with the owner**: a release APK built at `114fc3f` was installed on the phone on
+  2026-11-11, not debuggable, and started with no crash in its log; the one built at `0655a43`,
+  with M1.15's last changes to the phone's core (its JVM tests and `scripts/check.sh android`
+  passing there), is not installed yet: the phone was not connected;
   the owner checks its sign-ins, a desktop theme and a playback, and, on the owner's account,
   SoundCloud's changes after S3 and S8.
 - **Left**, each under its stage in [the debt](debt.md): S6 (until Stage 2), the frozen screens'

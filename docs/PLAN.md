@@ -69,8 +69,9 @@ built in this stage.
   account, SoundCloud's changes after S3 and S8.
 - **Where it stands (2026-11-11).** Every finding fixed and pushed, CI green, the figures in
   [`measurements.md`](measurements.md#the-audits-fixes-m115-2026-11-11), [the history](history.md#m115--the-audits-fixes)
-  written. Next: the closing review; the owner's checks of the release APK, installed, and of
-  SoundCloud's changes; then Stage 1 moves to the history.
+  written; two rounds of the closing review answered. Next: a third round; the release APK built at
+  `0655a43` installed, then the owner's checks of it and of SoundCloud's changes; then Stage 1 moves
+  to the history.
 
 ## Ideas
 
