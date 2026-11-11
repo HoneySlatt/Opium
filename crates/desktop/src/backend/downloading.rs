@@ -173,6 +173,11 @@ impl Downloads {
         self.queue.forget(provider);
     }
 
+    /// `ids`, asked for but never queued, will not come.
+    pub fn called_off(&self, ids: Vec<ItemId>) {
+        self.queue.called_off(ids);
+    }
+
     /// `provider` said whether its subscription is active.
     pub fn subscription(&self, provider: ProviderKind, active: bool) {
         self.queue.subscription(provider, active);

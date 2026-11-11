@@ -345,7 +345,10 @@ fn songs_waiting_to_be_downloaded_are_called_off_by_a_removal_or_a_sign_out() {
         connects.hold(NAVIDROME, download(NAVIDROME, &["3"]), None);
 
         connects.remove_downloads(&[ItemId::new(APPLE, "1"), ItemId::new(NAVIDROME, "3")]);
-        connects.forget_downloads(NAVIDROME);
+        assert!(
+            connects.forget_downloads(NAVIDROME).is_empty(),
+            "its one song was removed"
+        );
         connects.release(APPLE);
         connects.release(NAVIDROME);
         let back = handed_back(&mut connects);
@@ -361,7 +364,11 @@ fn songs_waiting_to_be_downloaded_are_called_off_by_a_removal_or_a_sign_out() {
         let _apple = pending_connect(&mut connects, APPLE);
         connects.hold(APPLE, download(APPLE, &["1"]), None);
         connects.hold(APPLE, lyrics_of(APPLE), None);
-        connects.forget_downloads(APPLE);
+        assert_eq!(
+            connects.forget_downloads(APPLE),
+            [ItemId::new(APPLE, "1")],
+            "the songs called off, to be told so"
+        );
         connects.release(APPLE);
         let back = handed_back(&mut connects);
         assert_eq!(back.len(), 1, "a sign-out calls the songs off");

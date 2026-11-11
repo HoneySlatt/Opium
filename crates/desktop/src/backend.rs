@@ -1366,10 +1366,19 @@ impl Connects {
 
     /// The songs of `provider` waiting for its connect to be downloaded,
     /// called off: signed out of.
-    fn forget_downloads(&mut self, provider: ProviderKind) {
+    /// The songs called off, to be told so.
+    fn forget_downloads(&mut self, provider: ProviderKind) -> Vec<ItemId> {
+        let mut called_off = Vec::new();
         if let Some(held) = self.held.get_mut(&provider) {
-            held.retain(|asked| !matches!(asked.request, Request::Download { .. }));
+            held.retain(|asked| match &asked.request {
+                Request::Download { tracks, .. } => {
+                    called_off.extend(tracks.iter().map(|t| t.id.clone()));
+                    false
+                }
+                _ => true,
+            });
         }
+        called_off
     }
 
     /// `ids` no longer to be downloaded, among the songs waiting for a
@@ -1845,9 +1854,10 @@ async fn run(
                 sign_outs.sign_out(provider);
                 // What waited on its connect is answered as it is now: signed
                 // out; its songs waiting to be downloaded are called off.
-                connects.forget_downloads(provider);
+                let called_off = connects.forget_downloads(provider);
                 connects.release(provider);
                 downloads.forget(provider);
+                downloads.called_off(called_off);
                 loading.stop(provider);
                 match provider {
                     ProviderKind::AppleMusic => apple = None,

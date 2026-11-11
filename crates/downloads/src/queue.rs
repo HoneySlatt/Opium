@@ -282,17 +282,37 @@ impl Downloads {
     /// confirmed again. Every song kept stays, and those that came without
     /// DRM play on (ADR-0017).
     pub fn forget(&self, provider: ProviderKind) {
-        {
+        let called_off: Vec<ItemId> = {
             let mut queue = lock(&self.queue);
-            queue.tracks.retain(|(t, _)| t.id.provider != provider);
+            let mut called_off = Vec::new();
+            queue.tracks.retain(|(t, _)| {
+                let waits = t.id.provider != provider;
+                if !waits {
+                    called_off.push(t.id.clone());
+                }
+                waits
+            });
             // Kept, a protected one would confirm the subscription again.
             for (id, off) in &mut queue.active {
                 if id.provider == provider {
                     *off = true;
                 }
             }
+            called_off
+        };
+        // Told, as `remove` tells: no download of them will come.
+        for id in called_off {
+            self.listener.state(id, Downloading::Gone);
         }
         self.subscription(provider, false);
+    }
+
+    /// `ids`, asked for before the queue had them (held while their service
+    /// connected) and called off: told so, as no download of them will come.
+    pub fn called_off(&self, ids: Vec<ItemId>) {
+        for id in ids {
+            self.listener.state(id, Downloading::Gone);
+        }
     }
 
     /// `provider` said whether its subscription is active: its protected
