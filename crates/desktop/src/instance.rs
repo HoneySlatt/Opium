@@ -14,7 +14,6 @@
 
 use std::fs::{File, OpenOptions};
 use std::io;
-use std::os::fd::AsRawFd;
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 
@@ -118,16 +117,11 @@ pub fn take_in(dir: &Path) -> Result<Instance, Refused> {
         }
         opened => opened.map_err(failed)?,
     };
-    // SAFETY: `flock` takes a descriptor and flags and touches no memory of
-    // ours; the descriptor is `file`'s own, open for the whole call.
-    let locked = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
-    if locked == 0 {
-        return Ok(Instance { _file: file });
-    }
-    let error = io::Error::last_os_error();
-    if error.raw_os_error() == Some(libc::EWOULDBLOCK) {
-        Err(Refused::Running)
-    } else {
-        Err(failed(error))
+    // `flock` on Linux, as the standard library takes it (the downloads'
+    // store locks its folder the same way).
+    match file.try_lock() {
+        Ok(()) => Ok(Instance { _file: file }),
+        Err(std::fs::TryLockError::WouldBlock) => Err(Refused::Running),
+        Err(std::fs::TryLockError::Error(e)) => Err(failed(e)),
     }
 }
