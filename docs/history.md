@@ -147,7 +147,7 @@ One milestone each, in this order: `cenc`, then `widevine`, then `apple-music`.
 
 - **Goal.** Stage 1 closes with no loss of data, flaw, crash or broken service left of those the
   [stage 1 audit](audits/2026-11-10-stage-1.md) found.
-- **Done on 2026-11-11**, finding by finding in [the audit's "Fixed"](audits/2026-11-10-stage-1.md#fixed),
+- **Fixed and pushed by 2026-11-11**, finding by finding in [the audit's "Fixed"](audits/2026-11-10-stage-1.md#fixed),
   each from its failing test where one could be written:
   - no download, setting, play, playlist or pairing lost to a file that does not read, a failed
     save, a power cut, a sign-out or two instances: one instance per profile
@@ -167,7 +167,9 @@ One milestone each, in this order: `cenc`, then `widevine`, then `apple-music`.
 - **Measured** ([figures](measurements.md#the-audits-fixes-m115-2026-11-11)): rest and the window's
   frames no worse. A regression found on the way, Home left loading at rest in 12 runs of 40 by the
   new order of the start's answers, was fixed in the frozen window, with the owner's go.
-- **By hand, with the owner**: the release APK installed on the phone, which starts with no crash;
+- **By hand, with the owner**: the release APK built at `114fc3f` (its JVM tests and
+  `scripts/check.sh android` passing there) and installed on the phone on 2026-11-11, not
+  debuggable, which started with no crash in its log;
   the owner checks its sign-ins, a desktop theme and a playback, and, on the owner's account,
   SoundCloud's changes after S3 and S8.
 - **Left**, each under its stage in [the debt](debt.md): S6 (until Stage 2), the frozen screens'

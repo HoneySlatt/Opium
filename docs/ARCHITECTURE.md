@@ -57,7 +57,8 @@ app in Kotlin with Jetpack Compose, which calls the core through UniFFI
   session, when new songs were first seen, the playlists last added to, shared settings), kept on
   disk and merged field by field ([ADR-0014](adr/0014-shared-state-merged-field-by-field.md)).
   Each change carries a stamp (`synced::Stamp`: milliseconds on a clock that never goes back,
-  `max(now, last + 1)`, and the device's id; the later stamp wins, the device's id breaks a tie).
+  `max(now, last + 1)`, and the device's id; the plays from before the devices shared their history
+  count from 1 up, below any real one; the later stamp wins, the device's id breaks a tie).
   Devices compare digests (`synced::Digest`, FNV-1a over each part's JSON) before sending what
   differs. On disk: `shared.json` (the device's id and its copy, but for the playlists),
   `playlists.json`, and the playlists' chosen covers under `covers/`; a file that does not read is

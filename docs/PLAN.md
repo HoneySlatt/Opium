@@ -9,8 +9,8 @@ Every milestone ends with the definition of done in [`AGENTS.md`](../AGENTS.md#d
 
 ## Current
 
-- Stage 1 — Under the method: M1.15, the stage audit's fixes, is next; every other milestone is
-  done, the audit (M1.8) recorded and decided ([audit](audits/2026-11-10-stage-1.md)).
+- Stage 1 — Under the method: M1.15, the stage audit's fixes, is in its closing review; every other
+  milestone is done, the audit (M1.8) recorded and decided ([audit](audits/2026-11-10-stage-1.md)).
 - After it, Opium waits for its port in uwui's first stage, after SlimeEngine's Stage 6d, fixing
   only a loss of data, a crash, a security flaw or a service that stops working
   ([ADR-0035](adr/0035-the-port-in-uwuis-first-stage-stage-1-finished-first.md)).

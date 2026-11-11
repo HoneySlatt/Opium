@@ -33,6 +33,12 @@ profile, the window's thread counted from 10 to 40 s), where the build before M1
 40: the start's connects, made apart since W7 (`a28d0ee`, 6 of 40), could answer in another order,
 and Home then stayed loading for ever. Fixed by `114fc3f`: none in 80 runs.
 
+**The files while the services connect** (W7), a throwaway profile with three silent files under
+`agent-headless`, `HTTPS_PROXY` and `HTTP_PROXY` at a local listener that accepts and never answers,
+Apple Music and SoundCloud signed in with made-up tokens, the measuring mode's `start`: from the
+process's start to the files' index written, before the fix (`7b9d019`) 10,590, 10,392 and 10,398 ms
+(the 10 s connect timeout), after it (`a28d0ee`) 584, 368 and 373 ms.
+
 **Warm start**, `scripts/measure/startup.py` in the same Weston, 10 runs each, to the first frame
 saved: median 524.5 ms with M1.15, 719.0 ms before it (the start no longer waits for Apple Music and
 SoundCloud).

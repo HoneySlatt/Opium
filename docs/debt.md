@@ -83,6 +83,10 @@ number there (L1, S2, W3…), and their failing tests are kept beside it.
 
 ## Waiting for Stage 7, the library
 
+- **The downloads' manifest stays at version 1** with M1.15's two new fields, so that an older build
+  reads it: that build drops them at its first save and may then sweep the sealed files they kept
+  (a downgrade after a manifest was set aside); and a folder once found so never sweeps a leftover
+  sealed file again.
 - **Formats without a version**: the shared state's, the pairings', the caches' and the settings'
   (since M1.15 the settings keep the keys they do not know, written back unchanged).
 - **Paging**: a server that ignores Navidrome's offset sends the same page for ever; Apple's lists
@@ -128,8 +132,13 @@ number there (L1, S2, W3…), and their failing tests are kept beside it.
   not fuzzed (only `cenc`'s and `apple-music`'s are).
 - **The examples `am fetch`, `am live` and `sc fetch` write decrypted protected audio to a file**,
   against the DRM rules; the owner keeps them until the first release (2026-11-10).
-- **Addresses kept before M1.15** with a Navidrome user and password in them (S2) stay in the
-  covers' caches until they are cleared.
+- **Addresses kept before M1.15** with a Navidrome user and password in them (S2): the password
+  stays in `navidrome/credentials.json` until the user signs in again (`connect` now refuses such
+  credentials), and in the covers' addresses kept in the caches, the history, the session and
+  Opium's playlists, which go to every paired device at each sync (`scrub_kept` strips the signed
+  query, not `user:password@`). A one-time scrub is the owner's call.
+- **The examples** (`am`, `sc`, `spike`, `am_cost`, `cdm_cost`) still take an empty
+  `XDG_CONFIG_HOME` for a relative folder, where the apps no longer do (W8).
 - **Gradle's verification file** lists what `assembleRelease` and `testDebugUnitTest` resolve;
   another task may need it written again (CONTRIBUTING).
 - **FFmpeg**: the shell's is built with GPL parts, GPL-3.0-or-later as a whole, which Opium's
