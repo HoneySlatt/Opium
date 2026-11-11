@@ -53,7 +53,7 @@ each (a `start` first, dropped):
 
 | Measure | M1.15 | M1.8 |
 |---|---|---|
-| Start to the first useful frame | 163.7 ms (one run) | median 156.0 ms (10 runs) |
+| Start to the first useful frame | 163.7 ms (one run: it shows nothing alone; the warm start above, ten runs of each build in the same Weston, is the comparison) | median 156.0 ms (10 runs) |
 | `scroll-songs`: intervals, over 6.25 ms, over 8.33 ms | 26,476, 2, 0; median 4.165 ms, p99 4.387, max 6.778 | 26,476, 0, 0 |
 | `scroll-songs`: CPU a frame, median / p99 / max | 0.61 / 0.86 / 1.88 ms | |
 | Highest resident memory scrolling Songs | 239.5 MiB | 245.7 MiB |
