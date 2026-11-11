@@ -125,7 +125,7 @@ without the owner's go.
 - The shared state's merge ignores order and repetition, deletions are final; a change to it extends
   `crates/synced/src/tests.rs`
   ([ADR-0014](docs/adr/0014-shared-state-merged-field-by-field.md)).
-- One instance at a time, or two overwrite each other's files ([ADR-0018](docs/adr/0018-one-instance-through-the-session-bus.md)).
+- One instance per profile, or two overwrite each other's files ([ADR-0043](docs/adr/0043-one-instance-per-profile-held-by-a-lock.md)).
 - No code reads the old "Music" names ([ADR-0023](docs/adr/0023-the-rename-to-opium.md)).
 - Tests write only in their own folder under `std::env::temp_dir()`.
 

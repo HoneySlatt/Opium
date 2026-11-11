@@ -5,42 +5,6 @@ work is in [`PLAN.md`](PLAN.md); a stage's audit adds what it leaves open. Triag
 [stage 1 audit](audits/2026-11-10-stage-1.md) on 2026-11-10; its findings are named by their
 number there (L1, S2, W3…), and their failing tests are kept beside it.
 
-## Paid by M1.15
-
-The audit's losses of data, flaws, crashes and broken services, with the small items the owner
-asked to pay at once ([M1.15](PLAN.md#m115--the-audits-fixes)):
-
-- **Losses of data**: every download deleted after a manifest put aside (L1); two instances at
-  once, which take the MPRIS name from each other and overwrite each other's files, the debt's
-  incident of 2026-11-07, whose exact way is not known (L2); settings that stop saving, or are
-  replaced without a copy (L3); an unreadable shared state that pushes every device's history out
-  (L4); a second file set aside replacing the first, the user never told (L5); a sign-out that
-  deletes the service's downloads, against ADR-0017 (L6); the phone's vault, whose failed read
-  deletes downloads and sign-ins (L7); a song downloaded again lost on a failed save (L8); the
-  playlists' move to their own file (L9); **what a tag write leaves**: a power cut that leaves zeros
-  past the old end makes a song stay half written on the phone, its original hidden (L10); the
-  settings' unknown keys dropped by a build that goes back (L11, the settings only); the phone's
-  themes overwritten by the desktop's (L12); writes not flushed before their rename (L13); the
-  phone's caches sharing one partial file per list; a scan's embedded cover lost to a shared
-  partial file.
-- **Flaws**: the exit watch's core dump ([ADR-0039](adr/0039-the-exit-watch-leaves-no-core-dump-unless-asked.md),
-  S1); Navidrome's user and password in kept addresses (S2); SoundCloud's write paths (S3); a
-  paired device's playlist id naming a file (S4); the 30 days beaten by a clock set back (S5); the
-  phone's TLS verifier fetched from a branch (S7); the zstd advisories and the yanked
-  `async-executor`, by one compatible update (S8); ADR-0013 corrected on Navidrome's password (S9).
-- **Crashes and broken services**: `volume = nan` (W1); Apple's paging, and SoundCloud's uploads,
-  without end (W2); Connect's playlists over the message cap (W3); a long list played on a device
-  (W4); an LRC offset and an edit list that overflow (W5); SoundCloud's confirmation lost at start
-  (W6); the backend waiting on Apple and SoundCloud (W7); an empty `XDG_CONFIG_HOME` (W8);
-  `frames.py`, which passes a scroll that stops short (W12).
-- **Small items**: the test tone `player/tests/data/tone.opus`, whose origin is to be recorded (its
-  tags say FFmpeg's Opus encoder); each licence logging its expiry twice; `Cdm::load` answering Ok
-  once loaded even if the `cdm` thread has since ended, `give_licence` and `decrypt` leaving "not
-  initialised" out of their documentation, "the CDM closed the session" said when the host closed
-  it; a test that needs five minutes of uptime; two comments pointing into the plan at text that
-  left it; the documents the audit found wrong, frozen code's false comments included; the
-  nineteen tests the audit wrote for gaps in the tests.
-
 ## Waiting for Stage 5, the move to uwui
 
 - **Opium wakes at rest**: 7.4 times a second online, 27 to 33 offline, its window's threads aside.
@@ -55,19 +19,28 @@ asked to pay at once ([M1.15](PLAN.md#m115--the-audits-fixes)):
 - **The player cannot wake the window**: the window asks it for its state every 250 ms while music
   plays, or while a paired device plays.
 - **The desktop's backend in one function** (`desktop::backend::run`, 949 lines, untested), which
-  routes items by hand where `services::Services` does; "write aside, then rename" written 16 times;
-  the resuming reader in three service crates; `connect` on `rand` 0.8 for one call; `desktop`'s
+  routes items by hand where `services::Services` does; the resuming reader in three service crates; `connect` on `rand` 0.8 for one call; `desktop`'s
   second HTTP client for one cover, fetched with a blocking call in the media controls' loop;
-  unused dependencies in `soundcloud`, `local` and `desktop`; 820 public items or fields without
+  unused dependencies in `soundcloud` and `local`; 820 public items or fields without
   documentation.
 - **Memory at rest**: 202 to 208 MiB, where the budget is 150.
+- **Requests while a service connects** (M1.15's fix of W7): a connect that a server keeps alive
+  by trickling bytes holds what waits on it with no overall deadline; a search typed while
+  services connect is run again whole as each arrives, and an older, partial answer can replace a
+  later one; SoundCloud's likes can be fetched twice at a reconnect; during a stall, Apple's kept
+  albums show only once its connect ends; a connect started before a service is turned off and on
+  again is still taken in; SoundCloud's bot-guard cookie can be written again after a sign-out.
+- **A file set aside is said only in the log** (L5): neither app tells the user; with uwui, and at
+  Stage 3 on the phone.
+- **The instance lock covers the config folder**: two instances given other config folders but
+  one cache folder could lose a cache write.
+- **`frames.py` checks Songs' scroll only**: the record does not give the Albums grid's length
+  (W12).
 - **Frozen with `app-desktop`** ([ADR-0026](adr/0026-the-egui-window-frozen-until-the-move.md)):
   - Space toggles playback again on each key repeat while held (`ui/mod.rs:922`);
   - files dropped on the window do nothing under Wayland, where winit 0.30 has no drag and drop;
   - Opium cannot be driven by an agent: nothing scrolls, clicks or types, but for M1.14's scripted
     scenarios (`measure.rs`), which only measure;
-  - a comment gives the turning cover twenty seconds a turn; the cookie takes 14, the toolbar's
-    cover 24 (`ui/fab.rs:28`);
   - animations that go on without the focus (`ui/lyrics.rs`, `ui/loading.rs`), animated covers too;
   - one thread per cover file, unbounded, a refused one panicking the window's thread
     (`ui/thumbs.rs`); WebP and GIF covers not decoded; a file's cover read on the window's thread;
@@ -80,7 +53,9 @@ asked to pay at once ([M1.15](PLAN.md#m115--the-audits-fixes)):
   - a failed service retried every minute for ever, offline included;
   - the exit hang inside eframe's teardown ([ADR-0021](adr/0021-the-exit-watch.md),
     [ADR-0024](adr/0024-the-exit-watch-aborts-for-a-core-dump.md));
-  - the interface's state and logic mixed with egui in `app.rs`, taken out as part of the move.
+  - the interface's state and logic mixed with egui in `app.rs`, taken out as part of the move;
+  - the theme's own lookup of `XDG_CONFIG_HOME` (`theme.rs:217`) takes an empty variable for a
+    relative folder, where `desktop::folders` no longer does; it only reads.
 - **The screenshot mode may never save**: on 2026-11-05 the release build saved in one of nine
   runs; on 2026-11-07 twice in two, in a headless Weston at 3840x2160 under its kiosk shell; on
   2026-11-10 once in two, the packaged build never. The cause is not known. Frozen with
@@ -101,11 +76,18 @@ asked to pay at once ([M1.15](PLAN.md#m115--the-audits-fixes)):
 - **Opium Connect's node** is built on the main thread, which is system work; paused in the
   background, Connect's timers keep running.
 - **The phone cannot play an Apple Music upload**, which the computer plays.
+- **The phone's system layer**: a SoundCloud token renewed while a sign-out runs can put the
+  sign-in back in the vault; a theme imported is written in place, so a write cut short loses an
+  older theme of that id; a desktop theme kept beside the user's of the same id (`<id>-desktop`)
+  shows the same name; the phone's lends fail at once while the computer's services connect.
 
 ## Waiting for Stage 7, the library
 
-- **Formats without a version**: the shared state's, the pairings' and the caches' (the settings'
-  is M1.15's).
+- **Formats without a version**: the shared state's, the pairings', the caches' and the settings'
+  (since M1.15 the settings keep the keys they do not know, written back unchanged).
+- **Paging**: a server that ignores Navidrome's offset sends the same page for ever; Apple's lists
+  paged by cursors that never repeat but come empty are followed; a list whose `meta.total` is huge
+  with a page of one is asked that many times.
 - **A library of 100,000 songs**: 606 bytes of the window's heap a song; the files' search folding
   every song again (27 to 36 ms); a Navidrome file or a SoundCloud original held whole in memory
   while it plays.
@@ -137,16 +119,29 @@ asked to pay at once ([M1.15](PLAN.md#m115--the-audits-fixes)):
   so Kotlin that no longer matches the core passes CI; built by hand (`build-core.sh`,
   `gradle assembleRelease`). With the Gradle wrapper; the PLAN's
   [Ideas](PLAN.md#ideas) hold it.
-- **Tests**: no Kotlin test; the player's engine, Apple Music's live radio reader and `opium-ffi`
+- **Tests**: the phone's JVM tests cover only the vault's reads, the desktop's themes and the
+  downloads' orders, and CI runs neither them nor Gradle's dependency verification (built by hand);
+  `connect`'s two tests of 100,000 songs take one to three minutes in a debug build; Navidrome's
+  test of the year fails on a clock behind 2026; the player's engine, Apple Music's live radio reader and `opium-ffi`
   untested; SoundCloud's bounded retries untested; Connect's tests listen on port 47820 of the local
   network while they run; no test in release mode; Miri never runs; most parsers of untrusted input
   not fuzzed (only `cenc`'s and `apple-music`'s are).
 - **The examples `am fetch`, `am live` and `sc fetch` write decrypted protected audio to a file**,
   against the DRM rules; the owner keeps them until the first release (2026-11-10).
+- **Addresses kept before M1.15** with a Navidrome user and password in them (S2) stay in the
+  covers' caches until they are cleared.
+- **Gradle's verification file** lists what `assembleRelease` and `testDebugUnitTest` resolve;
+  another task may need it written again (CONTRIBUTING).
 - **FFmpeg**: the shell's is built with GPL parts, GPL-3.0-or-later as a whole, which Opium's
   licence can take; which FFmpeg the packages link is decided at Stage 2.
 
 ## Waiting for Stage 8, Connect
+
+- **A paired device names any local file**: a local song's id is its path, so a play list, a
+  handoff or the history sent by a paired device can name a file the local scan never found, which
+  the player opens; not checked.
+- **A session from before the queue had a limit** (`session.json`) goes whole in one part, over
+  Connect's cap if it is long, until the next handoff replaces it.
 
 - **Away from home cannot be turned off** while a device is paired: the desktop always asks for
   it, and the phone while on screen and for 60 s after; Settings only changes the relay. Whether it

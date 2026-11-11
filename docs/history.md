@@ -143,6 +143,36 @@ One milestone each, in this order: `cenc`, then `widevine`, then `apple-music`.
   screens, the README and the CHANGELOG say so. The test helper `boxed`, still Kopuz's in two
   test files, took the form M1.10's clean side wrote.
 
+#### M1.15 — The audit's fixes
+
+- **Goal.** Stage 1 closes with no loss of data, flaw, crash or broken service left of those the
+  [stage 1 audit](audits/2026-11-10-stage-1.md) found.
+- **Done on 2026-11-11**, finding by finding in [the audit's "Fixed"](audits/2026-11-10-stage-1.md#fixed),
+  each from its failing test where one could be written:
+  - no download, setting, play, playlist or pairing lost to a file that does not read, a failed
+    save, a power cut, a sign-out or two instances: one instance per profile
+    ([ADR-0043](adr/0043-one-instance-per-profile-held-by-a-lock.md)), every kept file written
+    whole through one function, files set aside under names of their own;
+  - the flaws closed: no core dump ([ADR-0045](adr/0045-no-core-dump-through-the-core-size-limit.md),
+    which replaced ADR-0039's way when a search found it would break the file windows), Navidrome's
+    password out of addresses and over HTTPS off the local network
+    ([ADR-0044](adr/0044-navidromes-password-as-it-is-used.md)), SoundCloud's and a paired
+    device's ids checked, the 30 days held against a clock moved either way, the phone's
+    dependencies verified by Gradle, three advisories updated;
+  - Connect syncs a library of any size, in parts
+    ([ADR-0046](adr/0046-the-shared-state-sent-in-parts.md)); the files are served at once while the
+    services connect (10.4 s to 0.4 s on a stalled network);
+  - the phone's first tests, on the JVM; the nineteen tests the audit wrote for gaps; the documents
+    it found wrong.
+- **Measured** ([figures](measurements.md#the-audits-fixes-m115-2026-11-11)): rest and the window's
+  frames no worse. A regression found on the way, Home left loading at rest in 12 runs of 40 by the
+  new order of the start's answers, was fixed in the frozen window, with the owner's go.
+- **By hand, with the owner**: the release APK installed on the phone, which starts with no crash;
+  the owner checks its sign-ins, a desktop theme and a playback, and, on the owner's account,
+  SoundCloud's changes after S3 and S8.
+- **Left**, each under its stage in [the debt](debt.md): S6 (until Stage 2), the frozen screens'
+  findings, the work for no wake-up at rest, and what M1.15 found and did not fix.
+
 #### M1.14 — The figures to beat on uwui
 
 - **Goal.** The port to uwui is judged on figures, as SlimeEngine's ADR-0178 asks: uwui must run

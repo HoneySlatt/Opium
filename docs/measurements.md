@@ -10,6 +10,47 @@ the desktop runs on a [throwaway profile](../CONTRIBUTING.md#a-throwaway-profile
 cited live in [`scripts/measure/`](../scripts/measure/), each described at its head
 ([CONTRIBUTING.md](../CONTRIBUTING.md#measuring)).
 
+## The audit's fixes, M1.15 (2026-11-11)
+
+What M1.15 had to leave no worse: rest and the window's frames. Same machine as
+[M1.8](#the-stage-audit-m18-2026-11-10); builds at `114fc3f` (M1.15) and `28a1c13` (before it),
+`WIDEVINE_CDM=/nonexistent`, nothing signed in or paired, `library.py`'s 8,500 songs.
+
+**At rest**, `scripts/measure/rest.sh` in a headless Weston (2560x1440 at 240 Hz), offline (the
+runs under `agent-headless`, which gives no network), 30 s to settle then 60 s sampled:
+
+| Build | Runs | Wake-ups a second | CPU | Resident memory |
+|---|---|---|---|---|
+| M1.15 (`114fc3f`) | 3 | 26.38, 27.23, 23.20 | 0.12–0.18 % | 216 to 238 MiB |
+| Before M1.15 (`28a1c13`) | 7 | 24.5 to 30.1 (one run, the first on a new profile, 33.9 at 8.1 % CPU: the scan) | 0.23–0.32 % | 216 to 239 MiB |
+
+The memory is above M1.8's 202 to 208 MiB for both builds alike: the conditions differ, not the
+code. Wake-ups as M1.8's offline runs (27.25 to 33.04).
+
+**A regression found and fixed on the way.** An earlier build of M1.15 (`2e5cdef`) drew the window
+about 25 to 57 times a second at rest in 12 of 40 runs (eight instances at once, each on its own
+profile, the window's thread counted from 10 to 40 s), where the build before M1.15 did in none of
+40: the start's connects, made apart since W7 (`a28d0ee`, 6 of 40), could answer in another order,
+and Home then stayed loading for ever. Fixed by `114fc3f`: none in 80 runs.
+
+**Warm start**, `scripts/measure/startup.py` in the same Weston, 10 runs each, to the first frame
+saved: median 524.5 ms with M1.15, 719.0 ms before it (the start no longer waits for Apple Music and
+SoundCloud).
+
+**The window's frames**, `scripts/measure/frames.py` on the owner's 4K display at 240 Hz, as
+[M1.14](#the-figures-to-beat-on-uwui-m114-2026-11-07) ran them, the load average 1.5, one run of
+each (a `start` first, dropped):
+
+| Measure | M1.15 | M1.8 |
+|---|---|---|
+| Start to the first useful frame | 163.7 ms (one run) | median 156.0 ms (10 runs) |
+| `scroll-songs`: intervals, over 6.25 ms, over 8.33 ms | 26,476, 2, 0; median 4.165 ms, p99 4.387, max 6.778 | 26,476, 0, 0 |
+| `scroll-songs`: CPU a frame, median / p99 / max | 0.61 / 0.86 / 1.88 ms | |
+| Highest resident memory scrolling Songs | 239.5 MiB | 245.7 MiB |
+
+The run scrolled the whole list, as `frames.py`'s new check (W12) found. The budget, 99.9 % of
+refreshes on time and none more than one refresh late, is met; the Albums grid was not run again.
+
 ## The stage audit, M1.8 (2026-11-10)
 
 The quality bar measured again at `46e7a5a` ([audit](audits/2026-11-10-stage-1.md)). Machine and

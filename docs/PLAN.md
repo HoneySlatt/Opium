@@ -38,7 +38,7 @@ Every milestone ends with the definition of done in [`AGENTS.md`](../AGENTS.md#d
 | [M1.12](history.md#m110-to-m112--kopuzs-code-written-again) | `apple-music`'s derived items written again in a clean room | Done |
 | [M1.13](history.md#m113--nothing-of-kopuzs-left) | Nothing of Kopuz's left, the GPL kept | Done, one part kept |
 | [M1.14](history.md#m114--the-figures-to-beat-on-uwui) | The figures uwui must match: the egui window's and the Compose phone's | Done |
-| [M1.15](#m115--the-audits-fixes) | No loss of data, flaw or broken service the audit found is left | Planned |
+| [M1.15](#m115--the-audits-fixes) | No loss of data, flaw or broken service the audit found is left | In review; the owner's checks by hand open |
 
 ## Stage 1 — Under the method
 
@@ -52,7 +52,7 @@ built in this stage.
 - **Goal.** Stage 1 closes with no loss of data, flaw, crash or broken service left of those the
   [stage 1 audit](audits/2026-11-10-stage-1.md) found, as
   [ADR-0035](adr/0035-the-port-in-uwuis-first-stage-stage-1-finished-first.md) allows before uwui.
-- **Delivers.** What [the debt](debt.md#paid-by-m115) lists under M1.15: the losses of data L1 to
+- **Delivers.** What the [stage 1 audit](audits/2026-11-10-stage-1.md#the-owners-decisions) asked of M1.15: the losses of data L1 to
   L13 (L6 following [ADR-0017](adr/0017-downloads-sealed-and-tied-to-the-subscription.md), L11 for
   the settings); the flaws S1 ([ADR-0039](adr/0039-the-exit-watch-leaves-no-core-dump-unless-asked.md)),
   S2 to S5, S7, S8 (`cargo update -p zstd -p zstd-safe -p async-executor`) and S9 (an ADR amending
@@ -67,6 +67,10 @@ built in this stage.
 - **Measured.** Rest and the window's frames, not made worse.
 - **By hand.** The owner checks a release APK (the vault, the TLS verifier) and, on the owner's
   account, SoundCloud's changes after S3 and S8.
+- **Where it stands (2026-11-11).** Every finding fixed and pushed, CI green, the figures in
+  [`measurements.md`](measurements.md#the-audits-fixes-m115-2026-11-11), [the history](history.md#m115--the-audits-fixes)
+  written. Next: the closing review; the owner's checks of the release APK, installed, and of
+  SoundCloud's changes; then Stage 1 moves to the history.
 
 ## Ideas
 
