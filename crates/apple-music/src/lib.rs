@@ -1167,7 +1167,6 @@ impl AppleMusic {
     }
 }
 
-/// The page of `next`'s list starting at `offset`, with `first`'s parameters.
 /// Where the page `next` starts.
 fn offset_in(next: &str) -> Option<usize> {
     let base = url::Url::parse(API).ok()?;
@@ -1251,6 +1250,7 @@ fn query_as_written(address: &str) -> &str {
         .map_or("", |(_, query)| query)
 }
 
+/// The page of `next`'s list starting at `offset`, with `first`'s parameters.
 fn at_offset(next: &str, offset: usize, first: &str) -> String {
     let base = url::Url::parse(API).expect("API base");
     let Ok(mut url) = base.join(next) else {

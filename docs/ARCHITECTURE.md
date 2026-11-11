@@ -17,8 +17,9 @@ app in Kotlin with Jetpack Compose, which calls the core through UniFFI
   (`provider.rs`), the play queue and its `Handoff` (`queue.rs`), the best-copy matching
   (`dedupe.rs`, [ADR-0007](adr/0007-one-library-and-the-best-copy.md)), themes
   (`theme.rs` and `assets/themes/`, [ADR-0011](adr/0011-themes-as-toml-files-of-component-variants.md)),
-  cover palettes and colour maths, and `Growing`, a reader of a file still downloading. No network,
-  no UI. Its `ffi` feature derives the types for UniFFI.
+  cover palettes and colour maths, `Growing`, a reader of a file still downloading, and `files`:
+  `write_whole`, the one way every file the apps keep is written (whole or not at all, flushed but
+  for caches), `put_aside` for a file that does not read, and `sweep_partials`. No network, no UI. Its `ffi` feature derives the types for UniFFI.
 - **`crates/apple-music`**: Apple Music through its web player's private API: the developer
   token from the web player (`auth.rs`), the sign-in (`signin`), library, catalog, search, radio,
   lyrics, animated covers, a station's next songs (`station.rs`), and playback through
@@ -82,12 +83,14 @@ app in Kotlin with Jetpack Compose, which calls the core through UniFFI
   ([ADR-0019](adr/0019-the-workings-apart-from-the-drawing.md)): `backend` (the services and the
   player's sources on a tokio runtime, `Request`/`Reply`, and `backend/downloading.rs`), `settings`,
   `cache` (the library as last read), `covers` (covers on disk, their signing and fetch queue),
-  `mpris` (media controls and the single instance, [ADR-0018](adr/0018-one-instance-through-the-session-bus.md)),
+  `folders` (the config, cache and data folders, as XDG says), `instance` (the lock that keeps one
+  Opium per profile, [ADR-0043](adr/0043-one-instance-per-profile-held-by-a-lock.md)), `mpris` (media controls, and handing files to the running
+  instance, [ADR-0018](adr/0018-one-instance-through-the-session-bus.md)),
   `devices` (Opium Connect on the desktop), `soundcloud_browser`, `palette`, `exit`
   ([ADR-0021](adr/0021-the-exit-watch.md)). It knows no toolkit: it wakes the window through
   `desktop::Wake`.
 - **`crates/app-desktop`** (binary `opium`): the window, drawn with egui on eframe
-  ([ADR-0006](adr/0006-egui-for-the-desktop-window.md)): `main.rs` (single instance, window),
+  ([ADR-0006](adr/0006-egui-for-the-desktop-window.md)): `main.rs` (core dumps off, the instance's lock, the window),
   `app.rs` (the interface's state and much of its logic, about 6 300 lines), `ui/` (one module per
   page or part: songs, grids, album and playlist pages, Now Playing, lyrics, settings, the M3E
   toolbar and panes…), `theme.rs`, `fonts.rs`, `icons.rs`, `covers.rs` (egui's cover loader),
@@ -138,8 +141,10 @@ Rules that keep it so:
 
 ### Start-up of the desktop app
 
-1. `main` looks on the session bus for a running Opium: if one is there, it is raised (or handed
-   the files named on the command line) and this process exits.
+1. `main` turns core dumps off ([ADR-0045](adr/0045-no-core-dump-through-the-core-size-limit.md))
+   and takes the profile's lock (`desktop::instance`, [ADR-0043](adr/0043-one-instance-per-profile-held-by-a-lock.md)): held by a running Opium, it
+   hands that one the files named on the command line, or raises it, through the session bus, and
+   exits. Then it sweeps the partial files a crash left (`backend::sweep_partials`).
 2. eframe opens the window; `App::new` loads the settings, resolves the theme, opens the shared
    state (`synced::Kept`), starts Opium Connect (`devices::Devices::start`), starts the backend
    with a `Wake` made from egui's context, then the player and the MPRIS server.

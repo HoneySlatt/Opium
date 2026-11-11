@@ -20,9 +20,11 @@
 //! counts on from it.
 //!
 //! The limit left: a clock set back between two readings hides the time
-//! between them, as the second reads no later than the first. So the time
-//! while the app is closed, with the time counted since the last save, is
-//! lost when the clock is set back before the next start.
+//! between them, as the second reads no later than the first. The clock is
+//! read at each start, confirmation, download and song opened to play, so
+//! the time hidden so is the time while the app is closed, or open with
+//! nothing downloaded played, and the time counted since the last save. The
+//! manifest is plain JSON: a user who edits it can extend offline play too.
 //!
 //! One store at a time holds its folder ([`Store::open`]), in any process.
 //! A kept song's sealed file is deleted when the song is removed or kept

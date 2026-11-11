@@ -153,12 +153,12 @@ One milestone each, in this order: `cenc`, then `widevine`, then `apple-music`.
     save, a power cut, a sign-out or two instances: one instance per profile
     ([ADR-0043](adr/0043-one-instance-per-profile-held-by-a-lock.md)), every kept file written
     whole through one function, files set aside under names of their own;
-  - the flaws closed: no core dump ([ADR-0045](adr/0045-no-core-dump-through-the-core-size-limit.md),
+  - the flaws closed, as far as each holds: no core dump ([ADR-0045](adr/0045-no-core-dump-through-the-core-size-limit.md),
     which replaced ADR-0039's way when a search found it would break the file windows), Navidrome's
     password out of addresses and over HTTPS off the local network
     ([ADR-0044](adr/0044-navidromes-password-as-it-is-used.md)), SoundCloud's and a paired
-    device's ids checked, the 30 days counted on the clock's forward motion (a clock set back gains nothing while the app
-    runs), the phone's
+    device's ids checked, the 30 days counted on the clock's forward motion (a clock set back gains only the time between
+    two readings: while the app is closed, or open with nothing downloaded played), the phone's
     dependencies verified by Gradle, three advisories updated;
   - Connect syncs a library of any size, in parts
     ([ADR-0046](adr/0046-the-shared-state-sent-in-parts.md)); the files are served at once while the
