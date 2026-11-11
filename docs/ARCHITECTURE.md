@@ -196,9 +196,11 @@ the device that takes over.
 2. The bytes are written through `sealed::Writer` into a `.part` file of an opaque name, then kept:
    the manifest is written aside and renamed into place.
 3. Played back: the backend finds the song in the store (`Downloads::open`), `Store::judge` checks its standing
-   (a DRM song plays while its service's subscription was confirmed in the last 30 days), and the
+   (a DRM song plays until the clock has moved 30 days forward since its service last confirmed
+   its subscription, [ADR-0047](adr/0047-the-thirty-days-counted-on-the-clocks-forward-motion.md)), and the
    player reads it through `sealed::Reader`, which decrypts chunk by chunk and seeks anywhere.
-4. Each time Apple Music connects, `AppleMusic::subscribed` confirms the subscription again.
+4. Each time Apple Music connects, `AppleMusic::subscribed` confirms the subscription again;
+   SoundCloud's counts as confirmed at each connection, while signed in.
 
 ### The Android side
 

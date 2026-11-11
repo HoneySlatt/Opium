@@ -59,8 +59,8 @@ is, must be able to express each of them:
 uwui takes an application's need only if it is general (ADR-0170). These are Opium's own work.
 They stay in Opium and ask the framework only for what the rows below list:
 
-- The media controls (MPRIS) and the single instance, over D-Bus on threads of their own
-  (`desktop/src/mpris.rs`, `main.rs:21`).
+- The media controls (MPRIS) over D-Bus on threads of their own (`desktop/src/mpris.rs`), and the
+  single instance, a lock on the profile's folder (`desktop/src/instance.rs`, `main.rs:22-45`).
 - The file pickers through the desktop portal (`app.rs:295`, `app.rs:1353`), and the keyring
   (`downloads`).
 - Fetching covers, signed for Navidrome, with their disk cache (`covers.rs`, `desktop/src/covers.rs`);
@@ -76,13 +76,13 @@ They stay in Opium and ask the framework only for what the rows below list:
 
 | Need | Asked by | egui today | Mark |
 |---|---|---|---|
-| One window with a title, an application id (`opium`), an icon, a starting size and a minimum size (760 × 520) | `main.rs:30-41` | Given: `ViewportBuilder` | Indispensable |
-| The system's title bar and decorations; no client-side decorations, no transparent window | `main.rs:31` | Given | Indispensable |
+| One window with a title, an application id (`opium`), an icon, a starting size and a minimum size (760 × 520) | `main.rs:46-57` | Given: `ViewportBuilder` | Indispensable |
+| The system's title bar and decorations; no client-side decorations, no transparent window | `main.rs:47` | Given | Indispensable |
 | Going fullscreen and back, and knowing which it is | `ui/now_playing.rs:156-169`, `:708-744` | Given: `ViewportCommand::Fullscreen`, `viewport().fullscreen` | Indispensable |
 | Bringing the window to the front when asked from another thread (a second launch, MPRIS Raise) | `app.rs:5726` | Given: `ViewportCommand::Focus` | Indispensable |
 | Closing the window from code (MPRIS Quit) | `app.rs:5727` | Given: `ViewportCommand::Close` | Indispensable |
 | A hook when the window closes, before teardown, to save the session | `app.rs:6146` | Given: `App::on_exit` | Indispensable |
-| A teardown that never hangs | `desktop/src/exit.rs:21-34` | Built: a watch aborts the process 5 s after the session is saved, as eframe's teardown sometimes hangs ([ADR-0021](adr/0021-the-exit-watch.md), [ADR-0024](adr/0024-the-exit-watch-aborts-for-a-core-dump.md)) | Indispensable |
+| A teardown that never hangs | `desktop/src/exit.rs:53-67` | Built: a watch aborts the process 5 s after the session is saved, as eframe's teardown sometimes hangs ([ADR-0021](adr/0021-the-exit-watch.md), [ADR-0024](adr/0024-the-exit-watch-aborts-for-a-core-dump.md)) | Indispensable |
 | The interface scaled by the user's zoom (0.7 to 2.5, times a base of 1.1) on top of the display's fractional scale, with the keys chosen by Opium | `app.rs:849`, `app.rs:6122-6141` | Given: `set_zoom_factor`, `zoom_with_keyboard` off | Indispensable |
 | The display's scale readable while drawing, and followed when it changes (the window moved to another display), so hand-made shapes and images are sized in physical pixels | `ui/shapes.rs:82`, `:92`, `ui/mod.rs:745`, `ui/thumbs.rs:31` | Given: `pixels_per_point`, read at each frame | Indispensable |
 
@@ -90,7 +90,7 @@ They stay in Opium and ask the framework only for what the rows below list:
 
 | Need | Asked by | egui today | Mark |
 |---|---|---|---|
-| Woken from any thread: a function, `Send + Sync`, that asks for a frame (`desktop::Wake`) | `desktop/src/lib.rs:20`, `app.rs:336-339`, `covers.rs:123`, `ui/thumbs.rs:101`, `fonts.rs:69` | Given: `request_repaint` from a cloned `Context` | Indispensable |
+| Woken from any thread: a function, `Send + Sync`, that asks for a frame (`desktop::Wake`) | `desktop/src/lib.rs:22`, `app.rs:336-339`, `covers.rs:123`, `ui/thumbs.rs:101`, `fonts.rs:69` | Given: `request_repaint` from a cloned `Context` | Indispensable |
 | A frame asked for after a delay, nothing drawn until then: toasts, debounce, retries | `ui/mod.rs:848`, `app.rs:6207`, `ui/settings.rs:725` | Given: `request_repaint_after` | Indispensable |
 | Nothing drawn at rest | the whole window; [measured](measurements.md#1-at-rest-cpu-time-and-wake-ups) | Given: eframe draws only when asked | Indispensable |
 | The application's logic run every time something wakes it, even when the window is not drawn (on another workspace), so that MPRIS, the queue and devices keep going | `app.rs:6176` | Given: `App::logic` apart from `App::ui` | Indispensable |

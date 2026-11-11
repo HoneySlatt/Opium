@@ -482,7 +482,8 @@ from opening. The cause is not found ([ADR-0021](docs/adr/0021-the-exit-watch.md
   `=` is replaced by a command's path (`echo ====` fails). Quote, or run scripts with bash.
 - **A test build started on a profile where Opium already runs exits at once**: it raised the
   running window, or says the bus did not reach it ([ADR-0043](docs/adr/0043-one-instance-per-profile-held-by-a-lock.md)). On a throwaway profile it runs beside
-  the owner's.
+  the owner's; a second launch there, on the owner's bus, reaches the owner's, which holds the
+  media controls' name.
 - **A test `XDG_CONFIG_HOME` does not hide the owner's Widevine CDM**: the search also looks in
   Chrome's install folder and under `$HOME`. `WIDEVINE_CDM=/nonexistent` loads none.
 - **The screenshot mode may never save**: it waits for frames the compositor may not send. Its

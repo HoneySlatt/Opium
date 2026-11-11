@@ -32,6 +32,9 @@ number there (L1, S2, W3…), and their failing tests are kept beside it.
   again is still taken in.
 - **A file set aside is said only in the log** (L5): neither app tells the user; with uwui, and at
   Stage 3 on the phone.
+- **A second launch on a second profile's Opium**, on a bus where another profile's Opium holds
+  the media controls' name, hands its files to that other Opium and raises it: the name tells no
+  profile apart.
 - **The instance lock covers the config folder** (and the downloads' store takes its own): two
   instances given other config folders but one cache folder could lose a cache write. A launch
   during a start or a teardown longer than 2 s (a cold start on a slow machine) exits without
@@ -62,7 +65,7 @@ number there (L1, S2, W3…), and their failing tests are kept beside it.
   - the exit hang inside eframe's teardown ([ADR-0021](adr/0021-the-exit-watch.md),
     [ADR-0024](adr/0024-the-exit-watch-aborts-for-a-core-dump.md));
   - the interface's state and logic mixed with egui in `app.rs`, taken out as part of the move;
-  - 21 lints silenced (`#[allow(…)]`), one hiding four unused icons;
+  - 22 lints silenced (`#[allow(…)]`), one hiding four unused icons;
   - the theme's own lookup of `XDG_CONFIG_HOME` (`theme.rs:217`) takes an empty variable for a
     relative folder, where `desktop::folders` no longer does; it only reads.
 - **The screenshot mode may never save**: on 2026-11-05 the release build saved in one of nine

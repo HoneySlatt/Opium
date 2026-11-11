@@ -42,8 +42,9 @@ its teardown hangs, after noting where it stood in `exit.log` (`desktop::exit`,
 [ADR-0021](adr/0021-the-exit-watch.md)).
 
 **Expired.** The standing of a downloaded song that came through a service's DRM once that
-service's subscription was not confirmed in the last 30 days, or the user signed out of it
-(`downloads::store::Standing`, [ADR-0017](adr/0017-downloads-sealed-and-tied-to-the-subscription.md)).
+service's subscription was not confirmed within the last 30 days of the clock's forward motion,
+or the user signed out of it (`downloads::store::Standing`,
+[ADR-0017](adr/0017-downloads-sealed-and-tied-to-the-subscription.md), [ADR-0047](adr/0047-the-thirty-days-counted-on-the-clocks-forward-motion.md)).
 
 **First useful frame.** The first frame that shows the library, not only the window: on the
 desktop, the first frame of Songs with its rows from the cached library, at the start of the page's
