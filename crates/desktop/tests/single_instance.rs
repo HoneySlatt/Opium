@@ -4,6 +4,7 @@ use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::process::{Child, ChildStdout, Command, Stdio};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use desktop::instance::{Refused, take_in};
@@ -17,6 +18,8 @@ const OWN_BUS: &str = "OPIUM_TEST_OWN_BUS";
 /// What the first instance prints once `Mpris::start` has kept its name,
 /// followed by `yes` or `no`.
 const KEPT: &str = "name kept: ";
+/// What the first instance prints once it holds its profile's lock.
+const LOCKED: &str = "lock held";
 
 /// Whether this process runs on a session bus of its own. If it doesn't,
 /// runs `test` again under `dbus-run-session`, which starts one for it
@@ -26,14 +29,19 @@ fn on_a_bus_of_its_own(test: &str) -> bool {
     if std::env::var_os(OWN_BUS).is_some() {
         return true;
     }
+    let config = bus_config();
     let status = Command::new("dbus-run-session")
-        .arg(format!("--config-file={}", bus_config().display()))
+        .arg(format!("--config-file={}", config.display()))
         .arg("--")
         .arg(std::env::current_exe().expect("the test binary"))
         .args(["--exact", test, "--test-threads=1", "--nocapture"])
         .env(OWN_BUS, "1")
         .status()
         .expect("dbus-run-session, which gives these tests a session bus of their own");
+    // The bus's folder, its configuration and its socket, gone with the bus.
+    if let Some(dir) = config.parent() {
+        let _ = std::fs::remove_dir_all(dir);
+    }
     assert!(
         status.success(),
         "{test} failed on a session bus of its own"
@@ -43,9 +51,17 @@ fn on_a_bus_of_its_own(test: &str) -> bool {
 
 /// A session bus's configuration of the test's own, written to its folder
 /// under the temporary one: `dbus-run-session`'s default is a file of the
-/// system's (`/etc/dbus-1/session.conf`), which not every machine has.
+/// system's (`/etc/dbus-1/session.conf`), which not every machine has. A
+/// folder for each call, as the tests run at once and each removes its own;
+/// numbered rather than named after the test, as the bus's socket goes in it
+/// and a socket's path is short (108 bytes on Linux).
 fn bus_config() -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("opium-test-bus-{}", std::process::id()));
+    static CALLS: AtomicUsize = AtomicUsize::new(0);
+    let dir = std::env::temp_dir().join(format!(
+        "opium-test-bus-{}-{}",
+        std::process::id(),
+        CALLS.fetch_add(1, Ordering::Relaxed)
+    ));
     std::fs::create_dir_all(&dir).expect("the test's folder");
     let path = dir.join("session.conf");
     std::fs::write(
@@ -120,6 +136,21 @@ impl First {
         self.profile.join("opium")
     }
 
+    /// Waits until it says it holds its profile's lock, as `main` takes it
+    /// first.
+    fn wait_until_locked(&mut self) {
+        let mut line = String::new();
+        loop {
+            line.clear();
+            let read = self.stdout.read_line(&mut line).expect("its output");
+            assert!(read > 0, "the first instance ended before taking its lock");
+            // The harness prints the test's name first on the same line.
+            if line.trim_end().ends_with(LOCKED) {
+                return;
+            }
+        }
+    }
+
     /// Waits until it says its name is kept from later requests, so that no
     /// test runs in the moment between its two requests for the name.
     fn wait_until_kept(&mut self) {
@@ -176,6 +207,7 @@ fn be_first_instance() -> bool {
     };
     let delay: u64 = delay.to_str().and_then(|d| d.parse().ok()).unwrap_or(0);
     let _instance = desktop::instance::take().expect("the first instance's lock");
+    println!("{LOCKED}");
     std::thread::sleep(Duration::from_millis(delay));
     let mpris = Mpris::start(no_wake());
     let until = Instant::now() + Duration::from_secs(5);
@@ -317,5 +349,41 @@ fn a_launch_while_one_runs_raises_it() {
     assert!(
         found && opened,
         "raised: {found}, files handed over: {opened}"
+    );
+}
+
+/// A launch while the Opium running holds its profile's lock but not yet its
+/// name, which it takes about 170 ms after it starts (docs/measurements.md,
+/// warm start-up; 500 ms here): `main` found the lock held, asked the bus,
+/// found nobody, and exited with the files it was given. It now asks again
+/// for a while, and reaches the Opium once it is on the bus.
+#[test]
+fn a_launch_before_the_running_one_takes_its_name_reaches_it() {
+    if be_first_instance() {
+        return;
+    }
+    if !on_a_bus_of_its_own("a_launch_before_the_running_one_takes_its_name_reaches_it") {
+        return;
+    }
+    let mut first = first_instance(
+        "a_launch_before_the_running_one_takes_its_name_reaches_it",
+        Duration::from_millis(500),
+    );
+    first.wait_until_locked();
+    // What `main` finds first: the lock held, so an Opium runs on this
+    // profile; and on the bus, no name yet.
+    let locked = matches!(take_in(&first.config()), Err(Refused::Running));
+    let held_at_launch = name_held();
+    let opened = desktop::mpris::open_in_running(&[PathBuf::from("/music/a.flac")]);
+    let raised = raise_running();
+    quit(first);
+    assert!(
+        locked && !held_at_launch,
+        "the launch came too late to show anything: lock held {locked}, name held \
+         {held_at_launch}"
+    );
+    assert!(
+        opened && raised,
+        "files handed over: {opened}, raised: {raised}: the launch exits with its files"
     );
 }

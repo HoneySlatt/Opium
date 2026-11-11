@@ -158,82 +158,97 @@ async fn its_opium(bus: &mpris_server::zbus::Connection) -> bool {
         && said("Identity").await.as_deref() == Some("Opium")
 }
 
-/// Bring the Opium already running forward; whether one was there. Two of
-/// them would share the settings, the downloads and the library kept on
-/// disk, each undoing the other's writes.
-pub fn raise_running() -> bool {
-    let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
+/// How long a launch that finds its profile's lock held looks for the Opium
+/// holding it on the bus: that one takes its name about 170 ms after it
+/// starts (docs/measurements.md, warm start-up), and gives it up as it ends.
+const LOOK_FOR: Duration = Duration::from_secs(2);
+/// How often the launch asks meanwhile.
+const LOOK_EVERY: Duration = Duration::from_millis(100);
+
+/// A runtime of its own, and on it a connection to the session bus; none
+/// without a session bus.
+fn session_bus() -> Option<(tokio::runtime::Runtime, Connection)> {
+    let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
-    else {
-        return false;
-    };
-    runtime.block_on(async {
-        let Ok(bus) = mpris_server::zbus::Connection::session().await else {
-            return false;
-        };
-        if !its_opium(&bus).await {
+        .ok()?;
+    let bus = runtime.block_on(Connection::session()).ok()?;
+    Some((runtime, bus))
+}
+
+/// Try `reach` until it says it reached the Opium running, every
+/// [`LOOK_EVERY`] for [`LOOK_FOR`] at most; whether it did.
+fn for_a_while(mut reach: impl FnMut() -> bool) -> bool {
+    let until = Instant::now() + LOOK_FOR;
+    loop {
+        if reach() {
+            return true;
+        }
+        if Instant::now() + LOOK_EVERY > until {
             return false;
         }
-        bus.call_method(
-            Some(BUS_NAME),
-            "/org/mpris/MediaPlayer2",
-            Some("org.mpris.MediaPlayer2"),
-            "Raise",
-            &(),
-        )
-        .await
-        .is_ok()
+        std::thread::sleep(LOOK_EVERY);
+    }
+}
+
+/// Call `method` of `interface` on the player under Opium's name, with
+/// `uri` as its argument if given; whether it answered without an error.
+async fn call(bus: &Connection, interface: &str, method: &str, uri: Option<String>) -> bool {
+    let path = "/org/mpris/MediaPlayer2";
+    let to = Some(BUS_NAME);
+    match uri {
+        Some(uri) => {
+            bus.call_method(to, path, Some(interface), method, &(uri,))
+                .await
+        }
+        None => {
+            bus.call_method(to, path, Some(interface), method, &())
+                .await
+        }
+    }
+    .is_ok()
+}
+
+/// Bring the Opium already running forward; whether one was there, or came
+/// on the bus within two seconds. Two of them would share the settings,
+/// the downloads and the library kept on disk, each undoing the other's
+/// writes. Without a session bus, `false` at once.
+pub fn raise_running() -> bool {
+    let Some((runtime, bus)) = session_bus() else {
+        return false;
+    };
+    for_a_while(|| {
+        runtime.block_on(async {
+            its_opium(&bus).await && call(&bus, "org.mpris.MediaPlayer2", "Raise", None).await
+        })
     })
 }
 
 /// Hand `files` to the Opium already running, through its media controls,
-/// and bring it forward; whether one was there to take them.
+/// and bring it forward; whether one was there to take them, or came on the
+/// bus within two seconds. Each file is handed over once: a try that fails
+/// midway goes on, at the next, from the file it stopped at. Without a
+/// session bus, `false` at once.
 pub fn open_in_running(files: &[std::path::PathBuf]) -> bool {
-    let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-    else {
+    let Some((runtime, bus)) = session_bus() else {
         return false;
     };
-    runtime.block_on(async {
-        let Ok(bus) = mpris_server::zbus::Connection::session().await else {
-            return false;
-        };
-        if !its_opium(&bus).await {
-            return false;
-        }
-        let call = |interface: &'static str, method: &'static str, uri: Option<String>| {
-            let bus = bus.clone();
-            async move {
-                let path = "/org/mpris/MediaPlayer2";
-                let to = Some(BUS_NAME);
-                match uri {
-                    Some(uri) => {
-                        bus.call_method(to, path, Some(interface), method, &(uri,))
-                            .await
-                    }
-                    None => {
-                        bus.call_method(to, path, Some(interface), method, &())
-                            .await
-                    }
-                }
-                .is_ok()
-            }
-        };
-        for file in files {
-            if !call(
-                "org.mpris.MediaPlayer2.Player",
-                "OpenUri",
-                Some(crate::file_uri(file)),
-            )
-            .await
-            {
+    let mut handed = 0;
+    for_a_while(|| {
+        runtime.block_on(async {
+            if !its_opium(&bus).await {
                 return false;
             }
-        }
-        call("org.mpris.MediaPlayer2", "Raise", None).await;
-        true
+            while let Some(file) = files.get(handed) {
+                let uri = Some(crate::file_uri(file));
+                if !call(&bus, "org.mpris.MediaPlayer2.Player", "OpenUri", uri).await {
+                    return false;
+                }
+                handed += 1;
+            }
+            call(&bus, "org.mpris.MediaPlayer2", "Raise", None).await;
+            true
+        })
     })
 }
 
