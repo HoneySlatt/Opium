@@ -172,7 +172,8 @@ One milestone each, in this order: `cenc`, then `widevine`, then `apple-music`.
 - **By hand, with the owner**: a release APK built at `114fc3f` was installed on the phone on
   2026-11-11, not debuggable, and started with no crash in its log; the one built
   at `718816d`, M1.15's last change to the phone's core (its JVM tests and `scripts/check.sh
-  android` passing there), waits to be installed: the phone was not connected;
+  android` passing there), was installed the same evening, not debuggable, and started with no
+  crash and no error of the vault or of TLS in its log;
   the owner checks its sign-ins, a desktop theme and a playback, and, on the owner's account,
   SoundCloud's changes after S3 and S8.
 - **Left**, each under its stage in [the debt](debt.md): S6 (until Stage 2), the frozen screens'

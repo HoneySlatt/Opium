@@ -70,8 +70,8 @@ built in this stage.
 - **Where it stands (2026-11-11).** Every finding fixed and pushed, CI green, the figures in
   [`measurements.md`](measurements.md#the-audits-fixes-m115-2026-11-11), [the history](history.md#m115--the-audits-fixes)
   written; the five rounds of the closing review answered (the fifth found six small defects, fixed).
-  Next: the release APK built at `718816d` installed; the owner's checks of it and of SoundCloud's
-  changes; then Stage 1 moves to the history.
+  The release APK built at `718816d` is installed. Next: the owner's checks of it and of
+  SoundCloud's changes; then Stage 1 moves to the history.
 
 ## Ideas
 
