@@ -872,7 +872,10 @@ impl Kept {
         }
         let name = format!("{}-{:016x}.jpg", playlist.id, digest(&data));
         let path = self.covers.join(&name);
-        if !path.exists() {
+        // A cache of the cover kept in the playlist itself, written without a
+        // flush (it is asked for on the window's thread): an empty file, which
+        // a power cut can leave, is written again.
+        if !std::fs::metadata(&path).is_ok_and(|kept| kept.len() > 0) {
             use base64::Engine;
             let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(&data) else {
                 return playlist;
@@ -886,7 +889,7 @@ impl Kept {
                 }
             }
             let _ = std::fs::create_dir_all(&self.covers);
-            if write_whole(&path, &bytes, Mode::Default).is_err() {
+            if write_whole(&path, &bytes, Mode::Cache).is_err() {
                 return playlist;
             }
         }

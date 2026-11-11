@@ -456,6 +456,25 @@ fn a_chosen_cover_shows_from_a_file_of_its_own() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A chosen cover's file is a cache, written without a flush: an empty one,
+/// which a power cut can leave, is written again from the playlist.
+#[test]
+fn a_chosen_covers_file_left_empty_is_written_again() {
+    let dir = std::env::temp_dir().join(format!("synced-cover-empty-{}", new_id()));
+    let kept = Kept::open(&dir, Vec::new);
+    let (id, _) = kept.create_playlist("Mix".into(), String::new(), vec![track(1)]);
+    kept.cover_playlist(&id, Some(b"jpeg one"));
+    let cover = kept.playlist(&id).unwrap().cover.unwrap();
+    let path = cover.strip_prefix("file://").unwrap().to_owned();
+    std::fs::write(&path, b"").unwrap();
+    let again = kept.playlist(&id).unwrap().cover.unwrap();
+    let written = std::fs::read(&path).unwrap();
+    close(kept);
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(again, cover);
+    assert_eq!(written, b"jpeg one");
+}
+
 fn session(songs: &[u32], at: u32, position_ms: u64) -> Handoff {
     Handoff {
         tracks: songs.iter().copied().map(track).collect(),
