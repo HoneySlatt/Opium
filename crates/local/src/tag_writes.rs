@@ -204,10 +204,12 @@ pub fn unfinished_tag_writes(work: &Path) -> Vec<Unfinished> {
 /// original kept in `work`, then remove the write's copies. The file is
 /// first compared with the copies. One already as edited (the write had
 /// finished) or as it was is left; one mixing the two, as a write or an
-/// undo cut short leaves it, is replaced. One that is neither (changed
-/// since by another app, or damaged some other way) is left too, and its
-/// original kept in `work` as `<id>.kept`, never removed by Opium. On an
-/// error the copies are kept, for the next try.
+/// undo cut short leaves it, is replaced: past the shorter copy's end, it
+/// may hold zeros where a power cut kept the file's new length but not the
+/// bytes written there. One that is neither (changed since by another app,
+/// or damaged some other way) is left too, and its original kept in `work`
+/// as `<id>.kept`, never removed by Opium. On an error the copies are kept,
+/// for the next try.
 pub fn undo_tag_write(open: &mut File, work: &Path, id: &str) -> Result<(), String> {
     let _one = one_at_a_time();
     if !is_id(id) {
@@ -317,7 +319,9 @@ enum State {
     Edited,
     /// Each byte the edited copy's or the original's at its place, the
     /// length between theirs: as a write or an undo cut short leaves it,
-    /// even with its blocks reaching the disk out of order.
+    /// even with its blocks reaching the disk out of order. Past the shorter
+    /// copy's end, a zero counts as the longer one's not yet on disk, as a
+    /// power cut leaves it.
     Mixed,
     /// Neither: changed since some other way.
     Unknown,
@@ -338,7 +342,12 @@ fn state_of(open: &mut File, copies: &Copies) -> io::Result<State> {
         let from_original = original.next().transpose()?;
         as_edited &= byte == from_edited;
         as_original &= byte == from_original;
-        if byte != from_edited && byte != from_original {
+        // Past the shorter copy's end the file grew as the longer one was
+        // written over it; a power cut can keep the new length but not the
+        // blocks yet to reach the disk, which read as zeros.
+        let one_copy_ended = from_edited.is_none() != from_original.is_none();
+        let not_yet_on_disk = byte == Some(0) && one_copy_ended;
+        if byte != from_edited && byte != from_original && !not_yet_on_disk {
             return Ok(State::Unknown);
         }
         length += 1;
@@ -800,6 +809,70 @@ mod tests {
         fs::write(&path, b"x").unwrap();
         assert!(undo_tag_write(&mut open_rw(&path), &dir, "../song").is_err());
         assert!(undo_tag_write(&mut open_rw(&path), &dir, "").is_err());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    // Stage 1 audit, L10: a power cut's zeros past the old end left the song half written.
+
+    /// Ten frames of MPEG-1 Layer III, as `scan::tests::mp3`, but with audio that is not silence.
+    fn loud_mp3() -> Vec<u8> {
+        let mut bytes = Vec::new();
+        for frame in 0..10u32 {
+            bytes.extend([0xFF, 0xFB, 0x90, 0x00]);
+            bytes.extend((0..417u32 - 4).map(|i| 1 + ((i + frame) % 200) as u8));
+        }
+        bytes
+    }
+
+    #[test]
+    fn a_write_a_power_cut_left_with_zeros_past_the_old_end_is_put_back() {
+        let dir = folder("tags-power-cut");
+        let path = dir.join("song.mp3");
+        let original = loud_mp3();
+        fs::write(&path, &original).unwrap();
+        let work = dir.join("work");
+        // The phone's replace stopped halfway: the edited copy's first half, the original's rest.
+        let copies = cut_short(&path, &work, "Cut", original.len() / 2);
+        let edited = fs::read(&copies.edited).unwrap();
+        // The ID3v2 tag goes first: the edited copy is longer and its audio sits further on.
+        assert!(edited.len() > original.len());
+        // The power cut: the file's new length reached the disk, the blocks past its old end did
+        // not, and read back as zeros.
+        let mut on_disk = fs::read(&path).unwrap();
+        on_disk.resize(edited.len(), 0);
+        fs::write(&path, &on_disk).unwrap();
+        let id = id_of(&copies);
+        undo_tag_write(&mut open_rw(&path), &work, &id).unwrap();
+        assert_eq!(
+            fs::read(&path).unwrap(),
+            original,
+            "the song is left half written; its original is only in {id}.kept"
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// Zeros count as a power cut's only past the shorter copy's end: one
+    /// before it, where neither copy has one, is a change made elsewhere.
+    #[test]
+    fn a_zero_before_the_shorter_copys_end_is_never_taken_for_a_power_cuts() {
+        let dir = folder("tags-zero-inside");
+        let path = dir.join("song.mp3");
+        let original = loud_mp3();
+        fs::write(&path, &original).unwrap();
+        let work = dir.join("work");
+        let copies = cut_short(&path, &work, "Cut", original.len() / 2);
+        let edited = fs::read(&copies.edited).unwrap();
+        let mut changed = fs::read(&path).unwrap();
+        let inside = (original.len() / 2..original.len())
+            .find(|&at| original[at] != 0 && edited[at] != 0)
+            .unwrap();
+        changed[inside] = 0;
+        changed.resize(edited.len(), 0);
+        fs::write(&path, &changed).unwrap();
+        let id = id_of(&copies);
+        undo_tag_write(&mut open_rw(&path), &work, &id).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), changed, "left as it is");
+        assert_eq!(fs::read(work.join(format!("{id}.kept"))).unwrap(), original);
         fs::remove_dir_all(dir).unwrap();
     }
 }
