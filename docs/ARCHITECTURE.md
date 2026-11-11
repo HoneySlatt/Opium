@@ -18,8 +18,9 @@ app in Kotlin with Jetpack Compose, which calls the core through UniFFI
   (`dedupe.rs`, [ADR-0007](adr/0007-one-library-and-the-best-copy.md)), themes
   (`theme.rs` and `assets/themes/`, [ADR-0011](adr/0011-themes-as-toml-files-of-component-variants.md)),
   cover palettes and colour maths, `Growing`, a reader of a file still downloading, and `files`:
-  `write_whole`, the one way every file the apps keep is written (whole or not at all, flushed but
-  for caches), `put_aside` for a file that does not read, and `sweep_partials`. No network, no UI. Its `ffi` feature derives the types for UniFFI.
+  `write_whole`, the one way the apps write a file they keep whole (whole or not at all, flushed but
+  for caches; the downloaded songs are streamed, the tag writes keep their own journal, and the
+  phone's Kotlin writes its vault and themes itself), `put_aside` for a file that does not read, and `sweep_partials`. No network, no UI. Its `ffi` feature derives the types for UniFFI.
 - **`crates/apple-music`**: Apple Music through its web player's private API: the developer
   token from the web player (`auth.rs`), the sign-in (`signin`), library, catalog, search, radio,
   lyrics, animated covers, a station's next songs (`station.rs`), and playback through

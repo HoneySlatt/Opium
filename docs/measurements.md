@@ -531,7 +531,7 @@ Wake-ups per thread at rest (median of the runs, all states alike):
 
 | Thread | Wake-ups/s | Cause |
 |---|---|---|
-| `connect` (Opium Connect's tokio runtime) | 3.8 (3.0 to 5.5); bursts of 40 to 100 in one second every 15 to 20 s | LAN, iroh and redial timers (`REDIAL` 5 s, `PING` 15 s) |
+| `connect` (Opium Connect's tokio runtime) | 3.8 (3.0 to 5.5); bursts of 40 to 100 in one second every 15 to 20 s | LAN, iroh and redial timers (`REDIAL` 5 s, `PING` 15 s): the stage 1 audit found these the wrong ones, `PING` running only on a connection; iroh's network report (every 20 to 26 s) and relay ping (15 s) wake it ([M1.8](#the-stage-audit-m18-2026-11-10)) |
 | `blocking-1` | 2.00, exactly | the `blocking` crate 1.7.0 (through zbus and async-fs): its idle thread waits 500 ms and no longer exits under the thread limit, so it loops forever. 1.6.2 let it exit. |
 | `theme-watch` | 1.00, exactly | `app.rs` `watch_theme`: polls the theme files' times every second |
 | `player` | 1.00, exactly | `player/src/engine.rs` `idle()`: 1 s `recv_timeout` with no sink; 250 ms (4/s) once a song is paused with a sink (read in the code, not measured: it needs playing) |

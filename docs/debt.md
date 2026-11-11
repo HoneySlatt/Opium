@@ -18,7 +18,7 @@ number there (L1, S2, W3…), and their failing tests are kept beside it.
   the engine wakes every 10 ms. Neither measured: they need sound.
 - **The player cannot wake the window**: the window asks it for its state every 250 ms while music
   plays, or while a paired device plays.
-- **The desktop's backend in one function** (`desktop::backend::run`, 949 lines, untested), which
+- **The desktop's backend in one function** (`desktop::backend::run`, 1,060 lines, its loop untested), which
   routes items by hand where `services::Services` does; the resuming reader in three service crates; `connect` on `rand` 0.8 for one call; `desktop`'s
   second HTTP client for one cover, fetched with a blocking call in the media controls' loop;
   unused dependencies in `soundcloud` and `local`; 820 public items or fields without
@@ -62,6 +62,7 @@ number there (L1, S2, W3…), and their failing tests are kept beside it.
   - the exit hang inside eframe's teardown ([ADR-0021](adr/0021-the-exit-watch.md),
     [ADR-0024](adr/0024-the-exit-watch-aborts-for-a-core-dump.md));
   - the interface's state and logic mixed with egui in `app.rs`, taken out as part of the move;
+  - 21 lints silenced (`#[allow(…)]`), one hiding four unused icons;
   - the theme's own lookup of `XDG_CONFIG_HOME` (`theme.rs:217`) takes an empty variable for a
     relative folder, where `desktop::folders` no longer does; it only reads.
 - **The screenshot mode may never save**: on 2026-11-05 the release build saved in one of nine
@@ -133,7 +134,15 @@ number there (L1, S2, W3…), and their failing tests are kept beside it.
   so Kotlin that no longer matches the core passes CI; built by hand (`build-core.sh`,
   `gradle assembleRelease`). With the Gradle wrapper; the PLAN's
   [Ideas](PLAN.md#ideas) hold it.
-- **Tests**, besides the stage 1 audit's (its *Tests* section): the downloads queue's tests wait on
+- **Dependencies, beside advisories**: 55 crates behind their latest compatible version, four held
+  back by a breaking one (`aes-gcm`, `ashpd`, `oo7`, `rand` 0.8), `generic-array` 0.14.9 not taken,
+  46 crates in several versions; the phone uses OkHttp without declaring it (`ui/detail/Tint.kt`,
+  reached through Media3's and Coil's).
+- **Untested**: the default that keeps lyrics sites other than LRCLIB off
+  ([ADR-0008](adr/0008-the-lyrics-sources.md)), in both apps; the migrations of the session and of
+  the recent playlists.
+- **Tests**, besides the stage 1 audit's (its *Tests* section): `synced`'s tests set a fixed time
+  against the real clock; the downloads queue's tests wait on
   `busy()` with no deadline; Opium Connect's wire tests have no deadline; a test of file times
   passes falsely on coarse clocks; one times the fake CDM; `synced-settings-<pid>` is never cleared
   first; fuzz targets built only on the weekly run; 88 documented functions that return a `Result`
@@ -147,6 +156,9 @@ number there (L1, S2, W3…), and their failing tests are kept beside it.
   not fuzzed (only `cenc`'s and `apple-music`'s are).
 - **The examples `am fetch`, `am live` and `sc fetch` write decrypted protected audio to a file**,
   against the DRM rules; the owner keeps them until the first release (2026-11-10).
+- **A Navidrome server at home reached by a bare name** (`nas:4533`, `nas.lan`) or a Tailscale
+  address (100.64/10), typed without a scheme, is reached over HTTPS (ADR-0044's list) and fails
+  until the user types `http://`.
 - **Navidrome addresses kept as `http://` before M1.15**, when an address typed without a scheme
   became one even for a server on the internet, stay so (ADR-0044 migrates nothing): the salted
   token and the password typed again at a session's lapse go in clear until the user signs in
@@ -167,6 +179,9 @@ number there (L1, S2, W3…), and their failing tests are kept beside it.
   readings, while the app is closed or open with nothing downloaded played, and up to an hour
   counted since the last save; the manifest is plain JSON, which a user can edit; a clock behind then put right counts the jump, which may expire
   protected songs until the next confirmation.
+- **A cache file a power cut left cut short** (a scan's cover, a fetched or animated cover) is taken
+  as made, as only an empty one is written again; a playlist's chosen cover is compared with its
+  length.
 - **A downloaded playlist's songs for its offline page** are kept as a cache (written without a
   flush): a power cut can lose the list, which comes back online; the songs stay.
 - **A protected download plays under any account of its service**: the subscription is confirmed by

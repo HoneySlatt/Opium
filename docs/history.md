@@ -151,16 +151,17 @@ One milestone each, in this order: `cenc`, then `widevine`, then `apple-music`.
   each from its failing test where one could be written:
   - no download, setting, play, playlist or pairing lost to a file that does not read, a failed
     save, a power cut, a sign-out or two instances: one instance per profile
-    ([ADR-0043](adr/0043-one-instance-per-profile-held-by-a-lock.md)), every kept file written
-    whole through one function, files set aside under names of their own;
+    ([ADR-0043](adr/0043-one-instance-per-profile-held-by-a-lock.md)), the files kept
+    whole written through one function, files set aside under names of their own;
   - the flaws closed, as far as each holds: no core dump ([ADR-0045](adr/0045-no-core-dump-through-the-core-size-limit.md),
     which replaced ADR-0039's way when a search found it would break the file windows), Navidrome's
     password out of addresses and over HTTPS off the local network
     ([ADR-0044](adr/0044-navidromes-password-as-it-is-used.md)), SoundCloud's and a paired
-    device's ids checked, the 30 days counted on the clock's forward motion (a clock set back gains only the time between
+    device's ids checked, the 30 days counted on the clock's forward motion
+    ([ADR-0047](adr/0047-the-thirty-days-counted-on-the-clocks-forward-motion.md)) (a clock set back gains only the time between
     two readings: while the app is closed, or open with nothing downloaded played), the phone's
     dependencies verified by Gradle, three advisories updated;
-  - Connect syncs a library of any size, in parts
+  - Connect syncs a library of 100,000 songs and more, in parts
     ([ADR-0046](adr/0046-the-shared-state-sent-in-parts.md)); the files are served at once while the
     services connect (10.4 s to 0.4 s on a stalled network);
   - the phone's first tests, on the JVM; the nineteen tests the audit wrote for gaps; the documents
@@ -169,9 +170,9 @@ One milestone each, in this order: `cenc`, then `widevine`, then `apple-music`.
   frames no worse. A regression found on the way, Home left loading at rest in 12 runs of 40 by the
   new order of the start's answers, was fixed in the frozen window, with the owner's go.
 - **By hand, with the owner**: a release APK built at `114fc3f` was installed on the phone on
-  2026-11-11, not debuggable, and started with no crash in its log; the one built at `0655a43`,
-  with M1.15's last changes to the phone's core (its JVM tests and `scripts/check.sh android`
-  passing there), is not installed yet: the phone was not connected;
+  2026-11-11, not debuggable, and started with no crash in its log; M1.15's last
+  changes to the phone's core came after it, so a release APK is to be built at the commit that
+  closes M1.15 and installed;
   the owner checks its sign-ins, a desktop theme and a playback, and, on the owner's account,
   SoundCloud's changes after S3 and S8.
 - **Left**, each under its stage in [the debt](debt.md): S6 (until Stage 2), the frozen screens'

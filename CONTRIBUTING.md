@@ -217,6 +217,9 @@ scripts/measure/power-compare.sh <profile> <out>              # GPU power, close
 kill -TERM "$wpid"                                            # that pid only
 ```
 
+- `run.sh`, which every script starts the app through, loads no Widevine CDM unless `WIDEVINE_CDM`
+  names one: the search would otherwise find the owner's under `$HOME`. The figures before M1.15 do
+  not say whether one was loaded.
 - `<profile>` is a [throwaway profile](#a-throwaway-profile)'s folder, the scripts run under
   `unshare --user --map-current-user --net` to keep it off the network; or a
   [copy of the owner's profile](#tests-on-a-copy-of-the-owners-profile) made by

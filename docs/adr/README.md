@@ -30,7 +30,7 @@ call the app "Music" ([ADR-0023](0023-the-rename-to-opium.md)).
 | [0014](0014-shared-state-merged-field-by-field.md) | What the devices share, merged field by field | Accepted; amended by 0034 and 0046 |
 | [0015](0015-away-from-home-through-iroh.md) | Away from home, paired devices meet through iroh | Accepted; amends 0010 (away from home); amended by 0040 |
 | [0016](0016-the-services.md) | The services: Apple Music, SoundCloud, Navidrome and the device's own files | Accepted; amended by 0034 |
-| [0017](0017-downloads-sealed-and-tied-to-the-subscription.md) | Downloads sealed with the app's key, and tied to the subscription | Accepted; amended by 0034 |
+| [0017](0017-downloads-sealed-and-tied-to-the-subscription.md) | Downloads sealed with the app's key, and tied to the subscription | Accepted; amended by 0034 and 0047 |
 | [0018](0018-one-instance-through-the-session-bus.md) | One instance, found through its MPRIS name on the session bus | Accepted; amended by 0043 |
 | [0019](0019-the-workings-apart-from-the-drawing.md) | The desktop's workings apart from its drawing, waking it through `Wake` | Accepted |
 | [0020](0020-d-bus-over-async-io.md) | D-Bus spoken over async-io, not tokio | Accepted |
@@ -60,3 +60,4 @@ call the app "Music" ([ADR-0023](0023-the-rename-to-opium.md)).
 | [0044](0044-navidromes-password-as-it-is-used.md) | Navidrome's password, as it is used | Accepted; amends 0013 |
 | [0045](0045-no-core-dump-through-the-core-size-limit.md) | No core dump, through the core size limit | Accepted; amends 0039 |
 | [0046](0046-the-shared-state-sent-in-parts.md) | The shared state sent in parts | Accepted; amends 0014 |
+| [0047](0047-the-thirty-days-counted-on-the-clocks-forward-motion.md) | The thirty days counted on the clock's forward motion | Accepted; amends 0017 |

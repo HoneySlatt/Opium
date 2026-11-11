@@ -1,7 +1,8 @@
 # 0017. Downloads sealed with the app's key, and tied to the subscription
 
 - Status: Accepted; amended by [0034](0034-what-opium-is-to-become.md)
-  (a collection's available part shown; an offline mode by hand)
+  (a collection's available part shown; an offline mode by hand) and
+  [0047](0047-the-thirty-days-counted-on-the-clocks-forward-motion.md) (how the 30 days are counted)
 - Date: 2026-11-03
 
 ## Context
