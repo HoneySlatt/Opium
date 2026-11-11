@@ -1,6 +1,7 @@
 //! Provider and network work on a tokio runtime, off the UI thread. The UI sends
 //! [`Request`]s and picks up [`Reply`]s each frame; every reply wakes it up.
 
+use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::mpsc;
@@ -22,6 +23,8 @@ use crate::SearchScope;
 use crate::cache;
 
 mod downloading;
+#[cfg(test)]
+mod tests;
 pub use downloading::{Downloading, KeptSong};
 
 pub enum Request {
@@ -658,6 +661,19 @@ fn keep_soundcloud_tokens(tokens: &soundcloud::Tokens) {
     );
 }
 
+/// What keeps the tokens SoundCloud renews for the sign-in there is now, in
+/// a connect or any request after it: none once that sign-in was signed out
+/// of, so that a renewal still running never writes back the tokens the
+/// sign-out deleted.
+fn keep_soundcloud_tokens_while_signed_in(sign_outs: &SignOuts) -> soundcloud::OnTokens {
+    let (sign_outs, since) = (sign_outs.clone(), sign_outs.count(ProviderKind::SoundCloud));
+    Box::new(move |tokens| {
+        sign_outs.unless_signed_out_since(ProviderKind::SoundCloud, since, || {
+            keep_soundcloud_tokens(tokens)
+        });
+    })
+}
+
 fn kept_soundcloud_tokens() -> Option<soundcloud::Tokens> {
     let text = std::fs::read_to_string(soundcloud_dir().join("tokens.json")).ok()?;
     let json: serde_json::Value = serde_json::from_str(&text).ok()?;
@@ -806,6 +822,20 @@ fn keep_navidrome(credentials: &navidrome::Credentials) -> Result<(), String> {
     write_private(&navidrome_file(), json.as_bytes()).map_err(|e| e.to_string())
 }
 
+/// What keeps the session a connect started now renews: nothing once the
+/// sign-in was signed out of, so that a connect still running never writes
+/// back the sign-in the sign-out deleted.
+fn keep_navidrome_while_signed_in(
+    sign_outs: &SignOuts,
+) -> impl FnOnce(&navidrome::Credentials) + Send + 'static {
+    let (sign_outs, since) = (sign_outs.clone(), sign_outs.count(ProviderKind::Navidrome));
+    move |credentials| {
+        sign_outs.unless_signed_out_since(ProviderKind::Navidrome, since, || {
+            let _ = keep_navidrome(credentials);
+        });
+    }
+}
+
 /// What a sign-in left on the disk, gone: the tokens, the browser profile
 /// (its cookies), and the library kept from the account.
 fn forget_sign_in(provider: ProviderKind) {
@@ -834,61 +864,68 @@ fn forget_sign_in(provider: ProviderKind) {
     cache::clear();
 }
 
-/// Connect to the Navidrome server kept, telling the UI how it went.
-async fn connect_navidrome(replies: &Replies) -> Option<Arc<Navidrome>> {
+/// Connect to the Navidrome server kept, `keep` keeping the session it
+/// renews.
+async fn connect_navidrome(keep: impl FnOnce(&navidrome::Credentials)) -> Ended {
     let kept = std::fs::read_to_string(navidrome_file())
         .ok()
         .and_then(|text| serde_json::from_str::<navidrome::Credentials>(&text).ok());
     let Some(credentials) = kept else {
-        replies.send(Reply::Navidrome(Ok(None)));
-        return None;
+        return Ended {
+            connection: Connection::Navidrome(None),
+            told: Some(Reply::Navidrome(Ok(None))),
+        };
     };
-    match Navidrome::connect(credentials).await {
+    let (server, told) = match Navidrome::connect(credentials).await {
         Ok(nd) => {
             // Its session renewed as it connected: kept so.
-            let _ = keep_navidrome(&nd.credentials());
-            replies.send(Reply::Navidrome(Ok(Some(nd.user().to_owned()))));
-            Some(Arc::new(nd))
+            keep(&nd.credentials());
+            let told = Reply::Navidrome(Ok(Some(nd.user().to_owned())));
+            (Some(Arc::new(nd)), told)
         }
-        Err(Error::NotSignedIn) => {
-            replies.send(Reply::Navidrome(Ok(None)));
-            None
-        }
-        Err(e) => {
-            replies.send(Reply::Navidrome(Err(e.to_string())));
-            None
-        }
+        Err(Error::NotSignedIn) => (None, Reply::Navidrome(Ok(None))),
+        Err(e) => (None, Reply::Navidrome(Err(e.to_string()))),
+    };
+    Ended {
+        connection: Connection::Navidrome(server),
+        told: Some(told),
     }
 }
 
-/// Connect to SoundCloud with the kept tokens, telling the UI how it went.
-async fn connect_soundcloud(replies: &Replies) -> Option<Arc<SoundCloud>> {
+/// Connect to SoundCloud with the kept tokens, `keep` keeping those it
+/// renews.
+async fn connect_soundcloud(replies: &Replies, keep: soundcloud::OnTokens) -> Ended {
+    let unconnected = |told| Ended {
+        connection: Connection::SoundCloud(None),
+        told: Some(told),
+    };
     let Some(tokens) = kept_soundcloud_tokens() else {
-        replies.send(Reply::SoundCloud(Ok(None)));
-        return None;
+        return unconnected(Reply::SoundCloud(Ok(None)));
+    };
+    // Its changes go through a browser: without one it can't connect, and
+    // says why rather than stay connecting.
+    let Some(browser) = sign_in_browser() else {
+        return unconnected(Reply::SoundCloud(Err(NO_BROWSER.to_owned())));
     };
     let notify = replies.clone();
     let browser = crate::soundcloud_browser::ChromeLike::new(
-        sign_in_browser()?,
+        browser,
         soundcloud_dir().join("browser-profile"),
         soundcloud_dir().join("datadome"),
         Box::new(move |message| notify.send(Reply::Changed(Ok(message)))),
     )
     .ok()
     .map(|b| Arc::new(b) as Arc<dyn soundcloud::Browser>);
-    match SoundCloud::connect(tokens, Box::new(keep_soundcloud_tokens), browser).await {
+    match SoundCloud::connect(tokens, keep, browser).await {
         Ok(sc) => {
-            replies.send(Reply::SoundCloud(Ok(Some(sc.username().to_owned()))));
-            Some(Arc::new(sc))
+            let told = Reply::SoundCloud(Ok(Some(sc.username().to_owned())));
+            Ended {
+                connection: Connection::SoundCloud(Some(Arc::new(sc))),
+                told: Some(told),
+            }
         }
-        Err(Error::NotSignedIn) => {
-            replies.send(Reply::SoundCloud(Ok(None)));
-            None
-        }
-        Err(e) => {
-            replies.send(Reply::SoundCloud(Err(e.to_string())));
-            None
-        }
+        Err(Error::NotSignedIn) => unconnected(Reply::SoundCloud(Ok(None))),
+        Err(e) => unconnected(Reply::SoundCloud(Err(e.to_string()))),
     }
 }
 
@@ -1025,7 +1062,6 @@ fn sign_in_browser() -> Option<std::ffi::OsString> {
         .map(|b| (*b).into())
 }
 
-/// Connect with the saved token, telling the UI how it went.
 /// Apple's newest songs as first seen, kept in common with the other devices.
 struct SeenShared(synced::Kept, connect::Sharer);
 
@@ -1039,40 +1075,40 @@ impl apple_music::SeenElsewhere for SeenShared {
     }
 }
 
-async fn connect(
-    replies: &Replies,
-    seen: Arc<dyn apple_music::SeenElsewhere>,
-) -> Option<Arc<AppleMusic>> {
+/// Connect to Apple Music with the saved token.
+async fn connect(seen: Arc<dyn apple_music::SeenElsewhere>) -> Ended {
     let Ok(token) = std::fs::read_to_string(apple_music_dir().join("media-user-token")) else {
-        replies.send(Reply::NotSignedIn);
-        return None;
+        return Ended {
+            connection: Connection::Apple(None),
+            told: Some(Reply::NotSignedIn),
+        };
     };
-    match AppleMusic::connect(token.trim()).await {
+    let (am, told) = match AppleMusic::connect(token.trim()).await {
         Ok(am) => {
             am.keep_seen_in(crate::settings::dir().join("apple-seen.json"), Some(seen));
-            replies.send(Reply::Connected {
+            let told = Reply::Connected {
                 storefront: am.storefront().to_owned(),
-            });
-            let am = Arc::new(am);
-            let (picture_am, picture_replies) = (am.clone(), replies.clone());
-            tokio::spawn(async move {
-                if let Ok(Some(profile)) = picture_am.profile().await
-                    && let Some(picture) = profile.picture
-                {
-                    picture_replies.send(Reply::ProfilePicture(picture));
-                }
-            });
-            Some(am)
+            };
+            (Some(Arc::new(am)), told)
         }
-        Err(Error::NotSignedIn) => {
-            replies.send(Reply::NotSignedIn);
-            None
-        }
-        Err(e) => {
-            replies.send(Reply::CouldntConnect(e.to_string()));
-            None
-        }
+        Err(Error::NotSignedIn) => (None, Reply::NotSignedIn),
+        Err(e) => (None, Reply::CouldntConnect(e.to_string())),
+    };
+    Ended {
+        connection: Connection::Apple(am),
+        told: Some(told),
     }
+}
+
+/// The account's picture, once Apple says it.
+fn show_profile_picture(am: Arc<AppleMusic>, replies: Replies) {
+    tokio::spawn(async move {
+        if let Ok(Some(profile)) = am.profile().await
+            && let Some(picture) = profile.picture
+        {
+            replies.send(Reply::ProfilePicture(picture));
+        }
+    });
 }
 
 /// Open the browser on Apple's sign-in page, wait for the user, and save the
@@ -1099,12 +1135,224 @@ fn sign_covers_with(nd: &Option<Arc<Navidrome>>) {
     }));
 }
 
-/// A connection made while requests went on.
-/// With whether its library then loads (once the library was asked for).
-enum Arrived {
-    Apple(Option<Arc<AppleMusic>>, bool),
-    SoundCloud(Option<Arc<SoundCloud>>, bool),
-    Navidrome(Option<Arc<Navidrome>>, bool),
+/// A service's connection as its connect ended: none inside when it
+/// couldn't be made.
+enum Connection {
+    Apple(Option<Arc<AppleMusic>>),
+    SoundCloud(Option<Arc<SoundCloud>>),
+    Navidrome(Option<Arc<Navidrome>>),
+}
+
+/// How a connect ended: the connection, and what the window is told of it,
+/// said only if the loop keeps it.
+struct Ended {
+    connection: Connection,
+    told: Option<Reply>,
+}
+
+/// A connect of `provider` ended, while requests went on.
+struct Arrived {
+    provider: ProviderKind,
+    /// How it ended; none if it panicked, which changes nothing.
+    ended: Option<Ended>,
+    /// Its library then loads (once the library was asked for).
+    load: bool,
+    /// The service's sign-outs counted as it started: one since makes it
+    /// stale, the connection of a sign-in gone.
+    sign_outs: u64,
+}
+
+/// A request as the loop takes it. `only`: the one service whose part of a
+/// list several answer is asked, that list having been asked while it
+/// connected; none for a request as it was asked.
+struct Asked {
+    request: Request,
+    only: Option<ProviderKind>,
+}
+
+/// Each service's sign-outs so far, shared with what keeps the tokens a
+/// sign-in renews: under the same lock, tokens renewed for a sign-in signed
+/// out of since are never written back once the sign-out has deleted them.
+#[derive(Clone, Default)]
+struct SignOuts(Arc<std::sync::Mutex<HashMap<ProviderKind, u64>>>);
+
+impl SignOuts {
+    fn count(&self, provider: ProviderKind) -> u64 {
+        self.counts().get(&provider).copied().unwrap_or(0)
+    }
+
+    /// One more sign-out of `provider`: counted before its sign-in is
+    /// deleted from the disk.
+    fn sign_out(&self, provider: ProviderKind) {
+        *self.counts().entry(provider).or_default() += 1;
+    }
+
+    /// `keep` run, under the lock, unless `provider` was signed out of since
+    /// its sign-outs were `since`: what it returned, or none.
+    fn unless_signed_out_since<T>(
+        &self,
+        provider: ProviderKind,
+        since: u64,
+        keep: impl FnOnce() -> T,
+    ) -> Option<T> {
+        let counts = self.counts();
+        (counts.get(&provider).copied().unwrap_or(0) == since).then(keep)
+    }
+
+    fn counts(&self) -> std::sync::MutexGuard<'_, HashMap<ProviderKind, u64>> {
+        self.0.lock().unwrap_or_else(|e| e.into_inner())
+    }
+}
+
+/// The connects under way, and what was asked of a service while one of
+/// them was: held, then handed back to the loop once none is under way, so
+/// that it is answered as the service then stands, connected or not. The
+/// one place where requests wait on a connect.
+struct Connects {
+    arrived: UnboundedSender<Arrived>,
+    sign_outs: SignOuts,
+    /// The connects of each service under way, each by the service's
+    /// sign-outs when it started: one started before a sign-out holds
+    /// nothing, the loop dropping what it brings.
+    under_way: HashMap<ProviderKind, Vec<u64>>,
+    /// What waits on each service.
+    held: HashMap<ProviderKind, Vec<Asked>>,
+    /// What is handed back, in the order it was held.
+    ready: VecDeque<Asked>,
+}
+
+impl Connects {
+    fn new(arrived: UnboundedSender<Arrived>, sign_outs: SignOuts) -> Self {
+        Self {
+            arrived,
+            sign_outs,
+            under_way: HashMap::new(),
+            held: HashMap::new(),
+            ready: VecDeque::new(),
+        }
+    }
+
+    /// Connect to `provider` through `connect`, off the loop: how it ended
+    /// comes back through `arrived`, its library loading then if `load` and
+    /// the library was asked for.
+    fn start(
+        &mut self,
+        provider: ProviderKind,
+        load: bool,
+        connect: impl std::future::Future<Output = Ended> + Send + 'static,
+    ) {
+        let (arrived, sign_outs) = (self.arrived.clone(), self.sign_outs.count(provider));
+        self.under_way.entry(provider).or_default().push(sign_outs);
+        tokio::spawn(async move {
+            // One that panicked comes back all the same, so that nothing
+            // waits on it for ever.
+            let ended = tokio::spawn(connect).await.ok();
+            let _ = arrived.send(Arrived {
+                provider,
+                ended,
+                load,
+                sign_outs,
+            });
+        });
+    }
+
+    /// Whether a connect of `provider` started since its last sign-out is
+    /// under way.
+    fn under_way(&self, provider: ProviderKind) -> bool {
+        let now = self.sign_outs.count(provider);
+        self.under_way
+            .get(&provider)
+            .is_some_and(|started| started.contains(&now))
+    }
+
+    /// `request` waits on `provider`'s connect; with `only`, as that one
+    /// service's part of a list (see [`Asked`]).
+    fn hold(&mut self, provider: ProviderKind, request: Request, only: Option<ProviderKind>) {
+        let asked = Asked { request, only };
+        self.held.entry(provider).or_default().push(asked);
+    }
+
+    /// A connect of `provider`, started at its sign-outs `sign_outs`, came
+    /// back: what waits on it is handed back once none started since the
+    /// last sign-out is under way.
+    fn ended(&mut self, provider: ProviderKind, sign_outs: u64) {
+        if let Some(started) = self.under_way.get_mut(&provider)
+            && let Some(at) = started.iter().position(|s| *s == sign_outs)
+        {
+            started.swap_remove(at);
+        }
+        if !self.under_way(provider) {
+            self.release(provider);
+        }
+    }
+
+    /// The songs of `provider` waiting for its connect to be downloaded,
+    /// called off: signed out of.
+    fn forget_downloads(&mut self, provider: ProviderKind) {
+        if let Some(held) = self.held.get_mut(&provider) {
+            held.retain(|asked| !matches!(asked.request, Request::Download { .. }));
+        }
+    }
+
+    /// `ids` no longer to be downloaded, among the songs waiting for a
+    /// connect.
+    fn remove_downloads(&mut self, ids: &[ItemId]) {
+        for held in self.held.values_mut() {
+            held.retain_mut(|asked| match &mut asked.request {
+                Request::Download { tracks, .. } => {
+                    tracks.retain(|t| !ids.contains(&t.id));
+                    !tracks.is_empty()
+                }
+                _ => true,
+            });
+        }
+    }
+
+    /// What waits on `provider` handed back now, to be answered as it
+    /// stands: turned off, or signed out of.
+    fn release(&mut self, provider: ProviderKind) {
+        self.ready
+            .extend(self.held.remove(&provider).unwrap_or_default());
+    }
+
+    /// The next request handed back.
+    fn next(&mut self) -> Option<Asked> {
+        self.ready.pop_front()
+    }
+}
+
+/// The one service a request is for, which it waits on while that service
+/// connects: an item's, a page's, a narrowed search's, an animated cover's
+/// (Apple Music's). None for what the files answer, for a list several
+/// services answer ([`list_copy`]), and for a song warmed ahead, answered at
+/// once and fetched again if it is played.
+fn waits_on(request: &Request) -> Option<ProviderKind> {
+    match request {
+        Request::Warm { .. } => None,
+        Request::Home(source) | Request::Radio(source) | Request::NewMusic(source) => Some(*source),
+        Request::Search(_, source, _) => *source,
+        Request::Motion { .. } => Some(ProviderKind::AppleMusic),
+        // Answered at once: a password held for a connect could reach the
+        // server another sign-in connects to.
+        Request::NavidromeSession(_) => None,
+        Request::SetPlaylistCover { id, .. } => Some(id.provider),
+        request => target(request),
+    }
+}
+
+/// A list several services answer, copied to ask again of one that was
+/// still connecting: none for any other request. A search of every service
+/// is asked whole again, its answer being one.
+fn list_copy(request: &Request) -> Option<Request> {
+    Some(match request {
+        Request::LibraryAlbums => Request::LibraryAlbums,
+        Request::LibraryArtists => Request::LibraryArtists,
+        Request::RecentlyAdded => Request::RecentlyAdded,
+        Request::NewestSongs => Request::NewestSongs,
+        Request::Playlists => Request::Playlists,
+        Request::Search(scope, None, query) => Request::Search(*scope, None, query.clone()),
+        _ => return None,
+    })
 }
 
 async fn run(
@@ -1116,32 +1364,38 @@ async fn run(
     lends: connect::Sharer,
 ) {
     let on = |p| !off.contains(&p);
-    // Apple Music and SoundCloud at once, before anything is asked of them.
-    let (mut apple, mut sc) = tokio::join!(
-        async {
-            match on(ProviderKind::AppleMusic) {
-                true => connect(&replies, seen.clone()).await,
-                false => None,
-            }
-        },
-        async {
-            match on(ProviderKind::SoundCloud) {
-                true => connect_soundcloud(&replies).await,
-                false => None,
-            }
-        },
-    );
-    // A connection made later (the server, often out of reach away from
-    // home; one turned on, or tried again) comes back here, so that it
-    // holds up nothing meanwhile.
+    // Each service's sign-outs: a connect started before one is stale, and
+    // so is an answer on Apple's subscription asked before one.
+    let sign_outs = SignOuts::default();
+    // Every connect comes back here once it ends, those of the start as
+    // those made later (one turned on, or tried again), so that none holds up
+    // the loop: on a stalled network a service takes tens of seconds to give
+    // up, and the files, the downloads and the other services would wait on
+    // it. What is asked of a service meanwhile waits for it (`Connects`).
     let (arrived_tx, mut arrived) = tokio::sync::mpsc::unbounded_channel::<Arrived>();
-    let mut nd = None;
-    if on(ProviderKind::Navidrome) {
-        let (arrived_tx, replies) = (arrived_tx.clone(), replies.clone());
-        tokio::spawn(async move {
-            let _ = arrived_tx.send(Arrived::Navidrome(connect_navidrome(&replies).await, true));
+    let mut connects = Connects::new(arrived_tx, sign_outs.clone());
+    // Those of the start load their library as they come, if it was asked
+    // for meanwhile.
+    if on(ProviderKind::AppleMusic) {
+        connects.start(ProviderKind::AppleMusic, true, connect(seen.clone()));
+    }
+    if on(ProviderKind::SoundCloud) {
+        let keep = keep_soundcloud_tokens_while_signed_in(&sign_outs);
+        let replies = replies.clone();
+        connects.start(ProviderKind::SoundCloud, true, async move {
+            connect_soundcloud(&replies, keep).await
         });
     }
+    if on(ProviderKind::Navidrome) {
+        connects.start(
+            ProviderKind::Navidrome,
+            true,
+            connect_navidrome(keep_navidrome_while_signed_in(&sign_outs)),
+        );
+    }
+    let mut apple: Option<Arc<AppleMusic>> = None;
+    let mut sc: Option<Arc<SoundCloud>> = None;
+    let mut nd = None;
     // Asked for once: a service connected afterwards loads its library.
     let mut library_wanted = false;
     // Recently Added was asked for: SoundCloud answers once connected.
@@ -1153,7 +1407,6 @@ async fn run(
     // Apple's answers on the subscription, each with the sign-outs of Apple
     // counted when it was asked (`confirm_subscription`).
     let (answers_tx, mut answers) = tokio::sync::mpsc::unbounded_channel::<(bool, u64)>();
-    let mut apple_sign_outs = 0u64;
     // Out of reach, their libraries shown as kept: once, not at each try.
     let mut kept_shown = std::collections::HashSet::new();
     // The music files of the folders chosen, and their watching (the app
@@ -1172,12 +1425,6 @@ async fn run(
     let downloads = downloading::Downloads::open(replies.clone());
     // The paired phone borrows what it can't download itself.
     lends.lend(downloads.lender());
-    if let Some(am) = apple.clone() {
-        confirm_subscription(am, answers_tx.clone(), apple_sign_outs);
-    }
-    if sc.is_some() {
-        downloads.subscription(ProviderKind::SoundCloud, true);
-    }
     loop {
         // What the next download fetches with.
         downloads.services(downloading::Services {
@@ -1186,100 +1433,92 @@ async fn run(
             navidrome: nd.clone(),
             cdm: cdm.clone().ok(),
         });
-        let request = tokio::select! {
-            Some(came) = arrived.recv() => {
-                let replies = replies.clone();
-                let provider = match &came {
-                    Arrived::Apple(..) => ProviderKind::AppleMusic,
-                    Arrived::SoundCloud(..) => ProviderKind::SoundCloud,
-                    Arrived::Navidrome(..) => ProviderKind::Navidrome,
-                };
-                if turned_off.contains(&provider) || signed_out.contains(&provider) {
+        // What waited on a connect first, then what comes.
+        let Asked { request, only } = match connects.next() {
+            Some(asked) => asked,
+            None => tokio::select! {
+                Some(came) = arrived.recv() => {
+                    let replies = replies.clone();
+                    let (provider, load) = (came.provider, came.load);
+                    // What waited on it is asked again once the loop has taken it in.
+                    connects.ended(provider, came.sign_outs);
+                    // Turned off or signed out of meanwhile, or started before a
+                    // sign-out: dropped, and nothing said of it.
+                    let kept = !turned_off.contains(&provider)
+                        && !signed_out.contains(&provider)
+                        && came.sign_outs == sign_outs.count(provider);
+                    let Some(Ended { connection, told }) = came.ended.filter(|_| kept) else {
+                        continue;
+                    };
+                    if let Some(told) = told {
+                        replies.send(told);
+                    }
+                    match connection {
+                        Connection::Apple(am) => {
+                            apple = am;
+                            if let Some(am) = apple.clone() {
+                                kept_shown.remove(&provider);
+                                let asked_after = sign_outs.count(provider);
+                                confirm_subscription(am.clone(), answers_tx.clone(), asked_after);
+                                show_profile_picture(am, replies.clone());
+                            }
+                            if let Some(am) = apple.clone().filter(|_| load && library_wanted) {
+                                loading.start(ProviderKind::AppleMusic, load_library(am, replies));
+                            }
+                        }
+                        Connection::SoundCloud(c) => {
+                            sc = c;
+                            // Signed in still: its songs play on.
+                            if sc.is_some() {
+                                kept_shown.remove(&provider);
+                                downloads.subscription(ProviderKind::SoundCloud, true);
+                            }
+                            if let Some(sc) = sc.clone().filter(|_| load && recent_wanted) {
+                                tokio::spawn(soundcloud_recent(sc, replies.clone()));
+                            }
+                            if let Some(sc) = sc.clone().filter(|_| load && library_wanted) {
+                                loading.start(
+                                    ProviderKind::SoundCloud,
+                                    load_soundcloud_library(sc, replies),
+                                );
+                            }
+                        }
+                        Connection::Navidrome(server) => {
+                            nd = server;
+                            sign_covers_with(&nd);
+                            if nd.is_some() {
+                                kept_shown.remove(&provider);
+                            } else if library_wanted
+                                && signed_in(provider)
+                                && kept_shown.insert(provider)
+                            {
+                                show_kept(provider, replies.clone());
+                            }
+                            if let Some(nd) = nd.clone().filter(|_| load && library_wanted) {
+                                loading.start(
+                                    ProviderKind::Navidrome,
+                                    load_navidrome_library(nd, replies),
+                                );
+                            }
+                        }
+                    }
                     continue;
                 }
-                match came {
-                    Arrived::Apple(am, load) => {
-                        apple = am;
-                        if let Some(am) = apple.clone() {
-                            kept_shown.remove(&provider);
-                            confirm_subscription(am, answers_tx.clone(), apple_sign_outs);
-                        }
-                        if let Some(am) = apple.clone().filter(|_| load && library_wanted) {
-                            loading.start(ProviderKind::AppleMusic, load_library(am, replies));
-                        }
+                Some((active, asked_after)) = answers.recv() => {
+                    // Asked before a sign-out, the answer is about the account
+                    // that left: its songs mustn't play 30 days more.
+                    if asked_after == sign_outs.count(ProviderKind::AppleMusic) {
+                        downloads.subscription(ProviderKind::AppleMusic, active);
                     }
-                    Arrived::SoundCloud(c, load) => {
-                        sc = c;
-                        // Signed in still: its songs play on.
-                        if sc.is_some() {
-                            kept_shown.remove(&provider);
-                            downloads.subscription(ProviderKind::SoundCloud, true);
-                        }
-                        if let Some(sc) = sc.clone().filter(|_| load && recent_wanted) {
-                            tokio::spawn(soundcloud_recent(sc, replies.clone()));
-                        }
-                        if let Some(sc) = sc.clone().filter(|_| load && library_wanted) {
-                            loading.start(
-                                ProviderKind::SoundCloud,
-                                load_soundcloud_library(sc, replies),
-                            );
-                        }
-                    }
-                    Arrived::Navidrome(server, load) => {
-                        nd = server;
-                        sign_covers_with(&nd);
-                        if nd.is_some() {
-                            kept_shown.remove(&provider);
-                        } else if library_wanted && signed_in(provider) && kept_shown.insert(provider) {
-                            show_kept(provider, replies.clone());
-                        }
-                        if let Some(nd) = nd.clone().filter(|_| load && library_wanted) {
-                            loading.start(ProviderKind::Navidrome, load_navidrome_library(nd, replies));
-                        }
-                    }
+                    continue;
                 }
-                continue;
-            }
-            Some((active, asked_after)) = answers.recv() => {
-                // Asked before a sign-out, the answer is about the account
-                // that left: its songs mustn't play 30 days more.
-                if asked_after == apple_sign_outs {
-                    downloads.subscription(ProviderKind::AppleMusic, active);
-                }
-                continue;
-            }
-            request = requests.recv() => match request {
-                Some(request) => request,
-                None => break,
+                request = requests.recv() => match request {
+                    Some(request) => Asked { request, only: None },
+                    None => break,
+                },
             },
         };
         let replies = replies.clone();
-        // The files' lists, beside the services'.
-        if let (Some(files), true) = (
-            local.clone(),
-            matches!(
-                request,
-                Request::LibraryAlbums | Request::LibraryArtists | Request::RecentlyAdded
-            ),
-        ) {
-            let kind = match request {
-                Request::LibraryAlbums => Request::LibraryAlbums,
-                Request::LibraryArtists => Request::LibraryArtists,
-                _ => Request::RecentlyAdded,
-            };
-            tokio::spawn(local_lists(files, kind, replies.clone()));
-        }
-        // Apple signed in and on, but out of reach: its lists as kept.
-        let apple_kept = !turned_off.contains(&ProviderKind::AppleMusic)
-            && !signed_out.contains(&ProviderKind::AppleMusic)
-            && signed_in(ProviderKind::AppleMusic);
-        // SoundCloud's likes, beside the other services' Recently Added.
-        if matches!(request, Request::RecentlyAdded) {
-            recent_wanted = true;
-            if let Some(sc) = sc.clone() {
-                tokio::spawn(soundcloud_recent(sc, replies.clone()));
-            }
-        }
         // A song downloaded plays from the disk, whatever is connected.
         if let Request::Fetch {
             token,
@@ -1308,12 +1547,59 @@ async fn run(
             });
             continue;
         }
+        // The services still connecting: a connect under way whose
+        // connection the loop will take in (neither turned off nor signed out
+        // of since). What is for one of them alone waits for it, and so does
+        // its part of a list several answer, the others answering at once.
+        let connecting: Vec<ProviderKind> = [
+            ProviderKind::AppleMusic,
+            ProviderKind::SoundCloud,
+            ProviderKind::Navidrome,
+        ]
+        .into_iter()
+        .filter(|p| connects.under_way(*p) && !turned_off.contains(p) && !signed_out.contains(p))
+        .collect();
+        if only.is_none() {
+            if let Some(provider) = waits_on(&request).filter(|p| connecting.contains(p)) {
+                connects.hold(provider, request, None);
+                continue;
+            }
+            for &provider in &connecting {
+                if let Some(part) = list_copy(&request) {
+                    connects.hold(provider, part, Some(provider));
+                }
+            }
+        }
+        // Whether a list several answer asks `provider`'s part now: only the
+        // one it waited on, when handed back; else those not connecting.
+        let asks = |provider: ProviderKind| match only {
+            Some(waited_on) => provider == waited_on,
+            None => !connecting.contains(&provider),
+        };
         match request {
             Request::Download { tracks, original } => {
-                downloads.add(tracks, original);
+                // A song of a service still connecting waits for it.
+                let (later, now): (Vec<Track>, Vec<Track>) = tracks
+                    .into_iter()
+                    .partition(|t| connecting.contains(&t.id.provider));
+                for &provider in &connecting {
+                    let tracks: Vec<Track> = later
+                        .iter()
+                        .filter(|t| t.id.provider == provider)
+                        .cloned()
+                        .collect();
+                    if !tracks.is_empty() {
+                        let request = Request::Download { tracks, original };
+                        connects.hold(provider, request, None);
+                    }
+                }
+                if !now.is_empty() {
+                    downloads.add(now, original);
+                }
                 continue;
             }
             Request::RemoveDownloads(ids) => {
+                connects.remove_downloads(&ids);
                 downloads.remove(ids);
                 continue;
             }
@@ -1333,11 +1619,7 @@ async fn run(
             }
             Request::Reconnect => {
                 signed_out.remove(&ProviderKind::AppleMusic);
-                let arrived_tx = arrived_tx.clone();
-                let seen = seen.clone();
-                tokio::spawn(async move {
-                    let _ = arrived_tx.send(Arrived::Apple(connect(&replies, seen).await, false));
-                });
+                connects.start(ProviderKind::AppleMusic, false, connect(seen.clone()));
                 continue;
             }
             Request::SetLocalFolders(folders) => {
@@ -1427,6 +1709,8 @@ async fn run(
                     turned_off.remove(&provider);
                 } else {
                     turned_off.insert(provider);
+                    // What waited on its connect is answered as it is now: off.
+                    connects.release(provider);
                 }
                 match (provider, on) {
                     (ProviderKind::AppleMusic, false) => {
@@ -1451,42 +1735,38 @@ async fn run(
                     (ProviderKind::Opium, _) => {}
                     // Turned on: its library loads once it is connected.
                     (ProviderKind::AppleMusic, true) => {
-                        let arrived_tx = arrived_tx.clone();
-                        let seen = seen.clone();
-                        tokio::spawn(async move {
-                            let _ = arrived_tx
-                                .send(Arrived::Apple(connect(&replies, seen).await, true));
-                        });
+                        connects.start(provider, true, connect(seen.clone()));
                     }
                     (ProviderKind::SoundCloud, true) => {
-                        let arrived_tx = arrived_tx.clone();
-                        tokio::spawn(async move {
-                            let _ = arrived_tx.send(Arrived::SoundCloud(
-                                connect_soundcloud(&replies).await,
-                                true,
-                            ));
+                        let keep = keep_soundcloud_tokens_while_signed_in(&sign_outs);
+                        connects.start(provider, true, async move {
+                            connect_soundcloud(&replies, keep).await
                         });
                     }
                     (ProviderKind::Navidrome, true) => {
-                        let arrived_tx = arrived_tx.clone();
-                        tokio::spawn(async move {
-                            let _ = arrived_tx
-                                .send(Arrived::Navidrome(connect_navidrome(&replies).await, true));
-                        });
+                        connects.start(
+                            provider,
+                            true,
+                            connect_navidrome(keep_navidrome_while_signed_in(&sign_outs)),
+                        );
                     }
                 }
                 continue;
             }
             Request::SignOut(provider) => {
-                // A connection on its way is dropped as it comes.
+                // A connection on its way is dropped as it comes, with what it
+                // would have said; tokens it renews are no longer kept. Counted
+                // before the sign-in is deleted below.
                 signed_out.insert(provider);
+                sign_outs.sign_out(provider);
+                // What waited on its connect is answered as it is now: signed
+                // out; its songs waiting to be downloaded are called off.
+                connects.forget_downloads(provider);
+                connects.release(provider);
                 downloads.forget(provider);
                 loading.stop(provider);
                 match provider {
-                    ProviderKind::AppleMusic => {
-                        apple = None;
-                        apple_sign_outs += 1;
-                    }
+                    ProviderKind::AppleMusic => apple = None,
                     ProviderKind::SoundCloud => sc = None,
                     ProviderKind::Navidrome => {
                         nd = None;
@@ -1511,21 +1791,18 @@ async fn run(
             }
             Request::ReconnectSoundCloud => {
                 signed_out.remove(&ProviderKind::SoundCloud);
-                let arrived_tx = arrived_tx.clone();
-                tokio::spawn(async move {
-                    let _ = arrived_tx.send(Arrived::SoundCloud(
-                        connect_soundcloud(&replies).await,
-                        true,
-                    ));
+                let keep = keep_soundcloud_tokens_while_signed_in(&sign_outs);
+                connects.start(ProviderKind::SoundCloud, true, async move {
+                    connect_soundcloud(&replies, keep).await
                 });
                 continue;
             }
             Request::ReconnectNavidrome => {
-                let arrived_tx = arrived_tx.clone();
-                tokio::spawn(async move {
-                    let _ = arrived_tx
-                        .send(Arrived::Navidrome(connect_navidrome(&replies).await, true));
-                });
+                connects.start(
+                    ProviderKind::Navidrome,
+                    true,
+                    connect_navidrome(keep_navidrome_while_signed_in(&sign_outs)),
+                );
                 continue;
             }
             Request::SignInNavidrome {
@@ -1542,11 +1819,12 @@ async fn run(
                         continue;
                     }
                 };
-                // On its own thread: reaching a server that isn't there
-                // takes tens of seconds, and nothing else — no page, no
-                // search, no song starting — would be answered meanwhile.
-                let (arrived_tx, replies) = (arrived_tx.clone(), replies.clone());
-                tokio::spawn(async move {
+                // Off the loop: reaching a server that isn't there takes
+                // tens of seconds, and nothing else — no page, no search, no
+                // song starting — would be answered meanwhile. Signed out of
+                // meanwhile, the sign-in is neither kept nor told.
+                let (guard, since) = (sign_outs.clone(), sign_outs.count(ProviderKind::Navidrome));
+                connects.start(ProviderKind::Navidrome, true, async move {
                     let connected = Navidrome::connect(credentials).await;
                     // A session on its own API too, for a cover changed;
                     // the password goes no further.
@@ -1554,25 +1832,34 @@ async fn run(
                         let _ = server.open_session(&password).await;
                     }
                     drop(password);
-                    let server = match connected {
+                    let (server, told) = match connected {
                         Ok(server) => {
-                            let kept = keep_navidrome(&server.credentials());
-                            replies.send(Reply::SignedInNavidrome(kept));
-                            replies.send(Reply::Navidrome(Ok(Some(server.user().to_owned()))));
-                            Some(Arc::new(server))
+                            let kept = guard.unless_signed_out_since(
+                                ProviderKind::Navidrome,
+                                since,
+                                || keep_navidrome(&server.credentials()),
+                            );
+                            if let Some(kept) = kept {
+                                replies.send(Reply::SignedInNavidrome(kept));
+                            }
+                            let told = Reply::Navidrome(Ok(Some(server.user().to_owned())));
+                            (Some(Arc::new(server)), Some(told))
                         }
                         Err(Error::NotSignedIn) => {
                             replies.send(Reply::SignedInNavidrome(Err(
                                 "the server didn't take this user and password".into(),
                             )));
-                            None
+                            (None, None)
                         }
                         Err(e) => {
                             replies.send(Reply::SignedInNavidrome(Err(e.to_string())));
-                            None
+                            (None, None)
                         }
                     };
-                    let _ = arrived_tx.send(Arrived::Navidrome(server, true));
+                    Ended {
+                        connection: Connection::Navidrome(server),
+                        told,
+                    }
                 });
                 continue;
             }
@@ -1597,7 +1884,8 @@ async fn run(
                         load_navidrome_library(nd, replies.clone()),
                     );
                 }
-                // Those signed in but out of reach: as they were kept.
+                // Those signed in but out of reach, or still connecting: as
+                // they were kept, their own coming once connected.
                 for (provider, connected) in [
                     (ProviderKind::AppleMusic, apple.is_some()),
                     (ProviderKind::SoundCloud, sc.is_some()),
@@ -1622,11 +1910,16 @@ async fn run(
                     (ProviderKind::Navidrome, nd.is_some()),
                     (ProviderKind::Local, local.is_some()),
                 ] {
-                    if on && let Some(ids) = cache::read::<Vec<ItemId>>(&newest_kept(provider)) {
+                    if on
+                        && asks(provider)
+                        && let Some(ids) = cache::read::<Vec<ItemId>>(&newest_kept(provider))
+                    {
                         replies.send(Reply::NewestSongs { provider, ids });
                     }
                 }
-                if let Some(am) = apple.clone() {
+                if asks(ProviderKind::AppleMusic)
+                    && let Some(am) = apple.clone()
+                {
                     let replies = replies.clone();
                     tokio::spawn(async move {
                         let mut ids = Vec::new();
@@ -1655,7 +1948,7 @@ async fn run(
                     ),
                 ];
                 for (provider, p) in others {
-                    let (Some(p), replies) = (p, replies.clone()) else {
+                    let (Some(p), true, replies) = (p, asks(provider), replies.clone()) else {
                         continue;
                     };
                     tokio::spawn(async move {
@@ -1676,40 +1969,64 @@ async fn run(
                 }
                 continue;
             }
-            // The server's own lists; Apple Music's are its own below.
-            Request::LibraryAlbums | Request::LibraryArtists | Request::RecentlyAdded
-                if apple.is_none() =>
-            {
-                match nd.clone() {
-                    Some(nd) => {
-                        tokio::spawn(navidrome_lists(nd, request, replies));
+            // Each service's part: the files' and the connected services' own
+            // lists. Out of reach, Apple Music's as kept; another, which has
+            // none kept, says it has none when the list waited on it as it
+            // connected (`only`), so that the list isn't left waiting.
+            Request::LibraryAlbums | Request::LibraryArtists | Request::RecentlyAdded => {
+                let list = || match &request {
+                    Request::LibraryAlbums => Request::LibraryAlbums,
+                    Request::LibraryArtists => Request::LibraryArtists,
+                    _ => Request::RecentlyAdded,
+                };
+                // Apple signed in and on, but out of reach: its lists as kept.
+                let apple_kept = !turned_off.contains(&ProviderKind::AppleMusic)
+                    && !signed_out.contains(&ProviderKind::AppleMusic)
+                    && signed_in(ProviderKind::AppleMusic);
+                let out_of_reach = |provider| out_of_reach_list(provider, &request, apple_kept);
+                if asks(ProviderKind::Local)
+                    && let Some(files) = local.clone()
+                {
+                    tokio::spawn(local_lists(files, list(), replies.clone()));
+                }
+                if asks(ProviderKind::Navidrome) {
+                    match nd.clone() {
+                        Some(nd) => {
+                            tokio::spawn(navidrome_lists(nd, list(), replies.clone()));
+                        }
+                        None if only.is_some() => {
+                            replies.send(out_of_reach(ProviderKind::Navidrome));
+                        }
+                        None => {}
                     }
-                    // No service has such lists: they are empty, not loading;
-                    // Apple's out of reach, as they were kept.
-                    None => replies.send(match request {
-                        Request::LibraryAlbums => Reply::LibraryAlbums {
-                            provider: ProviderKind::AppleMusic,
-                            albums: kept_list(apple_kept, "albums"),
-                            done: true,
-                            whole: true,
-                        },
-                        Request::LibraryArtists => Reply::LibraryArtists {
-                            provider: ProviderKind::AppleMusic,
-                            artists: kept_list(apple_kept, "artists"),
-                            done: true,
-                            whole: true,
-                        },
-                        _ => Reply::RecentlyAdded {
-                            provider: ProviderKind::AppleMusic,
-                            items: Vec::new(),
-                            done: true,
-                        },
-                    }),
+                }
+                // SoundCloud's likes, beside the other services' Recently Added.
+                if matches!(request, Request::RecentlyAdded) && asks(ProviderKind::SoundCloud) {
+                    recent_wanted = true;
+                    match sc.clone() {
+                        Some(sc) => {
+                            tokio::spawn(soundcloud_recent(sc, replies.clone()));
+                        }
+                        None if only.is_some() => {
+                            replies.send(out_of_reach(ProviderKind::SoundCloud));
+                        }
+                        None => {}
+                    }
+                }
+                if asks(ProviderKind::AppleMusic) {
+                    match apple.clone() {
+                        Some(am) => {
+                            tokio::spawn(apple_lists(am, list(), replies.clone()));
+                        }
+                        None => replies.send(out_of_reach(ProviderKind::AppleMusic)),
+                    }
                 }
                 continue;
             }
             Request::Playlists => {
-                if let Some(am) = apple.clone() {
+                if asks(ProviderKind::AppleMusic)
+                    && let Some(am) = apple.clone()
+                {
                     let replies = replies.clone();
                     tokio::spawn(async move {
                         // Only a whole list replaces the one shown.
@@ -1721,7 +2038,9 @@ async fn run(
                         }
                     });
                 }
-                if let Some(sc) = sc.clone() {
+                if asks(ProviderKind::SoundCloud)
+                    && let Some(sc) = sc.clone()
+                {
                     let replies = replies.clone();
                     tokio::spawn(async move {
                         if let Ok(playlists) = soundcloud_playlists(&sc).await {
@@ -1732,7 +2051,9 @@ async fn run(
                         }
                     });
                 }
-                if let Some(nd) = nd.clone() {
+                if asks(ProviderKind::Navidrome)
+                    && let Some(nd) = nd.clone()
+                {
                     tokio::spawn(async move {
                         if let Ok(page) = nd.library_playlists(None).await {
                             replies.send(Reply::Playlists {
@@ -1828,11 +2149,17 @@ async fn run(
                 let refused = |reason: &str| CoverRefused::Failed(reason.to_owned());
                 match (id.provider, nd.clone()) {
                     (ProviderKind::Navidrome, Some(server)) => {
+                        let (guard, since) =
+                            (sign_outs.clone(), sign_outs.count(ProviderKind::Navidrome));
                         tokio::spawn(async move {
                             let again = jpeg.clone();
                             let result = match server.set_playlist_cover(&id.id, jpeg).await {
                                 Ok(true) => {
-                                    let _ = keep_navidrome(&server.credentials());
+                                    guard.unless_signed_out_since(
+                                        ProviderKind::Navidrome,
+                                        since,
+                                        || keep_navidrome(&server.credentials()),
+                                    );
                                     Ok(())
                                 }
                                 Ok(false) => Err(CoverRefused::Password(again)),
@@ -1859,6 +2186,7 @@ async fn run(
                     )));
                     continue;
                 };
+                let (guard, since) = (sign_outs.clone(), sign_outs.count(ProviderKind::Navidrome));
                 tokio::spawn(async move {
                     let result = server
                         .open_session(&password)
@@ -1866,17 +2194,22 @@ async fn run(
                         .map_err(|e| e.to_string());
                     drop(password);
                     if result == Ok(true) {
-                        let _ = keep_navidrome(&server.credentials());
+                        guard.unless_signed_out_since(ProviderKind::Navidrome, since, || {
+                            keep_navidrome(&server.credentials())
+                        });
                     }
                     replies.send(Reply::NavidromeSession(result));
                 });
                 continue;
             }
             Request::Search(scope, source, query) => {
+                // Those still connecting are searched once they come, the
+                // whole search asked again then.
+                let ready = |provider| !connecting.contains(&provider);
                 let services = Services {
-                    apple: apple.clone(),
-                    soundcloud: sc.clone(),
-                    navidrome: nd.clone(),
+                    apple: apple.clone().filter(|_| ready(ProviderKind::AppleMusic)),
+                    soundcloud: sc.clone().filter(|_| ready(ProviderKind::SoundCloud)),
+                    navidrome: nd.clone().filter(|_| ready(ProviderKind::Navidrome)),
                     local: local.clone(),
                 };
                 tokio::spawn(search(services, scope, source, query, replies));
@@ -1954,6 +2287,9 @@ async fn run(
             | Request::SiteLyrics { .. }
             | Request::Library
             | Request::NewestSongs
+            | Request::LibraryAlbums
+            | Request::LibraryArtists
+            | Request::RecentlyAdded
             | Request::Playlists
             | Request::Palette(_)
             | Request::Download { .. }
@@ -1987,26 +2323,6 @@ async fn run(
                     replies.send(Reply::Lyrics { id, result });
                 });
             }
-            Request::LibraryAlbums => {
-                if let Some(nd) = nd.clone() {
-                    tokio::spawn(navidrome_lists(nd, Request::LibraryAlbums, replies.clone()));
-                }
-                tokio::spawn(async move {
-                    let show = |albums, done, whole| {
-                        replies.send(Reply::LibraryAlbums {
-                            provider: ProviderKind::AppleMusic,
-                            albums,
-                            done,
-                            whole,
-                        })
-                    };
-                    let mut list = Kept::start("albums", &show);
-                    let result = am
-                        .each_library_album(|albums, done| list.page(albums, done, &show))
-                        .await;
-                    list.failed(&replies, result, &show);
-                });
-            }
             Request::AlbumExtras(id) => {
                 tokio::spawn(async move {
                     let result = am
@@ -2024,54 +2340,6 @@ async fn run(
                         .await
                         .map_err(|e| e.to_string());
                     replies.send(Reply::LibraryArtistAlbums { id, result });
-                });
-            }
-            Request::LibraryArtists => {
-                if let Some(nd) = nd.clone() {
-                    tokio::spawn(navidrome_lists(
-                        nd,
-                        Request::LibraryArtists,
-                        replies.clone(),
-                    ));
-                }
-                tokio::spawn(async move {
-                    let show = |artists, done, whole| {
-                        replies.send(Reply::LibraryArtists {
-                            provider: ProviderKind::AppleMusic,
-                            artists,
-                            done,
-                            whole,
-                        })
-                    };
-                    let mut list = Kept::start("artists", &show);
-                    let result = am
-                        .each_library_artist(|artists, done| list.page(artists, done, &show))
-                        .await;
-                    list.failed(&replies, result, &show);
-                });
-            }
-            Request::RecentlyAdded => {
-                if let Some(nd) = nd.clone() {
-                    tokio::spawn(navidrome_lists(nd, Request::RecentlyAdded, replies.clone()));
-                }
-                tokio::spawn(async move {
-                    let provider = ProviderKind::AppleMusic;
-                    // Whole, in the order of what was added to last.
-                    let result = am
-                        .recently_added_by_activity(RECENT_LIMIT)
-                        .await
-                        .map(|items| {
-                            replies.send(Reply::RecentlyAdded {
-                                provider,
-                                items,
-                                done: true,
-                            })
-                        });
-                    failed(&replies, result, || Reply::RecentlyAdded {
-                        provider,
-                        items: Vec::new(),
-                        done: true,
-                    });
                 });
             }
             Request::InLibrary { kind, ids } => {
@@ -2177,6 +2445,33 @@ fn kept_list<T: DeserializeOwned>(kept: bool, name: &str) -> Vec<T> {
     kept.then(|| cache::read(name))
         .flatten()
         .unwrap_or_default()
+}
+
+/// `provider`'s part of the albums, artists or recent additions `request`
+/// asks for, while it is out of reach, done: Apple Music's albums and
+/// artists as kept when `apple_kept` (signed in and on), in place of those
+/// it showed; another's, none more.
+fn out_of_reach_list(provider: ProviderKind, request: &Request, apple_kept: bool) -> Reply {
+    let apple = provider == ProviderKind::AppleMusic;
+    match request {
+        Request::LibraryAlbums => Reply::LibraryAlbums {
+            provider,
+            albums: kept_list(apple && apple_kept, "albums"),
+            done: true,
+            whole: apple,
+        },
+        Request::LibraryArtists => Reply::LibraryArtists {
+            provider,
+            artists: kept_list(apple && apple_kept, "artists"),
+            done: true,
+            whole: apple,
+        },
+        _ => Reply::RecentlyAdded {
+            provider,
+            items: Vec::new(),
+            done: true,
+        },
+    }
 }
 
 /// Where an album's page is kept, to open offline.
@@ -2314,6 +2609,62 @@ async fn load_library(am: Arc<AppleMusic>, replies: Replies) {
         .each_library_track(|tracks, done| list.page(tracks, done, &show))
         .await;
     list.failed(&replies, result, &show);
+}
+
+/// Apple Music's albums or artists, as kept then page by page, or its
+/// recent additions.
+async fn apple_lists(am: Arc<AppleMusic>, request: Request, replies: Replies) {
+    let provider = ProviderKind::AppleMusic;
+    match request {
+        Request::LibraryAlbums => {
+            let show = |albums, done, whole| {
+                replies.send(Reply::LibraryAlbums {
+                    provider,
+                    albums,
+                    done,
+                    whole,
+                })
+            };
+            let mut list = Kept::start("albums", &show);
+            let result = am
+                .each_library_album(|albums, done| list.page(albums, done, &show))
+                .await;
+            list.failed(&replies, result, &show);
+        }
+        Request::LibraryArtists => {
+            let show = |artists, done, whole| {
+                replies.send(Reply::LibraryArtists {
+                    provider,
+                    artists,
+                    done,
+                    whole,
+                })
+            };
+            let mut list = Kept::start("artists", &show);
+            let result = am
+                .each_library_artist(|artists, done| list.page(artists, done, &show))
+                .await;
+            list.failed(&replies, result, &show);
+        }
+        _ => {
+            // Whole, in the order of what was added to last.
+            let result = am
+                .recently_added_by_activity(RECENT_LIMIT)
+                .await
+                .map(|items| {
+                    replies.send(Reply::RecentlyAdded {
+                        provider,
+                        items,
+                        done: true,
+                    })
+                });
+            failed(&replies, result, || Reply::RecentlyAdded {
+                provider,
+                items: Vec::new(),
+                done: true,
+            });
+        }
+    }
 }
 
 /// What any service does alike: favourites, the library, playlists, a
