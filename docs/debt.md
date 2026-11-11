@@ -29,11 +29,12 @@ number there (L1, S2, W3…), and their failing tests are kept beside it.
   services connect is run again whole as each arrives, and an older, partial answer can replace a
   later one; SoundCloud's likes can be fetched twice at a reconnect; during a stall, Apple's kept
   albums show only once its connect ends; a connect started before a service is turned off and on
-  again is still taken in; SoundCloud's bot-guard cookie can be written again after a sign-out.
+  again is still taken in.
 - **A file set aside is said only in the log** (L5): neither app tells the user; with uwui, and at
   Stage 3 on the phone.
-- **The instance lock covers the config folder**: two instances given other config folders but
-  one cache folder could lose a cache write.
+- **The instance lock covers the config folder** (and the downloads' store takes its own): two
+  instances given other config folders but one cache folder could lose a cache write. A launch
+  during a teardown longer than 2 s exits without handing its files over (`main.rs`, frozen).
 - **`frames.py` checks Songs' scroll only**: the record does not give the Albums grid's length
   (W12).
 - **Frozen with `app-desktop`** ([ADR-0026](adr/0026-the-egui-window-frozen-until-the-move.md)):
@@ -137,6 +138,16 @@ number there (L1, S2, W3…), and their failing tests are kept beside it.
   credentials), and in the covers' addresses kept in the caches, the history, the session and
   Opium's playlists, which go to every paired device at each sync (`scrub_kept` strips the signed
   query, not `user:password@`). A one-time scrub is the owner's call.
+- **The 30 days count the clock's forward motion** (`downloads::store`): time that passes while the
+  app is closed is lost if the clock is set back before the next start, and so is up to an hour
+  counted since the last save; a clock behind then put right counts the jump, which may expire
+  protected songs until the next confirmation.
+- **A downloaded playlist's songs for its offline page** are kept as a cache (written without a
+  flush): a power cut can lose the list, which comes back online; the songs stay.
+- **A protected download plays under any account of its service**: the subscription is confirmed by
+  service, so songs one account downloaded play again under another account signed in later. The
+  owner decided on 2026-11-11 to tie each protected download to its account (`Expired` under
+  another, never deleted), with an ADR amending ADR-0017 when it is built.
 - **The examples** (`am`, `sc`, `spike`, `am_cost`, `cdm_cost`) still take an empty
   `XDG_CONFIG_HOME` for a relative folder, where the apps no longer do (W8).
 - **Gradle's verification file** lists what `assembleRelease` and `testDebugUnitTest` resolve;
@@ -149,6 +160,9 @@ number there (L1, S2, W3…), and their failing tests are kept beside it.
 - **A paired device names any local file**: a local song's id is its path, so a play list, a
   handoff or the history sent by a paired device can name a file the local scan never found, which
   the player opens; not checked.
+- **Connect's sender holds every part at once**: each message stays under 4 MiB, but all of a
+  sync's parts are queued before the first is written, 19 messages and 76 MB at 100,000 songs; a
+  bounded queue with backpressure would bound it.
 - **A session from before the queue had a limit** (`session.json`) goes whole in one part, over
   Connect's cap if it is long, until the next handoff replaces it.
 

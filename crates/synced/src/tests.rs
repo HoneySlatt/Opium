@@ -282,6 +282,14 @@ fn changes_heard_out_of_order_come_out_the_same() {
     assert_eq!(songs(&b, "p"), ["Song 2", "Song 1"]);
 }
 
+/// Close `kept` with nothing left to write: a `Kept` dropped with a save
+/// waiting writes it a moment later, from its own thread, and so makes its
+/// folder again once the test has removed it.
+fn close(kept: Kept) {
+    kept.flush();
+    drop(kept);
+}
+
 #[test]
 fn kept_on_disk_from_one_launch_to_the_next() {
     let dir = std::env::temp_dir().join(format!("synced-test-{}", new_id()));
@@ -444,6 +452,7 @@ fn a_chosen_cover_shows_from_a_file_of_its_own() {
     assert!(!std::path::Path::new(path).exists());
     kept.cover_playlist(&id, None);
     assert_eq!(kept.playlist(&id).unwrap().cover, None);
+    close(kept);
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -554,6 +563,8 @@ fn a_setting_set_last_wins_and_one_from_before_gives_way() {
     assert_eq!(a.settings()["relay"], "new");
     // Offered once there is one: nothing changes.
     assert!(a.offer_setting("relay", "older".into()).is_empty());
+    close(a);
+    close(b);
     let _ = std::fs::remove_dir_all(dir);
 }
 
@@ -699,6 +710,7 @@ fn a_playlist_id_from_another_device_stays_in_the_covers_folder() {
     .unwrap();
     assert!(kept.merge(theirs));
     let _ = kept.playlists();
+    close(kept);
     let outside: Vec<String> = std::fs::read_dir(&dir)
         .unwrap()
         .flatten()
@@ -766,7 +778,9 @@ fn a_second_copy_put_aside_keeps_the_first() {
             );
         }
         // Written again, readable, beside the copies put aside.
-        assert!(Kept::open(&dir, Vec::new).playlist(&id).is_some());
+        let again = Kept::open(&dir, Vec::new);
+        assert!(again.playlist(&id).is_some());
+        close(again);
     }
     assert_eq!(
         std::fs::read_to_string(dir.join("shared.json.bad")).unwrap(),
@@ -1170,6 +1184,7 @@ fn what_a_change_here_returns_brings_it_to_another_device() {
     assert!(b.history().is_empty());
     assert!(b.merge(a.delete_playlist(&id)));
     assert!(b.playlist(&id).is_none());
-    drop((a, b));
+    close(a);
+    close(b);
     let _ = std::fs::remove_dir_all(&dir);
 }

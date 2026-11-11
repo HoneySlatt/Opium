@@ -78,12 +78,17 @@ const DRIFT_MS: u64 = 1500;
 /// The most bytes of JSON a part of what the devices keep in common takes,
 /// as one message (see [`Shared::into_parts`]): an eighth of the most a
 /// device takes in one ([`wire::MAX_SEALED`], 32 MiB), so that each
-/// message's memory stays bounded, on the phone too. Playlists of any
-/// length go so, in as many messages as they take, as every song is a
-/// piece of its own. A message holds more than this only for one piece
-/// longer on its own, which goes alone; one past the cap, such as a
-/// history of huge songs from a device that misbehaves, is refused by the
-/// device it goes to, as before.
+/// message, as it is sealed, sent, received and decoded, stays small, on
+/// the phone too. Playlists of any length go so, in as many messages as
+/// they take, as every song is a piece of its own. A message holds more
+/// than this only for one piece longer on its own, which goes alone; one
+/// past the cap, such as a history of huge songs from a device that
+/// misbehaves, is refused by the device it goes to, as before.
+///
+/// What the device sending holds at once is not bounded so: every part of
+/// what it sends is encoded before the first goes, and waits in the link's
+/// queue, which has no bound, until it is written. A playlist of 100,000
+/// songs makes 19 messages, 76 MB in all.
 const SHARED_PART: usize = wire::MAX_SEALED / 8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1545,6 +1550,42 @@ fn discover(inner: &Arc<Inner>, port: u16) -> Result<mdns_sd::ServiceDaemon, mdn
 mod tests {
     use super::*;
 
+    /// Drop `node`, and wait until nothing it ran is left to write in its
+    /// folder: its tasks end a moment after the runtime is shut down, not
+    /// at once, and one still taking in what came would save its `Kept`
+    /// once the test had removed the folder, which the save makes again.
+    /// Once they are gone, its `Kept` is flushed: nothing of it waits to be
+    /// written but what the test changes after.
+    fn stop(node: Node) {
+        let inner = node.inner.clone();
+        drop(node);
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while Arc::strong_count(&inner) > 1 {
+            assert!(Instant::now() < deadline, "the node's tasks never ended");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        flush(&inner.kept);
+    }
+
+    /// How long `Kept::flush` waits for its write before it gives up.
+    const FLUSH_GIVES_UP: Duration = Duration::from_secs(3);
+
+    /// `kept` on disk, however long its writes take: `Kept::flush` gives up
+    /// after [`FLUSH_GIVES_UP`], less than a library of 100,000 songs takes
+    /// to write twice in a debug build. A flush answered sooner was written,
+    /// with every write asked before it.
+    fn flush(kept: &Kept) {
+        let deadline = Instant::now() + Duration::from_secs(60);
+        loop {
+            let asked = Instant::now();
+            kept.flush();
+            if asked.elapsed() < FLUSH_GIVES_UP {
+                return;
+            }
+            assert!(Instant::now() < deadline, "the copy was never written");
+        }
+    }
+
     fn track(id: &str) -> Track {
         Track {
             id: opium_core::model::ItemId::new(opium_core::model::ProviderKind::AppleMusic, id),
@@ -1639,7 +1680,8 @@ mod tests {
             connected = b.peers().iter().any(|p| p.connected);
             std::thread::sleep(Duration::from_millis(20));
         }
-        drop((a, b));
+        stop(a);
+        stop(b);
         let _ = std::fs::remove_dir_all(dir);
         (a_error, b_error, connected)
     }
@@ -1742,7 +1784,9 @@ mod tests {
         ) {}
         assert_eq!(a_kept.history().len(), 2);
         assert_eq!(a_kept.history()[0].id.id, "2");
-        drop((a, b));
+        stop(a);
+        stop(b);
+        drop((a_kept, b_kept));
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -1850,7 +1894,8 @@ mod tests {
                 Err(_) => break None,
             }
         };
-        drop((a, b));
+        stop(a);
+        stop(b);
         let _ = std::fs::remove_dir_all(&dir);
         let (tracks, start) = got.expect("B never heard the song played on it");
         assert_eq!(tracks[start as usize].id, asked, "the song asked for");
@@ -1925,7 +1970,8 @@ mod tests {
                 Err(_) => break None,
             }
         };
-        drop((a, b));
+        stop(a);
+        stop(b);
         let _ = std::fs::remove_dir_all(&dir);
         let (tracks, start) = got.expect("B never heard the list");
         assert!(tracks.len() <= opium_core::queue::LIMIT);
@@ -1978,7 +2024,8 @@ mod tests {
                 Err(_) => break,
             }
         }
-        drop((a, b));
+        stop(a);
+        stop(b);
         let _ = std::fs::remove_dir_all(&dir);
         let check = |tracks: Option<Vec<Track>>, what: &str| {
             let tracks = tracks.unwrap_or_else(|| panic!("B never heard the songs {what}"));
@@ -2020,7 +2067,9 @@ mod tests {
             std::thread::sleep(Duration::from_millis(20));
         }
         let taken = b_kept.playlist("../escaped").is_some();
-        drop((a, b));
+        stop(a);
+        stop(b);
+        drop(b_kept);
         let _ = std::fs::remove_dir_all(&dir);
         assert!(!taken, "the playlist ../escaped was taken in");
     }
@@ -2118,9 +2167,8 @@ mod tests {
                 alike = b_kept.everything() == want;
             }
         }
-        drop((a, b));
-        a_kept.flush();
-        b_kept.flush();
+        stop(a);
+        stop(b);
         drop((a_kept, b_kept));
         let _ = std::fs::remove_dir_all(&dir);
         alike
@@ -2261,7 +2309,8 @@ mod tests {
         assert_eq!(got, song);
         let refused = rt.block_on(phone.borrow(&computer.me().id, track("refused"), false));
         assert_eq!(refused.err().unwrap().to_string(), "not this one");
-        drop((phone, computer));
+        stop(phone);
+        stop(computer);
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -2324,7 +2373,9 @@ mod tests {
         a.forget(&c.me().id);
         let key = lock(&b.inner.store).introduction(&a.me().id, &c.me().id);
         assert!(!lock(&a.inner.store).introduced(c.me(), key, None, &b.me().id));
-        drop((a, b, c));
+        stop(a);
+        stop(b);
+        stop(c);
         let _ = std::fs::remove_dir_all(dir);
     }
 }
