@@ -24,7 +24,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 
-use opium_core::files::put_aside;
+use opium_core::files::{Mode, put_aside, write_whole};
 use opium_core::model::{ItemId, ProviderKind, Track};
 use serde::{Deserialize, Serialize};
 
@@ -258,11 +258,7 @@ impl Store {
             unnamed_songs: self.unnamed_songs,
         })
         .map_err(io::Error::other)?;
-        let part = self.dir.join("manifest.json.part");
-        let mut file = File::create(&part)?;
-        file.write_all(&json)?;
-        file.sync_all()?;
-        std::fs::rename(part, self.dir.join(MANIFEST))?;
+        write_whole(&self.dir.join(MANIFEST), &json, Mode::Default)?;
         *lock(&self.seen_saved) = seen;
         Ok(())
     }
@@ -805,6 +801,26 @@ mod tests {
             .count()
     }
 
+    /// Where the test keeps the manifest while [`block_the_manifest`] holds.
+    const BLOCKED: &str = "manifest.json.blocked";
+
+    /// Make every save of the manifest in `dir` fail at its last step: the
+    /// test moves the manifest aside and puts a folder in its place, which
+    /// no file is renamed over. A real failure (a full disk, an I/O error)
+    /// leaves the manifest in place instead; [`unblock_the_manifest`] puts
+    /// it back before the store reads it again.
+    fn block_the_manifest(dir: &Path) {
+        std::fs::rename(dir.join(MANIFEST), dir.join(BLOCKED)).unwrap();
+        std::fs::create_dir(dir.join(MANIFEST)).unwrap();
+    }
+
+    /// Undo [`block_the_manifest`]: the folder gone, the manifest back in
+    /// its place, as a save that failed leaves it.
+    fn unblock_the_manifest(dir: &Path) {
+        std::fs::remove_dir(dir.join(MANIFEST)).unwrap();
+        std::fs::rename(dir.join(BLOCKED), dir.join(MANIFEST)).unwrap();
+    }
+
     #[test]
     fn a_manifest_put_aside_keeps_its_songs_through_the_next_starts() {
         let dir = dir();
@@ -921,9 +937,8 @@ mod tests {
                 b"first copy",
                 10,
             );
-            // As a full disk or an I/O error would: a folder stands where
-            // the manifest's new copy goes.
-            std::fs::create_dir(dir.0.join("manifest.json.part")).unwrap();
+            // The next saves of the manifest fail, as on a full disk.
+            block_the_manifest(&dir.0);
             let mut pending = store.begin().unwrap();
             pending.write_all(b"second copy").unwrap();
             assert!(
@@ -932,7 +947,7 @@ mod tests {
                     .is_err()
             );
         }
-        std::fs::remove_dir(dir.0.join("manifest.json.part")).unwrap();
+        unblock_the_manifest(&dir.0);
         let store = Store::open(&dir.0, key).unwrap();
         assert!(
             store.open_song(&id, 30).is_some_and(|r| r.is_ok()),
@@ -992,7 +1007,7 @@ mod tests {
             b"first copy",
             10,
         );
-        std::fs::create_dir(dir.0.join("manifest.json.part")).unwrap();
+        block_the_manifest(&dir.0);
         for id in ["1", "2"] {
             let mut pending = store.begin().unwrap();
             pending.write_all(b"again").unwrap();

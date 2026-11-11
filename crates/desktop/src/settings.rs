@@ -498,6 +498,29 @@ mod tests {
         assert_eq!(Settings::load_from(&dir.file()), Settings::default());
     }
 
+    // Stage 1 audit, L13: `write_private` wrote into a partial file left from before as it was.
+    #[test]
+    fn the_settings_are_the_users_alone_even_beside_a_partial_file_open_to_others() {
+        let dir = Dir::new("private");
+        // As an older build or a crash may have left it, readable by others.
+        let left = dir.0.join("settings.part");
+        std::fs::write(&left, "left").unwrap();
+        std::fs::set_permissions(&left, std::fs::Permissions::from_mode(0o644)).unwrap();
+        Settings {
+            volume: Some(0.5),
+            ..Settings::default()
+        }
+        .save_to(&dir.file());
+        let mode = std::fs::metadata(dir.file()).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "the settings are {mode:o}");
+        assert_eq!(Settings::load_from(&dir.file()).volume, Some(0.5));
+        assert_eq!(
+            std::fs::read(&left).unwrap(),
+            b"left",
+            "a file it didn't make is left alone"
+        );
+    }
+
     #[test]
     fn a_file_put_aside_leaves_what_read_of_it_in_its_place() {
         let dir = Dir::new("in-place");

@@ -11,6 +11,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use opium_core::Provider;
+use opium_core::files::{Mode, write_whole};
 use opium_core::model::{ItemId, ProviderKind};
 use soundcloud::{SoundCloud, Tokens};
 
@@ -21,20 +22,15 @@ fn dir() -> PathBuf {
     base.join("opium/soundcloud")
 }
 
+/// Keep the tokens, readable by the user only, whole or not at all.
 fn keep(tokens: &Tokens) {
-    use std::io::Write;
-    use std::os::unix::fs::OpenOptionsExt;
     let _ = std::fs::create_dir_all(dir());
     let json = serde_json::json!({ "oauth": tokens.oauth, "refresh": tokens.refresh });
-    if let Ok(mut file) = std::fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(dir().join("tokens.json"))
-    {
-        let _ = file.write_all(json.to_string().as_bytes());
-    }
+    let _ = write_whole(
+        &dir().join("tokens.json"),
+        json.to_string().as_bytes(),
+        Mode::Private,
+    );
 }
 
 fn kept() -> Option<Tokens> {

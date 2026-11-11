@@ -165,6 +165,10 @@ class Core(context: Context) {
      * The library's lists as last read, by service: see [Library]. In the
      * app's files, as the songs downloaded need them offline: a cache may be
      * cleared. The lists from before, in the cache, are moved in.
+     *
+     * The folder's name must match `KEPT_LISTS` in `crates/opium-ffi`, whose
+     * `keepIn` sweeps the partial files a crash left here. Those among the
+     * lists moved in from the cache, after `keepIn` ran, go at the next start.
      */
     val kept = File(context.filesDir, "library").apply {
         val old = File(context.cacheDir, "library")

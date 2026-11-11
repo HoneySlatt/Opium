@@ -6,13 +6,21 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use opium_core::files::{Mode, write_whole};
+
 /// Past this, the oldest covers go at the next start.
 const LIMIT: u64 = 500 * 1024 * 1024;
 /// …until the rest fits in this.
 const TRIMMED: u64 = 400 * 1024 * 1024;
 
-fn dir() -> Option<PathBuf> {
+/// The covers' folder: `covers` in the cache folder.
+pub(crate) fn dir() -> Option<PathBuf> {
     cache_dir("covers")
+}
+
+/// The animated covers' folder: `motion` in the cache folder.
+pub(crate) fn motion_dir() -> Option<PathBuf> {
+    cache_dir("motion")
 }
 
 pub(crate) fn cache_dir(name: &str) -> Option<PathBuf> {
@@ -34,16 +42,15 @@ pub fn file(url: &str) -> Option<PathBuf> {
 /// Where the animated cover at `url` is kept at `size`, in
 /// `~/.cache/opium/motion/`.
 pub fn motion_file(url: &str, size: u32) -> Option<PathBuf> {
-    Some(cache_dir("motion")?.join(format!("{:016x}-{size}.mp4", hash(url))))
+    Some(motion_dir()?.join(format!("{:016x}-{size}.mp4", hash(url))))
 }
 
-/// Keep an animated cover; returns where.
+/// Keep an animated cover, whole or not at all ([`write_whole`]); returns
+/// where, or `None` if it couldn't be kept.
 pub fn write_motion(url: &str, size: u32, bytes: &[u8]) -> Option<PathBuf> {
     let path = motion_file(url, size)?;
-    let partial = path.with_extension("part");
     std::fs::create_dir_all(path.parent()?)
-        .and_then(|()| std::fs::write(&partial, bytes))
-        .and_then(|()| std::fs::rename(&partial, &path))
+        .and_then(|()| write_whole(&path, bytes, Mode::Default))
         .ok()?;
     Some(path)
 }
@@ -118,15 +125,14 @@ pub fn read(url: &str) -> Option<Vec<u8>> {
     std::fs::read(file(url)?).ok()
 }
 
-/// Keep the cover downloaded from `url`.
+/// Keep the cover downloaded from `url`, whole or not at all
+/// ([`write_whole`]). A write that fails keeps nothing, and says nothing:
+/// it is a cache.
 pub fn write(url: &str, bytes: &[u8]) {
     let (Some(dir), Some(path)) = (dir(), file(url)) else {
         return;
     };
-    let partial = path.with_extension("part");
-    let _ = std::fs::create_dir_all(dir)
-        .and_then(|()| std::fs::write(&partial, bytes))
-        .and_then(|()| std::fs::rename(&partial, &path));
+    let _ = std::fs::create_dir_all(dir).and_then(|()| write_whole(&path, bytes, Mode::Default));
 }
 
 /// Drop the oldest covers, and moving covers, if they take too much room;

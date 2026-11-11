@@ -20,7 +20,7 @@ use std::sync::{Arc, Mutex, MutexGuard, mpsc};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use opium_core::Handoff;
-use opium_core::files::put_aside;
+use opium_core::files::{Mode, put_aside, write_whole};
 use opium_core::model::Track;
 use serde::{Deserialize, Serialize};
 
@@ -178,6 +178,10 @@ fn digest(value: &impl Serialize) -> u64 {
 
 /// As many playlists as Add to Playlist shows as the last ones.
 pub const USED: usize = 3;
+
+/// The folder, in the one [`Kept::open`] is given, that keeps the
+/// playlists' chosen covers as files, each written whole.
+pub const COVERS_FOLDER: &str = "covers";
 
 impl Shared {
     pub fn is_empty(&self) -> bool {
@@ -829,7 +833,7 @@ impl Kept {
             state,
             save,
             loaded,
-            covers: dir.join("covers"),
+            covers: dir.join(COVERS_FOLDER),
         }
     }
 
@@ -853,8 +857,9 @@ impl Kept {
         Some(self.with_cover(playlist))
     }
 
-    /// `playlist` with its chosen cover kept as a file, written the first
-    /// time it is asked for (the one before it gone). The file is named by
+    /// `playlist` with its chosen cover kept as a file, written whole the
+    /// first time it is asked for ([`write_whole`]; the one before it
+    /// gone). The file is named by
     /// the playlist's id, so a playlist whose id this app doesn't make,
     /// which might name a file outside the covers' folder, shows its first
     /// song's instead.
@@ -881,11 +886,7 @@ impl Kept {
                 }
             }
             let _ = std::fs::create_dir_all(&self.covers);
-            let partial = path.with_extension("part");
-            if std::fs::write(&partial, bytes)
-                .and_then(|()| std::fs::rename(&partial, &path))
-                .is_err()
-            {
+            if write_whole(&path, &bytes, Mode::Default).is_err() {
                 return playlist;
             }
         }
@@ -1238,25 +1239,17 @@ fn keep(state: &Mutex<State>, path: &Path, saves: &mpsc::Receiver<Save>) {
     }
 }
 
-/// Whether it was written.
+/// Write `bytes` to `path` whole or not at all, readable by the user alone
+/// ([`write_whole`]); whether it was written.
 fn write(path: &Path, bytes: &[u8]) -> bool {
+    #[cfg(test)]
+    if tests::write_fails(path) {
+        return false;
+    }
     if let Some(dir) = path.parent() {
         let _ = std::fs::create_dir_all(dir);
     }
-    let partial = path.with_extension("json.part");
-    let written = {
-        use std::io::Write;
-        let mut options = std::fs::OpenOptions::new();
-        options.write(true).create(true).truncate(true);
-        #[cfg(unix)]
-        std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
-        // On disk before it replaces the last: a power cut midway leaves
-        // one or the other whole.
-        options
-            .open(&partial)
-            .and_then(|mut f| f.write_all(bytes).and_then(|()| f.sync_all()))
-    };
-    written.is_ok() && std::fs::rename(&partial, path).is_ok()
+    write_whole(path, bytes, Mode::Private).is_ok()
 }
 
 #[cfg(test)]

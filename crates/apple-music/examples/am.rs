@@ -21,13 +21,12 @@
 //! The browser defaults to `brave-origin`; set `OPIUM_BROWSER` for another one.
 //! The token is stored under `$XDG_CONFIG_HOME/opium/apple-music/` and never printed.
 
-use std::io::Write;
-use std::os::unix::fs::OpenOptionsExt;
 use std::path::PathBuf;
 use std::time::Duration;
 
 use apple_music::AppleMusic;
 use opium_core::Provider;
+use opium_core::files::{Mode, write_whole};
 
 fn config_dir() -> PathBuf {
     let base = std::env::var_os("XDG_CONFIG_HOME")
@@ -120,13 +119,8 @@ async fn signin() -> Result<(), Box<dyn std::error::Error>> {
     println!("Sign in to Apple Music in the window that opens…");
     let token =
         apple_music::signin::sign_in(browser.as_ref(), &profile, Duration::from_secs(600)).await?;
-    let mut file = std::fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(token_path())?;
-    file.write_all(token.as_bytes())?;
+    // Readable by the user only, whole or not at all.
+    write_whole(&token_path(), token.as_bytes(), Mode::Private)?;
     println!("Signed in, token saved to {}", token_path().display());
     Ok(())
 }

@@ -29,6 +29,10 @@ pub use watch::Watching;
 pub use scan::Entry;
 use scan::Index;
 
+/// The folder, in the one [`Local::open`] is given, that keeps the covers
+/// read from the files, each written whole.
+pub const COVERS_FOLDER: &str = "covers";
+
 const ALBUM: &str = "album:";
 const ARTIST: &str = "artist:";
 /// What search shows of each kind, at most.
@@ -110,7 +114,7 @@ impl Local {
         let index = Index::read(&index_path);
         Self {
             folders,
-            covers: dir.join("covers"),
+            covers: dir.join(COVERS_FOLDER),
             index_path,
             catalog: RwLock::new(Catalog::of(Arc::new(index))),
             reading: Mutex::new(()),
@@ -205,7 +209,7 @@ impl Local {
 /// song; `covers` keeps its cover. None if it isn't music played here.
 pub fn file_track(path: &Path, covers: &Path) -> Option<Track> {
     let meta = std::fs::metadata(path).ok()?;
-    let entry = scan::read_file(path, meta.len(), 0, 0, covers)?;
+    let entry = scan::read_file(path, meta.len(), 0, 0, &scan::Covers::new(covers))?;
     Some(track(&entry, &HashMap::new()))
 }
 

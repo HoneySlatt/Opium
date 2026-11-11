@@ -21,6 +21,9 @@ const HOLDER: &str = "OPIUM_TEST_LOCK_HOLDER";
 const IDLE: &str = "OPIUM_TEST_LOCK_IDLE";
 /// In a child: take the profile's lock (`instance::take`), and say how it went.
 const TAKER: &str = "OPIUM_TEST_LOCK_TAKER";
+/// In a child: take the profile's lock, then sweep as `main` does
+/// (`backend::sweep_partials`), and say how it went.
+const SWEEPER: &str = "OPIUM_TEST_LOCK_SWEEPER";
 
 /// Held by each test while it runs. A child started by one test holds a
 /// copy of every file this process has open until it starts its program,
@@ -66,6 +69,16 @@ fn be_a_child() -> bool {
     if std::env::var_os(TAKER).is_some() {
         match instance::take() {
             Ok(_) => println!("taken"),
+            Err(refused) => println!("refused: {refused:?}"),
+        }
+        return true;
+    }
+    if std::env::var_os(SWEEPER).is_some() {
+        match instance::take() {
+            Ok(held) => {
+                desktop::backend::sweep_partials(&held);
+                println!("swept");
+            }
             Err(refused) => println!("refused: {refused:?}"),
         }
         return true;
@@ -255,13 +268,19 @@ fn a_file_where_the_folder_should_be_refuses_the_lock() {
 /// `instance::take`, in a child whose environment is `env` with `HOME` and
 /// the XDG variables removed first: what it said.
 fn take_with(test: &str, env: &[(&str, &std::ffi::OsStr)]) -> String {
+    run_with(test, TAKER, env)
+}
+
+/// The child `role` names, in an environment that is `env` with `HOME` and
+/// the XDG variables removed first: what it said.
+fn run_with(test: &str, role: &str, env: &[(&str, &std::ffi::OsStr)]) -> String {
     let mut command = child(test, &[]);
     for variable in ["HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME"] {
         command.env_remove(variable);
     }
     let mut taker = command
         .envs(env.iter().copied())
-        .env(TAKER, "1")
+        .env(role, "1")
         .spawn()
         .unwrap();
     drop(taker.stdin.take());
@@ -312,4 +331,68 @@ fn without_a_config_folder_there_is_no_lock_to_take() {
             "{env:?}: {said}"
         );
     }
+}
+
+/// Swept once the lock is taken, as `main` does, the partial files a crash
+/// left go from every folder written whole; the downloads', a sign-in
+/// browser's profile and every other file stay. Taking the lock alone
+/// sweeps nothing.
+#[test]
+fn the_partial_files_a_crash_left_go_once_the_lock_is_taken() {
+    if be_a_child() {
+        return;
+    }
+    let _turn = one_at_a_time();
+    let dir = Dir::new("sweep");
+    let (config, cache, data) = (
+        dir.0.join("config/opium"),
+        dir.0.join("cache/opium"),
+        dir.0.join("data/opium"),
+    );
+    let left = [
+        config.join("settings.part"),
+        config.join(".0123456789abcdef.part"),
+        config.join("shared.json.part"),
+        config.join("apple-music/media-user-token.part"),
+        config.join("soundcloud/tokens.part"),
+        config.join("navidrome/credentials.part"),
+        config.join("covers/p.1-00ff00ff00ff00ff.part"),
+        cache.join("library/playlist-p.AbC.json.part.3"),
+        cache.join("covers/0123456789abcdef.part"),
+        cache.join("motion/0123456789abcdef-600.part"),
+        cache.join("local/index.part.42.0"),
+        cache.join("local/covers/0123456789abcdef.part"),
+    ];
+    let kept = [
+        config.join("settings.toml"),
+        config.join("apple-music/browser-profile/Default.part"),
+        data.join("downloads/0123456789abcdef.part"),
+    ];
+    for file in left.iter().chain(&kept) {
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(file, "x").unwrap();
+    }
+    let test = "the_partial_files_a_crash_left_go_once_the_lock_is_taken";
+    let (config_home, cache_home, data_home) = (
+        dir.0.join("config"),
+        dir.0.join("cache"),
+        dir.0.join("data"),
+    );
+    let env = [
+        ("XDG_CONFIG_HOME", config_home.as_os_str()),
+        ("XDG_CACHE_HOME", cache_home.as_os_str()),
+        ("XDG_DATA_HOME", data_home.as_os_str()),
+    ];
+    let said = take_with(test, &env);
+    assert!(said.lines().any(|line| self::said(line, "taken")), "{said}");
+    assert!(
+        left.iter().all(|file| file.exists()),
+        "taking the lock swept"
+    );
+    let said = run_with(test, SWEEPER, &env);
+    assert!(said.lines().any(|line| self::said(line, "swept")), "{said}");
+    let still: Vec<&PathBuf> = left.iter().filter(|file| file.exists()).collect();
+    assert!(still.is_empty(), "left: {still:?}");
+    let gone: Vec<&PathBuf> = kept.iter().filter(|file| !file.exists()).collect();
+    assert!(gone.is_empty(), "swept: {gone:?}");
 }

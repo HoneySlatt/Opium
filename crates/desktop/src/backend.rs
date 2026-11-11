@@ -632,24 +632,76 @@ fn private_dir(dir: &Path) -> std::io::Result<()> {
     std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))
 }
 
-/// Write a secret readable by the user only: aside, then moved over, so
-/// that a crash midway leaves the last one whole.
+/// Write a secret readable by the user only, in a folder only the user can
+/// open, made if missing: whole or not at all
+/// ([`write_whole`](opium_core::files::write_whole)), so that a crash midway
+/// leaves the last one whole.
 pub(crate) fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    use std::io::Write;
-    use std::os::unix::fs::OpenOptionsExt;
     if let Some(dir) = path.parent() {
         private_dir(dir)?;
     }
-    let partial = path.with_extension("part");
-    let mut file = std::fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(&partial)?;
-    file.write_all(bytes)?;
-    file.sync_all()?;
-    std::fs::rename(&partial, path)
+    opium_core::files::write_whole(path, bytes, opium_core::files::Mode::Private)
+}
+
+/// The folders whose files are written whole, each beside its partial
+/// file: the config folder with its `apple-music/`, `soundcloud/`,
+/// `navidrome/` and the playlists' covers; in the cache folder, the library
+/// as last read, the covers, the animated covers, and the files' index and
+/// covers. Not the downloads, which sweep their own, nor a folder the user
+/// chose, nor the sign-in browsers' profiles.
+///
+/// # Panics
+///
+/// Without a config folder, as [`crate::settings::dir`].
+fn written_whole() -> Vec<PathBuf> {
+    let config = crate::settings::dir();
+    let local = local_dir();
+    let mut folders = vec![
+        config.join(synced::COVERS_FOLDER),
+        apple_music_dir(),
+        soundcloud_dir(),
+        navidrome_dir(),
+        config,
+    ];
+    folders.extend(local.as_ref().map(|local| local.join(local::COVERS_FOLDER)));
+    folders.extend(
+        [
+            crate::cache::dir(),
+            crate::covers::dir(),
+            crate::covers::motion_dir(),
+            local,
+        ]
+        .into_iter()
+        .flatten(),
+    );
+    folders
+}
+
+/// Remove the partial files a crash left in the folders written whole
+/// ([`opium_core::files::sweep_partials`]), saying on standard error where
+/// any went. Call it at start, right after [`crate::instance::take`], before
+/// anything is written: `_held`, the profile's lock, proves that no other
+/// Opium writes in its config folder.
+///
+/// The lock guards the config folder only. A second Opium given another
+/// config folder but the same cache folder (only `XDG_CONFIG_HOME` set) may
+/// have a cache write under way there, which the sweep then makes fail: a
+/// cache, read again.
+///
+/// # Panics
+///
+/// Without a config folder, as [`crate::settings::dir`]: [`crate::instance::take`]
+/// gave none without one.
+pub fn sweep_partials(_held: &crate::instance::Instance) {
+    for folder in written_whole() {
+        let removed = opium_core::files::sweep_partials(&folder);
+        if removed > 0 {
+            eprintln!(
+                "opium: removed {removed} partial files a crash left in {}",
+                folder.display()
+            );
+        }
+    }
 }
 
 /// Keep SoundCloud's tokens, readable by the user only.
@@ -809,11 +861,14 @@ fn local_request(
     }
 }
 
+/// Where the Navidrome sign-in is kept: `navidrome` in the config folder.
+fn navidrome_dir() -> PathBuf {
+    apple_music_dir().with_file_name("navidrome")
+}
+
 /// Where the Navidrome sign-in keeps the server, the user and the token.
 fn navidrome_file() -> PathBuf {
-    apple_music_dir()
-        .with_file_name("navidrome")
-        .join("credentials.json")
+    navidrome_dir().join("credentials.json")
 }
 
 /// Keep the server's sign-in, readable by the user only.

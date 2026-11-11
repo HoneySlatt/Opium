@@ -2,15 +2,16 @@
 //! the disk so a launch shows the library at once, and only the files changed
 //! since are read again.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Condvar, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use lofty::file::{AudioFile, FileType, TaggedFileExt};
 use lofty::picture::PictureType;
 use lofty::tag::{ItemKey, Tag};
+use opium_core::files::{Mode, write_whole};
 use opium_core::model::Codec;
 use serde::{Deserialize, Serialize};
 
@@ -66,20 +67,18 @@ impl Index {
             .unwrap_or_default()
     }
 
+    /// Write the index to `path`, its folder made if missing: whole or not
+    /// at all, even with two writes at once ([`write_whole`]).
+    ///
+    /// # Errors
+    ///
+    /// The folder can't be made, or the index written: `path` is then as it
+    /// was.
     pub fn write(&self, path: &Path) -> std::io::Result<()> {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
         }
-        // A name of its own, so that two writes at once can't each put
-        // half of theirs in the same file and leave it unreadable.
-        static WRITES: AtomicUsize = AtomicUsize::new(0);
-        let partial = path.with_extension(format!(
-            "part.{}.{}",
-            std::process::id(),
-            WRITES.fetch_add(1, Ordering::Relaxed)
-        ));
-        std::fs::write(&partial, serde_json::to_vec(self)?)?;
-        std::fs::rename(partial, path)
+        write_whole(path, &serde_json::to_vec(self)?, Mode::Default)
     }
 }
 
@@ -149,6 +148,7 @@ pub(crate) fn walk(folders: &[PathBuf]) -> Vec<(PathBuf, u64, u64)> {
 /// Read `folders` again: the files kept as they were reused, the others
 /// read; whether anything changed.
 pub fn scan(folders: &[PathBuf], before: &Index, covers: &Path) -> (Index, bool) {
+    let covers = Covers::new(covers);
     let known: HashMap<&str, &Entry> = before
         .entries
         .iter()
@@ -216,7 +216,7 @@ pub fn scan(folders: &[PathBuf], before: &Index, covers: &Path) -> (Index, bool)
                         return;
                     };
                     let entry =
-                        read_file(path, *size, *modified, added.unwrap_or(*modified), covers)
+                        read_file(path, *size, *modified, added.unwrap_or(*modified), &covers)
                             .ok_or_else(|| (path.to_string_lossy().into_owned(), *size, *modified));
                     read.lock().unwrap_or_else(|e| e.into_inner()).push(entry);
                 }
@@ -230,20 +230,20 @@ pub fn scan(folders: &[PathBuf], before: &Index, covers: &Path) -> (Index, bool)
             Err(file) => skipped.push(file),
         }
     }
-    folder_covers(&mut entries, covers);
+    folder_covers(&mut entries, &covers);
     entries.sort_by(|a, b| a.path.cmp(&b.path));
     let changed = entries != before.entries;
     (Index { entries, skipped }, changed)
 }
 
-/// The file at `path` as an entry, its tags read; none if it isn't music
-/// the player decodes.
+/// The file at `path` as an entry, its tags read, its cover kept in
+/// `covers`; none if it isn't music the player decodes.
 pub fn read_file(
     path: &Path,
     size: u64,
     modified: u64,
     added: u64,
-    covers: &Path,
+    covers: &Covers,
 ) -> Option<Entry> {
     let file = lofty::read_from_path(path).ok()?;
     let props = file.properties();
@@ -307,31 +307,121 @@ pub fn read_file(
 /// The tag's front cover, else its first picture, kept square in `covers`
 /// under the picture's own hash: the same picture on every track of an
 /// album is made once.
-fn embedded_cover(tag: &Tag, covers: &Path) -> Option<String> {
+fn embedded_cover(tag: &Tag, covers: &Covers) -> Option<String> {
     let pictures = tag.pictures();
     let picture = pictures
         .iter()
         .find(|p| p.pic_type() == PictureType::CoverFront)
         .or_else(|| pictures.first())?;
-    keep_cover(picture.data(), covers)
+    covers.keep(picture.data())
 }
 
-/// `bytes`, a picture, made square in `covers`; its path.
-pub fn keep_cover(bytes: &[u8], covers: &Path) -> Option<String> {
-    let path = covers.join(format!("{:016x}.jpg", fnv(bytes)));
-    if !path.exists() {
-        let square = opium_core::cover::square(bytes)?;
-        std::fs::create_dir_all(covers).ok()?;
-        let partial = path.with_extension("part");
-        std::fs::write(&partial, square).ok()?;
-        std::fs::rename(&partial, &path).ok()?;
+/// The covers one scan keeps in their folder, each under its picture's own
+/// hash: made once however many workers reach it at once ([`Making`]), and
+/// one that can't be made tried once in the scan.
+pub struct Covers<'a> {
+    folder: &'a Path,
+    /// The covers this scan couldn't make, by their path: not tried again
+    /// until the next scan, which may find the disk no longer full.
+    failed: Mutex<HashSet<PathBuf>>,
+    /// Makes a picture a cover: [`opium_core::cover::square`], or a test's
+    /// own.
+    square: fn(&[u8]) -> Option<Vec<u8>>,
+}
+
+impl<'a> Covers<'a> {
+    /// The covers kept in `folder`, made when first written to, for one
+    /// scan or one file.
+    pub fn new(folder: &'a Path) -> Self {
+        Self {
+            folder,
+            failed: Mutex::default(),
+            square: opium_core::cover::square,
+        }
     }
-    Some(path.to_string_lossy().into_owned())
+
+    /// `bytes`, a picture, made square in the folder; its path.
+    ///
+    /// Made once: a worker that reaches a cover another is making waits for
+    /// it, then takes it as made (the scan reads an album's files at once,
+    /// each with the same picture). One these covers couldn't make is not
+    /// tried again, by the workers waiting for it nor by those after.
+    /// Written whole ([`write_whole`]), so a reader never finds half a
+    /// cover. `None` when the picture doesn't decode or can't be kept.
+    pub fn keep(&self, bytes: &[u8]) -> Option<String> {
+        let path = self.folder.join(format!("{:016x}.jpg", fnv(bytes)));
+        if !path.exists() && !self.make_once(bytes, &path) {
+            return None;
+        }
+        Some(path.to_string_lossy().into_owned())
+    }
+
+    /// Make the cover at `path` from `bytes`, unless another worker made it
+    /// meanwhile or these covers failed to; whether it is there.
+    fn make_once(&self, bytes: &[u8], path: &Path) -> bool {
+        let Some(_making) = Making::claim(path) else {
+            return true;
+        };
+        if self.failed().contains(path) {
+            return false;
+        }
+        let made = (self.square)(bytes).is_some_and(|square| {
+            std::fs::create_dir_all(self.folder).is_ok()
+                && write_whole(path, &square, Mode::Default).is_ok()
+        });
+        if !made {
+            // Noted while `_making` is held: the workers waiting for it read
+            // this once it goes.
+            self.failed().insert(path.to_owned());
+        }
+        made
+    }
+
+    fn failed(&self) -> std::sync::MutexGuard<'_, HashSet<PathBuf>> {
+        // A worker that panicked left the set whole: one path in or not.
+        self.failed.lock().unwrap_or_else(|e| e.into_inner())
+    }
+}
+
+/// The covers being made now, by their path, and the signal that one is
+/// done.
+static MAKING: (Mutex<Vec<PathBuf>>, Condvar) = (Mutex::new(Vec::new()), Condvar::new());
+
+/// A cover this worker makes: others that reach it wait until it is
+/// dropped, made or not.
+struct Making<'a>(&'a Path);
+
+impl<'a> Making<'a> {
+    /// The cover at `path` to make, once no other worker makes it; `None`
+    /// if, by then, it is there.
+    fn claim(path: &'a Path) -> Option<Self> {
+        let (making, done) = &MAKING;
+        let mut making = making.lock().unwrap_or_else(|e| e.into_inner());
+        while making.iter().any(|other| other == path) {
+            making = done.wait(making).unwrap_or_else(|e| e.into_inner());
+        }
+        if path.exists() {
+            return None;
+        }
+        making.push(path.to_owned());
+        Some(Self(path))
+    }
+}
+
+impl Drop for Making<'_> {
+    fn drop(&mut self) {
+        let (making, done) = &MAKING;
+        making
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .retain(|other| other != self.0);
+        done.notify_all();
+    }
 }
 
 /// The files with no picture of their own take their folder's: `cover.jpg`,
 /// `folder.png` and the like.
-fn folder_covers(entries: &mut [Entry], covers: &Path) {
+fn folder_covers(entries: &mut [Entry], covers: &Covers) {
     let mut found: HashMap<PathBuf, Option<String>> = HashMap::new();
     for entry in entries.iter_mut().filter(|e| e.cover.is_none()) {
         let Some(dir) = Path::new(&entry.path).parent() else {
@@ -344,7 +434,7 @@ fn folder_covers(entries: &mut [Entry], covers: &Path) {
     }
 }
 
-fn folder_cover(dir: &Path, covers: &Path) -> Option<String> {
+fn folder_cover(dir: &Path, covers: &Covers) -> Option<String> {
     let pictures = std::fs::read_dir(dir).ok()?.flatten().filter_map(|item| {
         let path = item.path();
         let ext = path.extension()?.to_str()?.to_ascii_lowercase();
@@ -360,7 +450,7 @@ fn folder_cover(dir: &Path, covers: &Path) -> Option<String> {
         }
     }
     let (_, path) = best?;
-    keep_cover(&std::fs::read(path).ok()?, covers)
+    covers.keep(&std::fs::read(path).ok()?)
 }
 
 /// FNV-1a, 64 bits.
@@ -486,5 +576,228 @@ pub(crate) mod tests {
         let (empty, changed) = scan(&[music], &index, &covers);
         assert!(empty.entries.is_empty() && changed);
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// `bytes` kept as a cover in `covers` as a lone file's is, in a
+    /// [`Covers`] of its own: how the stage 1 audit's tests below reach it.
+    fn keep_cover(bytes: &[u8], covers: &Path) -> Option<String> {
+        Covers::new(covers).keep(bytes)
+    }
+
+    /// A folder of the test's own under the temporary folder, made empty.
+    fn own_folder(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("local-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// How long a claim that should wait is given to return all the same.
+    const STILL_WAITING: std::time::Duration = std::time::Duration::from_millis(300);
+
+    #[test]
+    fn a_second_claim_waits_for_the_first_then_finds_the_cover_made() {
+        let dir = own_folder("claim-made");
+        let path = dir.join("cover.jpg");
+        let first = Making::claim(&path).expect("nobody makes it yet");
+        let (said, heard) = std::sync::mpsc::channel();
+        std::thread::scope(|scope| {
+            scope.spawn(|| said.send(Making::claim(&path).is_some()).unwrap());
+            assert!(
+                heard.recv_timeout(STILL_WAITING).is_err(),
+                "the second claim didn't wait for the first"
+            );
+            std::fs::write(&path, b"made").unwrap();
+            drop(first);
+            assert!(!heard.recv().unwrap(), "claimed though it was made");
+        });
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_second_claim_waits_for_the_first_then_makes_what_it_failed_to() {
+        let dir = own_folder("claim-failed");
+        let path = dir.join("cover.jpg");
+        let first = Making::claim(&path).expect("nobody makes it yet");
+        let (said, heard) = std::sync::mpsc::channel();
+        std::thread::scope(|scope| {
+            scope.spawn(|| said.send(Making::claim(&path).is_some()).unwrap());
+            assert!(
+                heard.recv_timeout(STILL_WAITING).is_err(),
+                "the second claim didn't wait for the first"
+            );
+            // Failed: dropped with no cover made.
+            drop(first);
+            assert!(heard.recv().unwrap(), "not claimed though nobody made it");
+        });
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_second_claim_waits_for_the_first_then_makes_what_it_panicked_on() {
+        let dir = own_folder("claim-panicked");
+        let path = dir.join("cover.jpg");
+        let path = path.as_path();
+        let (claimed, first_claimed) = std::sync::mpsc::channel();
+        let (go, panic_now) = std::sync::mpsc::channel::<()>();
+        let (said, heard) = std::sync::mpsc::channel();
+        std::thread::scope(|scope| {
+            // Owned here, so that a failed assertion lets the maker go.
+            let go = go;
+            let first = scope.spawn(move || {
+                let _making = Making::claim(path).expect("nobody makes it yet");
+                claimed.send(()).unwrap();
+                panic_now.recv().unwrap();
+                // A panic, without the message a test's would print.
+                std::panic::resume_unwind(Box::new("the maker panicked"));
+            });
+            first_claimed.recv().unwrap();
+            scope.spawn(|| said.send(Making::claim(path).is_some()).unwrap());
+            assert!(
+                heard.recv_timeout(STILL_WAITING).is_err(),
+                "the second claim didn't wait for the first"
+            );
+            go.send(()).unwrap();
+            assert!(first.join().is_err());
+            assert!(
+                heard.recv().unwrap(),
+                "not claimed after the maker panicked"
+            );
+        });
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// Eight workers at once, as an album's first files reach the same
+    /// picture: what each was told. Each `square` call takes a tenth of a
+    /// second, so that every worker reaches the cover while it is made.
+    fn eight_at_once(covers: &Covers, bytes: &[u8]) -> Vec<Option<String>> {
+        let together = std::sync::Barrier::new(8);
+        std::thread::scope(|scope| {
+            let workers: Vec<_> = (0..8)
+                .map(|_| {
+                    scope.spawn(|| {
+                        together.wait();
+                        covers.keep(bytes)
+                    })
+                })
+                .collect();
+            workers.into_iter().map(|w| w.join().unwrap()).collect()
+        })
+    }
+
+    #[test]
+    fn a_cover_reached_by_eight_workers_at_once_is_made_once() {
+        static MADE: AtomicUsize = AtomicUsize::new(0);
+        fn square(bytes: &[u8]) -> Option<Vec<u8>> {
+            MADE.fetch_add(1, Ordering::SeqCst);
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            Some(bytes.to_vec())
+        }
+        let dir = own_folder("made-once");
+        let covers = Covers {
+            square,
+            ..Covers::new(&dir)
+        };
+        let told = eight_at_once(&covers, b"a picture");
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(told.iter().all(Option::is_some), "{told:?}");
+        assert_eq!(MADE.load(Ordering::SeqCst), 1, "times the cover was made");
+    }
+
+    #[test]
+    fn a_cover_that_cant_be_made_is_tried_once_in_a_scan() {
+        static TRIED: AtomicUsize = AtomicUsize::new(0);
+        fn square(_: &[u8]) -> Option<Vec<u8>> {
+            TRIED.fetch_add(1, Ordering::SeqCst);
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            None
+        }
+        let dir = own_folder("failed-once");
+        let covers = Covers {
+            square,
+            ..Covers::new(&dir)
+        };
+        let told = eight_at_once(&covers, b"not a picture");
+        // The album's later files, in the same scan.
+        let later: Vec<_> = (0..4).map(|_| covers.keep(b"not a picture")).collect();
+        let in_this_scan = TRIED.load(Ordering::SeqCst);
+        // The next scan tries again.
+        let next_scan = Covers {
+            square,
+            ..Covers::new(&dir)
+        };
+        let again = next_scan.keep(b"not a picture");
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(
+            told.iter()
+                .chain(&later)
+                .chain([&again])
+                .all(Option::is_none)
+        );
+        assert_eq!(in_this_scan, 1, "times this scan tried the picture");
+        assert_eq!(TRIED.load(Ordering::SeqCst), 2, "the next scan didn't try");
+    }
+
+    // Stage 1 audit, W11: a cover made by eight threads at once left some songs without it.
+    #[test]
+    fn the_same_cover_kept_by_eight_threads_at_once_is_kept_for_each() {
+        let mut png = std::io::Cursor::new(Vec::new());
+        image::RgbImage::from_fn(640, 640, |x, y| image::Rgb([x as u8, y as u8, 90]))
+            .write_to(&mut png, image::ImageFormat::Png)
+            .unwrap();
+        let png = png.into_inner();
+        let mut without = 0;
+        for round in 0..20 {
+            let covers = std::env::temp_dir()
+                .join(format!("local-covers-race-{}-{round}", std::process::id()));
+            let start = std::sync::Barrier::new(8);
+            let kept: Vec<Option<String>> = std::thread::scope(|s| {
+                let handles: Vec<_> = (0..8)
+                    .map(|_| {
+                        s.spawn(|| {
+                            start.wait();
+                            keep_cover(&png, &covers)
+                        })
+                    })
+                    .collect();
+                handles.into_iter().map(|h| h.join().unwrap()).collect()
+            });
+            without += kept.iter().filter(|k| k.is_none()).count();
+            let _ = std::fs::remove_dir_all(&covers);
+        }
+        assert_eq!(without, 0, "tracks left without their cover");
+    }
+
+    // Stage 1 audit, W11: an album's cover was made by every worker at once, and some lost it.
+    /// An album's cover, embedded in each of its files, reached by eight of the scan's workers at
+    /// once: each file is told where the cover is kept.
+    #[test]
+    fn an_albums_cover_reached_by_every_worker_at_once_is_kept_for_each_file() {
+        let dir = std::env::temp_dir().join(format!("local-cover-once-{}", std::process::id()));
+        // As covers come: 1200 px, so that making it square takes as long as it does for real.
+        let mut png = std::io::Cursor::new(Vec::new());
+        image::RgbImage::from_fn(1200, 1200, |x, y| image::Rgb([x as u8, y as u8, 90]))
+            .write_to(&mut png, image::ImageFormat::Png)
+            .unwrap();
+        let picture = png.into_inner();
+        let mut without = 0;
+        for round in 0..10 {
+            let covers = dir.join(format!("covers-{round}"));
+            let together = std::sync::Barrier::new(8);
+            let kept: Vec<Option<String>> = std::thread::scope(|scope| {
+                let workers: Vec<_> = (0..8)
+                    .map(|_| {
+                        scope.spawn(|| {
+                            together.wait();
+                            keep_cover(&picture, &covers)
+                        })
+                    })
+                    .collect();
+                workers.into_iter().map(|w| w.join().unwrap()).collect()
+            });
+            without += kept.iter().filter(|k| k.is_none()).count();
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(without, 0, "of 80 files, {without} told of no cover");
     }
 }

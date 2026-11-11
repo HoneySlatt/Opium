@@ -286,8 +286,22 @@ impl Session {
 
     /// Keep in `dir` what the services' sign-ins need kept: when Apple's
     /// newest songs were first seen, for Recently Added.
+    ///
+    /// The app calls it once, as it starts, with its files folder: first,
+    /// nothing being written there yet, the partial files a crash left are
+    /// removed from `dir`, from its folder of the library's lists
+    /// (`library`) and from that of the playlists' covers
+    /// ([`opium_core::files::sweep_partials`]).
     pub fn keep_in(&self, dir: String) {
-        *self.dir.write().unwrap_or_else(|e| e.into_inner()) = Some(dir.into());
+        let dir = std::path::PathBuf::from(dir);
+        for folder in [
+            dir.join(KEPT_LISTS),
+            dir.join(synced::COVERS_FOLDER),
+            dir.clone(),
+        ] {
+            opium_core::files::sweep_partials(&folder);
+        }
+        *self.dir.write().unwrap_or_else(|e| e.into_inner()) = Some(dir);
     }
 
     /// Opium's own playlists, as `connect` keeps them, answered with the
@@ -1295,15 +1309,25 @@ pub fn artists_left_out(artists: Vec<Artist>) -> Vec<u32> {
     sorted(opium_core::dedupe::artists(&artists))
 }
 
+/// The folder, in the app's files folder, of the library's lists that
+/// [`keep`] writes, swept by [`Session::keep_in`]. It must match the name
+/// the app gives it (`android/…/data/Core.kt`, `kept`): renamed there and
+/// not here, its partial files would stay.
+const KEPT_LISTS: &str = "library";
+
 /// The library's lists as last read, kept in the app's files: shown at once
-/// at the next launch while the services are asked again. Written aside,
-/// then moved over the old one.
+/// at the next launch while the services are asked again. Written whole or
+/// not at all ([`write_whole`](opium_core::files::write_whole)), however
+/// many keep one list at once.
 fn keep<T: serde::Serialize>(path: &str, items: &[T]) {
     let Ok(bytes) = serde_json::to_vec(items) else {
         return;
     };
-    let partial = format!("{path}.part");
-    let _ = std::fs::write(&partial, bytes).and_then(|()| std::fs::rename(&partial, path));
+    let _ = opium_core::files::write_whole(
+        std::path::Path::new(path),
+        &bytes,
+        opium_core::files::Mode::Default,
+    );
 }
 
 /// What was kept at `path`: nothing if nothing readable was.
@@ -2136,4 +2160,81 @@ fn owned_file(fd: i32) -> Option<std::fs::File> {
     // and passes it to one call only, so the `File` is its one owner and
     // closes it once.
     (fd >= 0).then(|| unsafe { std::fs::File::from_raw_fd(fd) })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Stage 1 audit, W11: the phone's caches shared one partial file per list.
+    /// A list kept by two threads at once, as when two pages keep theirs, is kept whole: one
+    /// list or the other, and every read meanwhile finds one whole too.
+    #[test]
+    fn a_list_kept_by_two_threads_at_once_is_kept_whole() {
+        let dir = std::env::temp_dir().join(format!("opium-ffi-keep-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("tracks.json").to_string_lossy().into_owned();
+        // Of two lengths, so that one written into the other's file would not read.
+        let long: Vec<String> = (0..2000).map(|i| format!("song {i}")).collect();
+        let short = vec!["one song".to_owned()];
+        keep(&path, &short);
+        let writing = std::sync::atomic::AtomicUsize::new(2);
+        let mut torn = 0;
+        std::thread::scope(|scope| {
+            for list in [&long, &short] {
+                let (path, writing) = (&path, &writing);
+                scope.spawn(move || {
+                    for _ in 0..200 {
+                        keep(path, list);
+                    }
+                    writing.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+                });
+            }
+            while writing.load(std::sync::atomic::Ordering::Relaxed) > 0 {
+                let read: Vec<String> = kept(&path);
+                if read != long && read != short {
+                    torn += 1;
+                }
+            }
+        });
+        let last: Vec<String> = kept(&path);
+        let left = std::fs::read_dir(&dir).unwrap().count();
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(torn, 0, "reads that found neither list whole");
+        assert!(
+            last == long || last == short,
+            "the list kept doesn't read whole"
+        );
+        assert_eq!(left, 1, "a partial file was left beside the list");
+    }
+
+    /// As the app starts, the partial files a crash left in the folders the
+    /// core writes whole go; the downloads', and every other file, stay.
+    #[test]
+    fn the_partial_files_a_crash_left_go_as_the_app_starts() {
+        let dir = std::env::temp_dir().join(format!("opium-ffi-sweep-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let left = [
+            dir.join("recently-searched.json.part"),
+            dir.join(".0123456789abcdef.part"),
+            dir.join("library/songs-APPLE_MUSIC.json.part"),
+            dir.join("covers/p.1-00ff00ff00ff00ff.part"),
+        ];
+        let kept = [
+            dir.join("recently-searched.json"),
+            dir.join("downloads/0123456789abcdef.part"),
+            dir.join("vault/apple-music.part"),
+        ];
+        for file in left.iter().chain(&kept) {
+            std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+            std::fs::write(file, "x").unwrap();
+        }
+        Session::new().keep_in(dir.to_string_lossy().into_owned());
+        let gone: Vec<bool> = left.iter().map(|file| !file.exists()).collect();
+        let stayed: Vec<bool> = kept.iter().map(|file| file.exists()).collect();
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(gone, [true; 4], "{left:?}");
+        assert_eq!(stayed, [true; 3], "{kept:?}");
+    }
 }

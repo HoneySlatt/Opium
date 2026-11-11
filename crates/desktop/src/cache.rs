@@ -3,10 +3,12 @@
 
 use std::path::PathBuf;
 
+use opium_core::files::{Mode, write_whole};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
-fn dir() -> Option<PathBuf> {
+/// The library's folder: `library` in the cache folder.
+pub(crate) fn dir() -> Option<PathBuf> {
     Some(crate::folders::cache()?.join("library"))
 }
 
@@ -31,8 +33,10 @@ pub fn read<T: DeserializeOwned>(name: &str) -> Option<T> {
     serde_json::from_str(&navidrome::scrub_kept(&text)).ok()
 }
 
-/// Keep `value` under `name`, replacing the old one whole: written aside, then
-/// moved over it.
+/// Keep `value` under `name`, replacing the old one whole or not at all
+/// ([`write_whole`]), even with two writers of one entry at once (an album
+/// opened twice over). A write that fails keeps nothing, and says nothing:
+/// it is a cache.
 pub fn write<T: Serialize>(name: &str, value: &T) {
     let (Some(dir), Some(path)) = (dir(), file(name)) else {
         return;
@@ -40,17 +44,7 @@ pub fn write<T: Serialize>(name: &str, value: &T) {
     let Ok(bytes) = serde_json::to_vec(value) else {
         return;
     };
-    // A name of its own per write: two writers of one entry (an album
-    // opened twice over) would otherwise each put part of theirs in the
-    // same file, and what was renamed into place wouldn't read.
-    static WRITES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-    let partial = path.with_extension(format!(
-        "json.part.{}",
-        WRITES.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-    ));
-    let _ = std::fs::create_dir_all(&dir)
-        .and_then(|()| std::fs::write(&partial, bytes))
-        .and_then(|()| std::fs::rename(&partial, &path));
+    let _ = std::fs::create_dir_all(&dir).and_then(|()| write_whole(&path, &bytes, Mode::Default));
 }
 
 /// Forget everything kept: another account may sign in.

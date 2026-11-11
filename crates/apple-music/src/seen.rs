@@ -11,6 +11,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use opium_core::files::{Mode, write_whole};
+
 /// The times the user's other devices saw songs first, kept in common.
 pub trait SeenElsewhere: Send + Sync {
     /// When each of `ids` was first seen on any device, of those known, in
@@ -98,6 +100,7 @@ impl Seen {
         out
     }
 
+    /// Written whole or not at all ([`write_whole`]).
     fn save(&self) {
         let Ok(bytes) = serde_json::to_vec(&self.times) else {
             return;
@@ -105,10 +108,7 @@ impl Seen {
         if let Some(dir) = self.path.parent() {
             let _ = std::fs::create_dir_all(dir);
         }
-        let partial = self.path.with_extension("part");
-        if std::fs::write(&partial, bytes).is_ok() {
-            let _ = std::fs::rename(&partial, &self.path);
-        }
+        let _ = write_whole(&self.path, &bytes, Mode::Default);
     }
 }
 

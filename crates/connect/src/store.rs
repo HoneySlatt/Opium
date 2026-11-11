@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use opium_core::files::put_aside;
+use opium_core::files::{Mode, put_aside, write_whole};
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 
@@ -234,8 +234,8 @@ impl Store {
         self.save();
     }
 
-    /// Written aside, readable by the user alone, then moved over; never
-    /// over a file that may not be written.
+    /// Written whole or not at all, readable by the user alone
+    /// ([`write_whole`]); never over a file that may not be written.
     fn save(&self) {
         if !self.writable {
             return;
@@ -246,22 +246,7 @@ impl Store {
         if let Some(dir) = self.path.parent() {
             let _ = std::fs::create_dir_all(dir);
         }
-        let partial = self.path.with_extension("json.part");
-        let written = {
-            use std::io::Write;
-            let mut options = std::fs::OpenOptions::new();
-            options.write(true).create(true).truncate(true);
-            #[cfg(unix)]
-            std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
-            // On disk before it replaces the last: a power cut midway leaves
-            // one or the other whole.
-            options
-                .open(&partial)
-                .and_then(|mut f| f.write_all(&bytes).and_then(|()| f.sync_all()))
-        };
-        if written.is_ok() {
-            let _ = std::fs::rename(&partial, &self.path);
-        }
+        let _ = write_whole(&self.path, &bytes, Mode::Private);
     }
 }
 

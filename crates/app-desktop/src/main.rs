@@ -42,6 +42,7 @@ fn main() -> eframe::Result {
             std::process::exit(1);
         }
     };
+    backend::sweep_partials(&_instance);
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("Opium")

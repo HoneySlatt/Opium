@@ -106,7 +106,8 @@ fn wait_until_held(held: bool, what: &str) {
     }
 }
 
-/// The Opium already running, and its profile: a config folder of its own.
+/// The Opium already running, and its profile: config, cache and data
+/// folders of its own.
 struct First {
     child: Child,
     stdout: BufReader<ChildStdout>,
@@ -151,7 +152,10 @@ fn first_instance(test: &str, delay: Duration) -> First {
     let mut child = Command::new(std::env::current_exe().expect("the test binary"))
         .args(["--exact", test, "--test-threads=1", "--nocapture"])
         .env(FIRST, delay.as_millis().to_string())
+        // Every folder of its own, so that nothing of the user's is reached.
         .env("XDG_CONFIG_HOME", &profile)
+        .env("XDG_CACHE_HOME", profile.join("cache"))
+        .env("XDG_DATA_HOME", profile.join("data"))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()

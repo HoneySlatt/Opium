@@ -658,18 +658,30 @@ fn playlists_moving_to_their_own_file_survive_a_write_that_fails() {
     before.create_playlist("p", "Mix".into(), String::new(), vec![track(1)], 1000);
     let old = serde_json::json!({ "me": "a", "shared": before.shared });
     std::fs::write(dir.join("shared.json"), old.to_string()).unwrap();
-    // As a full disk would: a folder stands where the new file's copy goes.
-    std::fs::create_dir(dir.join("playlists.json.part")).unwrap();
+    // As a full disk would: the new file's writes fail.
+    let lists = dir.join("playlists.json");
+    lock(&FAILING_WRITES).push(lists.clone());
     let kept = Kept::open(&dir, Vec::new);
     kept.flush();
     drop(kept);
-    std::fs::remove_dir(dir.join("playlists.json.part")).unwrap();
+    lock(&FAILING_WRITES).retain(|failing| *failing != lists);
+    let failed = !lists.exists();
     let again = Kept::open(&dir, Vec::new);
     let kept_on_disk = again.playlist("p").is_some();
     again.flush();
     drop(again);
     let _ = std::fs::remove_dir_all(&dir);
+    assert!(failed, "the write of playlists.json failed");
     assert!(kept_on_disk, "the playlist is still in one of the files");
+}
+
+/// The files whose writes fail, as on a full disk: each test names its own,
+/// in a folder of its own.
+static FAILING_WRITES: Mutex<Vec<std::path::PathBuf>> = Mutex::new(Vec::new());
+
+/// Whether a test made the writes of `path` fail.
+pub(super) fn write_fails(path: &Path) -> bool {
+    lock(&FAILING_WRITES).iter().any(|failing| failing == path)
 }
 
 /// Stage 1 audit, S4: a playlist id another device chose never names a
