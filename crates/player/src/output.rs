@@ -642,4 +642,65 @@ mod tests {
             "loudest sample {loudest} from a source at 0.5; gain now {gain}"
         );
     }
+
+    /// The fade when the ring runs dry, in stereo: the test before is mono, where `n / channels`
+    /// and `n * channels` are the same number.
+    ///
+    /// 100 stereo frames of 1.0 into 200 frames' room, at 1 kHz: the fade is 5 frames long, frames
+    /// 95 to 99 at 0.8, 0.6, 0.4, 0.2 and 0, both channels alike; the rest silent.
+    ///
+    /// Catches `n / channels` replaced by `n * channels` in `fill` (a miss before): `frames` would
+    /// be 400, the fade skip past every frame, and the music cut off where it ran dry, a click at
+    /// each stall.
+    #[test]
+    fn a_ring_run_dry_fades_out_in_stereo_too() {
+        let (mut producer, mut consumer) = rtrb::RingBuffer::new(1024);
+        for _ in 0..200 {
+            producer.push(1.0).unwrap();
+        }
+        let state = OutputState::new(1.0);
+        let mut gain = 1.0;
+        let mut out = [0.5; 400];
+        fill(&mut consumer, &state, &mut gain, &mut out, 2, 1_000);
+        assert_eq!(out[..190], [1.0; 190]);
+        assert!(out[190] < 1.0 && out[190] > 0.0 && out[190] == out[191]);
+        assert_eq!(out[198..], [0.0; 202]);
+        assert_eq!(gain, 0.0);
+    }
+
+    /// A pause fades out, then reads nothing more: what is buffered waits in the ring, whole, and
+    /// plays from where it stopped once the music goes on.
+    ///
+    /// 100 frames of 1.0, mono, 1 kHz: the fade to silence reads about 5 of them.
+    ///
+    /// Catches `*gain == 0.0` replaced by `*gain != 0.0` in `fill` (a miss before: the pause would
+    /// cut the sound at once rather than fade, and once silent the output would read on, the song
+    /// moving on unheard).
+    #[test]
+    fn a_pause_fades_out_and_keeps_what_is_buffered() {
+        let (mut producer, mut consumer) = rtrb::RingBuffer::new(1024);
+        for _ in 0..100 {
+            producer.push(1.0).unwrap();
+        }
+        let state = OutputState::new(1.0);
+        state.paused.store(true, Ordering::Relaxed);
+        let mut gain = 1.0;
+        let mut out = [0.5; 20];
+        fill(&mut consumer, &state, &mut gain, &mut out, 1, 1_000);
+        assert!(out[0] > 0.0 && out[0] < 1.0, "a pause fades out");
+        assert_eq!(gain, 0.0);
+        let left = consumer.slots();
+        assert!(left >= 90, "only the fade was read: {left} left");
+        // Paused and silent: nothing read, nothing dropped.
+        let mut out = [0.5; 20];
+        fill(&mut consumer, &state, &mut gain, &mut out, 1, 1_000);
+        assert_eq!(out, [0.0; 20]);
+        assert_eq!(consumer.slots(), left);
+        // Played again: from where it stopped, fading in.
+        state.paused.store(false, Ordering::Relaxed);
+        let mut out = [0.0; 10];
+        fill(&mut consumer, &state, &mut gain, &mut out, 1, 1_000);
+        assert!(out[0] > 0.0 && out[0] < 1.0);
+        assert_eq!(consumer.slots(), left - 10);
+    }
 }

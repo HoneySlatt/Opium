@@ -99,4 +99,24 @@ mod tests {
             assert!(c.len() == 6 && c.bytes().all(|b| b.is_ascii_digit()));
         }
     }
+
+    /// The key two devices keep is drawn from their pairing's own: two pairings keep two keys,
+    /// neither a fixed one, and the derivation is pinned, as two devices on different versions of
+    /// Opium must derive alike. The test before checks only that both ends agree, which a constant
+    /// passes: every pairing would then share one key, and any device could pass for a paired one.
+    ///
+    /// The answer: HMAC-SHA-256 under 32 bytes of 7 of "opium-connect psk", computed apart with
+    /// Python's `hmac`.
+    ///
+    /// Catches `kept` replaced by `[0; 32]` (a miss before) or by `[1; 32]`.
+    #[test]
+    fn each_pairing_keeps_a_key_of_its_own() {
+        let (one, _) = exchange("123456", "123456");
+        let (other, _) = exchange("123456", "123456");
+        assert_ne!(one, other, "each exchange agrees on a key of its own");
+        assert_ne!(kept(&one), kept(&other));
+        let answer = "09882de3409ff79f29a76b4e4df4a060ce436a795cda80bf832deae082dae629";
+        let kept_of_sevens: String = kept(&[7; 32]).iter().map(|b| format!("{b:02x}")).collect();
+        assert_eq!(kept_of_sevens, answer);
+    }
 }

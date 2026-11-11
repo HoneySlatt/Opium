@@ -70,6 +70,26 @@ mod year {
         // Run in 2026 or later.
         assert!(super::current_year() >= 2026);
     }
+
+    /// This year by the clock is the calendar's: opium-core's reading of a date
+    /// (`opium_core::recent::rfc3339`), another algorithm, says the same year. The test before
+    /// asks only for 2026 or later, which any wrong year after that passes, and fails on a
+    /// machine whose clock is behind. This one still reads the clock, twice: it could be wrong a
+    /// few microseconds a year, at the turn of the year in UTC.
+    ///
+    /// Catches most mutants of `current_year` that the test before lets by. Some change the year
+    /// only on some days (January and February, the turn of a century), which a test of today
+    /// cannot reach; that needs `current_year` split into a function of the day, tested on known
+    /// dates (1970-01-01, 2000-02-29, 2100-03-01, a 31 December and a 1 January).
+    #[test]
+    fn this_year_is_the_calendars() {
+        let seconds = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        let year: i64 = opium_core::recent::rfc3339(seconds)[..4].parse().unwrap();
+        assert_eq!(super::current_year(), year);
+    }
 }
 
 /// How the app signs in to a server: its address, the user, and a salted

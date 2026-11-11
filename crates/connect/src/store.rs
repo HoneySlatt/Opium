@@ -347,4 +347,31 @@ mod tests {
             "connect.json was written over"
         );
     }
+
+    /// A device forgotten here loses its key, and is kept in mind as forgotten, once; the others
+    /// stay paired. The test before (`devices_paired_with_one_are_with_each_other`, in `lib.rs`)
+    /// checks only that a forgotten device isn't introduced again, which a `forget` that unpaired
+    /// every other device and kept the forgotten one passes: a lost phone would stay paired.
+    ///
+    /// Catches `!=` replaced by `==` where `Store::forget` keeps the other devices.
+    #[test]
+    fn a_device_forgotten_loses_its_key_and_the_others_keep_theirs() {
+        let dir = dir();
+        let device = |id: &str| Device {
+            id: id.into(),
+            name: id.into(),
+            kind: DeviceKind::Phone,
+        };
+        let mut store = Store::open(&dir);
+        store.pair(device("lost"), [1; 32]);
+        store.pair(device("kept"), [2; 32]);
+        store.forget("lost");
+        store.forget("lost");
+        assert_eq!(store.key("lost"), None);
+        assert_eq!(store.key("kept"), Some([2; 32]));
+        let again = Store::open(&dir);
+        assert_eq!(again.saved.forgotten, ["lost"]);
+        assert_eq!(again.key("kept"), Some([2; 32]));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

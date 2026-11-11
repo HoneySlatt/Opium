@@ -1092,6 +1092,26 @@ mod tests {
         );
         assert_eq!(jwt_client_id("2-12345-old-style"), None);
     }
+
+    /// The bot guard's refusal is told by its header, or, where the header can't be read, by its
+    /// body naming the check; another refusal is not the guard's. `call` gives up on the guard's
+    /// at once, without reading a new client id nor trying again (ADR-0012: no refused route
+    /// retried). No test reached `guarded` before.
+    ///
+    /// Shown to catch `guarded` replaced by `false` (a miss before), and its `&&` made `||` and
+    /// its `||` made `&&`.
+    #[test]
+    fn the_bot_guards_refusal_is_told_by_its_header_or_its_body() {
+        assert!(guarded(403, true, ""));
+        assert!(guarded(
+            403,
+            false,
+            r#"<script src="https://ct.captcha-delivery.com/c.js"></script>"#
+        ));
+        assert!(!guarded(403, false, "forbidden"));
+        assert!(!guarded(401, true, ""));
+        assert!(!guarded(429, false, "captcha-delivery.com"));
+    }
 }
 
 // Stage 1 audit W2: an artist's uploads are not asked for for ever.

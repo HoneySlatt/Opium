@@ -1283,4 +1283,58 @@ mod tests {
         assert!(store.open_song(&id, 20).is_some_and(|r| r.is_ok()));
         assert!(!dir.0.join(PUT_ASIDE).exists());
     }
+
+    /// A manifest the system won't let the store read (a folder in its place here; a disk error, a
+    /// permission) is neither missing nor damaged: the store fails to open, and sweeps nothing. Were
+    /// it taken for a missing one, the store would start empty and sweep every song as nobody's
+    /// (`sweep`, called when the manifest "says it all"): the user's downloads, protected songs
+    /// included, gone for good (AGENTS.md: "An unreadable downloads manifest is put aside, never
+    /// swept").
+    ///
+    /// Catches the guard `e.kind() == io::ErrorKind::NotFound` in `Store::open` replaced by `true`.
+    #[test]
+    fn a_manifest_that_cant_be_read_keeps_every_song() {
+        let dir = dir();
+        let key = sealed::new_key();
+        {
+            let mut store = Store::open(&dir.0, key).unwrap();
+            keep(
+                &mut store,
+                song(ProviderKind::Navidrome, "1", false),
+                b"music",
+                10,
+            );
+        }
+        std::fs::remove_file(dir.0.join(MANIFEST)).unwrap();
+        std::fs::create_dir(dir.0.join(MANIFEST)).unwrap();
+        assert!(Store::open(&dir.0, key).is_err());
+        let sealed = std::fs::read_dir(&dir.0)
+            .unwrap()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().ends_with(".sealed"))
+            .count();
+        assert_eq!(sealed, 1, "the song's file is still there");
+    }
+
+    /// Thirty days from the last confirmation of the subscription, as Apple Music allows, and not
+    /// a second more (ADR-0017). The test before reads the bound from `PROTECTED_FOR` itself, so
+    /// any value of it passed.
+    ///
+    /// Shown to catch a `*` of `PROTECTED_FOR` replaced by `+`.
+    #[test]
+    fn a_protected_song_plays_thirty_days_after_its_confirmation_and_no_more() {
+        const DAY: u64 = 24 * 60 * 60;
+        let dir = dir();
+        let mut store = Store::open(&dir.0, sealed::new_key()).unwrap();
+        let id = ItemId::new(ProviderKind::AppleMusic, "1");
+        keep(
+            &mut store,
+            song(ProviderKind::AppleMusic, "1", true),
+            b"x",
+            0,
+        );
+        assert!(store.open_song(&id, 29 * DAY).is_some());
+        assert!(store.open_song(&id, 30 * DAY - 1).is_some());
+        assert!(store.open_song(&id, 30 * DAY).is_none());
+    }
 }

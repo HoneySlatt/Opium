@@ -359,4 +359,71 @@ mod tests {
             "the ten-minute version stays reachable"
         );
     }
+
+    fn album(provider: ProviderKind, title: &str, artist: &str) -> Album {
+        Album {
+            id: ItemId::new(provider, title),
+            title: title.into(),
+            artists: vec![artist.into()],
+            artist_id: None,
+            artist_artwork: None,
+            released: None,
+            genre: None,
+            description: None,
+            catalog_id: None,
+            in_favourites: None,
+            year: None,
+            artwork: None,
+            track_count: None,
+            explicit: false,
+            added: None,
+            motion: None,
+            copyright: None,
+            mastered: false,
+        }
+    }
+
+    fn artist(provider: ProviderKind, name: &str) -> Artist {
+        Artist {
+            id: ItemId::new(provider, name),
+            name: name.into(),
+            artwork: None,
+            in_favourites: None,
+            library_id: None,
+        }
+    }
+
+    /// The library's Albums and Artists leave out the worse copies of one album or one artist,
+    /// as Songs does, and nothing else: of an album, the copy of the better-ranked service stays
+    /// (the server's before Apple Music's); of an artist, Apple Music's, for its photos. No test
+    /// called `albums` or `artists` before, and both apps hide what they answer.
+    ///
+    /// Shown to catch `albums` replaced by `HashSet::from_iter([0])` (a miss before) and `artists`
+    /// by `HashSet::new()`.
+    #[test]
+    fn albums_and_artists_keep_their_best_copy_and_the_rest() {
+        let albums_here = [
+            album(ProviderKind::Navidrome, "Album", "Artist"),
+            album(ProviderKind::AppleMusic, "album", "artist"),
+            album(ProviderKind::AppleMusic, "Another", "Artist"),
+        ];
+        assert_eq!(albums(&albums_here), HashSet::from([1]));
+        let apart = [
+            album(ProviderKind::AppleMusic, "Album", "Artist"),
+            album(ProviderKind::Navidrome, "Other", "Artist"),
+        ];
+        assert!(albums(&apart).is_empty());
+
+        let artists_here = [
+            artist(ProviderKind::AppleMusic, "Artist"),
+            artist(ProviderKind::Navidrome, "artist"),
+            artist(ProviderKind::Local, "Other"),
+        ];
+        assert_eq!(artists(&artists_here), HashSet::from([1]));
+        let apart = [
+            artist(ProviderKind::Navidrome, "Artist"),
+            artist(ProviderKind::AppleMusic, "Other"),
+        ];
+        assert!(artists(&apart).is_empty());
+    }
 }

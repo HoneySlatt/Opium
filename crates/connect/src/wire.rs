@@ -204,4 +204,60 @@ mod tests {
         assert!(kb.is_err());
         assert!(ka.is_err());
     }
+
+    /// A sealed message of megabytes comes whole (a long library's playlists run to megabytes, says
+    /// `receive`), and one byte more than 32 MiB is refused rather than held in memory. The long
+    /// message of the test before is 200,000 bytes, which a limit cut to a megabyte passes, and
+    /// nothing tested the limit itself. Each message goes on a connection of its own whose reader
+    /// is dropped once it has read: a refusal then ends the writer's wait, and the test fails
+    /// rather than hangs. The 32 MiB take about 12 s through the cipher in a debug build.
+    ///
+    /// Catches `MAX_SEALED` as `32 + 1024 * 1024` (a megabyte), which the test before passes.
+    #[tokio::test]
+    async fn a_message_of_megabytes_comes_whole_and_one_too_long_is_refused() {
+        async fn through(message: &[u8]) -> io::Result<Vec<u8>> {
+            let (mut a, mut b) = tokio::io::duplex(1 << 20);
+            let key = [7; 32];
+            let (ka, kb) = tokio::join!(
+                handshake(&mut a, true, &key, b"x"),
+                handshake(&mut b, false, &key, b"x"),
+            );
+            let (ka, kb) = (ka.unwrap(), kb.unwrap());
+            let (mut na, mut nb) = (0, 0);
+            let (_, got) = tokio::join!(send(&mut a, &ka, &mut na, message), async move {
+                let got = receive(&mut b, &kb, &mut nb).await;
+                drop(b);
+                got
+            });
+            got
+        }
+        let long: Vec<u8> = (0..3_000_000u32).map(|i| (i % 251) as u8).collect();
+        assert_eq!(through(&long).await.unwrap(), long);
+        // 32 MiB and a byte, written out: a test reading the bound from `MAX_SEALED` would move
+        // with it.
+        assert!(through(&vec![0u8; 32 * 1024 * 1024 + 1]).await.is_err());
+    }
+
+    /// A frame in the clear (a greeting, a pairing step) may be 64 KiB long, and no longer,
+    /// whether written or read. The length is written out: read from `MAX_PLAIN`, the test would
+    /// move with it. A frame too long is refused as such, before it is read, not met as the end
+    /// of the stream.
+    ///
+    /// Catches `MAX_PLAIN` as `64 + 1024` (a miss before).
+    #[tokio::test]
+    async fn a_frame_in_the_clear_may_take_its_whole_limit_and_no_more() {
+        let (mut a, mut b) = tokio::io::duplex(1 << 18);
+        const LIMIT: usize = 64 * 1024;
+        let longest = vec![1u8; LIMIT];
+        write_plain(&mut a, &longest).await.unwrap();
+        assert_eq!(read_plain(&mut b).await.unwrap(), longest);
+        assert!(write_plain(&mut a, &vec![1u8; LIMIT + 1]).await.is_err());
+        // Told that a longer one comes, and nothing after: refused before it is read.
+        a.write_all(&((LIMIT + 1) as u32).to_be_bytes())
+            .await
+            .unwrap();
+        drop(a);
+        let refused = read_plain(&mut b).await.unwrap_err();
+        assert_eq!(refused.kind(), io::ErrorKind::InvalidData);
+    }
 }
