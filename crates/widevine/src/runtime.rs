@@ -318,6 +318,19 @@ impl Runtime {
         &self.shared
     }
 
+    /// Whether the CDM thread still takes requests, without sending one.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::ShutDown`] after a shutdown began, [`Error::HostStopped`] when the thread ended
+    /// unexpectedly.
+    pub(crate) fn check_running(&self) -> Result<(), Error> {
+        match self.shared.lock_queue().refusal() {
+            Some(error) => Err(error),
+            None => Ok(()),
+        }
+    }
+
     /// Creates and initialises the CDM instance, or returns at once when it is initialised.
     pub(crate) fn initialise(&self) -> Result<(), Error> {
         self.ask(|reply| Request::Initialise { reply })

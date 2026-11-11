@@ -83,9 +83,13 @@ pub enum Error {
     /// licence.
     #[error("decrypting: key expired")]
     KeyExpired,
-    /// The CDM closed the session.
+    /// The CDM closed the session on its own.
     #[error("the CDM closed the session")]
     SessionClosed,
+    /// The host closed the session before the request reached it: its close was asked for, or
+    /// the host had forgotten it since.
+    #[error("the host had closed the session")]
+    SessionClosedByHost,
     /// The subsample runs do not add up to the sample's size; the CDM was not called.
     #[error(
         "decrypting: the subsample runs add up to {runs} bytes, not the sample's {sample} bytes"

@@ -107,6 +107,16 @@ struct SessionEntry {
 }
 
 impl SessionEntry {
+    /// Why a request to this session, which is not open, is refused: the CDM closed it on its
+    /// own, or the host closed it.
+    fn closed_error(&self) -> Error {
+        if self.state == SessionState::Closed {
+            Error::SessionClosed
+        } else {
+            Error::SessionClosedByHost
+        }
+    }
+
     fn key_status(&self, key_id: &[u8]) -> Option<KeyStatus> {
         self.keys
             .iter()
@@ -439,8 +449,9 @@ impl Host {
             Some(entry) if entry.state == SessionState::Open => {
                 entry.cdm_id.clone().unwrap_or_default()
             }
-            _ => {
-                self.shared.answer(reply, Err(Error::SessionClosed));
+            other => {
+                let error = other.map_or(Error::SessionClosedByHost, SessionEntry::closed_error);
+                self.shared.answer(reply, Err(error));
                 return;
             }
         };
@@ -471,10 +482,10 @@ impl Host {
 
     fn decrypt(&mut self, session: SessionKey, sample: &SampleRef) -> Result<(), Error> {
         let cdm = self.ready_cdm().ok_or(Error::NotInitialised)?;
-        let entry = self
-            .session(session)
-            .filter(|entry| entry.state == SessionState::Open);
-        let entry = entry.ok_or(Error::SessionClosed)?;
+        let entry = self.session(session).ok_or(Error::SessionClosedByHost)?;
+        if entry.state != SessionState::Open {
+            return Err(entry.closed_error());
+        }
         if entry.key_status(&sample.key_id) == Some(KeyStatus::Expired) {
             return Err(Error::KeyExpired);
         }
@@ -710,8 +721,12 @@ impl Host {
             } => self.message(session, kind, message),
             Event::KeysChanged { session, keys } => self.keys_changed(&session, keys),
             Event::ExpirationChanged { session, expiry } => match self.known_session(&session) {
+                // 0 means "no such time exists" or "never expires" (the CDM's header). A licence
+                // that gave a deadline and then 0 would log two lines a song, the second no use
+                // to read: 0 is not logged.
+                Some(_) if expiry == 0.0 => {}
                 Some(_) => self.log(format_args!(
-                    "a session's licence now expires at {expiry} s"
+                    "a session's licence expires at {expiry} s since 1970"
                 )),
                 None => self.ignore("an expiry for an unknown session"),
             },
@@ -1091,7 +1106,7 @@ impl Host {
     ) -> Option<Result<(), Error>> {
         let entry = self.session(session)?;
         if entry.state != SessionState::Open {
-            return Some(Err(Error::SessionClosed));
+            return Some(Err(entry.closed_error()));
         }
         if promise.is_some() {
             return None;

@@ -92,6 +92,26 @@ fn a_failed_initialisation_is_tried_again_from_the_library_already_open() {
 }
 
 #[test]
+fn loading_once_loaded_says_so_when_the_cdm_thread_has_ended() {
+    let folder = TestFolder::new("loader-ended");
+    let (first, _) = library_files(&folder);
+    let fake = Fake::new(well_behaved());
+    let opened = Arc::new(AtomicUsize::new(0));
+    let loader = Loader::new();
+    let runtime = loader.load(&first, opener(&fake, &opened), QUICK).unwrap();
+    // Shuts the thread down without the loader knowing: its queue refuses requests from now on.
+    // (A panic of the thread gives `HostStopped` instead: `tests/host.rs`.)
+    assert!(runtime.shutdown());
+    assert_eq!(
+        loader
+            .load(&first, opener(&fake, &opened), QUICK)
+            .map(|_| ()),
+        Err(Error::ShutDown)
+    );
+    assert_eq!(opened.load(Ordering::Relaxed), 1);
+}
+
+#[test]
 fn a_library_that_does_not_open_leaves_nothing_loaded() {
     let folder = TestFolder::new("loader-unopened");
     let (first, second) = library_files(&folder);

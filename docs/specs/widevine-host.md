@@ -101,7 +101,8 @@ later, from the timers the thread fires. The host:
   expired", so that the caller can open a new session and ask for a new licence. Renewals
   (`kLicenseRenewal`) are reported, not sent: sending them to a service needs the owner's check
   against it.
-- **`OnExpirationChange`**: kept, for diagnostics.
+- **`OnExpirationChange`**: logged once, for diagnostics; a time of 0, which the header defines
+  as "no such time exists", is not.
 - **`OnSessionClosed(session)`**: marks the session closed.
 - **`CreateFileIO`**: none (returns null): no persistent state is given to the CDM.
 - **`RequestStorageId(version)`**: answered with no storage id (`OnStorageId(version, null, 0)`).

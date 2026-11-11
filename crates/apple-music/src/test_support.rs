@@ -201,7 +201,8 @@ impl TestServer {
             .collect()
     }
 
-    /// The most requests that were being answered at once.
+    /// The most requests that were being answered at once: from the request read to the reply
+    /// about to be written.
     pub fn peak_in_flight(&self) -> usize {
         self.peak.load(Ordering::SeqCst)
     }
@@ -248,10 +249,12 @@ fn serve(
         .push(request.clone());
     let reply = handler(&request);
     std::thread::sleep(reply.hold);
+    // Answered once its reply is on its way, not once it is written: a client that has read the
+    // reply sends its next request at once, and the count must not still hold this one then.
+    active.fetch_sub(1, Ordering::SeqCst);
     if !reply.hang_up {
         let _ = write_reply(&stream, &reply);
     }
-    active.fetch_sub(1, Ordering::SeqCst);
     let _ = stream.shutdown(std::net::Shutdown::Both);
 }
 

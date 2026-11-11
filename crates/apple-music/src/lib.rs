@@ -262,7 +262,8 @@ pub struct AppleMusic {
     /// When a reading before it expires was last begun, whatever its outcome: one in
     /// [`RENEW_EVERY`] at most, while the old token is still good.
     read_before_expiry: std::sync::Mutex<Option<std::time::Instant>>,
-    /// How far a test has moved the wall clock on, as [`now`](Self::now) reads it.
+    /// How far a test has moved the clocks on, as [`now`](Self::now) and
+    /// [`renewal_clock`](Self::renewal_clock) read them.
     #[cfg(test)]
     clock_moved_on: std::sync::Mutex<std::time::Duration>,
     user_token: String,
@@ -513,7 +514,7 @@ impl AppleMusic {
         if self.developer_token() != refused {
             return Ok(true);
         }
-        if renewed.is_some_and(|at| at.elapsed() < RENEW_EVERY) {
+        if renewed.is_some_and(|at| self.renewal_clock().duration_since(at) < RENEW_EVERY) {
             return Ok(false);
         }
         match self.read_token_in_place_of(refused).await {
@@ -521,11 +522,11 @@ impl AppleMusic {
             // The page or the script answered, though not with a token: wait before asking
             // again rather than read the page at every refusal.
             Err(_) => {
-                *renewed = Some(std::time::Instant::now());
+                *renewed = Some(self.renewal_clock());
                 Ok(false)
             }
             Ok(new) => {
-                *renewed = Some(std::time::Instant::now());
+                *renewed = Some(self.renewal_clock());
                 Ok(new)
             }
         }
@@ -550,6 +551,24 @@ impl AppleMusic {
         Ok(true)
     }
 
+    /// The monotonic clock `renewed` is dated and aged by.
+    #[cfg(not(test))]
+    fn renewal_clock(&self) -> std::time::Instant {
+        std::time::Instant::now()
+    }
+
+    /// The monotonic clock `renewed` is dated and aged by: in tests, moved on by
+    /// [`move_clock_on`](Self::move_clock_on), so that a test ages a reading by five minutes
+    /// without waiting, and without needing a machine that has been up that long.
+    #[cfg(test)]
+    fn renewal_clock(&self) -> std::time::Instant {
+        std::time::Instant::now()
+            + *self
+                .clock_moved_on
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+    }
+
     /// The time the developer token's `exp` is compared with: the wall clock.
     #[cfg(not(test))]
     fn now(&self) -> std::time::SystemTime {
@@ -568,23 +587,14 @@ impl AppleMusic {
                 .unwrap_or_else(|e| e.into_inner())
     }
 
-    /// Move the wall clock that [`now`](Self::now) reads on by `by`, for this account only.
+    /// Move the clocks that [`now`](Self::now) and [`renewal_clock`](Self::renewal_clock) read
+    /// on by `by`, for this account only.
     #[cfg(test)]
     fn move_clock_on(&self, by: std::time::Duration) {
         *self
             .clock_moved_on
             .lock()
             .unwrap_or_else(|e| e.into_inner()) += by;
-    }
-
-    /// Date the last reading of the developer token on a refusal `ago` back, as if it had
-    /// been read then and the web player had answered.
-    #[cfg(test)]
-    fn as_if_a_refusal_read_the_token(&self, ago: std::time::Duration) {
-        let then = std::time::Instant::now()
-            .checked_sub(ago)
-            .expect("the monotonic clock goes back that far");
-        *self.renewed.try_lock().expect("no renewal under way") = Some(then);
     }
 
     /// Forget when the developer token was last read again, as if five minutes had passed.
@@ -2535,10 +2545,11 @@ mod http_tests {
             refused(am.profile().await);
         }
         assert_eq!(page_readings(server), 2);
-        am.as_if_a_refusal_read_the_token(RENEW_EVERY - Duration::from_secs(1));
+        // A second short of five minutes after the reading, then a second past them.
+        am.move_clock_on(RENEW_EVERY - Duration::from_secs(1));
         refused(am.profile().await);
         assert_eq!(page_readings(server), 2);
-        am.as_if_a_refusal_read_the_token(RENEW_EVERY + Duration::from_secs(1));
+        am.move_clock_on(Duration::from_secs(2));
         refused(am.profile().await);
         refused(am.profile().await);
         assert_eq!(page_readings(server), 3);

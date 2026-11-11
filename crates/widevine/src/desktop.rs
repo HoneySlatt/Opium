@@ -87,9 +87,10 @@ impl Session {
     ///
     /// [`Error::LicenceRefused`] with the CDM's message and system code,
     /// [`Error::KeyNotUsable`] with the key's status, [`Error::LicenceNotTaken`] when the
-    /// deadline passes, [`Error::NotProvisioned`], [`Error::SessionClosed`],
-    /// [`Error::TooLarge`], [`Error::HostStopped`] when the CDM thread has ended unexpectedly,
-    /// [`Error::ShutDown`].
+    /// deadline passes, [`Error::NotProvisioned`], [`Error::NotInitialised`] when the CDM is not
+    /// initialised, [`Error::SessionClosed`] when the CDM closed the session on its own,
+    /// [`Error::SessionClosedByHost`] when the host had closed it, [`Error::TooLarge`],
+    /// [`Error::HostStopped`] when the CDM thread has ended unexpectedly, [`Error::ShutDown`].
     pub fn give_licence(&self, licence: &[u8], key_id: &[u8; 16]) -> Result<(), Error> {
         self.runtime.give_licence(self.key, licence, key_id)
     }
@@ -106,8 +107,10 @@ impl Session {
     /// [`Error::SubsamplesMismatch`] and [`Error::TooLarge`] before reaching the CDM;
     /// [`Error::NoKey`], [`Error::DecryptionFailed`] and the other statuses of the CDM;
     /// [`Error::KeyExpired`] when the key expired since its licence;
-    /// [`Error::WrongLength`]; [`Error::SessionClosed`]; [`Error::HostStopped`] when the CDM
-    /// thread has ended unexpectedly; [`Error::ShutDown`].
+    /// [`Error::WrongLength`]; [`Error::NotInitialised`] when the CDM is not initialised;
+    /// [`Error::SessionClosed`] when the CDM closed the session on its own;
+    /// [`Error::SessionClosedByHost`] when the host had closed it; [`Error::HostStopped`] when
+    /// the CDM thread has ended unexpectedly; [`Error::ShutDown`].
     pub fn decrypt(&self, data: &mut [u8], sample: &Protected<'_>) -> Result<(), Error> {
         self.runtime.decrypt(self.key, data, sample)
     }
@@ -208,7 +211,11 @@ impl Loader {
             .runtime
             .clone()
             .ok_or(Error::HostStopped)?;
-        if !loaded.ready {
+        if loaded.ready {
+            // Initialised before: nothing is sent, so a thread that has ended since is not seen
+            // unless asked.
+            runtime.check_running()?;
+        } else {
             runtime.initialise()?;
             loaded.ready = true;
         }

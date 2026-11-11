@@ -862,11 +862,39 @@ fn callbacks_for_a_session_already_closed_are_ignored_and_noted() {
     let (second, challenge) = runtime.open_session(b"second").unwrap();
     assert_eq!(challenge, b"two");
     assert_eq!(ignored(&runtime) - before, 4);
+    // `first` was closed by the host (`runtime.close`), not by the CDM on its own.
     assert_eq!(
         runtime.decrypt(first, &mut [1], &cenc(&key(1))),
-        Err(Error::SessionClosed)
+        Err(Error::SessionClosedByHost)
     );
     runtime.give_licence(second, &key(3), &key(3)).unwrap();
+    assert!(runtime.shutdown());
+}
+
+#[test]
+fn a_session_the_host_closed_says_the_host_closed_it_and_the_cdm_does_not_get_the_blame() {
+    let fake = Fake::new(well_behaved());
+    let runtime = ready(&fake);
+    let (session, _) = runtime.open_session(b"init").unwrap();
+    runtime.close(session);
+    // Closes are asked without waiting; the opening of another session comes after it.
+    runtime.open_session(b"other").unwrap();
+    assert_eq!(
+        runtime.give_licence(session, &key(1), &key(1)),
+        Err(Error::SessionClosedByHost)
+    );
+    assert_eq!(
+        runtime.decrypt(session, &mut [1, 2], &cenc(&key(1))),
+        Err(Error::SessionClosedByHost)
+    );
+    assert_eq!(
+        Error::SessionClosedByHost.to_string(),
+        "the host had closed the session"
+    );
+    assert_eq!(
+        Error::SessionClosed.to_string(),
+        "the CDM closed the session"
+    );
     assert!(runtime.shutdown());
 }
 
@@ -1101,6 +1129,44 @@ fn unanswered_requests_and_expiries_change_nothing() {
     licensed(&runtime);
     assert_eq!(ignored(&runtime), 0);
     assert!(runtime.shutdown());
+}
+
+#[test]
+fn a_licence_logs_its_deadline_once_whatever_the_cdm_says_after() {
+    let fake = Fake::new(script(|call| match call {
+        Call::UpdateSession {
+            promise, session, ..
+        } => Some(vec![
+            Step::Expiration {
+                session: session.clone(),
+                time: 1.0e9,
+            },
+            // "No such time exists": the CDM's own word for no deadline.
+            Step::Expiration {
+                session: session.clone(),
+                time: 0.0,
+            },
+            Step::Keys {
+                session: session.clone(),
+                keys: vec![(key(1).to_vec(), 0)],
+            },
+            Step::Resolve(*promise),
+        ]),
+        _ => None,
+    }));
+    let runtime = ready(&fake);
+    licensed(&runtime);
+    assert_eq!(ignored(&runtime), 0);
+    assert!(runtime.shutdown());
+    let lines = runtime.shared().lines.lock().unwrap().clone();
+    let expiries: Vec<&String> = lines
+        .iter()
+        .filter(|line| line.contains("expires"))
+        .collect();
+    assert_eq!(
+        expiries,
+        ["a session's licence expires at 1000000000 s since 1970"]
+    );
 }
 
 #[test]
@@ -1509,6 +1575,7 @@ fn a_cdm_thread_that_ends_answers_every_request_waiting_and_every_later_one() {
     runtime.close(2);
     assert_eq!(queued(&runtime), 0, "nothing waits for a thread that ended");
     assert!(runtime.shared().counters.panicked.load(Ordering::Relaxed));
+    assert_eq!(runtime.check_running(), Err(Error::HostStopped));
     assert!(runtime.shutdown(), "the thread has ended");
     assert_eq!(Error::HostStopped.to_string(), "the CDM thread ended");
 }
