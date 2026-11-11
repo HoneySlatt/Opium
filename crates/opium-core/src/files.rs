@@ -5,7 +5,8 @@ use std::fs::{File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
-/// Who may read a file that [`write_whole`] writes.
+/// How [`write_whole`] writes a file: who may read it, and whether it is
+/// put on disk before it replaces the old one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
     /// Whoever the process's umask lets: for files that hold no secret.
@@ -13,6 +14,15 @@ pub enum Mode {
     /// The user alone (`0600` on Unix), from the file's creation on: for
     /// secrets, and the files kept with them.
     Private,
+    /// As `Default`, but neither the file nor its folder is put on disk: for
+    /// a cache, which the app makes again from where it came when it is
+    /// lost, and which is written often (a cover for each one shown). A
+    /// reader still finds the old file or the new one whole, never a mix;
+    /// only a power cut, or the system crashing, may leave the new one cut
+    /// short or empty, or bring the old one back, which its reader must
+    /// take as it takes a file that doesn't read. Put on disk, a cover's
+    /// write takes over a millisecond on an SSD, twenty times as long.
+    Cache,
 }
 
 /// How many names [`write_whole`] tries for its partial file: each is
@@ -22,11 +32,14 @@ const PARTIAL_NAMES_TRIED: usize = 8;
 /// Write `bytes` to `path` whole or not at all: into a new partial file in
 /// the same folder, of a name no other writer uses, put on disk, renamed
 /// over `path`, and the folder then put on disk too, so that the rename
-/// itself lasts.
+/// itself lasts. With [`Mode::Cache`], nothing is put on disk: the file and
+/// the folder reach it when the system writes them back.
 ///
 /// Whatever happens (a crash, a power cut, two writers at once), a reader
 /// finds `path` as it was or as one writer wrote it whole, never a mix; of
-/// two writers at once, the last to rename wins.
+/// two writers at once, the last to rename wins. With [`Mode::Cache`], so
+/// it is but after a power cut or a crash of the system, which may leave
+/// the new file cut short or empty, or bring the old one back.
 ///
 /// The partial file is `.<16 hex digits>.part`: short, so that a file of
 /// the longest name a folder takes is still written; hidden; ending in
@@ -67,9 +80,10 @@ fn write_whole_with(
         ));
     }
     let (partial, mut file) = new_partial(path, mode)?;
+    let flushed = mode != Mode::Cache;
     let written = file
         .write_all(bytes)
-        .and_then(|()| file.sync_all())
+        .and_then(|()| if flushed { file.sync_all() } else { Ok(()) })
         .and_then(|()| {
             if let Some(before_rename) = before_rename {
                 before_rename();
@@ -80,6 +94,9 @@ fn write_whole_with(
     if let Err(e) = written {
         let _ = std::fs::remove_file(&partial);
         return Err(e);
+    }
+    if !flushed {
+        return Ok(());
     }
     let folder = folder_of(path);
     if let Err(e) = File::open(folder).and_then(|opened| opened.sync_all()) {
@@ -306,6 +323,19 @@ mod tests {
 
     #[test]
     fn two_writers_at_once_leave_one_whole_file_never_a_mix() {
+        writers_at_once(Mode::Default);
+    }
+
+    /// A cache, not put on disk, is still written whole.
+    #[test]
+    fn two_writers_of_a_cache_at_once_leave_one_whole_file_never_a_mix() {
+        writers_at_once(Mode::Cache);
+    }
+
+    /// Eight writers write one file as `mode` says, ten times each, while
+    /// it is read: each read finds one writer's bytes whole, and nothing is
+    /// left beside the file.
+    fn writers_at_once(mode: Mode) {
         let dir = dir();
         let path = dir.0.join("kept");
         // Each writer's bytes all alike and of a length of their own: a mix
@@ -313,7 +343,7 @@ mod tests {
         let contents: Vec<Vec<u8>> = (1..=8u8)
             .map(|n| vec![n; 16 * 1024 * usize::from(n)])
             .collect();
-        write_whole(&path, &contents[0], Mode::Default).unwrap();
+        write_whole(&path, &contents[0], mode).unwrap();
         let writing = std::sync::atomic::AtomicUsize::new(contents.len());
         let mut mixed = 0;
         std::thread::scope(|scope| {
@@ -321,7 +351,7 @@ mod tests {
                 let (path, writing) = (&path, &writing);
                 scope.spawn(move || {
                     for _ in 0..10 {
-                        write_whole(path, content, Mode::Default).unwrap();
+                        write_whole(path, content, mode).unwrap();
                     }
                     writing.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
                 });
@@ -335,6 +365,24 @@ mod tests {
         assert_eq!(mixed, 0, "reads that found no writer's bytes whole");
         assert!(contents.contains(&std::fs::read(&path).unwrap()));
         assert_eq!(partial_files(&dir.0), Vec::<String>::new());
+    }
+
+    /// A cache that can't be written leaves the old file as it was, and
+    /// nothing beside it, as any other.
+    #[test]
+    fn a_cache_written_whole_replaces_the_last_or_leaves_it_as_it_was() {
+        let dir = dir();
+        let path = dir.0.join("cover");
+        write_whole(&path, b"first", Mode::Cache).unwrap();
+        write_whole(&path, b"second, and longer", Mode::Cache).unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"second, and longer");
+        assert_eq!(names(&dir.0), ["cover"]);
+        // A folder where the file goes: the rename fails.
+        let blocked = dir.0.join("blocked");
+        std::fs::create_dir(&blocked).unwrap();
+        assert!(write_whole(&blocked, b"new", Mode::Cache).is_err());
+        assert!(blocked.is_dir());
+        assert_eq!(names(&dir.0), ["blocked", "cover"]);
     }
 
     #[test]

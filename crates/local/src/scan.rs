@@ -68,7 +68,8 @@ impl Index {
     }
 
     /// Write the index to `path`, its folder made if missing: whole or not
-    /// at all, even with two writes at once ([`write_whole`]).
+    /// at all, even with two writes at once, as a cache, which a scan makes
+    /// again ([`write_whole`], [`Mode::Cache`]).
     ///
     /// # Errors
     ///
@@ -78,7 +79,7 @@ impl Index {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
         }
-        write_whole(path, &serde_json::to_vec(self)?, Mode::Default)
+        write_whole(path, &serde_json::to_vec(self)?, Mode::Cache)
     }
 }
 
@@ -346,8 +347,9 @@ impl<'a> Covers<'a> {
     /// it, then takes it as made (the scan reads an album's files at once,
     /// each with the same picture). One these covers couldn't make is not
     /// tried again, by the workers waiting for it nor by those after.
-    /// Written whole ([`write_whole`]), so a reader never finds half a
-    /// cover. `None` when the picture doesn't decode or can't be kept.
+    /// Written whole, as a cache ([`write_whole`], [`Mode::Cache`]), so a
+    /// reader never finds half a cover. `None` when the picture doesn't
+    /// decode or can't be kept.
     pub fn keep(&self, bytes: &[u8]) -> Option<String> {
         let path = self.folder.join(format!("{:016x}.jpg", fnv(bytes)));
         if !path.exists() && !self.make_once(bytes, &path) {
@@ -367,7 +369,7 @@ impl<'a> Covers<'a> {
         }
         let made = (self.square)(bytes).is_some_and(|square| {
             std::fs::create_dir_all(self.folder).is_ok()
-                && write_whole(path, &square, Mode::Default).is_ok()
+                && write_whole(path, &square, Mode::Cache).is_ok()
         });
         if !made {
             // Noted while `_making` is held: the workers waiting for it read

@@ -33,10 +33,10 @@ pub fn read<T: DeserializeOwned>(name: &str) -> Option<T> {
     serde_json::from_str(&navidrome::scrub_kept(&text)).ok()
 }
 
-/// Keep `value` under `name`, replacing the old one whole or not at all
-/// ([`write_whole`]), even with two writers of one entry at once (an album
-/// opened twice over). A write that fails keeps nothing, and says nothing:
-/// it is a cache.
+/// Keep `value` under `name`, replacing the old one whole or not at all, as
+/// a cache ([`write_whole`], [`Mode::Cache`]), even with two writers of one
+/// entry at once (an album opened twice over). A write that fails keeps
+/// nothing, and says nothing: it is a cache.
 pub fn write<T: Serialize>(name: &str, value: &T) {
     let (Some(dir), Some(path)) = (dir(), file(name)) else {
         return;
@@ -44,7 +44,7 @@ pub fn write<T: Serialize>(name: &str, value: &T) {
     let Ok(bytes) = serde_json::to_vec(value) else {
         return;
     };
-    let _ = std::fs::create_dir_all(&dir).and_then(|()| write_whole(&path, &bytes, Mode::Default));
+    let _ = std::fs::create_dir_all(&dir).and_then(|()| write_whole(&path, &bytes, Mode::Cache));
 }
 
 /// Forget everything kept: another account may sign in.

@@ -1315,19 +1315,17 @@ pub fn artists_left_out(artists: Vec<Artist>) -> Vec<u32> {
 /// not here, its partial files would stay.
 const KEPT_LISTS: &str = "library";
 
-/// The library's lists as last read, kept in the app's files: shown at once
-/// at the next launch while the services are asked again. Written whole or
-/// not at all ([`write_whole`](opium_core::files::write_whole)), however
-/// many keep one list at once.
-fn keep<T: serde::Serialize>(path: &str, items: &[T]) {
+/// A list kept in the app's files, written whole or not at all as `mode`
+/// says ([`write_whole`](opium_core::files::write_whole)), however many
+/// keep one list at once. The library's lists as last read, shown at once
+/// at the next launch while the services are asked again, are a cache, read
+/// again from the services when lost
+/// ([`Mode::Cache`](opium_core::files::Mode::Cache)).
+fn keep<T: serde::Serialize>(path: &str, items: &[T], mode: opium_core::files::Mode) {
     let Ok(bytes) = serde_json::to_vec(items) else {
         return;
     };
-    let _ = opium_core::files::write_whole(
-        std::path::Path::new(path),
-        &bytes,
-        opium_core::files::Mode::Default,
-    );
+    let _ = opium_core::files::write_whole(std::path::Path::new(path), &bytes, mode);
 }
 
 /// What was kept at `path`: nothing if nothing readable was.
@@ -1363,9 +1361,11 @@ pub struct RecentlySearched {
     pub library: bool,
 }
 
+/// Keep at `path` the user's recent searches: theirs, not a cache, so put
+/// on disk as they are kept.
 #[uniffi::export]
 pub fn keep_searched(path: String, items: Vec<RecentlySearched>) {
-    keep(&path, &items);
+    keep(&path, &items, opium_core::files::Mode::Default);
 }
 
 #[uniffi::export]
@@ -1404,7 +1404,7 @@ fn kept_session(path: String) -> Option<connect::Handoff> {
 
 #[uniffi::export]
 pub fn keep_tracks(path: String, items: Vec<Track>) {
-    keep(&path, &items);
+    keep(&path, &items, opium_core::files::Mode::Cache);
 }
 
 #[uniffi::export]
@@ -1414,7 +1414,7 @@ pub fn kept_tracks(path: String) -> Vec<Track> {
 
 #[uniffi::export]
 pub fn keep_albums(path: String, items: Vec<Album>) {
-    keep(&path, &items);
+    keep(&path, &items, opium_core::files::Mode::Cache);
 }
 
 #[uniffi::export]
@@ -1424,7 +1424,7 @@ pub fn kept_albums(path: String) -> Vec<Album> {
 
 #[uniffi::export]
 pub fn keep_artists(path: String, items: Vec<Artist>) {
-    keep(&path, &items);
+    keep(&path, &items, opium_core::files::Mode::Cache);
 }
 
 #[uniffi::export]
@@ -1434,7 +1434,7 @@ pub fn kept_artists(path: String) -> Vec<Artist> {
 
 #[uniffi::export]
 pub fn keep_collections(path: String, items: Vec<Collection>) {
-    keep(&path, &items);
+    keep(&path, &items, opium_core::files::Mode::Cache);
 }
 
 #[uniffi::export]
@@ -1444,7 +1444,7 @@ pub fn kept_collections(path: String) -> Vec<Collection> {
 
 #[uniffi::export]
 pub fn keep_playlists(path: String, items: Vec<Playlist>) {
-    keep(&path, &items);
+    keep(&path, &items, opium_core::files::Mode::Cache);
 }
 
 #[uniffi::export]
@@ -2178,7 +2178,7 @@ mod tests {
         // Of two lengths, so that one written into the other's file would not read.
         let long: Vec<String> = (0..2000).map(|i| format!("song {i}")).collect();
         let short = vec!["one song".to_owned()];
-        keep(&path, &short);
+        keep(&path, &short, opium_core::files::Mode::Cache);
         let writing = std::sync::atomic::AtomicUsize::new(2);
         let mut torn = 0;
         std::thread::scope(|scope| {
@@ -2186,7 +2186,7 @@ mod tests {
                 let (path, writing) = (&path, &writing);
                 scope.spawn(move || {
                     for _ in 0..200 {
-                        keep(path, list);
+                        keep(path, list, opium_core::files::Mode::Cache);
                     }
                     writing.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
                 });

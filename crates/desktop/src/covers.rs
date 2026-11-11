@@ -45,12 +45,13 @@ pub fn motion_file(url: &str, size: u32) -> Option<PathBuf> {
     Some(motion_dir()?.join(format!("{:016x}-{size}.mp4", hash(url))))
 }
 
-/// Keep an animated cover, whole or not at all ([`write_whole`]); returns
-/// where, or `None` if it couldn't be kept.
+/// Keep an animated cover, whole or not at all, as a cache
+/// ([`write_whole`], [`Mode::Cache`]); returns where, or `None` if it
+/// couldn't be kept.
 pub fn write_motion(url: &str, size: u32, bytes: &[u8]) -> Option<PathBuf> {
     let path = motion_file(url, size)?;
     std::fs::create_dir_all(path.parent()?)
-        .and_then(|()| write_whole(&path, bytes, Mode::Default))
+        .and_then(|()| write_whole(&path, bytes, Mode::Cache))
         .ok()?;
     Some(path)
 }
@@ -125,14 +126,14 @@ pub fn read(url: &str) -> Option<Vec<u8>> {
     std::fs::read(file(url)?).ok()
 }
 
-/// Keep the cover downloaded from `url`, whole or not at all
-/// ([`write_whole`]). A write that fails keeps nothing, and says nothing:
-/// it is a cache.
+/// Keep the cover downloaded from `url`, whole or not at all, as a cache
+/// ([`write_whole`], [`Mode::Cache`]). A write that fails keeps nothing,
+/// and says nothing: it is a cache.
 pub fn write(url: &str, bytes: &[u8]) {
     let (Some(dir), Some(path)) = (dir(), file(url)) else {
         return;
     };
-    let _ = std::fs::create_dir_all(dir).and_then(|()| write_whole(&path, bytes, Mode::Default));
+    let _ = std::fs::create_dir_all(dir).and_then(|()| write_whole(&path, bytes, Mode::Cache));
 }
 
 /// Drop the oldest covers, and moving covers, if they take too much room;
