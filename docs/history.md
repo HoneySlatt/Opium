@@ -170,9 +170,9 @@ One milestone each, in this order: `cenc`, then `widevine`, then `apple-music`.
   frames no worse. A regression found on the way, Home left loading at rest in 12 runs of 40 by the
   new order of the start's answers, was fixed in the frozen window, with the owner's go.
 - **By hand, with the owner**: a release APK built at `114fc3f` was installed on the phone on
-  2026-11-11, not debuggable, and started with no crash in its log; M1.15's last
-  changes to the phone's core came after it, so a release APK is to be built at the commit that
-  closes M1.15 and installed;
+  2026-11-11, not debuggable, and started with no crash in its log; the one built
+  at `718816d`, M1.15's last change to the phone's core (its JVM tests and `scripts/check.sh
+  android` passing there), waits to be installed: the phone was not connected;
   the owner checks its sign-ins, a desktop theme and a playback, and, on the owner's account,
   SoundCloud's changes after S3 and S8.
 - **Left**, each under its stage in [the debt](debt.md): S6 (until Stage 2), the frozen screens'
