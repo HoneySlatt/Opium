@@ -1,10 +1,15 @@
 # History
 
-The stages that are done, newest first, then the milestones done in the current stage, with what
-each delivered, its figures and the decisions taken on the way. Stage 1 is the current stage and no
-stage is done yet; the current work is in [`PLAN.md`](PLAN.md).
+The stages that are done, newest first, with what each milestone delivered, its figures and the
+decisions taken on the way. The current work is in [`PLAN.md`](PLAN.md).
 
-## Stage 1 — Under the method (in progress)
+## Stage 1 — Under the method (done on 2026-11-12)
+
+Opium came under the owner's project method on 2026-11-04: its memory moved from the owner's notes
+into the repository, its checks became one command that CI runs, the rename to Opium landed
+([ADR-0023](adr/0023-the-rename-to-opium.md)), its quality bar was measured, the code adapted from
+Kopuz was written again in clean rooms, and the stage audit
+([2026-11-10](audits/2026-11-10-stage-1.md)) found what M1.15 then fixed. No feature was built.
 
 ### Milestones done
 
@@ -147,7 +152,7 @@ One milestone each, in this order: `cenc`, then `widevine`, then `apple-music`.
 
 - **Goal.** Stage 1 closes with no loss of data, flaw, crash or broken service left of those the
   [stage 1 audit](audits/2026-11-10-stage-1.md) found.
-- **Fixed and pushed by 2026-11-11**, finding by finding in [the audit's "Fixed"](audits/2026-11-10-stage-1.md#fixed),
+- **Done on 2026-11-12**, finding by finding in [the audit's "Fixed"](audits/2026-11-10-stage-1.md#fixed),
   each from its failing test where one could be written:
   - no download, setting, play, playlist or pairing lost to a file that does not read, a failed
     save, a power cut, a sign-out or two instances: one instance per profile
@@ -174,8 +179,9 @@ One milestone each, in this order: `cenc`, then `widevine`, then `apple-music`.
   at `718816d`, M1.15's last change to the phone's core (its JVM tests and `scripts/check.sh
   android` passing there), was installed the same evening, not debuggable, and started with no
   crash and no error of the vault or of TLS in its log;
-  the owner checks its sign-ins, a desktop theme and a playback, and, on the owner's account,
-  SoundCloud's changes after S3 and S8.
+  the owner checked it and SoundCloud's changes after S3 and S8, and said all was well on
+  2026-11-12. Five rounds of the closing review, a fresh reviewer each, each finding less than the
+  one before; the fifth's six small defects were fixed.
 - **Left**, each under its stage in [the debt](debt.md): S6 (until Stage 2), the frozen screens'
   findings, the work for no wake-up at rest, and what M1.15 found and did not fix.
 
