@@ -18,4 +18,12 @@ measured. Facts a newcomer needs, without the history of the conversation. -->
 
 ## Consequences
 
-- <!-- what follows, good and bad, and what is left to decide later -->
+- <!-- what follows, good and bad, and what is left to decide later; constraints introduced,
+  compatibility obligations and the cost of migration or replacement where relevant -->
+
+## Validation and reconsideration
+
+<!-- Relevant change and failure scenarios, acceptance criteria and evidence available at the time
+of the decision; distinguish measured facts, reviewed reasoning and assumptions. Link to living
+checks and evidence. State what would justify proposing a new decision to the owner; do not treat
+that condition as automatic permission to change direction. Omit details that do not apply. -->
