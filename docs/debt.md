@@ -11,6 +11,7 @@ number there (L1, S2, W3…), and their failing tests are kept beside it.
   `scripts/measure/startup.py map` still runs Umbriel, which the owner's machine no longer has
   (Niri replaced it), and `CONTRIBUTING.md` names it three times; `rest.sh`, `sample.py`,
   `startup.py` and `memwatch.py` record no load from other programs, which a timed measure must.
+  Taken up by the PLAN's [documentation milestone](PLAN.md#documentation-under-the-methods-new-rules).
 
 ## Waiting for Stage 5, the move to uwui
 
@@ -213,14 +214,13 @@ number there (L1, S2, W3…), and their failing tests are kept beside it.
   licence can take; which FFmpeg the packages link is decided at Stage 2.
 
 - **Found by the [architecture audit](audits/2026-11-16-architecture.md#before-the-first-release)**,
-  before 0.1.0 makes them permanent: two devices talk only with the same Connect version, with no
-  range and no word to the user (A2), and `ProviderKind` has no fallback, so a service added later
-  breaks older devices' sync (A3), both taken up now by the PLAN's
-  [Formats and versions](PLAN.md#formats-and-versions); the desktop's app id is `opium`, not reverse-DNS (A4); errors
-  carry English sentences, not kinds the interface can translate (A5); no log with levels, a file
-  and secrets stripped in one place (A6); no terms for outside contributions, no SPDX header, no
-  `SECURITY.md` (A7); CONTRIBUTING mixes what every contributor needs with the owner's machine
-  (D3); nothing tells a contributor what to prove with fakes and what the owner checks (D6).
+  before 0.1.0 makes them permanent. Taken up by the PLAN: Connect's versions and the unknown
+  service (A2, A3) in *Formats and versions*; error kinds and the log (A5, A6) in *Errors and the
+  log*; `SECURITY.md` and the templates (A7) in the documentation milestone. Left for Stage 2: the
+  desktop's id set in the code and the packages
+  ([ADR-0049](adr/0049-the-apps-names-and-its-desktop-id.md), A4); the code of conduct and SPDX
+  headers (A7); CONTRIBUTING split between what every contributor needs and the owner's machine
+  (D3); what a contributor proves with fakes and what the owner checks (D6).
 
 ## Waiting for Stage 8, Connect
 

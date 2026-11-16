@@ -36,7 +36,7 @@ call the app "Music" ([ADR-0023](0023-the-rename-to-opium.md)).
 | [0020](0020-d-bus-over-async-io.md) | D-Bus spoken over async-io, not tokio | Accepted |
 | [0021](0021-the-exit-watch.md) | The exit watch | Accepted; amended by 0024 |
 | [0022](0022-gpui-tried-and-abandoned.md) | GPUI tried and abandoned; egui stays until SlimeEngine's UI framework runs applications | Accepted; amends 0006 (until the move); amended by 0026 and 0031 |
-| [0023](0023-the-rename-to-opium.md) | The app is named Opium, everywhere, with no compatibility kept | Accepted |
+| [0023](0023-the-rename-to-opium.md) | The app is named Opium, everywhere, with no compatibility kept | Superseded by 0049 |
 | [0024](0024-the-exit-watch-aborts-for-a-core-dump.md) | The exit watch aborts, for a core dump | Accepted; amends 0021; amended by 0039 |
 | [0025](0025-the-quality-bar.md) | The quality bar: tiers and budgets | Accepted; amended by 0034, 0037 and 0038 |
 | [0026](0026-the-egui-window-frozen-until-the-move.md) | The egui window is frozen until the move to SlimeEngine's UI framework | Accepted; amends 0006 and 0022; amended by 0029 and 0031 |
@@ -62,3 +62,5 @@ call the app "Music" ([ADR-0023](0023-the-rename-to-opium.md)).
 | [0046](0046-the-shared-state-sent-in-parts.md) | The shared state sent in parts | Accepted; amends 0014 |
 | [0047](0047-the-thirty-days-counted-on-the-clocks-forward-motion.md) | The thirty days counted on the clock's forward motion | Accepted; amends 0017 |
 | [0048](0048-formats-and-connects-versions-before-the-port.md) | Formats and Connect's versions before the port | Accepted; amends 0035 |
+| [0049](0049-the-apps-names-and-its-desktop-id.md) | The app's names, and its desktop id | Accepted; supersedes 0023 |
+| [0050](0050-contributions-under-githubs-terms-alone.md) | Contributions under GitHub's terms alone | Accepted |

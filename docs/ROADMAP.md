@@ -156,6 +156,23 @@ when it exceeds its budget by more than its noise.
 | Phone memory, at rest and scrolling | No more than today. Today, under Compose: 273 MiB PSS after a cold start, 380 MiB after scrolling ([M1.14](measurements.md#the-phone-under-compose)) | `adb shell dumpsys meminfo io.github.honeyslatt.opium`, by `scripts/measure/phone.py` | By hand |
 | Phone accessibility | TalkBack names every control; the system's font scale honoured up to its largest, without clipped text; touch targets of at least 48 dp; reduced motion honoured. Today: 69 of 145 tap targets hold no text, 44 under 48 dp; the position and a device's volume neither read nor set by TalkBack ([stage 1 audit](audits/2026-11-10-stage-1.md#wrong-behaviour), W9) | TalkBack; the largest font scale; the layout inspector | At Stage 3, on uwui |
 
+
+### Architecture and stability scenarios
+
+> **Decided by the owner on 2026-11-16**, from the
+> [architecture audit](audits/2026-11-16-architecture.md#proposed-for-the-quality-bar).
+
+Each scenario is a realistic change or failure, its criterion, and how it is checked.
+
+| Scenario | Acceptance criterion | Checked by | When |
+|---|---|---|---|
+| A service added (Jellyfin) | The change touches the new crate, `ProviderKind`, `services` and the interface's list of services; older devices keep syncing | Tracing the code; a test that reads a message naming an unknown service | The PLAN's *Formats and versions*; again at Stage 9 |
+| Windows' audio output | `player` gets a second output; no caller outside it changes | Tracing the code | Stage 4 |
+| A phone one version behind the computer | They pair and sync what both know; the older reports that it should update | A test of two versions of the wire | The PLAN's *Formats and versions* |
+| An upgrade, then a downgrade | Every file reads its older versions; an older build refuses a profile a newer one wrote, and writes nothing | Migration tests on test data | The PLAN's *Formats and versions* |
+| Hours of play, sync and downloads | Memory, threads and open files return to their start; no queue grows past its bound | A long-run test on a throwaway profile | Stage 5, with the bounds of the [debt](debt.md) |
+| The network cut during a sync or a download | State stays valid; the work resumes or stops, within a bound | Fault-injection tests | Stage 5 for downloads, Stage 8 for Connect |
+
 ## 3. Decisions
 
 ### Fixed
@@ -169,7 +186,7 @@ when it exceeds its budget by more than its noise.
 | Translation | The text ready for translation from Stage 5; English and French on the desktop at 0.1.0, on the phone at Stage 3 ([ADR-0034](adr/0034-what-opium-is-to-become.md)) |
 | Licence | GPL-3.0-or-later ([ADR-0001](adr/0001-gpl-3-0-or-later.md)), kept after the code adapted from Kopuz was written again in a clean room, but for part of the browser sign-in ([ADR-0030](adr/0030-the-kopuz-code-rewritten-in-a-clean-room.md), [ADR-0032](adr/0032-the-gpl-kept-and-kopuzs-code-still-written-again.md), [ADR-0033](adr/0033-the-browser-sign-ins-pipe-kept-as-adapted-from-kopuz.md)) |
 | CI's time | One job of checks, the phone's job beside it, the fuzzing weekly; the checks split across jobs only if a warm run passes 20 minutes ([ADR-0042](adr/0042-ci-keeps-one-job-of-checks.md)) |
-| Name | Opium, everywhere, no compatibility with the old names ([ADR-0023](adr/0023-the-rename-to-opium.md)) |
+| Name | Opium, everywhere, no compatibility with the old names; the desktop's id `io.github.honeyslatt.Opium` from Stage 2 ([ADR-0049](adr/0049-the-apps-names-and-its-desktop-id.md)) |
 | Services | Apple Music, SoundCloud, Navidrome (OpenSubsonic), the device's own files ([ADR-0016](adr/0016-the-services.md)); Jellyfin and Plex at Stage 9; ListenBrainz, Last.fm, MusicBrainz, the Cover Art Archive, Discord, Wikipedia and Wikidata, each off by default ([ADR-0034](adr/0034-what-opium-is-to-become.md), [ADR-0038](adr/0038-opium-measured-against-the-market.md)) |
 | One library | The best copy of each song: files, server, Apple Music, SoundCloud ([ADR-0007](adr/0007-one-library-and-the-best-copy.md)) |
 | Apple Music | Through its web player, after Kopuz ([ADR-0002](adr/0002-apple-music-through-its-web-player.md)) |
@@ -261,6 +278,11 @@ stable ([ADR-0035](adr/0035-the-port-in-uwuis-first-stage-stage-1-finished-first
 finished first; Opium then waits for the port, and this stage comes right after Stage 1
 ([ADR-0029](adr/0029-opium-waits-for-slime-ui-then-moves-first.md)).
 
+- First, a design session that builds nothing: one layer of state and actions in Rust, free of
+  any toolkit, for the desktop, the phone, `opium-headless`, the `opium` command and users' agents,
+  where `app.rs`, the phone's Compose screens, `desktop::backend` and `opium-ffi` each hold part of
+  it today ([audit B1](audits/2026-11-16-architecture.md#at-the-move-to-uwui-stage-5)); uwui is
+  adapted where the design needs it (decided by the owner on 2026-11-16)
 - The interface's state and logic taken out of `app.rs` into a model free of any toolkit
 - Each page and component, in each theme's variants, on the framework, with every need marked
   indispensable in [`ui-framework-needs.md`](ui-framework-needs.md)

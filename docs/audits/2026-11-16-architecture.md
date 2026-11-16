@@ -73,11 +73,12 @@ once people have installed Opium, every change to it needs a migration that work
   has already been reconsidered once ([ADR-0030](../adr/0030-the-kopuz-code-rewritten-in-a-clean-room.md),
   [ADR-0032](../adr/0032-the-gpl-kept-and-kopuzs-code-still-written-again.md)): after outside
   contributions, changing it needs every contributor's consent.
-- **A8. Making the repository public cannot be undone.** What a release exposes of DRM is
-  [open](../ROADMAP.md#open) until Stage 2. A public history stays copied once forked. The code that
-  loads the browser's CDM and talks to Apple's private API is the part most exposed to a takedown
-  request. This needs the owner's decision, with advice the audit cannot give, before anything
-  goes public.
+- **A8. What a release exposes of DRM** is [open](../ROADMAP.md#open) until Stage 2. The
+  repository is already public (`HoneySlatt/Opium`), and was when the owner chose, on 2026-11-10,
+  to keep the developer examples that write decrypted audio until the first release; a public
+  history stays copied once forked. The code that loads the browser's CDM and talks to Apple's
+  private API is the part most exposed to a takedown request. The first version of this audit took
+  the repository for private; corrected the same day.
 
 ### At the move to uwui, Stage 5
 
@@ -161,17 +162,27 @@ proposal for the ROADMAP, which the owner decides:
 
 ## Decisions for the owner
 
-One at a time, each with its options:
+Put to the owner one at a time on 2026-11-16, each decided the same day:
 
-1. Move "every format versioned", Connect's version range and the unknown service (A1 to A3) from
-   Stage 7 into Stage 2, before 0.1.0. **Decided on 2026-11-16**: sooner, in a milestone of their
-   own while Opium waits for uwui ([ADR-0048](../adr/0048-formats-and-connects-versions-before-the-port.md)).
-2. The desktop's app id (A4), with the signing key already open at Stage 2.
-3. Errors as kinds and one log with secrets stripped (A5, A6): at the port, or before it.
-4. The terms for outside contributions (A7) and the repository's visibility (A8).
-5. A design session for one shared layer of state and actions before Stage 5 (B1).
-6. The scenarios above in the ROADMAP's quality bar.
-7. Whether to align `AGENTS.md` with the method's new template: its rule "No abstraction without a
-   second use" becomes "an abstraction needs a concrete benefit: reuse, isolation of an unstable
-   dependency, protection of an invariant or a test boundary", and the definition of done checks
-   the affected architecture contracts and stability scenarios.
+1. **Formats and Connect's versions (A1 to A3)**: in a milestone of their own while Opium waits for
+   uwui, rather than at Stage 7 or Stage 2
+   ([ADR-0048](../adr/0048-formats-and-connects-versions-before-the-port.md)). Its conventions, in
+   the [PLAN](../PLAN.md#formats-and-versions): each file carries its version; an older build
+   refuses a newer profile and writes nothing; caches of another version rebuilt; the two messages
+   reported by the core only until uwui.
+2. **The desktop's id (A4)**: `io.github.honeyslatt.Opium`, from Stage 2
+   ([ADR-0049](../adr/0049-the-apps-names-and-its-desktop-id.md)).
+3. **Errors and the log (A5, A6)**: a milestone during the wait, after the formats, on `tracing`
+   ([PLAN](../PLAN.md#errors-and-the-log)).
+4. **Contributions (A7)**: GitHub's terms alone, no DCO nor agreement
+   ([ADR-0050](../adr/0050-contributions-under-githubs-terms-alone.md)); `SECURITY.md` and the
+   templates for issues and pull requests now, the code of conduct and SPDX headers at Stage 2. A8
+   was not put again: nothing changed since the owner's choice of 2026-11-10.
+5. **One shared layer (B1)**: a design session at the start of Stage 5; uwui, the owner's own, is
+   adapted where it needs to be ([ROADMAP](../ROADMAP.md#stage-5--on-uwui)).
+6. **The scenarios**: all six, in the [ROADMAP](../ROADMAP.md#architecture-and-stability-scenarios).
+7. **`AGENTS.md`**: aligned with the method's template, the lines that repeat the owner's global
+   rules dropped to stay under 1,500 words; done by the PLAN's
+   [documentation milestone](../PLAN.md#documentation-under-the-methods-new-rules), which also
+   brings the method's rules of 2026-11-16 on documents: one ADR per topic, the generated index, the
+   changelog's fragments.

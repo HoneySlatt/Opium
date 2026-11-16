@@ -1,6 +1,6 @@
 # 0023. The app is named Opium, everywhere, with no compatibility kept
 
-- Status: Accepted
+- Status: Superseded by [0049](0049-the-apps-names-and-its-desktop-id.md)
 - Date: 2026-11-04
 
 ## Context
