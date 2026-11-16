@@ -5,6 +5,13 @@ work is in [`PLAN.md`](PLAN.md); a stage's audit adds what it leaves open. Triag
 [stage 1 audit](audits/2026-11-10-stage-1.md) on 2026-11-10; its findings are named by their
 number there (L1, S2, W3…), and their failing tests are kept beside it.
 
+## Not waiting for a stage
+
+- **The measuring scripts and the machine** ([audit E1, E2](audits/2026-11-16-architecture.md#drift-found-on-the-owners-machine)):
+  `scripts/measure/startup.py map` still runs Umbriel, which the owner's machine no longer has
+  (Niri replaced it), and `CONTRIBUTING.md` names it three times; `rest.sh`, `sample.py`,
+  `startup.py` and `memwatch.py` record no load from other programs, which a timed measure must.
+
 ## Waiting for Stage 5, the move to uwui
 
 - **Opium wakes at rest**: 7.4 times a second online, 27 to 33 offline, its window's threads aside.
@@ -75,6 +82,12 @@ number there (L1, S2, W3…), and their failing tests are kept beside it.
 - **Text in decomposed Unicode** does not fold for search; `file://localhost/` is read as a
   relative path; a file opened with a name that is not UTF-8 will not open; when mDNS fails to
   start, discovery is never tried again.
+
+- **Found by the [architecture audit](audits/2026-11-16-architecture.md)**, for the port: the
+  interface's logic written twice, in `app.rs` and in the phone's Compose screens, over two ways of
+  orchestrating the services (B1); the Linux-only code not yet kept in modules named by platform
+  (B2); local songs known by their path (B3); no test that runs for hours and checks that memory,
+  threads and files come back (C3).
 
 ## Waiting for Stage 3, the phone on uwui
 
@@ -197,6 +210,15 @@ number there (L1, S2, W3…), and their failing tests are kept beside it.
   another task may need it written again (CONTRIBUTING).
 - **FFmpeg**: the shell's is built with GPL parts, GPL-3.0-or-later as a whole, which Opium's
   licence can take; which FFmpeg the packages link is decided at Stage 2.
+
+- **Found by the [architecture audit](audits/2026-11-16-architecture.md#before-the-first-release)**,
+  before 0.1.0 makes them permanent: two devices talk only with the same Connect version, with no
+  range and no word to the user (A2); `ProviderKind` has no fallback, so a service added later
+  breaks older devices' sync (A3); the desktop's app id is `opium`, not reverse-DNS (A4); errors
+  carry English sentences, not kinds the interface can translate (A5); no log with levels, a file
+  and secrets stripped in one place (A6); no terms for outside contributions, no SPDX header, no
+  `SECURITY.md` (A7); CONTRIBUTING mixes what every contributor needs with the owner's machine
+  (D3); nothing tells a contributor what to prove with fakes and what the owner checks (D6).
 
 ## Waiting for Stage 8, Connect
 

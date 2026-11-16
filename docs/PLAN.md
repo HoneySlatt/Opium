@@ -20,6 +20,10 @@ Every milestone ends with the definition of done in [`AGENTS.md`](../AGENTS.md#d
   starts, and the stages after it in the [ROADMAP's order](ROADMAP.md#4-stages).
 - **Still due with the owner**: a SoundCloud song served encrypted, not yet played after the
   clean-room rewrite.
+- **The [architecture audit of 2026-11-16](audits/2026-11-16-architecture.md#decisions-for-the-owner)**
+  waits for the owner's decisions, one at a time: formats and Connect's versions before 0.1.0, the
+  desktop's app id, errors and the log, the terms for contributions, one shared layer before
+  Stage 5, the quality bar's scenarios.
 
 ## Ideas
 

@@ -212,6 +212,52 @@ SoundCloud's from their addresses; the phone's files from Android's media index.
 same `downloads` crate through `opium-ffi`, sealed with a key the vault keeps; Apple's and
 SoundCloud's encrypted songs are borrowed from the paired computer (`connect::lend`).
 
+## Invariants and ownership
+
+Who owns what, as the code is now. The rules are in [`AGENTS.md`](../AGENTS.md#architecture-rules);
+where the code falls short of them is in the [known debt](debt.md).
+
+- **The services** belong to the backend's thread and its tokio runtime on the desktop, to the
+  core's `Session` on the phone. The window and Kotlin only send requests to them.
+- **The CDM** belongs to its one thread, `cdm`; everything else sends it requests.
+- **The shared state** belongs to `synced::Kept`, behind its lock; its merge ignores order and
+  repetition, and a deletion is final (`crates/synced/src/tests.rs`).
+- **The downloads' store** owns its manifest and takes its own lock; the queue fetches one song at a
+  time.
+- **The profile** belongs to the instance that holds its lock
+  ([ADR-0043](adr/0043-one-instance-per-profile-held-by-a-lock.md)).
+- **Opium Connect's node** owns its one-thread runtime and its connections.
+- **A file kept whole** is written only through `opium_core::files::write_whole`.
+
+## Limits and recovery
+
+- **Bounded**: the history keeps 100 songs (`KEPT` in `crates/synced/src/history.rs`); a Connect message is at most
+  4 MiB; the downloads' queue fetches one song at a time; what another device sends is written to
+  disk within 5 s of its last part.
+- **Not bounded yet**: Connect's sender queues a whole sync before writing it; one thread per cover
+  file; a failed service retried every minute; a connect kept alive by a server with no overall
+  deadline ([debt](debt.md)).
+- **After a crash**: partial files are swept at start; a file that does not read is put aside as
+  `<name>.bad`, never written over; the exit watch ends a hung exit
+  ([ADR-0021](adr/0021-the-exit-watch.md)).
+- **Versions**: two devices talk only if their Connect `VERSION` is the same; the downloads'
+  manifest is at version 1; the shared state, the pairings, the caches and the settings carry none
+  ([debt](debt.md#waiting-for-stage-7-the-library)).
+
+## Evolution constraints
+
+What makes a realistic change costly today. Each is weighed in the
+[architecture audit of 2026-11-16](audits/2026-11-16-architecture.md).
+
+- **A new service** adds a variant to `ProviderKind`, named in 532 lines of 50 Rust files and 151
+  lines of 23 Kotlin files; older devices cannot read a message that names it.
+- **A new interface** (uwui, `opium-headless`, the `opium` command) finds the interface's logic
+  inside `app-desktop/src/app.rs`, mixed with egui, and the phone's inside its Compose screens; the
+  desktop's backend and `opium-ffi` orchestrate the services each their own way.
+- **Another platform** replaces code that is Linux-only today: PipeWire in `player`, D-Bus in
+  `desktop::mpris` and `desktop::instance`, the Secret Service in `downloads`, XDG folders in
+  `desktop::folders`.
+
 ## Where to start reading
 
 1. `crates/opium-core/src/model.rs` and `provider.rs`: what a song, an album and a service are.
