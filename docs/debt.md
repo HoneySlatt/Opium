@@ -113,7 +113,8 @@ number there (L1, S2, W3…), and their failing tests are kept beside it.
   (a downgrade after a manifest was set aside); and a folder once found so never sweeps a leftover
   sealed file again.
 - **Formats without a version**: the shared state's, the pairings', the caches' and the settings'
-  (since M1.15 the settings keep the keys they do not know, written back unchanged).
+  (since M1.15 the settings keep the keys they do not know, written back unchanged); taken up now
+  by the PLAN's [Formats and versions](PLAN.md#formats-and-versions).
 - **Paging**: Apple's page-by-page reader ends quietly a list whose next page does not move on,
   where the reader of whole lists says so with an error; SoundCloud's and Navidrome's end quietly
   too; a server that ignores Navidrome's offset sends the same page for ever; Apple's lists
@@ -213,8 +214,9 @@ number there (L1, S2, W3…), and their failing tests are kept beside it.
 
 - **Found by the [architecture audit](audits/2026-11-16-architecture.md#before-the-first-release)**,
   before 0.1.0 makes them permanent: two devices talk only with the same Connect version, with no
-  range and no word to the user (A2); `ProviderKind` has no fallback, so a service added later
-  breaks older devices' sync (A3); the desktop's app id is `opium`, not reverse-DNS (A4); errors
+  range and no word to the user (A2), and `ProviderKind` has no fallback, so a service added later
+  breaks older devices' sync (A3), both taken up now by the PLAN's
+  [Formats and versions](PLAN.md#formats-and-versions); the desktop's app id is `opium`, not reverse-DNS (A4); errors
   carry English sentences, not kinds the interface can translate (A5); no log with levels, a file
   and secrets stripped in one place (A6); no terms for outside contributions, no SPDX header, no
   `SECURITY.md` (A7); CONTRIBUTING mixes what every contributor needs with the owner's machine

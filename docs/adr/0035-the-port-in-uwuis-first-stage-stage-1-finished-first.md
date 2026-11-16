@@ -2,7 +2,8 @@
 
 - Status: Accepted; amends [0031](0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md) (when
   the port comes) and [0029](0029-opium-waits-for-slime-ui-then-moves-first.md) (when the standby
-  ends)
+  ends); amended by [0048](0048-formats-and-connects-versions-before-the-port.md) (what is done
+  while Opium waits)
 - Date: 2026-11-07
 
 ## Context

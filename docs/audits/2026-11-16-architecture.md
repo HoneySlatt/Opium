@@ -164,7 +164,8 @@ proposal for the ROADMAP, which the owner decides:
 One at a time, each with its options:
 
 1. Move "every format versioned", Connect's version range and the unknown service (A1 to A3) from
-   Stage 7 into Stage 2, before 0.1.0.
+   Stage 7 into Stage 2, before 0.1.0. **Decided on 2026-11-16**: sooner, in a milestone of their
+   own while Opium waits for uwui ([ADR-0048](../adr/0048-formats-and-connects-versions-before-the-port.md)).
 2. The desktop's app id (A4), with the signing key already open at Stage 2.
 3. Errors as kinds and one log with secrets stripped (A5, A6): at the port, or before it.
 4. The terms for outside contributions (A7) and the repository's visibility (A8).
