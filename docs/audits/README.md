@@ -14,3 +14,4 @@ items go to the known debt, [`../debt.md`](../debt.md).
 | [2026-11-06](2026-11-06-kopuz-whole-tree.md) | Opium's whole tree compared with Kopuz at both revisions, every long run read by hand; one part still adapted, kept by the owner; the credits made true (M1.13) |
 | [2026-11-10](2026-11-10-stage-1.md) | The stage audit that closes Stage 1: every dimension, what each left out, its proofs beside it (M1.8) |
 | [2026-11-16](2026-11-16-architecture.md) | Architecture and evolvability, stability and recovery, what a contributor meets: what costs more the later it is done; read, not proven by tests |
+| [2026-11-17](2026-11-17-architecture.md) | Architecture, contributors and evolvability again, by three reviewers and a challenger: what the audit of 2026-11-16 missed or got wrong; read, not proven by tests |

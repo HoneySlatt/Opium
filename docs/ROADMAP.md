@@ -166,10 +166,10 @@ Each scenario is a realistic change or failure, its criterion, and how it is che
 
 | Scenario | Acceptance criterion | Checked by | When |
 |---|---|---|---|
-| A service added (Jellyfin) | The change touches the new crate, `ProviderKind`, `services` and the interface's list of services; older devices keep syncing | Tracing the code; a test that reads a message naming an unknown service | The PLAN's *Formats and versions*; again at Stage 9 |
+| A service added (Jellyfin) | The change touches the new crate, `ProviderKind`, `services` and the interface's list of services; older devices keep syncing | Tracing the code; a test that reads a message naming an unknown service | The PLAN's *The files' formats and versions* and *Connect's versions*; again at Stage 9 |
 | Windows' audio output | `player` gets a second output; no caller outside it changes | Tracing the code | Stage 4 |
-| A phone one version behind the computer | They pair and sync what both know; the older reports that it should update | A test of two versions of the wire | The PLAN's *Formats and versions* |
-| An upgrade, then a downgrade | Every file reads its older versions; an older build refuses a profile a newer one wrote, and writes nothing | Migration tests on test data | The PLAN's *Formats and versions* |
+| A phone one version behind the computer | They pair and sync what both know; the older reports that it should update | A test of two versions of the wire | The PLAN's *Connect's versions* |
+| An upgrade, then a downgrade | Every file reads its older versions; an older build refuses a profile a newer one wrote, and writes nothing | Migration tests on test data | The PLAN's *The files' formats and versions* |
 | Hours of play, sync and downloads | Memory, threads and open files return to their start; no queue grows past its bound | A long-run test on a throwaway profile | Stage 5, with the bounds of the [debt](debt.md) |
 | The network cut during a sync or a download | State stays valid; the work resumes or stops, within a bound | Fault-injection tests | Stage 5 for downloads, Stage 8 for Connect |
 
@@ -278,11 +278,13 @@ stable ([ADR-0035](adr/0035-the-port-in-uwuis-first-stage-stage-1-finished-first
 finished first; Opium then waits for the port, and this stage comes right after Stage 1
 ([ADR-0029](adr/0029-opium-waits-for-slime-ui-then-moves-first.md)).
 
-- First, a design session that builds nothing: one layer of state and actions in Rust, free of
-  any toolkit, for the desktop, the phone, `opium-headless`, the `opium` command and users' agents,
-  where `app.rs`, the phone's Compose screens, `desktop::backend` and `opium-ffi` each hold part of
-  it today ([audit B1](audits/2026-11-16-architecture.md#at-the-move-to-uwui-stage-5)); uwui is
-  adapted where the design needs it (decided by the owner on 2026-11-16)
+- First, the one layer of state and actions in Rust, free of any toolkit, for the desktop, the
+  phone, `opium-headless`, the `opium` command and users' agents, where `app.rs`, the phone's Kotlin
+  system layer and `desktop::backend` each hold part of it today
+  ([audit ARC-1](audits/2026-11-17-architecture.md#the-applications-layer)): its half that needs no
+  toolkit designed during the wait, how state binds to the interface and how actions are declared
+  designed here, on uwui's; then built, the parity tests of the wait passing; uwui is adapted where
+  the design needs it ([ADR-0051](adr/0051-what-opium-builds-while-it-waits-for-uwui.md))
 - The interface's state and logic taken out of `app.rs` into a model free of any toolkit
 - Each page and component, in each theme's variants, on the framework, with every need marked
   indispensable in [`ui-framework-needs.md`](ui-framework-needs.md)
@@ -343,6 +345,8 @@ reproducibly, carry their licences and expose of DRM what the owner decided.
 - A spike of the browser's Widevine CDM on Windows (`VerifyCdmHost`), so that Stage 4's risk is
   known early
 - French shipped beside English on the desktop; the phone, still on Compose, gets it at Stage 3
+- A minimal export and import of Opium's own playlists and the history, holding no secret
+  ([ADR-0054](adr/0054-a-minimal-export-at-the-first-release.md))
 - README and CHANGELOG for 0.1.0
 - The dependencies checked (`cargo deny`), once their advisories are fixed or accepted
 - A release audit before the tag, recorded in [`audits/`](audits/README.md): the stage audit, plus
@@ -368,6 +372,8 @@ did ([ADR-0031](adr/0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md)).
 - Opium Connect's node no longer built on the main thread (the system layer, not frozen)
 - Battery and smoothness measured against the reference player, before and after each change
 - The phone's text in English and French
+- The minimal export and import of the desktop's, on the phone
+  ([ADR-0054](adr/0054-a-minimal-export-at-the-first-release.md))
 - The lowest Android decided with uwui, and the lowest phone measured
 - Android Auto complete, within Google's rules for driving: the library browsed, voice search, text
   search when parked, the queue, the favourites, every source; for those who turn on Android Auto's

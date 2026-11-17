@@ -1,7 +1,6 @@
 # 0048. Formats and Connect's versions before the port
 
-- Status: Accepted; amends [0035](0035-the-port-in-uwuis-first-stage-stage-1-finished-first.md)
-  (what is done while Opium waits for its port)
+- Status: Superseded by [0051](0051-what-opium-builds-while-it-waits-for-uwui.md)
 - Date: 2026-11-16
 
 ## Context

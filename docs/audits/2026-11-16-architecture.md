@@ -167,8 +167,9 @@ Put to the owner one at a time on 2026-11-16, each decided the same day:
 1. **Formats and Connect's versions (A1 to A3)**: in a milestone of their own while Opium waits for
    uwui, rather than at Stage 7 or Stage 2
    ([ADR-0048](../adr/0048-formats-and-connects-versions-before-the-port.md)). Its conventions, in
-   the [PLAN](../PLAN.md#formats-and-versions): each file carries its version; an older build
-   refuses a newer profile and writes nothing; caches of another version rebuilt; the two messages
+   the [PLAN](../PLAN.md#the-files-formats-and-versions), now in
+   [ADR-0051](../adr/0051-what-opium-builds-while-it-waits-for-uwui.md): each file carries its
+   version; an older build refuses a newer profile and writes nothing; caches of another version rebuilt; the two messages
    reported by the core only until uwui.
 2. **The desktop's id (A4)**: `io.github.honeyslatt.Opium`, from Stage 2
    ([ADR-0049](../adr/0049-the-apps-names-and-its-desktop-id.md)).

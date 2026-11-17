@@ -3,7 +3,9 @@
 An ADR records one decision: its context, the decision, the alternatives rejected and the
 consequences. Once accepted, only its status changes. A later decision that replaces it whole makes
 it `Superseded by NNNN`; one that changes part of it makes it `Accepted; amended by NNNN`, and the
-newer one `Accepted; amends NNNN (what)`.
+newer one `Accepted; amends NNNN (what)`. From 2026-11-17, as the method now asks, one that
+restates a topic of it whole makes it `…; superseded in part by NNNN (the topic)`, and the newer one
+`Accepted; supersedes in part NNNN (the topic)`.
 
 New ADRs copy [`0000-template.md`](0000-template.md) and take the next free number.
 
@@ -23,7 +25,7 @@ call the app "Music" ([ADR-0023](0023-the-rename-to-opium.md)).
 | [0007](0007-one-library-and-the-best-copy.md) | One library, and the best copy of each song | Accepted |
 | [0008](0008-the-lyrics-sources.md) | Lyrics: the song's own source first, then the sites, LRCLIB alone by default | Accepted; amended by 0034 |
 | [0009](0009-the-android-app-over-the-rust-core.md) | The Android app: Kotlin and Compose over the Rust core, through UniFFI | Accepted; amended by 0034 |
-| [0010](0010-opium-connect-on-the-local-network.md) | Opium Connect on the local network: mDNS, TCP 47820, SPAKE2 and Noise | Accepted; amended by 0015 and 0034 |
+| [0010](0010-opium-connect-on-the-local-network.md) | Opium Connect on the local network: mDNS, TCP 47820, SPAKE2 and Noise | Accepted; amended by 0015 and 0034; superseded in part by 0053 |
 | [0011](0011-themes-as-toml-files-of-component-variants.md) | Themes as TOML files that choose a variant of each component | Accepted; amended by 0034 and 0037 |
 | [0012](0012-soundcloud-changes-through-a-browser-seam.md) | SoundCloud's changes go through a browser seam | Accepted |
 | [0013](0013-secrets-and-what-is-kept-on-disk.md) | Secrets, and what is kept on disk | Accepted; amended by 0034 and 0044 |
@@ -48,7 +50,7 @@ call the app "Music" ([ADR-0023](0023-the-rename-to-opium.md)).
 | [0032](0032-the-gpl-kept-and-kopuzs-code-still-written-again.md) | The GPL is kept, and Kopuz's code is still written again | Accepted; amends 0030 and 0031, confirms 0001; amended by 0033 |
 | [0033](0033-the-browser-sign-ins-pipe-kept-as-adapted-from-kopuz.md) | The browser sign-in's pipe is kept as adapted from Kopuz | Accepted; amends 0030 and 0032 |
 | [0034](0034-what-opium-is-to-become.md) | What Opium is to become | Accepted; amends 0008, 0009, 0010, 0011, 0013, 0014, 0016, 0017, 0025, 0029 and 0031; amended by 0037 and 0038 |
-| [0035](0035-the-port-in-uwuis-first-stage-stage-1-finished-first.md) | The port in uwui's first stage, Stage 1 finished first | Accepted; amends 0031 and 0029; amended by 0048 |
+| [0035](0035-the-port-in-uwuis-first-stage-stage-1-finished-first.md) | The port in uwui's first stage, Stage 1 finished first | Accepted; amends 0031 and 0029; superseded in part by 0051 |
 | [0036](0036-the-phones-ci-job-blocks-even-when-google-fails.md) | The phone's CI job blocks, even when Google fails | Accepted; its remedy narrowed in CONTRIBUTING.md |
 | [0037](0037-uwuis-decisions-of-2026-11-07-taken-into-opium.md) | uwui's decisions of 2026-11-07, taken into Opium | Accepted; amends 0011, 0025 and 0034; amended by 0038 |
 | [0038](0038-opium-measured-against-the-market.md) | Opium measured against the market | Accepted; amends 0025, 0034 and 0037; amended by 0041 |
@@ -61,6 +63,10 @@ call the app "Music" ([ADR-0023](0023-the-rename-to-opium.md)).
 | [0045](0045-no-core-dump-through-the-core-size-limit.md) | No core dump, through the core size limit | Accepted; amends 0039 |
 | [0046](0046-the-shared-state-sent-in-parts.md) | The shared state sent in parts | Accepted; amends 0014 |
 | [0047](0047-the-thirty-days-counted-on-the-clocks-forward-motion.md) | The thirty days counted on the clock's forward motion | Accepted; amends 0017 |
-| [0048](0048-formats-and-connects-versions-before-the-port.md) | Formats and Connect's versions before the port | Accepted; amends 0035 |
+| [0048](0048-formats-and-connects-versions-before-the-port.md) | Formats and Connect's versions before the port | Superseded by 0051 |
 | [0049](0049-the-apps-names-and-its-desktop-id.md) | The app's names, and its desktop id | Accepted; supersedes 0023 |
 | [0050](0050-contributions-under-githubs-terms-alone.md) | Contributions under GitHub's terms alone | Accepted |
+| [0051](0051-what-opium-builds-while-it-waits-for-uwui.md) | What Opium builds while it waits for uwui | Accepted; supersedes 0048; supersedes in part 0035 |
+| [0052](0052-apples-licences-paced-in-one-place.md) | Apple's licences paced in one place | Accepted |
+| [0053](0053-a-forgotten-device-forgotten-everywhere.md) | A forgotten device forgotten everywhere | Accepted; supersedes in part 0010 |
+| [0054](0054-a-minimal-export-at-the-first-release.md) | A minimal export at the first release | Accepted |

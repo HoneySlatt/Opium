@@ -115,7 +115,7 @@ number there (L1, S2, W3…), and their failing tests are kept beside it.
   sealed file again.
 - **Formats without a version**: the shared state's, the pairings', the caches' and the settings'
   (since M1.15 the settings keep the keys they do not know, written back unchanged); taken up now
-  by the PLAN's [Formats and versions](PLAN.md#formats-and-versions).
+  by the PLAN's [files' formats and versions](PLAN.md#the-files-formats-and-versions).
 - **Paging**: Apple's page-by-page reader ends quietly a list whose next page does not move on,
   where the reader of whole lists says so with an error; SoundCloud's and Navidrome's end quietly
   too; a server that ignores Navidrome's offset sends the same page for ever; Apple's lists
@@ -215,12 +215,35 @@ number there (L1, S2, W3…), and their failing tests are kept beside it.
 
 - **Found by the [architecture audit](audits/2026-11-16-architecture.md#before-the-first-release)**,
   before 0.1.0 makes them permanent. Taken up by the PLAN: Connect's versions and the unknown
-  service (A2, A3) in *Formats and versions*; error kinds and the log (A5, A6) in *Errors and the
+  service (A2, A3) in *Connect's versions* and *The files' formats and versions*; error kinds and the log (A5, A6) in *Errors and the
   log*; `SECURITY.md` and the templates (A7) in the documentation milestone. Left for Stage 2: the
   desktop's id set in the code and the packages
   ([ADR-0049](adr/0049-the-apps-names-and-its-desktop-id.md), A4); the code of conduct and SPDX
   headers (A7); CONTRIBUTING split between what every contributor needs and the owner's machine
   (D3); what a contributor proves with fakes and what the owner checks (D6).
+
+- **Found by the [architecture audit of 2026-11-17](audits/2026-11-17-architecture.md)**, each
+  followed by a milestone ([ADR-0051](adr/0051-what-opium-builds-while-it-waits-for-uwui.md)):
+  - in the PLAN: Kotlin unchecked by CI (CTB-1) in *Kotlin's CI*; sign-outs not final and Apple's
+    licences in bursts (SEC-1 to SEC-5) in *Final sign-outs*, which opens `opium-ffi` and so weighs
+    Kotlin's cancellations that never reach Rust (SEC-6) and the unused `Apple` export (CTB-7);
+    "private", `AGENTS.md`'s room and ARCHITECTURE's drift (SEC-7, CTB-4, CTB-7) in the
+    documentation milestone; downgrades that delete, `Track` as four contracts, unknown fields lost,
+    the files' dates in a cache, the manifest rewritten per removal (DON-1, DON-2, DON-5, DON-6,
+    DON-8, DON-11) and a `content://` id from another phone played as this one's (DON-7) in *The
+    files' formats and versions*; whole messages dropped, the version's three places, forgetting
+    local only, the merge's tests by example (DON-3, DON-4, SEC-4, DON-9) in *Connect's versions*;
+    silent writes, sentences for errors, nothing logged on the phone (ERR-1 to ERR-3) in *Errors and
+    the log*; no application layer and services' abilities by matches (ARC-1, ARC-2) in *The shared
+    layer's design*;
+  - at Stage 5, with the shared layer: replies applied as they arrive (ARC-3), a dead backend unseen
+    (ERR-4), downloads waiting lost at exit (ARC-5), the collision points (CTB-6), the window's
+    unused dependencies (CTB-7);
+  - at Stage 2: the supported machines and the lowest Rust (CTB-2), what a contributor checks on
+    fakes (CTB-5), the keyring's key made again silently, under Flatpak too (DON-10);
+  - at Stage 3: the phone's open files closed by the JVM (PLT-2); at Stage 4: the Linux-only code
+    beyond the 2026-11-16 list, `Mode::Private` doing nothing on Windows (PLT-1); at Stage 7: ids
+    qualified by their server and a content key for the files (DON-7), what only grows (DON-11).
 
 ## Waiting for Stage 8, Connect
 

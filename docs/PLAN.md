@@ -11,117 +11,152 @@ Every milestone ends with the definition of done in [`AGENTS.md`](../AGENTS.md#d
 
 - **Stage 1 — Under the method is done** (2026-11-12): every milestone, its audit and the audit's
   fixes, in [the history](history.md#stage-1--under-the-method-done-on-2026-11-12).
-- **Opium waits for its port in uwui's first stage**, after SlimeEngine's Stage 6d
-  ([ADR-0035](adr/0035-the-port-in-uwuis-first-stage-stage-1-finished-first.md)). Meanwhile it
+- **Opium waits for its port in uwui's first stage**, after SlimeEngine's Stage 6d. Meanwhile it
   fixes a loss of data, a crash, a security flaw or a service that stops working, and builds the
-  three milestones below, in their order, as the owner decided on 2026-11-16 after the
-  [architecture audit](audits/2026-11-16-architecture.md#decisions-for-the-owner)
-  ([ADR-0048](adr/0048-formats-and-connects-versions-before-the-port.md) for the second; the first
-  writes the rule whole).
-- **Now: [Documentation under the method's new rules](#documentation-under-the-methods-new-rules)**,
-  not started; then [Formats and versions](#formats-and-versions), then
-  [Errors and the log](#errors-and-the-log).
-- **Then Stage 5**, the move to uwui
-  ([ADR-0031](adr/0031-opium-moves-to-uwui-during-slimeengines-stage-6d.md)), opened by a design
-  session for one shared layer of state and actions ([ROADMAP](ROADMAP.md#stage-5--on-uwui)), and
-  the stages after it in the [ROADMAP's order](ROADMAP.md#4-stages).
+  eight milestones below, in their order
+  ([ADR-0051](adr/0051-what-opium-builds-while-it-waits-for-uwui.md)), as the owner decided on
+  2026-11-17 after the [architecture audit](audits/2026-11-17-architecture.md#decisions-for-the-owner).
+- **Now: [Kotlin's CI](#kotlins-ci)**, not started.
+- **Then Stage 5**, the move to uwui, from the design of the last milestone
+  ([ROADMAP](ROADMAP.md#stage-5--on-uwui)), and the stages after it in the
+  [ROADMAP's order](ROADMAP.md#4-stages).
 - **Still due with the owner**: a SoundCloud song served encrypted, not yet played after the
   clean-room rewrite.
+
+Each milestone below starts by reading its findings in the
+[audit](audits/2026-11-17-architecture.md); its conventions a newcomer would question are put to the
+owner at its start, then written in an ADR.
+
+## Kotlin's CI
+
+Not started. Audit CTB-1.
+
+- **Goal.** A change to the core that breaks the phone fails CI.
+- **Delivers.** The `android` job runs `./android/build-core.sh`, then `gradle testDebugUnitTest
+  assembleRelease`, with the Gradle of the Android shell; the APK built is not kept. CONTRIBUTING and
+  the head of `scripts/check.sh` say so.
+- **Done when.** CI is green; a branch that renames an export Kotlin uses fails the job.
+- **Measured.** The job's time, cold and warm, in `measurements.md`.
+
+## Final sign-outs
+
+Not started. Audit SEC-1 to SEC-5.
+
+- **Goal.** Nothing started before a sign-out takes effect after it, on both apps: a connect, a
+  sign-in, a token, credential or cache write, a reply, a subscription confirmation.
+- **Delivers.**
+  - One sign-out generation per service in `services`, used by `desktop::backend` and `opium-ffi`,
+    checked where a reply is sent, under the lock of each write, and before a service is installed;
+    Kotlin's `attempt` and the vault's writes follow it; the phone's library loads of a service
+    called off when it is forgotten.
+  - A device forgotten unpairs here the devices it introduced
+    ([ADR-0053](adr/0053-a-forgotten-device-forgotten-everywhere.md)).
+  - Apple's licences paced in `AppleMusic::license`, the warm stopped before the licence, a
+    superseded fetch called off ([ADR-0052](adr/0052-apples-licences-paced-in-one-place.md)).
+- **Done when.** Tests with a fake service held during a sign-out, on both apps: no reply, no file,
+  no token, no confirmation after it; a fake Apple counts two licences at most over ten skips.
+- **How to test.** `scripts/check.sh`, `scripts/check.sh android` and the Android job; the desktop on
+  a throwaway profile against a local Navidrome.
+- **By hand, with the owner.** A sign-out and a sign-in again on each app, on the owner's accounts.
 
 ## Documentation under the method's new rules
 
 Not started. No code of the app changes.
 
 - **Goal.** Each topic is read in one ADR; the documents follow the method's rules of 2026-11-16; a
-  stranger finds how to report a flaw in private and how to file an issue.
+  stranger finds how to start, how to report a flaw in private and how to file an issue.
 - **Delivers.**
-  - Each chain of ADRs that amend one another (38 ADRs today) replaced by one ADR per topic that
-    supersedes the chain and states its rule whole, nothing added nor dropped. The ADR on the port
-    states the work done while Opium waits: these three milestones, and why
-    ([ADR-0048](adr/0048-formats-and-connects-versions-before-the-port.md)).
-  - From the method's templates: the rules of `docs/adr/README.md` and `scripts/adr-index.py`,
-    which writes its index; `changelog.d/` and `scripts/changelog.py`; both checked by
-    `scripts/check.sh`.
-  - `ARCHITECTURE.md` opened by a page that a newcomer reads first.
-  - `AGENTS.md` aligned with the method's template: the rule on abstractions, the definition of
-    done checking the affected architecture contracts and scenarios, ADRs superseded rather than
-    amended, `changelog.d/`. It stays under 1,500 words by dropping the lines that repeat the
-    owner's global rules: files added by their paths, no stash or reset over another's work, no
-    commit that fails the checks, everything in English.
-  - `SECURITY.md`, through GitHub's private reporting of vulnerabilities, turned on in the
-    repository's settings; templates for issues and pull requests. The code of conduct and SPDX
-    headers wait for Stage 2.
-  - The measuring scripts on Niri: `startup.py map` reads Niri's event stream, `CONTRIBUTING.md`
-    names Niri; `rest.sh`, `sample.py`, `startup.py` and `memwatch.py` record the load of other
-    programs before and while they run ([debt](debt.md#not-waiting-for-a-stage)).
-- **Done when.** `scripts/check.sh` passes with its new steps; no accepted ADR is amended by
-  another; a fresh reviewer has read each new ADR against the chain it replaces and found nothing
-  lost or added.
-- **How to test.** `scripts/check.sh`; `startup.py map` run once in a headless Niri or on the
-  owner's desktop with the owner's go.
-- **Measured.** Nothing but the documents' sizes.
+  - Each chain of ADRs that amend one another replaced by one ADR per topic that supersedes the
+    chain and states its rule whole, nothing added nor dropped.
+  - From the method's templates: the rules of `docs/adr/README.md` and `scripts/adr-index.py`;
+    `changelog.d/` and `scripts/changelog.py`; both checked by `scripts/check.sh`.
+  - `ARCHITECTURE.md` opened by a page a newcomer reads first; its ownership, limits and drift
+    corrected (audit CTB-7, DON-11, ARC-5).
+  - `AGENTS.md` aligned with the method's template, with room under 1,500 words (audit CTB-4).
+  - `SECURITY.md`, through GitHub's private reporting, turned on in the repository's settings;
+    templates for issues and pull requests.
+  - `CONTRIBUTING.md`: "private" corrected (audit SEC-7); a short section for an outside contributor:
+    clone, `nix develop`, `scripts/check.sh`, a run on a throwaway profile, what a pull request
+    proves and what the owner checks. The full split waits for Stage 2.
+  - The measuring scripts on Niri, recording the load of other programs
+    ([debt](debt.md#not-waiting-for-a-stage)).
+- **Done when.** `scripts/check.sh` passes with its new steps; no accepted ADR is amended by another;
+  a fresh reviewer has read each new ADR against the chain it replaces and found nothing lost or
+  added.
 
-## Formats and versions
+## The files' formats and versions
 
-Not started. Decided on 2026-11-16 ([ADR-0048](adr/0048-formats-and-connects-versions-before-the-port.md)),
-from the [architecture audit](audits/2026-11-16-architecture.md#before-the-first-release) (A1 to A3).
+Not started. Audit DON-1, DON-2, DON-5, DON-6, DON-8.
 
-- **Goal.** Every file Opium keeps reads its older versions and is never lost to a newer build; two
-  devices one version apart still pair and sync, and the older knows it should update; a service
-  an older device does not know passes through it unchanged.
-- **Decided by the owner on 2026-11-16.**
-  - Each kept file carries its own version.
-  - A build that finds a profile written by a newer one refuses it and writes nothing, as Firefox
-    does; going back means restoring a backup.
-  - A cache of another version is thrown away and rebuilt, never migrated.
-  - "This profile comes from a newer Opium" and "this other device must be updated" are reported by
-    the core only, to the log of [Errors and the log](#errors-and-the-log) and to the terminal: the
-    frozen windows show nothing until uwui.
+- **Goal.** Every file Opium keeps reads its older versions, keeps what it does not know, and is
+  never lost to a newer or an older build.
 - **Delivers.**
-  - The list of every file both apps keep, with its owner and its version (the desktop's files,
-    the phone's preferences and theme), in `ARCHITECTURE.md`.
-  - A version in each, a migration per step, a backup before a migration writes, the refusal of a
-    newer profile.
-  - Connect's hello with a range of versions, the common highest used.
-  - `ProviderKind` and the shared state keeping a service they do not know.
-  - An ADR for the conventions a newcomer would question.
-- **Done when.** Each format is read at each of its versions by a test on files written by
-  today's build, kept in the tests; a test of two wire versions pairs and syncs; a message naming
-  an unknown service passes an older device's merge unchanged; an older build given a newer profile
-  refuses it and leaves every file as it was.
-- **How to test.** `scripts/check.sh` and `scripts/check.sh android`; the desktop on a throwaway
-  profile carrying files from today's build; the ROADMAP's
-  [scenarios](ROADMAP.md#architecture-and-stability-scenarios) "a phone one version behind", "an
-  upgrade, then a downgrade" and "a service added".
-- **Measured.** The start-up to the first useful frame, before and after: a version check must not
-  slow it.
-- **By hand, with the owner.** The new desktop and APK installed together on the owner's devices;
-  history and playlists checked on both.
+  - The list of every file both apps keep, its owner, whether it can be rebuilt, its version, in
+    `ARCHITECTURE.md`.
+  - Its first commit: the JSON today's build writes, kept as tests.
+  - A version in each file, a migration per step, a backup before a migration writes, a newer profile
+    refused with nothing written ([ADR-0051](adr/0051-what-opium-builds-while-it-waits-for-uwui.md)).
+  - Types of their own where data crosses versions (shared state's rows, manifest's entries), keeping
+    unknown services, fields and values; ids spelt explicitly, not by Rust's debug form.
+  - The downloads' manifest put aside read back, and saved once per removal of many; the files'
+    dates of adding kept out of the cache; a `content://` id another phone stamped never played as
+    this one's.
+- **Done when.** Each format is read at each of its versions; an unknown service, field or value
+  passes an older build unchanged; an older build given a newer profile leaves every file as it was.
+- **Measured.** The start-up to the first useful frame, before and after.
+
+## Connect's versions
+
+Not started. Audit DON-3, DON-4, SEC-4.
+
+- **Goal.** Two devices one version apart pair and sync, and the older knows it should update; a
+  forgotten device is forgotten everywhere.
+- **Delivers.** A range of versions in the hello, the common highest used; both hellos' hash in the
+  Noise prologue, the ALPN and the prologue's tag fixed; a lowest version accepted; a message's items
+  read one by one when the whole fails; the forgetting of
+  [ADR-0053](adr/0053-a-forgotten-device-forgotten-everywhere.md).
+- **Done when.** A test of two versions of the wire pairs and syncs; an edited hello fails the
+  handshake; one unknown item leaves the rest of its message merged; three devices forget one.
+- **By hand, with the owner.** The new desktop and APK installed together; history and playlists
+  checked on both.
 
 ## Errors and the log
 
-Not started. Decided on 2026-11-16, from the
-[architecture audit](audits/2026-11-16-architecture.md#before-the-first-release) (A5, A6).
+Not started. Audit ERR-1 to ERR-3; owner's go on `tracing` and `tracing-subscriber` given on
+2026-11-16.
 
-- **Goal.** The interface can tell an error's kind, so that it can be translated with uwui; one log
-  a user can attach to an issue, secrets stripped in one place.
-- **Delivers.**
-  - Kinds in `opium_core::provider::Error` and the phone's `OpiumError`: offline, a session that
-    lapsed, a subscription that ended, a song not available in the user's country, a service that
-    limits requests, an answer not understood, and those the services' code shows are needed. Each
-    keeps its English text, so the frozen windows show what they show today.
-  - `tracing` and `tracing-subscriber`, the owner's go given on 2026-11-16: both are already in
-    `Cargo.lock` (`tracing` through iroh, zbus and winit; `tracing-subscriber` only through `loom`,
-    for tests), and become the app's own. A writer of Opium's keeps two files of bounded size in
-    the state folder, on both apps, and strips secrets before writing. The `eprintln!` calls move
-    to it.
-  - An ADR for the error kinds and the log.
-- **Done when.** Each service maps its failures to the kinds, tested; a test shows that a token, a
-  password or a signed address never reaches the log file; a flood of messages leaves the log
-  within its bound.
-- **How to test.** `scripts/check.sh` and `scripts/check.sh android`; the desktop on a throwaway
-  profile, offline and online.
-- **Measured.** The wake-ups at rest and the start-up, before and after: the log must add neither.
+- **Goal.** One log a user can attach to an issue, on both apps, secrets stripped in one place; each
+  error's kind known to the core.
+- **Delivers.** Kinds in `opium_core::provider::Error` and `OpiumError` (offline, session lapsed,
+  subscription ended, not in the user's country, rate limited, not understood, not offered by the
+  service), each keeping its English text; `desktop::backend`'s replies unchanged, their kinds
+  logged; the "encrypted" match of `opium-ffi` on a kind; a writer of two files of bounded size in
+  the state folder; the `eprintln!` calls and the writes whose errors are dropped moved to it.
+- **Done when.** Each service maps its failures to the kinds, tested; no token, password or signed
+  address reaches the log; a flood leaves the log within its bound.
+- **Measured.** The wake-ups at rest and the start-up, before and after.
+
+## Parity tests
+
+Not started.
+
+- **Goal.** What the app does at the boundaries the port replaces is recorded, for the new layer to
+  match.
+- **Delivers.** Tests over fake services at `desktop::backend`'s `Request`/`Reply` and at
+  `opium-ffi`'s `Session`: signing in and out, the library kept and read again, playing, downloading,
+  searching; the final sign-outs' tests among them.
+- **Done when.** Each scenario runs in `cargo test`, deterministic, without a window or the network.
+
+## The shared layer's design
+
+Not started; builds nothing.
+
+- **Goal.** The half of the one layer of state and actions that needs no toolkit, decided before
+  the port: the services' lifecycle, who owns and calls off each task, the policies both apps share
+  (retries, a station's refill, a search's pause), the errors' kinds.
+- **Delivers.** A design session under the method: options, a challenge, the owner's decisions, ADRs.
+  It adopts or replaces the sign-out generation of *Final sign-outs*.
+- **Done when.** The ADRs are accepted and the ROADMAP's Stage 5 starts from them.
 
 ## Ideas
 
@@ -129,9 +164,6 @@ For the owner to pick; none is planned.
 
 - **A gallery of every component in each theme**, captured off screen: the look approved on
   captures, reference images for CI. On the desktop, with uwui.
-- **CI building the phone's app**: `build-core.sh` and `gradle assembleRelease` in the `android`
-  job, so that Kotlin which no longer matches the core fails CI ([debt](debt.md)); with Stage 2's
-  Gradle wrapper. Its time is not measured.
 - **A crash report of the app's own**: a panic hook writing what the user can attach to an issue;
   the phone's now, the desktop window's with uwui.
 - **What Kopuz has and Opium lacks** ([licence audit](audits/2026-11-05-licence.md)): stations

@@ -2,7 +2,8 @@
 
 - Status: Accepted; amended by [0015](0015-away-from-home-through-iroh.md) (paired devices also
   reach each other away from home) and [0034](0034-what-opium-is-to-become.md) (resuming and
-  handing over at their best; a guest on the local network, its trust designed first)
+  handing over at their best; a guest on the local network, its trust designed first); superseded
+  in part by [0053](0053-a-forgotten-device-forgotten-everywhere.md) (a device forgotten)
 - Date: 2026-10-30
 
 ## Context
