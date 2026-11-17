@@ -148,11 +148,17 @@ In `nix develop .#android`:
   fails on any other: a file that changed, or one the list lacks. This pins above all the Kotlin
   half of `rustls-platform-verifier`, served from a GitHub branch that can move. When a dependency
   is added or changes version, write the file again over the build and the tests, every task run
-  again so that each resolves what it uses:
+  again so that each resolves what it uses, with an empty Gradle cache, as CI's:
 
   ```sh
-  (cd android && gradle --write-verification-metadata sha256 --rerun-tasks assembleRelease testDebugUnitTest)
+  home=$(mktemp -d)
+  (cd android && GRADLE_USER_HOME=$home gradle --no-daemon --write-verification-metadata sha256 --rerun-tasks assembleRelease testDebugUnitTest)
+  rm -r "$home"
   ```
+
+  A warm cache resolves some libraries' metadata differently and hides what an empty one needs:
+  written over the owner's cache, the file lacked 15 Maven BOMs and parent POMs, which failed CI's
+  first run of the APK's build (2026-11-17).
 
   Gradle only adds entries: to drop those no longer used, move the file aside first, then run the
   same command. A change to the file is read in review: only the changed dependencies' entries
