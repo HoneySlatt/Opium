@@ -1282,7 +1282,7 @@ impl LiveStation {
 /// The best copy among `songs` of `track`, another device's file: the
 /// phone's own file, the server's, a service's.
 #[uniffi::export]
-pub fn copy_of(track: Track, songs: Vec<Track>) -> Option<Track> {
+pub fn copy_of_renamed(track: Track, songs: Vec<Track>) -> Option<Track> {
     opium_core::dedupe::Copies::of(&songs).best(&track).cloned()
 }
 
