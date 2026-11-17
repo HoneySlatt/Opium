@@ -107,10 +107,13 @@ jobs:
         with:
           name: fuzz-artifacts
           path: crates/*/fuzz/artifacts/
-  # The phone's core (`scripts/check.sh android`), in the Android shell. The shell's SDK is Google's,
-  # unfree, so cache.nixos.org holds none of it but an old `sdk-tools` archive: every run downloads
-  # the rest from Google again, and fails when a version nixpkgs asks for is missing from Google's
-  # server, as on 2026-11-04 and 2026-11-05 (ADR-0036; CONTRIBUTING.md says what to do).
+  # The phone (`scripts/check.sh android`), in the Android shell: clippy on its core, then the core
+  # and its Kotlin bindings built, the Kotlin's JVM tests run and the release APK built, which no
+  # step keeps. The shell's SDK is Google's, unfree, so cache.nixos.org holds none of it but an old
+  # `sdk-tools` archive: every run downloads the rest from Google again, and fails when a version
+  # nixpkgs asks for is missing from Google's server, as on 2026-11-04 and 2026-11-05 (ADR-0036;
+  # CONTRIBUTING.md says what to do). Gradle downloads its plugins and libraries at every run too,
+  # from the repositories of android/settings.gradle.kts, each checked against its SHA-256.
   android:
     runs-on: ubuntu-24.04
     # A cold run is measured in docs/measurements.md; this limit only stops a hung run.
@@ -132,7 +135,7 @@ jobs:
           df -h /
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
       # As in the check job, but for the Android shell and `target-android`, the folder of
-      # scripts/check.sh android.
+      # scripts/check.sh android, whose core is built by android/build-core.sh.
       - id: shell
         run: |
           drv=$(nix eval --raw --no-update-lock-file .#devShells.x86_64-linux.android.drvPath)
@@ -144,7 +147,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target-android
-          key: cargo-android-${{ runner.os }}-${{ steps.shell.outputs.drv }}-debug${{ env.CARGO_PROFILE_DEV_DEBUG }}-incremental${{ env.CARGO_INCREMENTAL }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'crates/*/Cargo.toml', 'scripts/check.sh') }}
+          key: cargo-android-${{ runner.os }}-${{ steps.shell.outputs.drv }}-debug${{ env.CARGO_PROFILE_DEV_DEBUG }}-incremental${{ env.CARGO_INCREMENTAL }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'crates/*/Cargo.toml', 'scripts/check.sh', 'android/build-core.sh') }}
       - run: nix develop .#android --no-update-lock-file --command scripts/check.sh android
       - if: steps.cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

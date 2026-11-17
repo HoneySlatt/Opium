@@ -50,7 +50,7 @@ without the others, nothing is cached, the files are not opened, or there are no
 
 ```sh
 scripts/check.sh            # every check of the definition of done; what CI runs
-scripts/check.sh android    # inside `nix develop .#android`: the phone's core
+scripts/check.sh android    # inside `nix develop .#android`: the phone, core, Kotlin and APK
 scripts/check.sh docs       # the documents only: their sizes and links, in a second
 ```
 
@@ -64,13 +64,17 @@ scripts/check.sh docs       # the documents only: their sizes and links, in a se
   milestones to [`docs/history.md`](docs/history.md), debt to [`docs/debt.md`](docs/debt.md),
   commands to this file.
 - `scripts/check.sh android` runs clippy on `opium-ffi` for arm64 Android, warnings as errors, in
-  `target-android`. It checks that the phone's core builds without the desktop's crates. The APK
-  itself is not checked.
+  `target-android`: the phone's core builds without the desktop's crates. Then it runs
+  `./android/build-core.sh` and `gradle --no-daemon testDebugUnitTest assembleRelease`
+  ([the phone's build](#the-phones-build)): the Kotlin is compiled against the core just built, so
+  a change to the core that breaks the phone fails here. Gradle needs the network for what its cache
+  lacks. The release APK is left in `android/app/build`, as by hand.
 - CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs
   `nix develop --no-update-lock-file --command scripts/check.sh` on every push to `main`, every
   pull request, and every Monday at 06:53 UTC, but for a push or a pull request that changes only
   Markdown files. The flag makes an incomplete `flake.lock` an error instead of a silent update.
-  A second job runs `scripts/check.sh android` in `nix develop .#android` at the same times.
+  A second job runs `scripts/check.sh android` in `nix develop .#android` at the same times, and
+  keeps none of what it builds, the APK included.
   cache.nixos.org holds none of Google's SDK but an old `sdk-tools` archive, so each run downloads
   the rest from Google: a version missing from Google's server fails that job, as it did by hand on
   2026-11-04 and 2026-11-05. That red blocks work as any other
@@ -138,7 +142,7 @@ In `nix develop .#android`:
   only and never in the APK. They check the data layer's decisions that need no Android
   (`data/Rules.kt`), on the computer: no phone, no emulator. They need the bindings
   `build-core.sh` makes. AGP 9 makes unit tests for the debug build only; the task compiles
-  classes and builds no APK. `scripts/check.sh android` does not run them.
+  classes and builds no APK. `scripts/check.sh android` runs them, after `build-core.sh`.
 - Gradle checks every file it resolves, plugins and test libraries included, against its SHA-256
   in [`android/gradle/verification-metadata.xml`](android/gradle/verification-metadata.xml), and
   fails on any other: a file that changed, or one the list lacks. This pins above all the Kotlin

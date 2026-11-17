@@ -166,7 +166,7 @@ number there (L1, S2, W3…), and their failing tests are kept beside it.
   first; fuzz targets built only on the weekly run; 88 documented functions that return a `Result`
   without an *Errors* section; `rfc3339` written twice.
 - **Tests**: the phone's JVM tests cover only the vault's reads, the desktop's themes and the
-  downloads' orders, and CI runs neither them nor Gradle's dependency verification (built by hand);
+  downloads' orders;
   `connect`'s two tests of 100,000 songs take one to three minutes in a debug build; Navidrome's
   test of the year fails on a clock behind 2026; the player's engine, Apple Music's live radio reader and `opium-ffi`
   untested; SoundCloud's bounded retries untested; Connect's tests listen on port 47820 of the local
@@ -224,8 +224,10 @@ number there (L1, S2, W3…), and their failing tests are kept beside it.
 
 - **Found by the [architecture audit of 2026-11-17](audits/2026-11-17-architecture.md)**, each
   followed by a milestone ([ADR-0051](adr/0051-what-opium-builds-while-it-waits-for-uwui.md)):
-  - in the PLAN: Kotlin unchecked by CI (CTB-1) in *Kotlin's CI*; sign-outs not final and Apple's
-    licences in bursts (SEC-1 to SEC-5) in *Final sign-outs*, which opens `opium-ffi` and so weighs
+  - the Kotlin and the APK built by CI since *Kotlin's CI* (CTB-1); CTB-1's Nix package, which CI
+    does not build, so that `nix build` can fail on a green `main`, in no milestone yet;
+  - in the PLAN: sign-outs not final and Apple's licences in bursts (SEC-1 to SEC-5) in *Final
+    sign-outs*, which opens `opium-ffi` and so weighs
     Kotlin's cancellations that never reach Rust (SEC-6) and the unused `Apple` export (CTB-7);
     "private", `AGENTS.md`'s room and ARCHITECTURE's drift (SEC-7, CTB-4, CTB-7) in the
     documentation milestone; downgrades that delete, `Track` as four contracts, unknown fields lost,
