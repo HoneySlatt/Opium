@@ -4,8 +4,11 @@
 # `nix develop --no-update-lock-file -c scripts/check.sh` (the flag makes an incomplete flake.lock an
 # error instead of a silent update).
 #
-# `scripts/check.sh android`, run inside `nix develop .#android`, checks the phone's core instead:
-# the Rust that the Android app loads, built for the phone. Building the APK itself is not checked.
+# `scripts/check.sh android`, run inside `nix develop .#android`, checks the phone instead, as CI's
+# `android` job does: clippy on the Rust core that the Android app loads, built for the phone; then
+# `android/build-core.sh`, which builds that core and its Kotlin bindings; then Gradle's JVM tests
+# and the release APK, which compile the Kotlin against those bindings. Gradle downloads what
+# it lacks, so this part needs the network. The APK is left in `android/app/build`; CI keeps none.
 #
 # `scripts/check.sh docs` checks the documents only: the sizes of the files every agent reads at
 # every session, and the links between the Markdown files. The default part runs it first.
@@ -66,6 +69,16 @@ if [ "$part" = android ]; then
     # The same target folder and API level as android/build-core.sh.
     CARGO_TARGET_DIR=target-android \
         cargo ndk -t arm64-v8a --platform 34 clippy -p opium-ffi --locked -- -D warnings
+
+    # Built again at every run, so that Gradle never compiles the Kotlin against an older core's
+    # bindings: a core that drops or renames what Kotlin calls fails the next step.
+    step "the phone's core and its Kotlin bindings"
+    ./android/build-core.sh
+
+    # The JVM tests, then the release APK, which compiles every Kotlin file and shrinks it with R8.
+    # Without a daemon, so that no Gradle process stays behind once the checks end.
+    step "the Kotlin's JVM tests and the release APK"
+    (cd android && gradle --no-daemon testDebugUnitTest assembleRelease)
     step "all checks passed"
     exit 0
 fi
