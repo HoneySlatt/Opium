@@ -18,6 +18,8 @@ Every milestone ends with the definition of done in [`AGENTS.md`](../AGENTS.md#d
   [architecture audit](audits/2026-11-17-architecture.md#decisions-for-the-owner).
 - **Done: Kotlin's CI** (2026-11-18), in [the history](history.md#kotlins-ci-done-on-2026-11-18).
 - **Now: [Final sign-outs](#final-sign-outs)**, not started.
+- **After Final sign-outs: Rust 1.100** for the desktop shell, the Nix package and Android in
+  one toolchain update ([ADR-0055](adr/0055-rust-1-100-after-final-sign-outs.md)).
 - **Then Stage 5**, the move to uwui, from the design of the last milestone
   ([ROADMAP](ROADMAP.md#stage-5--on-uwui)), and the stages after it in the
   [ROADMAP's order](ROADMAP.md#4-stages).

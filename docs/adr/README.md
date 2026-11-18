@@ -70,3 +70,4 @@ call the app "Music" ([ADR-0023](0023-the-rename-to-opium.md)).
 | [0052](0052-apples-licences-paced-in-one-place.md) | Apple's licences paced in one place | Accepted |
 | [0053](0053-a-forgotten-device-forgotten-everywhere.md) | A forgotten device forgotten everywhere | Accepted; supersedes in part 0010 |
 | [0054](0054-a-minimal-export-at-the-first-release.md) | A minimal export at the first release | Accepted |
+| [0055](0055-rust-1-100-after-final-sign-outs.md) | Rust 1.100 after Final sign-outs | Accepted |
