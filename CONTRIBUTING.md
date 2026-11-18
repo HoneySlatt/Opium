@@ -90,6 +90,13 @@ scripts/check.sh docs       # the documents only: their sizes and links, in a se
   `repo.json`. Only platform-tools has a single version there: for it, a newer nixpkgs in
   `flake.lock`, which also moves the desktop's and the fuzzing shell's tools and the packaged app,
   but not the Android shell's Rust, which rust-overlay pins.
+- The same job's Gradle downloads, at every run, from the repositories of
+  [`android/settings.gradle.kts`](android/settings.gradle.kts): Google's Maven, Maven Central, the
+  Gradle Plugin Portal and the GitHub branch of `rustls-platform-verifier`. A red caused by one of
+  them blocks work as any other, by the owner's decision of 2026-11-18. Run the job again first: a
+  server that failed for a while passes then. A file whose SHA-256 no longer matches is a file that
+  changed: read what changed, and only with the owner's go write the
+  [verification file](#the-phones-build) again.
 - [`documents.yml`](.github/workflows/documents.yml) runs `scripts/check.sh docs` at every push to
   `main` and on every pull request, documents only included, with lychee from the pinned nixpkgs: a minute or two,
   where the whole check takes ten or more.

@@ -3,7 +3,8 @@
 - Status: Accepted; its remedy is narrowed by CONTRIBUTING.md's
   [checks](../../CONTRIBUTING.md#the-checks): most tools can be moved in `flake.nix` alone; the
   job's cost is [measured again](../measurements.md#cis-android-job-with-the-kotlin-and-the-apk-kotlins-ci-2026-11-18)
-  since it builds the APK
+  since it builds the APK; extended by the owner on 2026-11-18 to the repositories Gradle downloads
+  from ([CONTRIBUTING.md](../../CONTRIBUTING.md#the-checks))
 - Date: 2026-11-07
 
 ## Context

@@ -342,6 +342,8 @@ reproducibly, carry their licences and expose of DRM what the owner decided.
 - The fewest rights: the desktop's portals, Flatpak's sandbox, no superfluous Android permission
 - A Flatpak for Flathub, the Nix package, a signed APK on GitHub; the name and the Spotify theme's
   new name checked against those stores' rules
+- CI building the Nix package (`nix build`) at every push, so that it cannot break on a green
+  `main` (audit CTB-1)
 - A spike of the browser's Widevine CDM on Windows (`VerifyCdmHost`), so that Stage 4's risk is
   known early
 - French shipped beside English on the desktop; the phone, still on Compose, gets it at Stage 3

@@ -223,9 +223,7 @@ number there (L1, S2, W3…), and their failing tests are kept beside it.
 
 - **Found by the [architecture audit of 2026-11-17](audits/2026-11-17-architecture.md)**, each
   placed in a milestone ([ADR-0051](adr/0051-what-opium-builds-while-it-waits-for-uwui.md)) or a
-  stage but one:
-  - in no milestone yet, for the owner to place: the Nix package, which CI does not build, so that
-    `nix build` can fail on a green `main` (CTB-1's other half);
+  stage:
   - in the PLAN: sign-outs not final and Apple's licences in bursts (SEC-1 to SEC-5) in *Final
     sign-outs*, which opens `opium-ffi` and so weighs
     Kotlin's cancellations that never reach Rust (SEC-6) and the unused `Apple` export (CTB-7);
@@ -242,7 +240,9 @@ number there (L1, S2, W3…), and their failing tests are kept beside it.
     (ERR-4), downloads waiting lost at exit (ARC-5), the collision points (CTB-6), the window's
     unused dependencies (CTB-7);
   - at Stage 2: the supported machines and the lowest Rust (CTB-2), what a contributor checks on
-    fakes (CTB-5), the keyring's key made again silently, under Flatpak too (DON-10);
+    fakes (CTB-5), the keyring's key made again silently, under Flatpak too (DON-10), and the Nix
+    package, which CI does not build, so that `nix build` can fail on a green `main` (CTB-1's other
+    half, the owner's decision of 2026-11-18);
   - at Stage 3: the phone's open files closed by the JVM (PLT-2); at Stage 4: the Linux-only code
     beyond the 2026-11-16 list, `Mode::Private` doing nothing on Windows (PLT-1); at Stage 7: ids
     qualified by their server and a content key for the files (DON-7), what only grows (DON-11).

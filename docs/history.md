@@ -18,7 +18,9 @@ first run on an empty Gradle cache failed on BOMs and parent POMs missing from G
 file, written over a warm cache: 11 files in all; CONTRIBUTING now says to write it over an empty
 one. The job takes 16 to 21 minutes cold and 12 warm, against 4 min 41 s warm before
 ([measured](measurements.md#cis-android-job-with-the-kotlin-and-the-apk-kotlins-ci-2026-11-18)).
-The Nix package, CTB-1's other half, is still unbuilt by CI ([debt](debt.md)).
+The Nix package, CTB-1's other half, is left unbuilt by CI until Stage 2, by the owner's decision
+of 2026-11-18. A red caused by the repositories Gradle downloads from blocks work as any other, by
+the same decision, written into ADR-0036's status.
 
 ## Stage 1 — Under the method (done on 2026-11-12)
 
