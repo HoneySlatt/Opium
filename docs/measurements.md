@@ -13,10 +13,11 @@ cited live in [`scripts/measure/`](../scripts/measure/), each described at its h
 ## CI's `android` job with the Kotlin and the APK, *Kotlin's CI* (2026-11-18)
 
 GitHub's `ubuntu-24.04`, [`ci.yml`](../.github/workflows/ci.yml) at commit `f6d2b1a` (the same
-tree as `3f6b7cb`, the pull request's commit), run `44203166761` of pull request #1. The job runs `scripts/check.sh android`: clippy on the core, then
-`android/build-core.sh`, then `gradle --no-daemon testDebugUnitTest assembleRelease`, 34 JVM tests.
-Cold: the cache's key was new, since it now names `android/build-core.sh`. Warm: the same job run
-again, its cache hit. The Nix store and Gradle's cache start empty at each run.
+tree as `3f6b7cb`, the pull request's commit), run `44203166761` of pull request #1. The job runs
+`scripts/check.sh android`: clippy on the core, then `android/build-core.sh`, then
+`gradle --no-daemon testDebugUnitTest assembleRelease`, 34 JVM tests. Cold: the cache's key was
+new, since `scripts/check.sh` changed and the key now names `android/build-core.sh`. Warm: the same
+job run again, its cache hit. The Nix store and Gradle's cache start empty at each run.
 
 | Run | Duration | Of which |
 |---|---|---|
@@ -28,7 +29,7 @@ again, its cache hit. The Nix store and Gradle's cache start empty at each run.
   [quality bar's](ROADMAP.md#quality-bar) 20 minutes. A cold run has no budget.
 - **Before.** The job ran clippy alone: 4 min 41 s warm on 2026-11-16 (run `43908169478`), 9 min
   19 s cold on 2026-11-07 ([below](#the-android-shell-and-cis-android-job-m15-2026-11-07)). A warm
-  push now takes about 13 minutes of runner time for this job instead of 5.
+  push now takes about 12 minutes of runner time for this job instead of 5.
 - **Why a warm run still builds.** The checkout gives the workspace's sources new times, so Cargo
   builds the workspace's own crates again over the cached dependencies. The release build, thin LTO
   on one codegen unit, takes 1 min 52 s of it.
@@ -38,10 +39,12 @@ again, its cache hit. The Nix store and Gradle's cache start empty at each run.
   the longest stretch at 1 to 2 minutes.
 - **Freeing the disk** took 1 to 6 minutes. These runners had 86 to 89 GB free before it, where
   those of 2026-11-07 had 14 to 17. The job used 15 to 16 GB.
-- **A second cold run**, the push of these commits to `main` (run `44208220195`): 19 min 29 s, of
-  which the disk freed in 1 min 6 s, the shell 2 min 19 s, clippy 1 min 30 s, `build-core.sh` 8 min
-  3 s, Gradle 5 min 42 s. A pull request's cache is not visible to `main`, so its first push runs
-  cold. Single runs spread this far.
+- **Other runs.** Cold, the push of Kotlin's CI to `main` (`757706a` to `3c35a1b`, run
+  `44208220195`): 19 min 29 s, of which the disk freed in 1 min 6 s, the shell 2 min 19 s, clippy
+  1 min 30 s, `build-core.sh` 8 min 3 s, Gradle 5 min 42 s; a pull request's cache is not visible to
+  `main`, so its first push runs cold. Cold again, `35058bb` (run `44234751188`), whose comments in
+  `scripts/check.sh` changed the key: 16 min 13 s. Warm, pull request #1 at `b49510a` (run
+  `44208193295`): 11 min 55 s. Cold runs spread from 16 to 21 minutes, warm ones 12.
 - **A renamed export fails the job.** Run `44203168391` of pull request #2 renamed `copy_of`, which
   `Playback.kt` calls: `compileDebugKotlin` and `compileReleaseKotlin` failed with `Unresolved
   reference 'copyOf'`, after 13 minutes.

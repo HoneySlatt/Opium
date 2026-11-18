@@ -147,7 +147,10 @@ number there (L1, S2, W3…), and their failing tests are kept beside it.
   ([licence audit](audits/2026-11-05-licence.md)); neither package ships Opium's own GPL text; the
   Nix package ships no licence file; `btls-sys` declares MIT but links BoringSSL, under Apache-2.0.
 - **The APK**: signed with Android's debug key; it lets cleartext HTTP go to any host; it ships
-  2.25 MiB of iroh libraries that nothing loads; the Gradle project has no wrapper.
+  2.25 MiB of iroh libraries that nothing loads; the Gradle project has no wrapper; AGP cannot
+  strip its native libraries, which ship as built; the Kotlin compiles with 7 warnings, two of
+  them Media3's deprecated `AcceptedResultBuilder(session)` in `playback/CarLibrary.kt`, which a
+  later Media3 may remove.
 - **Dependencies, beside advisories**: 55 crates behind their latest compatible version, four held
   back by a breaking one (`aes-gcm`, `ashpd`, `oo7`, `rand` 0.8), `generic-array` 0.14.9 not taken,
   46 crates in several versions; the phone uses OkHttp without declaring it (`ui/detail/Tint.kt`,
@@ -219,8 +222,8 @@ number there (L1, S2, W3…), and their failing tests are kept beside it.
   (D3); what a contributor proves with fakes and what the owner checks (D6).
 
 - **Found by the [architecture audit of 2026-11-17](audits/2026-11-17-architecture.md)**, each
-  followed by a milestone ([ADR-0051](adr/0051-what-opium-builds-while-it-waits-for-uwui.md)) but
-  one:
+  placed in a milestone ([ADR-0051](adr/0051-what-opium-builds-while-it-waits-for-uwui.md)) or a
+  stage but one:
   - in no milestone yet, for the owner to place: the Nix package, which CI does not build, so that
     `nix build` can fail on a green `main` (CTB-1's other half);
   - in the PLAN: sign-outs not final and Apple's licences in bursts (SEC-1 to SEC-5) in *Final

@@ -69,8 +69,8 @@ scripts/check.sh docs       # the documents only: their sizes and links, in a se
   ([the phone's build](#the-phones-build)): the Kotlin is compiled against the core just built, so
   a change to the core that breaks the Kotlin's build (an export renamed or removed, a signature
   changed) fails here, as do the JVM tests, R8 and lint's fatal checks of the release build. What
-  breaks only when the app runs on the phone is still checked by hand. Gradle needs the network for what its cache
-  lacks. The release APK is left in `android/app/build`, as by hand.
+  breaks only when the app runs on the phone is still checked by hand. Gradle needs the network for
+  what its cache lacks. The release APK is left in `android/app/build`, as by hand.
 - CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs
   `nix develop --no-update-lock-file --command scripts/check.sh` on every push to `main`, every
   pull request, and every Monday at 06:53 UTC, but for a push or a pull request that changes only

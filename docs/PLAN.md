@@ -152,6 +152,10 @@ Not started; builds nothing.
 
 For the owner to pick; none is planned.
 
+- **CI's disk freed only when needed**: runners had 86 to 89 GB free on 2026-11-18 and the jobs use
+  16 at most; freeing below about 40 GB free would save 1 to 6 minutes a job
+  ([measured](measurements.md#cis-android-job-with-the-kotlin-and-the-apk-kotlins-ci-2026-11-18)).
+
 - **A gallery of every component in each theme**, captured off screen: the look approved on
   captures, reference images for CI. On the desktop, with uwui.
 - **A crash report of the app's own**: a panic hook writing what the user can attach to an issue;

@@ -20,8 +20,9 @@
 # data").
 #
 # Not checked here yet (docs/debt.md; cargo-deny at Stage 2, docs/ROADMAP.md): the dependencies'
-# licences and advisories, as cargo-deny finds advisories that only the owner can rule on; and the
-# benchmarks, measured by hand for now (docs/measurements.md).
+# licences and advisories, as cargo-deny finds advisories that only the owner can rule on; the
+# benchmarks, measured by hand for now (docs/measurements.md); and the Nix package (`nix build`),
+# which CI does not build (docs/debt.md).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
