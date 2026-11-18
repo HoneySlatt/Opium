@@ -7,8 +7,9 @@
 # `scripts/check.sh android`, run inside `nix develop .#android`, checks the phone instead, as CI's
 # `android` job does: clippy on the Rust core that the Android app loads, built for the phone; then
 # `android/build-core.sh`, which builds that core and its Kotlin bindings; then Gradle's JVM tests
-# and the release APK, which compile the Kotlin against those bindings. Gradle downloads what
-# it lacks, so this part needs the network. The APK is left in `android/app/build`; CI keeps none.
+# and the release APK, which compile the Kotlin against those bindings, shrink it with R8 and run
+# lint's fatal checks. Gradle downloads what it lacks, so this part needs the network. The APK is
+# left in `android/app/build`; CI uploads none.
 #
 # `scripts/check.sh docs` checks the documents only: the sizes of the files every agent reads at
 # every session, and the links between the Markdown files. The default part runs it first.
@@ -70,8 +71,8 @@ if [ "$part" = android ]; then
     CARGO_TARGET_DIR=target-android \
         cargo ndk -t arm64-v8a --platform 34 clippy -p opium-ffi --locked -- -D warnings
 
-    # Built again at every run, so that Gradle never compiles the Kotlin against an older core's
-    # bindings: a core that drops or renames what Kotlin calls fails the next step.
+    # Built again at every run, so that Gradle compiles the Kotlin against this tree's core: a core
+    # that drops or renames what Kotlin calls fails the next step.
     step "the phone's core and its Kotlin bindings"
     ./android/build-core.sh
 

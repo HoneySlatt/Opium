@@ -67,14 +67,18 @@ scripts/check.sh docs       # the documents only: their sizes and links, in a se
   `target-android`: the phone's core builds without the desktop's crates. Then it runs
   `./android/build-core.sh` and `gradle --no-daemon testDebugUnitTest assembleRelease`
   ([the phone's build](#the-phones-build)): the Kotlin is compiled against the core just built, so
-  a change to the core that breaks the phone fails here. Gradle needs the network for what its cache
+  a change to the core that breaks the Kotlin's build (an export renamed or removed, a signature
+  changed) fails here, as do the JVM tests, R8 and lint's fatal checks of the release build. What
+  breaks only when the app runs on the phone is still checked by hand. Gradle needs the network for what its cache
   lacks. The release APK is left in `android/app/build`, as by hand.
 - CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs
   `nix develop --no-update-lock-file --command scripts/check.sh` on every push to `main`, every
   pull request, and every Monday at 06:53 UTC, but for a push or a pull request that changes only
   Markdown files. The flag makes an incomplete `flake.lock` an error instead of a silent update.
-  A second job runs `scripts/check.sh android` in `nix develop .#android` at the same times, and
-  keeps none of what it builds, the APK included.
+  A second job runs `scripts/check.sh android` in `nix develop .#android` at the same times. It
+  uploads nothing it builds, the APK included; like the first, it caches Cargo's downloads and its
+  target folder. Gradle's cache is not kept: an empty one checks the verification file as a fresh
+  clone resolves it.
   cache.nixos.org holds none of Google's SDK but an old `sdk-tools` archive, so each run downloads
   the rest from Google: a version missing from Google's server fails that job, as it did by hand on
   2026-11-04 and 2026-11-05. That red blocks work as any other
@@ -157,8 +161,8 @@ In `nix develop .#android`:
   ```
 
   A warm cache resolves some libraries' metadata differently and hides what an empty one needs:
-  written over the owner's cache, the file lacked 15 Maven BOMs and parent POMs, which failed CI's
-  first run of the APK's build (2026-11-17).
+  written over the owner's cache, the file lacked 11 metadata files of 10 Maven BOMs and parent
+  POMs, which failed CI's first run of the APK's build (2026-11-17).
 
   Gradle only adds entries: to drop those no longer used, move the file aside first, then run the
   same command. A change to the file is read in review: only the changed dependencies' entries

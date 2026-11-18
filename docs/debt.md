@@ -148,10 +148,6 @@ number there (L1, S2, W3…), and their failing tests are kept beside it.
   Nix package ships no licence file; `btls-sys` declares MIT but links BoringSSL, under Apache-2.0.
 - **The APK**: signed with Android's debug key; it lets cleartext HTTP go to any host; it ships
   2.25 MiB of iroh libraries that nothing loads; the Gradle project has no wrapper.
-- **CI checks the phone's Rust only**: no check builds the Kotlin bindings, the Kotlin or the APK,
-  so Kotlin that no longer matches the core passes CI; built by hand (`build-core.sh`,
-  `gradle assembleRelease`). With the Gradle wrapper; the PLAN's
-  [Ideas](PLAN.md#ideas) hold it.
 - **Dependencies, beside advisories**: 55 crates behind their latest compatible version, four held
   back by a breaking one (`aes-gcm`, `ashpd`, `oo7`, `rand` 0.8), `generic-array` 0.14.9 not taken,
   46 crates in several versions; the phone uses OkHttp without declaring it (`ui/detail/Tint.kt`,
@@ -223,9 +219,10 @@ number there (L1, S2, W3…), and their failing tests are kept beside it.
   (D3); what a contributor proves with fakes and what the owner checks (D6).
 
 - **Found by the [architecture audit of 2026-11-17](audits/2026-11-17-architecture.md)**, each
-  followed by a milestone ([ADR-0051](adr/0051-what-opium-builds-while-it-waits-for-uwui.md)):
-  - the Kotlin and the APK built by CI since *Kotlin's CI* (CTB-1); CTB-1's Nix package, which CI
-    does not build, so that `nix build` can fail on a green `main`, in no milestone yet;
+  followed by a milestone ([ADR-0051](adr/0051-what-opium-builds-while-it-waits-for-uwui.md)) but
+  one:
+  - in no milestone yet, for the owner to place: the Nix package, which CI does not build, so that
+    `nix build` can fail on a green `main` (CTB-1's other half);
   - in the PLAN: sign-outs not final and Apple's licences in bursts (SEC-1 to SEC-5) in *Final
     sign-outs*, which opens `opium-ffi` and so weighs
     Kotlin's cancellations that never reach Rust (SEC-6) and the unused `Apple` export (CTB-7);

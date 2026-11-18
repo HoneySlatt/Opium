@@ -124,8 +124,9 @@ jobs:
       CARGO_INCREMENTAL: "0"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # The runner leaves 14 to 17 GB free and the job uses 11 to 12, the SDK's archives and what they
-      # unpack to (measured on 2026-11-07): too close, so the disk is freed as in the check job.
+      # The job uses 15 to 16 GB, the SDK, the builds and Gradle's downloads (2026-11-18). Runners
+      # had 14 to 17 GB free on 2026-11-07 and 86 to 89 on 2026-11-18: images vary, so the disk is
+      # freed as in the check job, to keep a margin.
       - name: Free the runner's disk
         run: |
           df -h /
@@ -157,6 +158,6 @@ jobs:
             ~/.cargo/git
             target-android
           key: ${{ steps.cache.outputs.cache-primary-key }}
-      # The disk the job used, to compare with the 14 to 17 GB the runner leaves free.
+      # The disk the job used, to compare with what the runner leaves free (docs/measurements.md).
       - if: always()
         run: df -h /

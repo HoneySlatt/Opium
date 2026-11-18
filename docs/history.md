@@ -1,7 +1,7 @@
 # History
 
-The stages that are done, newest first, with what each milestone delivered, its figures and the
-decisions taken on the way. The current work is in [`PLAN.md`](PLAN.md).
+The stages that are done, and the milestones done between stages, newest first, with what each
+milestone delivered, its figures and the decisions taken on the way. The current work is in [`PLAN.md`](PLAN.md).
 
 ## While Opium waits for uwui (from 2026-11-17)
 
@@ -13,9 +13,9 @@ Opium waits for its port in uwui's first stage; those still to build are in [the
 Audit CTB-1. CI's `android` job builds the phone's core, its Kotlin bindings, the Kotlin and the
 release APK, and runs the 34 JVM tests, through `scripts/check.sh android`; it keeps no APK. A pull
 request that renamed `copy_of`, an export `Playback.kt` calls, failed the job, as intended. The
-first run on an empty Gradle cache found 15 Maven BOMs and parent POMs missing from Gradle's
-verification file, written over a warm cache; CONTRIBUTING now writes it over an empty one. The
-job takes 21 min 7 s cold and 12 min 23 s warm, against 4 min 41 s warm before
+first run on an empty Gradle cache failed on BOMs and parent POMs missing from Gradle's verification
+file, written over a warm cache: 11 files in all; CONTRIBUTING now writes it over an empty one. The
+job takes 19 to 21 minutes cold and 12 min 23 s warm, against 4 min 41 s warm before
 ([measured](measurements.md#cis-android-job-with-the-kotlin-and-the-apk-kotlins-ci-2026-11-18)).
 The Nix package, CTB-1's other half, is still unbuilt by CI ([debt](debt.md)).
 

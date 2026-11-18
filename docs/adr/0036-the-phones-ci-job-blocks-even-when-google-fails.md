@@ -1,7 +1,9 @@
 # 0036. The phone's CI job blocks, even when Google fails
 
 - Status: Accepted; its remedy is narrowed by CONTRIBUTING.md's
-  [checks](../../CONTRIBUTING.md#the-checks): most tools can be moved in `flake.nix` alone
+  [checks](../../CONTRIBUTING.md#the-checks): most tools can be moved in `flake.nix` alone; the
+  job's cost is [measured again](../measurements.md#cis-android-job-with-the-kotlin-and-the-apk-kotlins-ci-2026-11-18)
+  since it builds the APK
 - Date: 2026-11-07
 
 ## Context
