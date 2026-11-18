@@ -10,6 +10,39 @@ the desktop runs on a [throwaway profile](../CONTRIBUTING.md#a-throwaway-profile
 cited live in [`scripts/measure/`](../scripts/measure/), each described at its head
 ([CONTRIBUTING.md](../CONTRIBUTING.md#measuring)).
 
+## CI's `android` job with the Kotlin and the APK, *Kotlin's CI* (2026-11-18)
+
+GitHub's `ubuntu-24.04`, [`ci.yml`](../.github/workflows/ci.yml) at commit `3f6b7cb`, run
+`44203166761` of pull request #1. The job runs `scripts/check.sh android`: clippy on the core, then
+`android/build-core.sh`, then `gradle --no-daemon testDebugUnitTest assembleRelease`, 34 JVM tests.
+Cold: the cache's key was new, since it now names `android/build-core.sh`. Warm: the same job run
+again, its cache hit. The Nix store and Gradle's cache start empty at each run. One run each.
+
+| Run | Duration | Of which |
+|---|---|---|
+| Cold | 21 min 7 s | the disk freed in 5 min 52 s; the shell, Google's SDK downloaded, in 2 min 21 s; clippy 1 min 11 s; `build-core.sh` 6 min 14 s (the release build 4 min 52 s); Gradle 4 min 31 s; the cache saved in 29 s, 1.06 GB |
+| Warm | 12 min 23 s | the disk freed in 3 min 30 s; the cache restored in 26 s; the shell in 1 min 47 s; clippy 6 s; `build-core.sh` 2 min 5 s (the release build 1 min 52 s); Gradle 4 min 2 s |
+
+- **Against the budget.** The workflow lasts as long as its longest job. The warm `check` job of the
+  same run took 6 min 55 s, so the warm run is 12 min 23 s, under the
+  [quality bar's](ROADMAP.md#quality-bar) 20 minutes. A cold run has no budget.
+- **Before.** The job ran clippy alone: 4 min 41 s warm on 2026-11-16 (run `43908169478`), 9 min
+  19 s cold on 2026-11-07 ([below](#the-android-shell-and-cis-android-job-m15-2026-11-07)). A warm
+  push now bills about 13 minutes for this job instead of 5.
+- **Why a warm run still builds.** The checkout gives the workspace's sources new times, so Cargo
+  builds the workspace's own crates again over the cached dependencies. The release build, thin LTO
+  on one codegen unit, takes 1 min 52 s of it.
+- **Gradle** downloads the plugins and libraries at each run, 352 MB on the desktop, as no cache
+  keeps them. Its 4 minutes also hold the Kotlin's compilation, twice (debug for the tests,
+  release), and R8.
+- **Freeing the disk** took 3 to 6 minutes. This runner had 86 GB free before it, where the runners
+  of 2026-11-07 had 14 to 17. The job used 15 GB.
+- **A renamed export fails the job.** Run `44203168391` of pull request #2 renamed `copy_of`, which
+  `Playback.kt` calls: `compileDebugKotlin` and `compileReleaseKotlin` failed with `Unresolved
+  reference 'copyOf'`, after 13 minutes.
+- **On the owner's desktop** (16 cores), the same check, its core built, an empty Gradle cache: 2 min
+  2 s.
+
 ## The audit's fixes, M1.15 (2026-11-11)
 
 What M1.15 had to leave no worse: rest and the window's frames. Same machine as
