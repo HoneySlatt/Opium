@@ -13,10 +13,11 @@ Every milestone ends with the definition of done in [`AGENTS.md`](../AGENTS.md#d
   fixes, in [the history](history.md#stage-1--under-the-method-done-on-2026-11-12).
 - **Opium waits for its port in uwui's first stage**, after SlimeEngine's Stage 6d. Meanwhile it
   fixes a loss of data, a crash, a security flaw or a service that stops working, and builds the
-  eight milestones below, in their order
-  ([ADR-0051](adr/0051-what-opium-builds-while-it-waits-for-uwui.md)), as the owner decided on
-  2026-11-17 after the [architecture audit](audits/2026-11-17-architecture.md#decisions-for-the-owner).
-- **Now: [Kotlin's CI](#kotlins-ci)**, not started.
+  eight milestones of [ADR-0051](adr/0051-what-opium-builds-while-it-waits-for-uwui.md) in their
+  order, those left below, as the owner decided on 2026-11-17 after the
+  [architecture audit](audits/2026-11-17-architecture.md#decisions-for-the-owner).
+- **Done: Kotlin's CI** (2026-11-18), in [the history](history.md#kotlins-ci-done-on-2026-11-18).
+- **Now: [Final sign-outs](#final-sign-outs)**, not started.
 - **Then Stage 5**, the move to uwui, from the design of the last milestone
   ([ROADMAP](ROADMAP.md#stage-5--on-uwui)), and the stages after it in the
   [ROADMAP's order](ROADMAP.md#4-stages).
@@ -26,17 +27,6 @@ Every milestone ends with the definition of done in [`AGENTS.md`](../AGENTS.md#d
 Each milestone below starts by reading its findings in the
 [audit](audits/2026-11-17-architecture.md); its conventions a newcomer would question are put to the
 owner at its start, then written in an ADR.
-
-## Kotlin's CI
-
-Not started. Audit CTB-1.
-
-- **Goal.** A change to the core that breaks the phone fails CI.
-- **Delivers.** The `android` job runs `./android/build-core.sh`, then `gradle testDebugUnitTest
-  assembleRelease`, with the Gradle of the Android shell; the APK built is not kept. CONTRIBUTING and
-  the head of `scripts/check.sh` say so.
-- **Done when.** CI is green; a branch that renames an export Kotlin uses fails the job.
-- **Measured.** The job's time, cold and warm, in `measurements.md`.
 
 ## Final sign-outs
 

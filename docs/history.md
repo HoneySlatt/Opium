@@ -3,6 +3,22 @@
 The stages that are done, newest first, with what each milestone delivered, its figures and the
 decisions taken on the way. The current work is in [`PLAN.md`](PLAN.md).
 
+## While Opium waits for uwui (from 2026-11-17)
+
+The milestones of [ADR-0051](adr/0051-what-opium-builds-while-it-waits-for-uwui.md), built while
+Opium waits for its port in uwui's first stage; those still to build are in [the PLAN](PLAN.md).
+
+### Kotlin's CI (done on 2026-11-18)
+
+Audit CTB-1. CI's `android` job builds the phone's core, its Kotlin bindings, the Kotlin and the
+release APK, and runs the 34 JVM tests, through `scripts/check.sh android`; it keeps no APK. A pull
+request that renamed `copy_of`, an export `Playback.kt` calls, failed the job, as intended. The
+first run on an empty Gradle cache found 15 Maven BOMs and parent POMs missing from Gradle's
+verification file, written over a warm cache; CONTRIBUTING now writes it over an empty one. The
+job takes 21 min 7 s cold and 12 min 23 s warm, against 4 min 41 s warm before
+([measured](measurements.md#cis-android-job-with-the-kotlin-and-the-apk-kotlins-ci-2026-11-18)).
+The Nix package, CTB-1's other half, is still unbuilt by CI ([debt](debt.md)).
+
 ## Stage 1 — Under the method (done on 2026-11-12)
 
 Opium came under the owner's project method on 2026-11-04: its memory moved from the owner's notes
